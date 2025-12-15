@@ -41,10 +41,32 @@ class TuyaDP:
     type: int = 0x02  # Default to VALUE (Integer)
 
 
+# Helper function for Radar State translation (Requested by user)
+def convert_radar_state(x):
+    """Convert radar state integer/bool to string description."""
+    # Handle Boolean (True/False)
+    if isinstance(x, bool):
+        return "presence" if x else "clear"
+
+    # Handle Integer/Enum
+    try:
+        val = int(x)
+        mapping = {
+            0: "none",
+            1: "presence",
+            2: "move",
+            3: "static",
+            4: "move_and_static"
+        }
+        return mapping.get(val, str(val))
+    except:
+        return str(x)
+
 # Updated DP Mappings for 24GHz Radar (Standard / Generic)
 TUYA_RADAR_DPS = {
-    # Presence/Occupancy
-    1: TuyaDP(1, "state", lambda x: bool(x), type=0x01), # BOOL
+    # Presence/Occupancy - Mapped to "radar_state" to match UI/HA expectations
+    # Uses converter to handle both Bool (0/1) and Enum (0/1/2/3)
+    1: TuyaDP(1, "radar_state", convert_radar_state, type=0x04),
 
     # Configuration
     2: TuyaDP(2, "radar_sensitivity", scale=1, type=0x02), # VALUE
@@ -62,13 +84,11 @@ TUYA_RADAR_DPS = {
 # DP Mappings for ZY-M100-24GV2 (_TZE204_7gclukjs)
 TUYA_RADAR_ZY_M100_DPS = {
     # DP 104: Binary Presence (True/False)
-    104: TuyaDP(104, "presence", lambda x: bool(x), type=0x01),
+    104: TuyaDP(104, "presence", lambda x: "presence" if x else "clear", type=0x01),
 
     # DP 1: Radar State (Enum lookup)
     # 0 = none, 1 = presence, 2 = move
-    1: TuyaDP(1, "radar_state",
-              lambda x: {0: "none", 1: "presence", 2: "move"}.get(int(x), str(x)),
-              type=0x04),
+    1: TuyaDP(1, "radar_state", convert_radar_state, type=0x04),
 
     # DP 103: Illuminance (Lux) - Specific to this model
     103: TuyaDP(103, "illuminance", scale=1, unit="lux", type=0x02),
@@ -388,6 +408,11 @@ class TuyaClusterHandler(ClusterHandler):
                         payload = json.dumps(state_update)
                         self.device.service.mqtt.publish_fast(f"{safe_name}/state", payload, qos=0)
 
+                        # FIX: Also emit WebSocket event so Frontend UI updates immediately
+                        if hasattr(self.device, 'emit_event'):
+                            # Send minimal update to UI to keep it responsive
+                            self.device.emit_event("device_updated", self.device.get_details())
+
                         logger.debug(f"[{self.device.ieee}] FAST-PATH: Published {dp_def.name}={value}")
 
                     else:
@@ -411,7 +436,22 @@ class TuyaClusterHandler(ClusterHandler):
 
     def handle_raw_data(self, message: bytes):
         """Handle raw Tuya message data (called from device.py)."""
-        self._parse_tuya_payload(message)
+        # message is the full ZCL frame. We need to strip the ZCL header.
+        # ZCL Header: FrameControl(1) + [MfrCode(2)] + TSN(1) + Command(1)
+
+        if len(message) < 3: return
+
+        fc = message[0]
+        # Check for Manufacturer Specific bit (0x04)
+        is_mfr = (fc & 0x04) != 0
+
+        header_len = 3 # FC + TSN + CMD
+        if is_mfr:
+            header_len += 2
+
+        if len(message) > header_len:
+            payload = message[header_len:]
+            self._parse_tuya_payload(payload)
 
     async def configure(self):
         """Configure Tuya device - usually no standard binding needed."""
@@ -684,7 +724,10 @@ class TuyaClusterHandler(ClusterHandler):
                 configs.append({
                     "component": "sensor",
                     "object_id": name,
-                    "config": cfg
+                    "config": {
+                        "name": name.replace("_", " ").title(),
+                        "value_template": f"{{{{ value_json.{name} }}}}"
+                    }
                 })
 
 

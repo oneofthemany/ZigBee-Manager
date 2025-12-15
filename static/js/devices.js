@@ -158,33 +158,44 @@ export function renderDeviceTable() {
     });
 }
 
+/**
+ * Handle incoming WebSocket device update events
+ */
 export function handleDeviceUpdate(payload) {
-    console.log("1. WebSocket Update Received:", payload.ieee);
+    // UPDATED LOGGING: Show full payload for debugging
+    console.log("1. WebSocket Update Received:", payload.ieee, "\nPayload:", JSON.stringify(payload, null, 2));
+
     // 1. Find the device in the array
     const devIndex = state.devices.findIndex(d => d.ieee === payload.ieee);
-    
+
     if (devIndex !== -1) {
         // 2. Update the device state in memory
+        // We merge the new data into the existing state object to preserve existing keys
         state.devices[devIndex].state = { ...state.devices[devIndex].state, ...payload.data };
-        console.log("2. Current Open Device:", state.currentDeviceIeee);
-        
+
         // Update metadata if present
         if (payload.data.last_seen) state.devices[devIndex].last_seen_ts = payload.data.last_seen;
         if (payload.data.available !== undefined) state.devices[devIndex].available = payload.data.available;
         if (payload.data.lqi !== undefined) state.devices[devIndex].lqi = payload.data.lqi;
 
+        // Update the cache as well
+        state.deviceCache[payload.ieee] = state.devices[devIndex];
+
         // 3. Update the background table row
         renderDeviceTable();
 
-        // Update router list if device type changed or availability changed (optional but good practice)
+        // Update router list if device type changed or availability changed
         populateRouterList();
 
-        console.log("3. MATCH! Attempting to refresh modal...");
-
-        // 4. Refresh the modal if it is open
+        // 4. Refresh the modal if it is open for THIS device
         if (state.currentDeviceIeee === payload.ieee) {
+            console.log("3. MATCH! Refreshing modal for:", payload.ieee);
             refreshModalState(state.devices[devIndex]); // Pass the updated object
         }
+    } else {
+        // Device not found in list (maybe new join?), trigger full fetch
+        console.log("Device not found in local list, fetching all...");
+        fetchDevices();
     }
 }
 

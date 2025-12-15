@@ -328,7 +328,7 @@ export function analysePacket(packet) {
 
     // 4. Detailed Analysis Logic
 
-    // --- A. Tuya Analysis (Prioritize Backend Data: packet.tuya_dps) ---
+    // --- A. Tuya Analysis (Prioritise Backend Data: packet.tuya_dps) ---
     if (cid === 0xEF00) {
         analysis.summary = analysis.command;
 
@@ -402,8 +402,7 @@ export function renderPacketAnalysis(packet) {
     // Safe Hex Display
     const cidHex = (analysis.cluster_id || 0).toString(16).padStart(4, '0');
 
-    // ADDED text-light to fix visibility on dark background
-    let html = '<div class="packet-analysis border-start border-3 border-primary ps-3 mb-3 text-light">';
+    let html = '<div class="packet-analysis border-start border-3 border-primary ps-3 mb-3">';
 
     // Header
     html += `<div class="d-flex justify-content-between align-items-start mb-2">`;
@@ -463,6 +462,34 @@ export function renderPacketAnalysis(packet) {
             }
 
             html += `</div>`;
+            html += `</div>`;
+        });
+        html += `</div>`;
+    }
+    // FALLBACK: Use rough client-side parsing if backend data is missing
+    else if (analysis.tuya_analysis) {
+        const ta = analysis.tuya_analysis;
+        html += `<div class="tuya-details bg-dark p-2 rounded mb-2">`;
+        html += `<div class="small text-warning mb-2"><i class="fas fa-microchip"></i> Tuya Protocol Analysis (Client-Side Fallback)</div>`;
+
+        if (ta.sequence !== null) html += `<div class="small mb-1 text-muted">Seq: ${ta.sequence}</div>`;
+
+        ta.dps.forEach(dp => {
+            html += `<div class="dp-item border-start border-info ps-2 mb-2">`;
+            html += `<div class="d-flex justify-content-between">`;
+            html += `<strong class="text-info">DP ${dp.dp_id}</strong>`;
+            html += `<span class="badge bg-info">${dp.dp_type_name}</span>`;
+            html += `</div>`;
+
+            html += `<div class="small mt-1">`;
+            html += `<strong>${escapeHtml(dp.meaning)}:</strong> <code class="text-light">${escapeHtml(dp.value)}</code>`;
+            html += `</div>`;
+
+            if (dp.derived_states.length > 0) {
+                html += `<div class="small text-success mt-1">`;
+                dp.derived_states.forEach(s => html += `<div>→ ${escapeHtml(s)}</div>`);
+                html += `</div>`;
+            }
             html += `</div>`;
         });
         html += `</div>`;

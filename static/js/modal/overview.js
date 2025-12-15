@@ -59,7 +59,15 @@ export function renderOverviewTab(device) {
     ];
 
     // Define sensor-specific keys that should only appear for devices with those capabilities
-    const occupancySensorKeys = ['motion', 'occupancy', 'presence', 'motion_on_time', 'motion_timeout', 'sensitivity'];
+    // FIX: Added complete list of Tuya Radar keys to allowed list
+    const occupancySensorKeys = [
+        'motion', 'occupancy', 'presence', 'motion_on_time',
+        'motion_timeout', 'sensitivity',
+        'radar_state', 'illuminance_lux', 'distance', 'target_distance',
+        'radar_sensitivity', 'presence_sensitivity', 'detection_distance_min',
+        'detection_distance_max', 'keep_time', 'fading_time'
+    ];
+
     const contactSensorKeys = ['contact', 'is_open'];
     const iasZoneKeys = ['zone_status', 'tamper', 'battery_low', 'trouble', 'water_leak', 'smoke', 'co_detected', 'vibration', 'alarm'];
 
@@ -78,8 +86,9 @@ export function renderOverviewTab(device) {
         const hasOccupancyCluster = hasCluster(0x0406);  // Occupancy Sensing
         const hasIASZone = hasCluster(0x0500);  // IAS Zone (motion sensors)
         const hasOnOff = hasCluster(0x0006) && device.model?.includes('SML');  // Philips motion sensors
+        const hasTuya = hasCluster(0xEF00); // Tuya Cluster (0xEF00) for radar sensors
 
-        return hasOccupancyCluster || hasIASZone || hasOnOff;
+        return hasOccupancyCluster || hasIASZone || hasOnOff || hasTuya;
     };
 
     const hasContactSensing = () => {
@@ -136,6 +145,14 @@ export function renderOverviewTab(device) {
             // Check if value is a long hex/binary string that needs wrapping
             const needsWrap = typeof val === 'string' && val.length > 40;
             const valueClass = needsWrap ? 'text-break' : '';
+
+            // Formatting specifically for Radar State
+            if (k === 'radar_state') {
+                let badgeClass = 'bg-secondary';
+                if (val === 'move' || val === 'presence') badgeClass = 'bg-success';
+                else if (val === 'static') badgeClass = 'bg-info';
+                val = `<span class="badge ${badgeClass}">${val}</span>`;
+            }
 
             return `
             <tr>
