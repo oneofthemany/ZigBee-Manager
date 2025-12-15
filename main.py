@@ -61,6 +61,7 @@ root_logger.addHandler(queue_handler)
 
 # Set debug level for specific modules
 logging.getLogger('handlers').setLevel(logging.INFO)
+logging.getLogger('handlers.base').setLevel(logging.INFO) # Set base handler to INFO
 logging.getLogger('core').setLevel(logging.INFO)
 logging.getLogger('device').setLevel(logging.INFO)
 
@@ -589,10 +590,10 @@ async def clear_debug():
 
 @app.get("/api/debug/packets")
 async def get_debug_packets(
-    limit: int = 100,
-    ieee: str = None,
-    cluster: int = None,
-    importance: str = None
+        limit: int = 100,
+        ieee: str = None,
+        cluster: int = None,
+        importance: str = None
 ):
     """Get captured packets with filtering."""
     try:
@@ -620,7 +621,7 @@ async def get_motion_events(limit: int = 50):
             "events": debugger.get_motion_events(limit=limit)
         }
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        return {"error": str(e)}
 
 
 @app.get("/api/debug/device/{ieee}")

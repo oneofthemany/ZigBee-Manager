@@ -194,7 +194,9 @@ const TUYA_COMMON_DPS = {
 // =============================================================================
 
 /**
- * Parse Tuya Payload (unchanged logic, just cleaned up)
+ * Parse Tuya Payload (This is the old, rough client-side implementation.
+ * We will rely on the backend's rich 'tuya_dps' data if available in the packet
+ * and only use this as a fallback).
  */
 function parseTuyaPayload(hexPayload) {
     try {
@@ -306,7 +308,7 @@ export function analysePacket(packet) {
         summary: "",
         details: [],
         recommendations: [],
-        tuya_analysis: null
+        tuya_analysis: null // Will hold the structured data from the backend
     };
 
     // 3. Command Resolution
@@ -326,17 +328,31 @@ export function analysePacket(packet) {
 
     // 4. Detailed Analysis Logic
 
-    // --- A. Tuya Analysis ---
+    // --- A. Tuya Analysis (Prioritize Backend Data: packet.tuya_dps) ---
     if (cid === 0xEF00) {
         analysis.summary = analysis.command;
-        if (packet.decoded?.payload) {
+
+        if (packet.tuya_dps && packet.tuya_dps.length > 0) {
+            // Use RICH, STRUCTURED DATA from backend
+            analysis.tuya_analysis = {
+                dps: packet.tuya_dps
+            };
+
+            // Build rich summary from backend data
+            const summaries = packet.tuya_dps.map(dp => {
+                const name = dp.dp_def_name || `DP${dp.dp_id}`;
+                return `${name}=${dp.parsed_value}${dp.dp_def_unit}`;
+            });
+            analysis.summary += `: ${summaries.join(', ')}`;
+
+        } else if (packet.decoded?.payload) {
+            // FALLBACK: Use rough client-side parsing
             const parsed = parseTuyaPayload(packet.decoded.payload);
             if (parsed && parsed.dps.length > 0) {
                 analysis.tuya_analysis = {
                     sequence: parsed.sequence,
                     dps: parsed.dps.map(dp => analyseTuyaDP(dp))
                 };
-                // Build summary
                 const summaries = parsed.dps.map(dp => {
                     const name = TUYA_COMMON_DPS[dp.dp_id]?.name || `DP${dp.dp_id}`;
                     return `${name}=${dp.valueStr}`;
@@ -348,13 +364,8 @@ export function analysePacket(packet) {
 
     // --- B. ZCL Attribute Reporting (0x0A) or Read Response (0x01) ---
     else if ((cmdId === 0x0A || cmdId === 0x01) && !isClusterSpecific) {
-        // Attempt to guess attributes from payload if we had a proper parser
-        // Since we only have raw payload in JS usually, we make a generic summary
-        // If your backend provides 'decoded.attributes', we could use that.
-        // Assuming packet.decoded might have key-value pairs in some implementations:
         analysis.summary = `${analysis.cluster_name} Report`;
 
-        // Simple heuristic: If we know this cluster usually reports specific things
         if (COMMON_ATTRIBUTES[cid]) {
              analysis.recommendations.push(`ℹ️ This cluster usually reports: ${Object.values(COMMON_ATTRIBUTES[cid]).join(', ')}`);
         }
@@ -391,7 +402,8 @@ export function renderPacketAnalysis(packet) {
     // Safe Hex Display
     const cidHex = (analysis.cluster_id || 0).toString(16).padStart(4, '0');
 
-    let html = '<div class="packet-analysis border-start border-3 border-primary ps-3 mb-3">';
+    // ADDED text-light to fix visibility on dark background
+    let html = '<div class="packet-analysis border-start border-3 border-primary ps-3 mb-3 text-light">';
 
     // Header
     html += `<div class="d-flex justify-content-between align-items-start mb-2">`;
@@ -407,34 +419,55 @@ export function renderPacketAnalysis(packet) {
         html += `<div class="mb-2"><strong>Summary:</strong> ${escapeHtml(analysis.summary)}</div>`;
     }
 
-    // Tuya Deep Analysis Block
-    if (analysis.tuya_analysis) {
-        const ta = analysis.tuya_analysis;
+    // Tuya Deep Analysis Block (Using structured data from backend: packet.tuya_dps)
+    if (analysis.cluster_id === 0xEF00 && packet.tuya_dps && packet.tuya_dps.length > 0) {
+        const dps = packet.tuya_dps;
         html += `<div class="tuya-details bg-dark p-2 rounded mb-2">`;
-        html += `<div class="small text-warning mb-2"><i class="fas fa-microchip"></i> Tuya Protocol Analysis</div>`;
+        html += `<div class="small text-warning mb-2"><i class="fas fa-microchip"></i> Tuya Protocol Analysis (Handler Decoded)</div>`;
 
-        if (ta.sequence !== null) html += `<div class="small mb-1 text-muted">Seq: ${ta.sequence}</div>`;
+        dps.forEach(dp => {
+            // Get the value after conversion/scaling, or fallback to parsed value
+            const finalValue = dp.parsed_value * dp.dp_def_scale + dp.dp_def_unit;
 
-        ta.dps.forEach(dp => {
-            html += `<div class="dp-item border-start border-info ps-2 mb-2">`;
-            html += `<div class="d-flex justify-content-between">`;
-            html += `<strong class="text-info">DP ${dp.dp_id}</strong>`;
-            html += `<span class="badge bg-info">${dp.dp_type_name}</span>`;
-            html += `</div>`;
-
-            html += `<div class="small mt-1">`;
-            html += `<strong>${escapeHtml(dp.meaning)}:</strong> <code class="text-light">${escapeHtml(dp.value)}</code>`;
-            html += `</div>`;
-
-            if (dp.derived_states.length > 0) {
-                html += `<div class="small text-success mt-1">`;
-                dp.derived_states.forEach(s => html += `<div>→ ${escapeHtml(s)}</div>`);
-                html += `</div>`;
+            // Format raw hex data
+            let rawDataStr = dp.raw_hex;
+            if (dp.dp_type === 0x02 && rawDataStr.length === 8) {
+                // VALUE (4-byte integer)
+                rawDataStr = `${rawDataStr.slice(0, 2)} ${rawDataStr.slice(2, 4)} ${rawDataStr.slice(4, 6)} ${rawDataStr.slice(6, 8)}`;
+            } else if (dp.dp_type === 0x01 && rawDataStr.length === 2) {
+                // BOOL (1-byte)
+                rawDataStr = `${rawDataStr}`;
             }
+
+            html += `<div class="dp-item border-start border-info ps-2 mb-2">`;
+            html += `<div class="d-flex justify-content-between align-items-start">`;
+            html += `<strong class="text-info">DP ${dp.dp_id}: ${escapeHtml(dp.dp_def_name)}</strong>`;
+            html += `<span class="badge bg-info">${TUYA_DP_TYPES[dp.dp_type] || `0x${dp.dp_type.toString(16)}`} (Len: ${dp.dp_len})</span>`;
+            html += `</div>`;
+
+            // Row 1: Raw Payload and Type
+            html += `<div class="row g-1 small mt-1">`;
+            html += `<div class="col-md-6"><strong>Raw Hex Data:</strong> <code class="text-light text-break">${escapeHtml(rawDataStr)}</code></div>`;
+            html += `<div class="col-md-6"><strong>Decoded Raw Value:</strong> <code class="text-light text-break">${escapeHtml(dp.raw_value)}</code></div>`;
+            html += `</div>`;
+
+            // Row 2: Scaled/Converted Value
+            html += `<div class="row g-1 small mt-1 border-top pt-1 border-secondary border-opacity-25">`;
+            html += `<div class="col-md-6 text-success"><strong>Final Value:</strong> <code class="text-success text-break">${escapeHtml(dp.parsed_value * dp.dp_def_scale + dp.dp_def_unit)}</code></div>`;
+
+            // Show scale only if it's not 1.0
+            if (dp.dp_def_scale !== 1.0) {
+                html += `<div class="col-md-6 text-muted"><strong>Scaling Applied:</strong> x${dp.dp_def_scale}</div>`;
+            } else {
+                html += `<div class="col-md-6 text-muted"><strong>Scaling Applied:</strong> None</div>`;
+            }
+
+            html += `</div>`;
             html += `</div>`;
         });
         html += `</div>`;
     }
+
 
     // Recommendations / Hints
     if (analysis.recommendations.length > 0) {

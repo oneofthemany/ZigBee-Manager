@@ -10,6 +10,13 @@ import time
 
 from .base import ClusterHandler, register_handler
 
+# Import the debugger for structured logging
+try:
+    from zigbee_debug import get_debugger
+except ImportError:
+    def get_debugger():
+        return None
+
 logger = logging.getLogger("handlers.tuya")
 
 TUYA_CLUSTER_ID = 0xEF00
@@ -181,6 +188,9 @@ class TuyaClusterHandler(ClusterHandler):
         """Handle Tuya cluster commands (data reports)."""
         logger.debug(f"[{self.device.ieee}] Tuya command: cmd=0x{command_id:02x}, args={args}")
 
+        # Ensure base logging/debugging is called (even if we override logic later)
+        super().cluster_command(tsn, command_id, args)
+
         if command_id in [TUYA_SET_DATA_RESPONSE, TUYA_ACTIVE_STATUS_REPORT]:
             self._handle_data_report(args)
         elif command_id == TUYA_TIME_REQUEST:
@@ -217,15 +227,20 @@ class TuyaClusterHandler(ClusterHandler):
         # Standard Tuya format: [seq_hi, seq_lo, dp_id, dp_type, len_hi, len_lo, ...data...]
         # Some devices have slightly different formats
         offset = 0
+        parsed_dps = [] # Collect parsed DP structures for enhanced logging
+
+        # Try to skip sequence number if present (common pattern)
+        if offset == 0 and len(data) > 6:
+            # Skip sequence number if present (common pattern 0x00 and a low byte)
+            if data[0] == 0x00 and data[1] < 0x80:
+                offset = 2
+
+        start_offset = offset
 
         while offset < len(data) - 4:
             try:
-                # Try to find DP structure
-                # Format varies: sometimes starts with seq, sometimes directly with DP
-                if offset == 0 and len(data) > 6:
-                    # Skip sequence number if present
-                    if data[0] == 0x00 and data[1] < 0x80:
-                        offset = 2
+                # Store starting position for this DP
+                dp_start = offset
 
                 dp_id = data[offset]
                 dp_type = data[offset + 1]
@@ -235,7 +250,22 @@ class TuyaClusterHandler(ClusterHandler):
                     break
 
                 dp_data = data[offset + 4:offset + 4 + dp_len]
-                self._process_dp(dp_id, dp_type, dp_data)
+
+                # Process and get the value before scaling/conversion for logging
+                raw_value, parsed_value = self._process_dp_logic(dp_id, dp_type, dp_data)
+
+                # Add structured data for enhanced debugging
+                parsed_dps.append({
+                    "dp_id": dp_id,
+                    "dp_type": dp_type,
+                    "dp_len": dp_len,
+                    "raw_hex": dp_data.hex(),
+                    "raw_value": raw_value,
+                    "parsed_value": parsed_value, # Value after initial decoding (before scaling/converter)
+                    "dp_def_name": self._dp_map.get(dp_id).name if self._dp_map.get(dp_id) else "Unknown",
+                    "dp_def_scale": self._dp_map.get(dp_id).scale if self._dp_map.get(dp_id) else 1.0,
+                    "dp_def_unit": self._dp_map.get(dp_id).unit if self._dp_map.get(dp_id) else "",
+                })
 
                 offset += 4 + dp_len
 
@@ -243,93 +273,141 @@ class TuyaClusterHandler(ClusterHandler):
                 logger.debug(f"[{self.device.ieee}] Parse error at offset {offset}: {e}")
                 break
 
-    def _process_dp(self, dp_id: int, dp_type: int, dp_data: bytes):
-        """Process a single Tuya Data Point."""
-        try:
-            # Decode value based on type
-            if dp_type == self.DP_TYPE_BOOL:
-                value = bool(dp_data[0]) if dp_data else False
-            elif dp_type == self.DP_TYPE_VALUE:
-                value = int.from_bytes(dp_data, 'big', signed=True)
-            elif dp_type == self.DP_TYPE_ENUM:
-                value = dp_data[0] if dp_data else 0
-            elif dp_type == self.DP_TYPE_STRING:
-                value = dp_data.decode('utf-8', errors='ignore')
-            elif dp_type == self.DP_TYPE_BITMAP:
-                value = int.from_bytes(dp_data, 'big')
-            else:
-                value = dp_data.hex()
+        # --- ENHANCED DEBUGGING EMISSION ---
+        debugger = get_debugger()
+        if debugger and parsed_dps:
+            debugger.record_tuya_report(
+                self.device.ieee,
+                data.hex(),
+                parsed_dps
+            )
+        # --- END ENHANCED DEBUGGING EMISSION ---
 
-            # Look up DP definition
-            dp_def = self._dp_map.get(dp_id)
+        # Now actually process the DPs for state update (this calls the _process_dp again but uses the logic below)
+        self._update_state_from_dps(data)
 
-            if dp_def:
-                # Apply converter if defined
-                if dp_def.converter:
-                    try:
-                        value = dp_def.converter(value)
-                    except:
-                        pass
 
-                # Apply scale
-                if isinstance(value, (int, float)) and dp_def.scale != 1.0:
-                    value = round(value * dp_def.scale, 2)
+    def _process_dp_logic(self, dp_id: int, dp_type: int, dp_data: bytes):
+        """Decodes raw DP data into a Python object (pre-scaling/conversion)."""
+        raw_value = None
 
-                # ======================================================
-                # OPTIMIZATION: FILTERING & PRIORITIZATION
-                # ======================================================
+        # Decode raw value based on type
+        if dp_type == self.DP_TYPE_BOOL:
+            raw_value = bool(dp_data[0]) if dp_data else False
+            parsed_value = raw_value
+        elif dp_type == self.DP_TYPE_VALUE:
+            raw_value = int.from_bytes(dp_data, 'big', signed=True)
+            parsed_value = raw_value
+        elif dp_type == self.DP_TYPE_ENUM:
+            raw_value = dp_data[0] if dp_data else 0
+            parsed_value = raw_value
+        elif dp_type == self.DP_TYPE_STRING:
+            raw_value = dp_data.decode('utf-8', errors='ignore')
+            parsed_value = raw_value
+        elif dp_type == self.DP_TYPE_BITMAP:
+            raw_value = int.from_bytes(dp_data, 'big')
+            parsed_value = raw_value
+        else:
+            raw_value = dp_data.hex()
+            parsed_value = raw_value
 
-                # 1. DROP Distance (DP9) to prevent spamming
-                if dp_id == 9 or dp_def.name == "distance":
-                    # Uncomment next line if you want to see debug logs for distance
-                    # logger.debug(f"[{self.device.ieee}] Ignored distance: {value}m")
-                    return
+        return raw_value, parsed_value
 
-                # 2. Prioritize Critical DPs (Presence / State)
-                qos = None
-                if dp_id in [1, 104]:  # State or Presence
-                    qos = 2
-                    logger.info(f"[{self.device.ieee}] 🚨 Critical (QoS 2): {dp_def.name} = {value}")
+    def _update_state_from_dps(self, data: bytes):
+        """Re-parses the payload to update state (original core logic)."""
+        offset = 0
+
+        # Try to skip sequence number if present (common pattern)
+        if offset == 0 and len(data) > 6:
+            if data[0] == 0x00 and data[1] < 0x80:
+                offset = 2
+
+        while offset < len(data) - 4:
+            try:
+                dp_id = data[offset]
+                dp_type = data[offset + 1]
+                dp_len = (data[offset + 2] << 8) | data[offset + 3]
+
+                if offset + 4 + dp_len > len(data):
+                    break
+
+                dp_data = data[offset + 4:offset + 4 + dp_len]
+
+                # --- START Original _process_dp logic ---
+
+                # Decode value based on type
+                raw_value, value = self._process_dp_logic(dp_id, dp_type, dp_data)
+
+                # Look up DP definition
+                dp_def = self._dp_map.get(dp_id)
+
+                if dp_def:
+                    # Apply converter if defined
+                    if dp_def.converter:
+                        try:
+                            value = dp_def.converter(value)
+                        except:
+                            pass
+
+                    # Apply scale
+                    if isinstance(value, (int, float)) and dp_def.scale != 1.0:
+                        value = round(value * dp_def.scale, 2)
+
+                    # 1. DROP Distance (DP9) to prevent spamming
+                    if dp_id == 9 or dp_def.name == "distance":
+                        return # Skip state update for distance
+
+                    # 2. Prioritize Critical DPs (Presence / State)
+                    qos = None
+                    if dp_id in [1, 104]:  # State or Presence
+                        qos = 2
+                        logger.info(f"[{self.device.ieee}] 🚨 Critical (QoS 2): {dp_def.name} = {value}")
+                    else:
+                        logger.info(f"[{self.device.ieee}] DP{dp_id}: {dp_def.name} = {value}{dp_def.unit}")
+
+                    # Prepare state update
+                    state_update = {dp_def.name: value}
+
+                    # SPECIAL HANDLING: For illuminance, create both attributes (ZHA pattern)
+                    if dp_def.name == "illuminance":
+                        state_update["illuminance_lux"] = value
+                        logger.debug(f"[{self.device.ieee}] Created illuminance_lux alias: {value}")
+
+                    # === FAST-PATH PUBLISH for presence/state (CRITICAL DPs) ===
+                    if dp_id in [1, 104] and self.device.service.mqtt and hasattr(self.device.service.mqtt, 'publish_fast'):
+                        # For radar presence, publish IMMEDIATELY via fast path
+                        safe_name = self.device.service.get_safe_name(self.device.ieee)
+
+                        # Update state in memory first
+                        self.device.state.update(state_update)
+                        self.device.last_seen = int(time.time() * 1000)
+                        self.device.service._cache_dirty = True
+
+                        # Fast non-blocking MQTT publish
+                        import json
+                        payload = json.dumps(state_update)
+                        self.device.service.mqtt.publish_fast(f"{safe_name}/state", payload, qos=0)
+
+                        logger.debug(f"[{self.device.ieee}] FAST-PATH: Published {dp_def.name}={value}")
+
+                    else:
+                        # Normal update for non-critical DPs (temperature, humidity, etc.)
+                        self.device.update_state(state_update, qos=qos)
+                    # === END FAST-PATH ===
+
                 else:
-                    logger.info(f"[{self.device.ieee}] DP{dp_id}: {dp_def.name} = {value}{dp_def.unit}")
+                    # Unknown DP - log it for debugging
+                    logger.debug(f"[{self.device.ieee}] Unknown DP{dp_id} (type {dp_type}): {value}")
+                    self.device.update_state({f"dp_{dp_id}": value})
 
-                # Prepare state update
-                state_update = {dp_def.name: value}
+                # --- END Original _process_dp logic ---
 
-                # SPECIAL HANDLING: For illuminance, create both attributes (ZHA pattern)
-                if dp_def.name == "illuminance":
-                    state_update["illuminance_lux"] = value
-                    logger.debug(f"[{self.device.ieee}] Created illuminance_lux alias: {value}")
+                offset += 4 + dp_len
 
-                # === FAST-PATH PUBLISH for presence/state (CRITICAL DPs) ===
-                if dp_id in [1, 104] and self.device.service.mqtt and hasattr(self.device.service.mqtt, 'publish_fast'):
-                    # For radar presence, publish IMMEDIATELY via fast path
-                    safe_name = self.device.service.get_safe_name(self.device.ieee)
+            except Exception as e:
+                logger.error(f"[{self.device.ieee}] Error processing DP at offset {offset}: {e}")
+                break
 
-                    # Update state in memory first
-                    self.device.state.update(state_update)
-                    self.device.last_seen = int(time.time() * 1000)
-                    self.device.service._cache_dirty = True
-
-                    # Fast non-blocking MQTT publish
-                    import json
-                    payload = json.dumps(state_update)
-                    self.device.service.mqtt.publish_fast(f"{safe_name}/state", payload, qos=0)
-
-                    logger.debug(f"[{self.device.ieee}] FAST-PATH: Published {dp_def.name}={value}")
-
-                else:
-                    # Normal update for non-critical DPs (temperature, humidity, etc.)
-                    self.device.update_state(state_update, qos=qos)
-                # === END FAST-PATH ===
-
-            else:
-                # Unknown DP - log it for debugging
-                logger.debug(f"[{self.device.ieee}] Unknown DP{dp_id} (type {dp_type}): {value}")
-                self.device.update_state({f"dp_{dp_id}": value})
-
-        except Exception as e:
-            logger.error(f"[{self.device.ieee}] Error processing DP{dp_id}: {e}")
 
     def handle_raw_data(self, message: bytes):
         """Handle raw Tuya message data (called from device.py)."""
@@ -437,7 +515,7 @@ class TuyaClusterHandler(ClusterHandler):
             (manuf_id >> 8) & 0xFF,
             zcl_seq,
             TUYA_QUERY_DATA,
-        ])
+            ])
 
         try:
             zigpy_device = self.cluster.endpoint.device

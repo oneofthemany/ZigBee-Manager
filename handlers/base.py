@@ -98,7 +98,7 @@ class ClusterHandler:
         cluster_name = CLUSTER_NAMES.get(self.cluster_id, f"0x{self.cluster_id:04X}")
 
         # Log that we received the callback
-        logger.info(
+        logger.debug( # Changed to DEBUG level to reduce log spam
             f"📡 [{self.device.ieee}] {cluster_name} attribute_updated callback! "
             f"attr=0x{attrid:04X}, value={value}, type={type(value).__name__}"
         )
@@ -157,7 +157,8 @@ class ClusterHandler:
         cluster_name = CLUSTER_NAMES.get(self.cluster_id, f"0x{self.cluster_id:04X}")
 
         # Log that we received the callback
-        logger.info(
+        # CRITICAL FIX: Changed to DEBUG level to prevent INFO log spamming
+        logger.debug(
             f"📡 [{self.device.ieee}] {cluster_name} cluster_command callback! "
             f"tsn={tsn}, cmd=0x{command_id:02X}, args={args}"
         )
@@ -251,8 +252,8 @@ class ClusterHandler:
 
             return True
         except asyncio.TimeoutError:
-             logger.warning(f"[{self.device.ieee}] ⏳ Configuration timed out for {cluster_name}")
-             return False
+            logger.warning(f"[{self.device.ieee}] ⏳ Configuration timed out for {cluster_name}")
+            return False
         except Exception as e:
             logger.warning(
                 f"[{self.device.ieee}] ❌ Configuration failed for {cluster_name}: {e}"
@@ -360,4 +361,3 @@ def print_registered_handlers():
         cluster_name = CLUSTER_NAMES.get(cluster_id, "Unknown")
         print(f"  0x{cluster_id:04X} ({cluster_name}): {handler_cls.__name__}")
     print("="*60 + "\n")
-

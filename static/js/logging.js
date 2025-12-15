@@ -48,11 +48,14 @@ export function renderLogs() {
         // B. Verbosity Filter (Hardcoded spam reduction)
         if (!state.verboseLogging) {
             const spamPatterns = [
+                // Keep these since they are common INFO/DEBUG logs
                 "pending publish calls", "MQTT command:", "Sending command:",
                 "Polled state =", "Polling 0x", "Polled ", "CRC error",
-                "Updating state with applied settings"
+                "Updating state with applied settings",
+                // ADDITION: Suppress basic cluster command logs from base handler if only INFO
+                "cluster_command callback!"
             ];
-            if (spamPatterns.some(p => l.message.includes(p))) return false;
+            if (spamPatterns.some(p => l.message.includes(p)) && l.level !== 'DEBUG') return false;
         }
 
         // C. IEEE / Name Filter
@@ -157,6 +160,10 @@ export async function toggleDebug(enable) {
     checkDebugStatus();
 }
 
+/**
+ * Handle Live Packet Stream (WebSocket)
+ * Adds the packet to the table immediately without full refresh
+ */
 export function handleLivePacket(p) {
     const tbody = document.querySelector('#debugPacketsContent tbody');
     if (!tbody) return;
@@ -191,34 +198,83 @@ export function handleLivePacket(p) {
         }
     }
 
-// Packet passes filters, add it to the table
+    // Packet passes filters, add it to the table
     const ieeeShort = p.ieee ? p.ieee.substring(p.ieee.length - 8) : 'N/A';
-
-    // NEW: Look up device details
     const device = state.deviceCache[p.ieee] || {};
     const devName = device.friendly_name || device.name || 'Unknown';
     const devModel = device.model || device.model_id || '-';
 
-    const rowHtml = `
-        <tr style="animation: highlight 1s">
+    // Generate a unique ID for this packet row
+    // We use a timestamp-random combo to ensure uniqueness for DOM IDs
+    const rowId = `live-packet-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+
+    let analysis;
+    try {
+        analysis = analysePacket(p);
+    } catch (e) {
+        console.warn('Packet analyser not available:', e);
+        analysis = {
+            cluster_name: p.cluster_name || `0x${(p.cluster_id || 0).toString(16).padStart(4, '0')}`,
+            command: p.decoded?.command_name || p.decoded?.command_id_hex || 'Unknown',
+            summary: ''
+        };
+    }
+
+    let rowClass = '';
+    if (p.cluster === 0xEF00) rowClass = 'table-warning';
+    else if (p.cluster === 0x0406) rowClass = 'table-info';
+
+    // 1. The Summary Row
+    const summaryHtml = `
+        <tr class="${rowClass}" style="cursor: pointer; animation: highlight 1s" onclick="togglePacketDetails('${rowId}')">
             <td class="small">${p.timestamp_str}</td>
             <td class="small fw-bold text-truncate" style="max-width: 150px;" title="${devName}">${devName}</td>
             <td class="small text-muted text-truncate" style="max-width: 100px;" title="${devModel}">${devModel}</td>
             <td class="small text-muted" title="${p.ieee}">${ieeeShort}</td>
-            <td>${p.cluster_name}</td>
-            <td>${p.decoded.command_name || p.decoded.command_id_hex}</td>
-            <td class="small text-muted">
-                <pre class="m-0" style="white-space: pre-wrap; word-break: break-all; font-size: 0.75rem;">${JSON.stringify(p.decoded, null, 2)}</pre>
+            <td>${analysis.cluster_name}</td>
+            <td class="small">${analysis.command}</td>
+            <td class="small">${analysis.summary || '-'}</td>
+            <td class="text-center">
+                <i class="fas fa-chevron-down" id="icon-${rowId}"></i>
             </td>
         </tr>
     `;
-    tbody.insertAdjacentHTML('afterbegin', rowHtml);
-    if (tbody.rows.length > 100) tbody.lastElementChild.remove();
+
+    // 2. The Detailed Row (Hidden by default)
+    // ADDED text-light to fix visibility on dark background
+    let detailsHtml = `<tr id="${rowId}" style="display: none;">
+        <td colspan="8" class="bg-dark text-light">
+            <div class="p-3">`;
+
+    try {
+        detailsHtml += renderPacketAnalysis(p);
+    } catch (e) {
+        detailsHtml += `<div class="alert alert-warning">Packet analyser error: ${e.message}</div>`;
+    }
+
+    detailsHtml += `
+                <div class="mt-3">
+                    <strong class="d-block mb-2">Raw Packet Data:</strong>
+                    <pre class="bg-black text-light p-2 rounded small" style="max-height: 300px; overflow-y: auto;">${JSON.stringify(p.decoded, null, 2)}</pre>
+                </div>
+            </div>
+        </td>
+    </tr>`;
+
+    // Insert both rows
+    tbody.insertAdjacentHTML('afterbegin', detailsHtml); // Detail row first (so it ends up below summary when prepending)
+    tbody.insertAdjacentHTML('afterbegin', summaryHtml); // Summary row on top
+
+    if (tbody.rows.length > 200) {
+        tbody.lastElementChild.remove();
+        tbody.lastElementChild.remove();
+    }
 }
 
 export async function viewDebugPackets() {
     const modal = new bootstrap.Modal(document.getElementById('debugPacketsModal'));
     modal.show();
+    // CRITICAL FIX: Ensure refresh is called to fetch the full data history
     await refreshDebugPackets();
 }
 
@@ -256,7 +312,6 @@ export async function refreshDebugPackets() {
         const data = await res.json();
 
         if (data.success) {
-            // UPDATED HEADER: Added Device and Model columns
             let html = '<table class="table table-sm table-hover"><thead><tr>' +
                 '<th width="10%">Time</th>' +
                 '<th width="15%">Device</th>' +
@@ -274,20 +329,16 @@ export async function refreshDebugPackets() {
                 data.packets.forEach((p, idx) => {
                     try {
                         const ieeeShort = p.ieee ? p.ieee.substring(p.ieee.length - 8) : 'N/A';
-
-                        // Look up device details
                         const device = state.deviceCache[p.ieee] || {};
                         const devName = device.friendly_name || device.name || 'Unknown';
                         const devModel = device.model || device.model_id || '-';
+                        const rowId = `packet-${idx}`;
 
-
-                        // Analyse the packet (with fallback if analyser not available)
                         let analysis;
                         try {
                             analysis = analysePacket(p);
                         } catch (e) {
                             console.warn('Packet analyser not available:', e);
-                            // Fallback analysis
                             analysis = {
                                 cluster_name: p.cluster_name || `0x${(p.cluster_id || 0).toString(16).padStart(4, '0')}`,
                                 command: p.decoded?.command_name || p.decoded?.command_id_hex || 'Unknown',
@@ -295,13 +346,11 @@ export async function refreshDebugPackets() {
                             };
                         }
 
-                        // Determine row color
                         let rowClass = '';
-                        if (p.cluster_id === 0xEF00) rowClass = 'table-warning';
-                        else if (p.cluster_id === 0x0406) rowClass = 'table-info';
+                        if (p.cluster === 0xEF00) rowClass = 'table-warning';
+                        else if (p.cluster === 0x0406) rowClass = 'table-info';
 
-                        // Added Device and Model cells
-                        html += `<tr class="${rowClass}" style="cursor: pointer;" onclick="togglePacketDetails('packet-${idx}')">
+                        html += `<tr class="${rowClass}" style="cursor: pointer;" onclick="togglePacketDetails('${rowId}')">
                             <td class="small">${p.timestamp_str}</td>
                             <td class="small fw-bold text-truncate" style="max-width: 150px;" title="${devName}">${devName}</td>
                             <td class="small text-muted text-truncate" style="max-width: 100px;" title="${devModel}">${devModel}</td>
@@ -310,20 +359,18 @@ export async function refreshDebugPackets() {
                             <td class="small">${analysis.command}</td>
                             <td class="small">${analysis.summary || '-'}</td>
                             <td class="text-center">
-                                <i class="fas fa-chevron-down" id="icon-packet-${idx}"></i>
+                                <i class="fas fa-chevron-down" id="icon-${rowId}"></i>
                             </td>
                         </tr>`;
 
-                        // Add expandable details row (Update colspan to 8 to match new column count)
-                        html += `<tr id="packet-${idx}" style="display: none;">
-                            <td colspan="8" class="bg-dark">
+                        // ADDED text-light to fix visibility on dark background
+                        html += `<tr id="${rowId}" style="display: none;">
+                            <td colspan="8" class="bg-dark text-light">
                                 <div class="p-3">`;
 
-                        // Try to render full analysis, fall back to raw data
                         try {
                             html += renderPacketAnalysis(p);
                         } catch (e) {
-                            console.warn('Packet analysis rendering failed:', e);
                             html += `<div class="alert alert-warning">Packet analyser not available. Showing raw data:</div>`;
                         }
 
@@ -337,8 +384,7 @@ export async function refreshDebugPackets() {
                         </tr>`;
                     } catch (rowError) {
                         console.error('Error rendering packet row:', rowError);
-                        // Add a simple row as fallback
-                        html += `<tr><td colspan="6" class="text-danger small">Error rendering packet ${idx}: ${rowError.message}</td></tr>`;
+                        html += `<tr><td colspan="8" class="text-danger small">Error rendering packet ${idx}: ${rowError.message}</td></tr>`;
                     }
                 });
             }
@@ -353,21 +399,14 @@ export async function refreshDebugPackets() {
 
 /**
  * Download Combined Debug Log
- * Generates an HTML report containing both:
- * 1. Pretty-printed JSON tree of Application Logs (Rich Data)
- * 2. Raw Text of Server Zigbee Debug Log
  */
 export async function downloadDebugLog() {
     try {
-        // 1. Fetch RAW server logs
         const resp = await fetch('/api/debug/log_file?lines=5000');
         const rawText = await resp.text();
-
-        // 2. Get Structured Application Logs
         const appLogs = state.allLogs;
         const appLogsJson = JSON.stringify(appLogs, null, 4);
 
-        // 3. Construct HTML Document
         const htmlContent = `
 <!DOCTYPE html>
 <html lang="en">
@@ -407,7 +446,6 @@ export async function downloadDebugLog() {
 </body>
 </html>`;
 
-        // 4. Open in New Tab
         const blob = new Blob([htmlContent], { type: 'text/html' });
         const url = URL.createObjectURL(blob);
         window.open(url, '_blank');

@@ -139,6 +139,9 @@ class ZigbeePacket:
     motion_detected: bool = False
     on_with_timed_off: Optional[Dict] = None
 
+    # NEW: Structured DP analysis for Tuya cluster (0xEF00)
+    tuya_dps: Optional[List[Dict]] = None
+
     def to_dict(self) -> Dict:
         return asdict(self)
 
@@ -192,15 +195,15 @@ class ZigbeeDebugger:
 
     # RENAMED from capture_raw_message to capture_packet to match core.py
     def capture_packet(
-        self,
-        sender_ieee: str,
-        sender_nwk: int,
-        profile: int,
-        cluster: int,
-        src_ep: int,
-        dst_ep: int,
-        message: bytes,
-        direction: str = "RX"
+            self,
+            sender_ieee: str,
+            sender_nwk: int,
+            profile: int,
+            cluster: int,
+            src_ep: int,
+            dst_ep: int,
+            message: bytes,
+            direction: str = "RX"
     ) -> Optional[ZigbeePacket]:
         """Capture and analyze a raw Zigbee message."""
         if not self.enabled:
@@ -228,15 +231,15 @@ class ZigbeeDebugger:
 
         # Logic for motion detection highlighting
         if cluster == 0x0500 and decoded.get("command_id") == 0x00:
-             # IAS Zone Status Change
-             is_motion = True
+            # IAS Zone Status Change
+            is_motion = True
         elif cluster == 0x0006 and decoded.get("command_id") == 0x42:
-             # On with Timed Off (Hue Motion)
-             is_motion = True
-             # Try to extract timing info if available
-             if "payload" in decoded:
-                 # This is a rough extraction, full parsing is better
-                 on_timed = {"raw_payload": decoded["payload"]}
+            # On with Timed Off (Hue Motion)
+            is_motion = True
+            # Try to extract timing info if available
+            if "payload" in decoded:
+                # This is a rough extraction, full parsing is better
+                on_timed = {"raw_payload": decoded["payload"]}
 
         packet = ZigbeePacket(
             timestamp=timestamp,
@@ -476,6 +479,15 @@ class ZigbeeDebugger:
             motion = "MOTION" if packet.decoded.get("alarm1_motion") else "clear"
             msg += f" | {motion} (status=0x{packet.decoded['zone_status']:04X})"
 
+        # --- NEW: Include Tuya DP summary in log ---
+        if packet.tuya_dps:
+            dp_summary = ", ".join([
+                f"DP{dp['dp_id']}:{dp['dp_def_name']}={dp['parsed_value']}{dp['dp_def_unit']}"
+                for dp in packet.tuya_dps
+            ])
+            msg += f" | Tuya DPs: {dp_summary}"
+            is_important = True # Tuya reports are always noteworthy
+
         # *** MODIFIED: Add RAW DATA to log as requested ***
         msg += f" | Raw: {packet.raw_data}"
 
@@ -484,14 +496,39 @@ class ZigbeeDebugger:
         else:
             logger.debug(msg)
 
+    # --- NEW METHOD: Record structured Tuya DP report ---
+    def record_tuya_report(self, ieee: str, raw_payload_hex: str, dps: List[Dict]):
+        """
+        Record a structured Tuya Data Point report.
+
+        This links back to the last captured packet from this IEEE/Cluster
+        and adds the structured DP decoding information.
+        """
+        # Find the last packet from this device/cluster
+        for i in reversed(range(len(self.packets))):
+            packet = self.packets[i]
+            if packet.ieee == ieee and packet.cluster == 0xEF00 and packet.raw_data.endswith(raw_payload_hex):
+                packet.tuya_dps = dps
+
+                # Mark as handled
+                packet.handler_triggered = True
+                packet.handler_name = "TuyaClusterHandler"
+
+                # Re-log the packet with the new DP information
+                self._log_packet(packet)
+                return
+
+        logger.warning(f"Could not find matching packet for Tuya DP report from {ieee}")
+
+
     def record_attribute_update(
-        self,
-        ieee: str,
-        cluster_id: int,
-        endpoint_id: int,
-        attr_id: int,
-        value: Any,
-        handler_name: str
+            self,
+            ieee: str,
+            cluster_id: int,
+            endpoint_id: int,
+            attr_id: int,
+            value: Any,
+            handler_name: str
     ):
         """Record an attribute update from a handler."""
         self.stats["attribute_reports"] += 1
@@ -516,13 +553,13 @@ class ZigbeeDebugger:
         )
 
     def record_cluster_command(
-        self,
-        ieee: str,
-        cluster_id: int,
-        endpoint_id: int,
-        command_id: int,
-        args: Any,
-        handler_name: str
+            self,
+            ieee: str,
+            cluster_id: int,
+            endpoint_id: int,
+            command_id: int,
+            args: Any,
+            handler_name: str
     ):
         """Record a cluster command received by a handler."""
         self.stats["cluster_commands"] += 1
@@ -559,11 +596,11 @@ class ZigbeeDebugger:
         logger.error(f"❌ Error [{ieee}]: {error} - {context}")
 
     def get_packets(
-        self,
-        limit: int = 100,
-        ieee_filter: str = None,
-        cluster_filter: int = None,
-        importance: str = None
+            self,
+            limit: int = 100,
+            ieee_filter: str = None,
+            cluster_filter: int = None,
+            importance: str = None
     ) -> List[Dict]:
         """Get captured packets with optional filtering.
 
@@ -587,10 +624,10 @@ class ZigbeeDebugger:
 
         # Importance Filter: Filter by cluster importance
         if importance == 'critical' or importance == 'high':
-             # Important clusters: IAS Zone (0x0500), Occupancy (0x0406)
-             # Following ZHA pattern for security/motion-critical clusters
-             important_clusters = [0x0500, 0x0406]
-             packets = [p for p in packets if p.cluster in important_clusters]
+            # Important clusters: IAS Zone (0x0500), Occupancy (0x0406)
+            # Following ZHA pattern for security/motion-critical clusters
+            important_clusters = [0x0500, 0x0406]
+            packets = [p for p in packets if p.cluster in important_clusters]
 
         # Return most recent first (reverse chronological)
         packets = packets[-limit:][::-1]
