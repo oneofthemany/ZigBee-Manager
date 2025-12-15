@@ -59,15 +59,12 @@ export function renderOverviewTab(device) {
     ];
 
     // Define sensor-specific keys that should only appear for devices with those capabilities
-    // FIX: Added complete list of Tuya Radar keys to allowed list
     const occupancySensorKeys = [
         'motion', 'occupancy', 'presence', 'motion_on_time',
-        'motion_timeout', 'sensitivity',
-        'radar_state', 'illuminance_lux', 'distance', 'target_distance',
-        'radar_sensitivity', 'presence_sensitivity', 'detection_distance_min',
-        'detection_distance_max', 'keep_time', 'fading_time'
+        'motion_timeout', 'radar_sensitivity', 'radar_state',
+        'illuminance_lux','presence_sensitivity', 'keep_time',
+        'detection_distance_min','detection_distance_max'
     ];
-
     const contactSensorKeys = ['contact', 'is_open'];
     const iasZoneKeys = ['zone_status', 'tamper', 'battery_low', 'trouble', 'water_leak', 'smoke', 'co_detected', 'vibration', 'alarm'];
 

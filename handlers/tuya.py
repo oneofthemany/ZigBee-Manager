@@ -724,10 +724,7 @@ class TuyaClusterHandler(ClusterHandler):
                 configs.append({
                     "component": "sensor",
                     "object_id": name,
-                    "config": {
-                        "name": name.replace("_", " ").title(),
-                        "value_template": f"{{{{ value_json.{name} }}}}"
-                    }
+                    "config": cfg
                 })
 
 
