@@ -1,0 +1,48 @@
+/* Groups Tab Specific Styles */
+.device-checkbox-item {
+    padding: 10px;
+    border-bottom: 1px solid #e0e0e0;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.device-checkbox-item:hover {
+    background-color: #f8f9fa;
+}
+
+.device-checkbox-item:last-child {
+    border-bottom: none;
+}
+
+.capability-badge {
+    display: inline-block;
+    margin: 2px;
+    padding: 4px 8px;
+    font-size: 0.75rem;
+    border-radius: 4px;
+}
+
+.group-card {
+    border-left: 4px solid #0d6efd;
+    margin-bottom: 10px;
+    transition: box-shadow 0.2s;
+}
+
+.group-card:hover {
+    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+}
+
+.member-device {
+    display: inline-block;
+    margin: 4px;
+    padding: 6px 12px;
+    background: #e7f3ff;
+    border-radius: 16px;
+    font-size: 0.85rem;
+}
+
+.member-device .remove-btn {
+    margin-left: 8px;
+    color: #dc3545;
+    cursor: pointer;
+}

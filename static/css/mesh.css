@@ -1,0 +1,50 @@
+/* Mesh Topology Specific Styles */
+.topology-tabs .nav-tabs {
+    border-bottom: 1px solid #dee2e6;
+}
+
+.topology-tabs .nav-tabs .nav-link {
+    border: 1px solid transparent;
+    border-top-left-radius: 0.375rem;
+    border-top-right-radius: 0.375rem;
+    padding: 0.5rem 1rem;
+    color: #6c757d;
+}
+
+.topology-tabs .nav-tabs .nav-link:hover {
+    border-color: #e9ecef #e9ecef #dee2e6;
+    isolation: isolate;
+}
+
+.topology-tabs .nav-tabs .nav-link.active {
+    color: #495057;
+    background-color: #fff;
+    border-color: #dee2e6 #dee2e6 #fff;
+}
+
+.mesh-visualisation-wrapper {
+    position: relative;
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.mesh-controls button {
+    padding: 4px 8px;
+    font-size: 12px;
+}
+
+.mesh-legend {
+    line-height: 1.2;
+}
+
+.mesh-tooltip {
+    font-family: system-ui, -apple-system, sans-serif;
+    line-height: 1.4;
+}
+
+/* Signal Quality Indicators */
+.signal-excellent { color: #00b894; }
+.signal-good { color: #fdcb6e; }
+.signal-fair { color: #e17055; }
+.signal-poor { color: #d63031; }
+.signal-weak { color: #636e72; }
