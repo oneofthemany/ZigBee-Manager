@@ -57,13 +57,13 @@ Time ─────────────────────────
 async def _async_device_restored(self, device):
     # ... restore device ...
     
-    # ✅ FIX: Don't announce here
+    # ✅ Don't announce here
     # Wait for startup to complete
 
 async def start(self):
     # ... startup sequence ...
     
-    # ✅ FIX: Announce AFTER startup completes
+    # ✅ Announce AFTER startup completes
     asyncio.create_task(self.announce_all_devices())
 
 async def announce_all_devices(self):
