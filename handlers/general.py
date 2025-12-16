@@ -294,85 +294,82 @@ class OnOffHandler(ClusterHandler):
     # --- HA Discovery ---
     def get_discovery_configs(self) -> List[Dict]:
         """
-        Generate Home Assistant discovery configs for On/Off cluster.
+        Generate Home Assistant MQTT discovery config.
+
+        CRITICAL: If a multi-endpoint device, always treats as switch/light.
         """
         ep = self.endpoint.endpoint_id
 
-        # 1. Check if it is a Contact Sensor
+        # 1. Check if it is a Contact Sensor (Only if multi-endpoint check failed)
         is_contact_sensor = self._is_contact_sensor()
+
+        # Check if the device is purely a contact sensor (i.e., only 0x0500)
         has_only_sensor_clusters = len(self.endpoint.in_clusters) <= 4 and 0x0500 in self.endpoint.in_clusters
 
         if is_contact_sensor or has_only_sensor_clusters:
             logger.info(f"[{self.device.ieee}] EP{ep} OnOff detected as: CONTACT_SENSOR (binary_sensor)")
 
+            # Use binary_sensor for contact sensors.
             return [{
                 "component": "binary_sensor",
                 "object_id": f"contact_{ep}",
                 "config": {
                     "name": f"Contact Sensor {ep}",
                     "device_class": "door",
-                    "value_template": f"{{{{ value_json.get('is_open_{ep}', false) }}}}",
+                    # Note: We must use the key the handler updates: is_open or contact
+                    "value_template": f"{{{{ value_json.is_open_{ep} }}}}",
                     "payload_on": True,
                     "payload_off": False
                 }
             }]
 
-        # 2. Check for lighting-specific clusters
+        # 2. Check for lighting-specific clusters (if not a sensor)
         has_lightlink = 0x1000 in self.endpoint.in_clusters or 0x1000 in self.endpoint.out_clusters
         has_opple = 0xFCC0 in self.endpoint.in_clusters or 0xFCC0 in self.endpoint.out_clusters
         has_color = 0x0300 in self.endpoint.in_clusters or 0x0300 in self.endpoint.out_clusters
-        has_level = 0x0008 in self.endpoint.in_clusters
 
         # Device is a LIGHT if it has ANY lighting-specific cluster
         is_light = has_lightlink or has_opple or has_color
 
         component = "light" if is_light else "switch"
 
+        # Log for debugging
         logger.info(f"[{self.device.ieee}] EP{ep} OnOff detected as: {component.upper()} "
-                    f"(lightlink={has_lightlink}, opple={has_opple}, color={has_color}, level={has_level})")
+                   f"(lightlink={has_lightlink}, opple={has_opple}, color={has_color})")
 
         # Build base config
         config = {
             "name": f"{'Light' if is_light else 'Switch'} {ep}",
-            # Use endpoint-specific state key with safe .get()
-            "value_template": f"{{{{ value_json.get('state_{ep}', 'OFF') }}}}",
+            "payload_on": "ON",
+            "payload_off": "OFF",
+            # Use endpoint-specific state key
+            "value_template": f"{{{{ value_json.state_{ep} }}}}",
             "command_topic": "CMD_TOPIC_PLACEHOLDER",
+            "command_template": f'{{"command": "{{{{ value }}}}", "endpoint": {ep}}}'
         }
 
-        # =====================================================================
-        # CRITICAL FIX: For lights, use JSON schema and declare capabilities
-        # =====================================================================
+        # If it's a light, add brightness support (if it has LevelControl)
         if is_light:
-            # Use JSON schema for lights (required for brightness/color control)
-            config["schema"] = "json"
-            config["state_value_template"] = f"{{{{ value_json.get('state_{ep}', 'OFF') }}}}"
-
-            # Remove the old value_template (JSON schema uses state_value_template)
-            del config["value_template"]
-
-            # Add brightness support if device has Level Control cluster
+            has_level = 0x0008 in self.endpoint.in_clusters
             if has_level:
-                # CRITICAL: Set brightness: true to enable slider in HA
-                config["brightness"] = True
-                config["brightness_scale"] = 100  # Use 0-100 scale
-                config["brightness_value_template"] = f"{{{{ value_json.get('brightness_{ep}', 0) | int }}}}"
+                config["brightness_state_topic"] = "STATE_TOPIC_PLACEHOLDER"
+                config["brightness_value_template"] = f"{{{{ value_json.brightness_{ep} }}}}"
+                config["brightness_scale"] = 100
+                config["brightness_command_topic"] = "CMD_TOPIC_PLACEHOLDER"
+                config[
+                    "brightness_command_template"] = f'{{"command": "brightness", "value": {{{{ value }}}}, "endpoint": {ep}}}'
 
-                logger.info(f"[{self.device.ieee}] EP{ep} Brightness support enabled")
-
-            # Add color temperature support if device has Color cluster
+            # If it has color, add color support
             if has_color:
                 config["color_mode"] = True
-                config["supported_color_modes"] = ["color_temp"]
+                config["supported_color_modes"] = ["color_temp", "xy"]
                 config["max_mireds"] = 500
                 config["min_mireds"] = 153
-                config["color_temp_value_template"] = f"{{{{ value_json.get('color_temp_mireds', 250) | int }}}}"
-
-                logger.info(f"[{self.device.ieee}] EP{ep} Color temperature support enabled")
-
-        else:
-            # Switches use simple on/off
-            config["payload_on"] = "ON"
-            config["payload_off"] = "OFF"
+                config["color_temp_state_topic"] = "STATE_TOPIC_PLACEHOLDER"
+                config["color_temp_value_template"] = f"{{{{ value_json.color_temp_mireds }}}}"
+                config["color_temp_command_topic"] = "CMD_TOPIC_PLACEHOLDER"
+                config[
+                    "color_temp_command_template"] = f'{{"command": "color_temp", "value": {{{{ value }}}}, "endpoint": {ep}}}'
 
         return [{
             "component": component,
