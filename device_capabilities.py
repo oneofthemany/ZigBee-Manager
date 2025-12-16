@@ -90,8 +90,9 @@ class DeviceCapabilities:
         'cover_position', 'moving'
     }
 
-    TUYA_FIELDS = {
-        'radar_sensitivity', 'presence_sensitivity', 'keep_time',
+    # Updated to include 'radar_state' and other radar specific fields
+    TUYA_RADAR_FIELDS = {
+        'radar_state', 'radar_sensitivity', 'presence_sensitivity', 'keep_time',
         'distance', 'detection_distance_min', 'detection_distance_max',
         'fading_time', 'self_test', 'target_distance', 'illuminance_threshold'
     }
@@ -401,8 +402,13 @@ class DeviceCapabilities:
             return (self.has_capability('cover') or
                     self.has_capability('window_covering'))
 
-        if field_name in self.TUYA_FIELDS:
-            return self.has_capability('tuya')
+        # Fix for misidentified Tuya Radar fields
+        if field_name in self.TUYA_RADAR_FIELDS:
+            # Only allow these fields if it is explicitly a radar/presence sensor
+            # This prevents blinds (which are "tuya" but not "radar") from showing them
+            return (self.has_capability('radar_sensor') or
+                    self.has_capability('presence_sensor') or
+                    self.has_capability('occupancy_sensing'))
 
         return True
 
