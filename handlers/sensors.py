@@ -2,10 +2,19 @@ import logging
 import json
 from typing import Any, Dict, Optional, List
 from zigpy.zcl.clusters.measurement import IlluminanceMeasurement, TemperatureMeasurement
-from zigpy.types.basic import uint16
 import asyncio
 from .base import ClusterHandler, register_handler
 
+try:
+    # New zigpy versions (0.60+)
+    from zigpy.types import uint16
+except ImportError:
+    try:
+        # Older zigpy versions
+        from zigpy.types.basic import uint16
+    except ImportError:
+        # Fallback for some specific intermediate versions
+        from zigpy.types import uint16_t as uint16
 logger = logging.getLogger("handlers.sensors")
 
 # Cluster IDs
