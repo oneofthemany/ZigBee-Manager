@@ -436,21 +436,8 @@ class LevelControlHandler(ClusterHandler):
         await self.set_level(level, transition_time)
 
     def get_discovery_configs(self) -> List[Dict]:
-        # Optional: Expose brightness as a number entity or part of light
-        # For simplicity, we assume it's attached to the switch, but we can add a number slider
-        ep = self.endpoint.endpoint_id
-        return [{
-            "component": "number",
-            "object_id": f"brightness_{ep}",
-            "config": {
-                "name": f"Brightness {ep}",
-                "min": 0, "max": 100,
-                "mode": "slider",
-                "value_template": f"{{{{ value_json.brightness_{ep} }}}}",
-                "command_topic": "CMD_TOPIC_PLACEHOLDER",
-                "command_template": f'{{"command": "brightness", "value": "{{{{ value }}}}", "endpoint": {ep} }}'
-            }
-        }]
+        # OnOff handler detects LevelControl and adds brightness to light entity
+        return []
 
 
 @register_handler(0x0004)
