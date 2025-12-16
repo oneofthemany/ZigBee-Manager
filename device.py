@@ -338,14 +338,41 @@ class ZHADevice:
             if k in always_report or self.state.get(k) != v:
                 changed[k] = v
 
-        # --- INTELLIGENT STATE MERGING (FIX for "Unknown" states in HA) ---
-        if ('state' in data or 'on' in data) and self.capabilities.has_capability('light'):
-            if 'brightness' in self.state and 'brightness' not in data:
-                changed['brightness'] = self.state['brightness']
-            if 'color_temp' in self.state and 'color_temp' not in data:
-                changed['color_temp'] = self.state['color_temp']
-            if 'level' in self.state and 'level' not in data:
-                changed['level'] = self.state['level']
+        # --- INTELLIGENT STATE MERGING ---
+        if self.capabilities.has_capability('light'):
+            # List of light-related attributes that should trigger state inclusion
+            light_attrs = ['state', 'on', 'brightness', 'level', 'color_temp', 'color_temperature',
+                           'color_temperature_mireds', 'color_temp_kelvin', 'hue', 'saturation', 'x', 'y']
+
+            # Check if ANY light attribute is being updated
+            has_light_update = any(k in light_attrs or any(k.startswith(f"{attr}_") for attr in light_attrs)
+                                   for k in data.keys())
+
+            if has_light_update:
+                # CRITICAL: Always include state when publishing light updates
+                if 'state' not in changed and 'state' in self.state:
+                    changed['state'] = self.state['state']
+                if 'on' not in changed and 'on' in self.state:
+                    changed['on'] = self.state['on']
+
+                # Also include other light attributes to maintain consistency
+                if 'brightness' in self.state and 'brightness' not in data:
+                    changed['brightness'] = self.state['brightness']
+                if 'level' in self.state and 'level' not in data:
+                    changed['level'] = self.state['level']
+                if 'color_temp' in self.state and 'color_temp' not in data:
+                    changed['color_temp'] = self.state['color_temp']
+
+        # Handle multi-endpoint devices - add endpoint-specific state fields
+        if endpoint_id is not None and self.capabilities.has_capability('light'):
+            state_key = f"state_{endpoint_id}"
+            on_key = f"on_{endpoint_id}"
+
+            # Ensure endpoint-specific state is present
+            if state_key in self.state and state_key not in changed:
+                changed[state_key] = self.state[state_key]
+            if on_key in self.state and on_key not in changed:
+                changed[on_key] = self.state[on_key]
 
         self.state.update(data)
 
