@@ -491,19 +491,45 @@ class MQTTService:
                 payload['value_template'] = safe_template
                 logger.debug(f"Converted template: {template} -> {safe_template}")
 
-            # Same fix for brightness_value_template
+
+
+            # templates to use .get() for safety
+            if 'state_value_template' in payload:
+                template = payload['state_value_template']
+                # Convert simple attribute access to .get()
+                if 'value_json.' in template and '.get' not in template:
+                    try:
+                        attr = template.split('value_json.')[1].split(' ')[0].split('}')[0]
+                        safe_template = f"{{{{ value_json.get('{attr}', 'OFF') }}}}"
+                        payload['state_value_template'] = safe_template
+                    except IndexError:
+                        pass
+
+            # brightness_value_template
             if 'brightness_value_template' in payload:
                 template = payload['brightness_value_template']
-                import re
-                safe_template = re.sub(r'value_json\.([a-z_0-9]+)', lambda m: f"value_json.get('{m.group(1)}', 0)", template)
-                payload['brightness_value_template'] = safe_template
+                # Only apply fix if .get is NOT already in the template
+                if 'value_json.' in template and '.get' not in template:
+                    try:
+                        attr = template.split('value_json.')[1].split(' ')[0].split('}')[0]
+                        suffix = ""
+                        if "|" in template:
+                            suffix = " | " + template.split("|")[1].split("}")[0].strip()
 
-            # Same fix for color_temp_value_template
+                        safe_template = f"{{{{ value_json.get('{attr}', 0){suffix} }}}}"
+                        payload['brightness_value_template'] = safe_template
+                    except IndexError:
+                        pass
+
+            # color_temp_value_template
             if 'color_temp_value_template' in payload:
                 template = payload['color_temp_value_template']
-                import re
-                safe_template = re.sub(r'value_json\.([a-z_0-9]+)', lambda m: f"value_json.get('{m.group(1)}', 250)", template)
-                payload['color_temp_value_template'] = safe_template
+                # Only apply fix if .get is NOT already in the template
+                if 'value_json.' in template and '.get' not in template:
+                    import re
+                    # This regex would match "value_json.get" if we didn't have the check above
+                    safe_template = re.sub(r'value_json\.([a-z_0-9]+)', lambda m: f"value_json.get('{m.group(1)}', 250)", template)
+                    payload['color_temp_value_template'] = safe_template
 
             # ===================================================================
             # 3: SET UP COMMAND TOPICS
