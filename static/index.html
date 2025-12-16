@@ -62,8 +62,8 @@
             <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#devices"><i class="fas fa-list"></i> Devices</button></li>
             <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#topology"><i class="fas fa-network-wired"></i> Topology</button></li>
             <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#settings"><i class="fas fa-cog"></i> Settings</button></li>
-            <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#debug"><i class="fas fa-terminal"></i> Debug Log</button></li>
             <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#groups"><i class="fas fa-layer-group"></i> Groups</button></li>
+            <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#debug"><i class="fas fa-terminal"></i> Debug Log</button></li>
         </ul>
 
         <div class="tab-content">
@@ -156,63 +156,6 @@
                 </div>
             </div>
 
-            <!-- DEBUG TAB -->
-            <div class="tab-pane fade" id="debug">
-                <div class="card shadow-sm h-100">
-                    <div class="card-header bg-light py-2">
-                        <div class="row g-2 align-items-center">
-                            <div class="col-auto">
-                                <span class="fw-bold">Live Logs</span>
-                                <span id="debugStatusBadge" class="badge bg-secondary ms-2">Disabled</span>
-                            </div>
-                            <div class="col-auto ms-auto">
-                                <div class="btn-group btn-group-sm" role="group">
-                                    <button id="debugEnableBtn" class="btn btn-success" onclick="toggleDebug(true)">
-                                        <i class="fas fa-bug"></i> Enable Debug
-                                    </button>
-                                    <button id="debugDisableBtn" class="btn btn-danger d-none" onclick="toggleDebug(false)">
-                                        <i class="fas fa-stop"></i> Disable Debug
-                                    </button>
-                                </div>
-                            </div>
-                            <div class="col-auto">
-                                <button id="verboseLogBtn" class="btn btn-sm btn-outline-secondary" onclick="toggleVerboseLogging()">
-                                    <i class="fas fa-eye-slash"></i> Standard
-                                </button>
-                            </div>
-                            <div class="col-auto">
-                                <select id="logLevelFilter" class="form-select form-select-sm" onchange="filterLogs()">
-                                    <option value="ALL">All Levels</option>
-                                    <option value="INFO">Info & Above</option>
-                                    <option value="WARNING">Warning & Error</option>
-                                    <option value="DEBUG">Debug (All)</option>
-                                </select>
-                            </div>
-                            <div class="col-auto">
-                                <input type="text" id="logIeeeFilter" class="form-control form-control-sm" placeholder="Filter IEEE..." onkeyup="filterLogs()">
-                            </div>
-                            <div class="col-auto">
-                                <button class="btn btn-sm btn-outline-secondary" onclick="clearLogs()">
-                                    <i class="fas fa-trash"></i> Clear
-                                </button>
-                            </div>
-                            <div class="col-auto">
-                                <button class="btn btn-sm btn-outline-info" onclick="viewDebugPackets()">
-                                    <i class="fas fa-network-wired"></i> Packets
-                                </button>
-                            </div>
-                            <div class="col-auto">
-                                <button class="btn btn-sm btn-outline-primary" onclick="downloadDebugLog()">
-                                    <i class="fas fa-download"></i> Download
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="card-body bg-dark p-0">
-                        <div id="logs" class="p-2 font-monospace small" style="height: 65vh; overflow-y: auto; color: #e0e0e0;"></div>
-                    </div>
-                </div>
-            </div>
 
             <!-- GROUPS TAB -->
             <div class="tab-pane fade" id="groups">
@@ -344,6 +287,64 @@
                 </div>
             </div>
 
+
+            <!-- DEBUG TAB -->
+            <div class="tab-pane fade" id="debug">
+                <div class="card shadow-sm h-100">
+                    <div class="card-header bg-light py-2">
+                        <div class="row g-2 align-items-center">
+                            <div class="col-auto">
+                                <span class="fw-bold">Live Logs</span>
+                                <span id="debugStatusBadge" class="badge bg-secondary ms-2">Disabled</span>
+                            </div>
+                            <div class="col-auto ms-auto">
+                                <div class="btn-group btn-group-sm" role="group">
+                                    <button id="debugEnableBtn" class="btn btn-success" onclick="toggleDebug(true)">
+                                        <i class="fas fa-bug"></i> Enable Debug
+                                    </button>
+                                    <button id="debugDisableBtn" class="btn btn-danger d-none" onclick="toggleDebug(false)">
+                                        <i class="fas fa-stop"></i> Disable Debug
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="col-auto">
+                                <button id="verboseLogBtn" class="btn btn-sm btn-outline-secondary" onclick="toggleVerboseLogging()">
+                                    <i class="fas fa-eye-slash"></i> Standard
+                                </button>
+                            </div>
+                            <div class="col-auto">
+                                <select id="logLevelFilter" class="form-select form-select-sm" onchange="filterLogs()">
+                                    <option value="ALL">All Levels</option>
+                                    <option value="INFO">Info & Above</option>
+                                    <option value="WARNING">Warning & Error</option>
+                                    <option value="DEBUG">Debug (All)</option>
+                                </select>
+                            </div>
+                            <div class="col-auto">
+                                <input type="text" id="logIeeeFilter" class="form-control form-control-sm" placeholder="Filter IEEE..." onkeyup="filterLogs()">
+                            </div>
+                            <div class="col-auto">
+                                <button class="btn btn-sm btn-outline-secondary" onclick="clearLogs()">
+                                    <i class="fas fa-trash"></i> Clear
+                                </button>
+                            </div>
+                            <div class="col-auto">
+                                <button class="btn btn-sm btn-outline-info" onclick="viewDebugPackets()">
+                                    <i class="fas fa-network-wired"></i> Packets
+                                </button>
+                            </div>
+                            <div class="col-auto">
+                                <button class="btn btn-sm btn-outline-primary" onclick="downloadDebugLog()">
+                                    <i class="fas fa-download"></i> Download
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card-body bg-dark p-0">
+                        <div id="logs" class="p-2 font-monospace small" style="height: 65vh; overflow-y: auto; color: #e0e0e0;"></div>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 
