@@ -270,7 +270,6 @@ class ZHADevice:
 
             # 4. SYNC BACK: CRITICAL STEP
             # Update the Service's cache with our now-clean state.
-            # This ensures the file on disk gets overwritten with clean data on the next save.
             if hasattr(self.service, 'state_cache'):
                 self.service.state_cache[self.ieee] = self.state.copy()
                 self.service._cache_dirty = True
@@ -339,6 +338,17 @@ class ZHADevice:
             if k in always_report or self.state.get(k) != v:
                 changed[k] = v
 
+        # --- INTELLIGENT STATE MERGING (FIX for "Unknown" states in HA) ---
+        # If 'state' or 'on' is updated, we merge related attributes (brightness, color)
+        # so HA gets a complete picture and doesn't mark them unknown.
+        if ('state' in data or 'on' in data) and self.capabilities.has_capability('light'):
+            if 'brightness' in self.state and 'brightness' not in data:
+                changed['brightness'] = self.state['brightness']
+            if 'color_temp' in self.state and 'color_temp' not in data:
+                changed['color_temp'] = self.state['color_temp']
+            if 'level' in self.state and 'level' not in data:
+                changed['level'] = self.state['level']
+
         self.state.update(data)
 
         # Ensure Manufacturer/Model are present in every update to keep cache sync complete
@@ -382,9 +392,30 @@ class ZHADevice:
         return elapsed < (threshold * 1000)
 
     def _is_battery_powered(self) -> bool:
-        power = str(self.state.get('power_source', '')).lower()
-        if 'battery' in power: return True
-        return self.get_role() == "EndDevice"
+        """Check if device is battery powered."""
+        # 1. Check strict Power Source attribute if available
+        power_source = str(self.state.get('power_source', '')).lower()
+        if 'mains' in power_source or 'dc' in power_source:
+            return False
+        if 'battery' in power_source:
+            return True
+
+        # 2. Check Logical Type (Router vs End Device)
+        role = self.get_role()
+        if role == "Router" or role == "Coordinator":
+            return False
+
+        # 3. Check for Green Power Proxy (0x0021) - Indicates Mains
+        # Green Power Proxies must be always-on devices.
+        for ep in self.zigpy_dev.endpoints.values():
+            if 0x0021 in ep.in_clusters or 0x0021 in ep.out_clusters:
+                return False
+
+        # 4. Fallback for End Devices (Assume Battery unless proven otherwise)
+        if "lumi.switch" in str(self.model).lower() and "neutral" in str(self.model).lower():
+            pass
+
+        return True
 
     async def configure(self, config: Optional[Dict] = None):
         """Configure cluster handlers (bindings/reporting) and apply settings."""
@@ -586,16 +617,43 @@ class ZHADevice:
         self.service._emit_sync("device_event", {"ieee": self.ieee, "event_type": event_type, "data": event_data})
 
     def get_device_discovery_configs(self) -> List[Dict]:
+        """Aggregate HA discovery configs from all handlers."""
         configs = []
-        seen = set()
-        for h in self.handlers.values():
-            if h in seen: continue
-            seen.add(h)
-            if hasattr(h, 'get_discovery_configs'):
-                c = h.get_discovery_configs()
-                if c: configs.extend(c)
+        seen_handlers = set()
+
+        # === FIX: Single Device Info Block ===
+        # This ensures all entities (light, switch, sensor) are grouped under ONE device in HA
+        device_info = {
+            "identifiers": [self.ieee], # Use IEEE as the unique device ID
+            "name": self.state.get("manufacturer", "Zigbee") + " " + self.state.get("model", "Device"),
+            "model": self.state.get("model", "Unknown"),
+            "manufacturer": self.state.get("manufacturer", "Unknown")
+        }
+
+        for handler in self.handlers.values():
+            if handler in seen_handlers: continue
+            seen_handlers.add(handler)
+
+            if hasattr(handler, 'get_discovery_configs'):
+                c = handler.get_discovery_configs()
+                if c:
+                    # Inject standardized device_info into each entity config
+                    for config in c:
+                        if "device" not in config:
+                            config["device"] = device_info
+                    configs.extend(c)
+
+        # Add generic Link Quality sensor, properly linked to the device
         configs.append({
-            "component": "sensor", "object_id": "linkquality",
-            "config": {"name": "Link Quality", "device_class": "signal_strength", "unit_of_measurement": "lqi", "value_template": "{{ value_json.lqi }}"}
+            "component": "sensor",
+            "object_id": "linkquality",
+            "unique_id": f"{self.ieee}_linkquality", # Ensure unique ID per entity
+            "device": device_info,
+            "config": {
+                "name": "Link Quality",
+                "device_class": "signal_strength",
+                "unit_of_measurement": "lqi",
+                "value_template": "{{ value_json.lqi }}"
+            }
         })
         return configs
