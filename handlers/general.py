@@ -268,6 +268,16 @@ class OnOffHandler(ClusterHandler):
 
         self.device.update_state(updates, endpoint_id=ep_id)
 
+
+    def parse_value(self, attrid: int, value: Any) -> Any:
+        """Convert OnOff attribute values to proper format."""
+        if attrid == self.ATTR_ON_OFF:
+            # Convert numeric/boolean to "ON"/"OFF" string
+            if isinstance(value, (bool, int)):
+                return "ON" if bool(value) else "OFF"
+        return value
+
+
     def get_attr_name(self, attrid: int) -> str:
         if attrid == self.ATTR_ON_OFF: return "state"
         return super().get_attr_name(attrid)
@@ -364,13 +374,24 @@ class OnOffHandler(ClusterHandler):
             if has_color:
                 config["color_mode"] = True
                 config["supported_color_modes"] = ["color_temp", "xy"]
+
+                # CRITICAL FIX: Add color mode state reporting
+                config["color_mode_state_topic"] = "STATE_TOPIC_PLACEHOLDER"
+                config["color_mode_value_template"] = f"{{{{ value_json.color_mode }}}}"
+
+                # Color temperature support
                 config["max_mireds"] = 500
                 config["min_mireds"] = 153
                 config["color_temp_state_topic"] = "STATE_TOPIC_PLACEHOLDER"
                 config["color_temp_value_template"] = f"{{{{ value_json.color_temp_mireds }}}}"
                 config["color_temp_command_topic"] = "CMD_TOPIC_PLACEHOLDER"
-                config[
-                    "color_temp_command_template"] = f'{{"command": "color_temp", "value": {{{{ value }}}}, "endpoint": {ep}}}'
+                config["color_temp_command_template"] = f'{{"command": "color_temp", "value": {{{{ value }}}}, "endpoint": {ep}}}'
+
+                # XY color support (for full RGB control)
+                config["xy_state_topic"] = "STATE_TOPIC_PLACEHOLDER"
+                config["xy_value_template"] = f"{{{{ [value_json.color_x, value_json.color_y] }}}}"
+                config["xy_command_topic"] = "CMD_TOPIC_PLACEHOLDER"
+                config["xy_command_template"] = f'{{"command": "color_xy", "value": {{{{ value }}}}, "endpoint": {ep}}}'
 
         return [{
             "component": component,
