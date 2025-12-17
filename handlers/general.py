@@ -327,15 +327,16 @@ class OnOffHandler(ClusterHandler):
         has_lightlink = 0x1000 in self.endpoint.in_clusters or 0x1000 in self.endpoint.out_clusters
         has_opple = 0xFCC0 in self.endpoint.in_clusters or 0xFCC0 in self.endpoint.out_clusters
         has_color = 0x0300 in self.endpoint.in_clusters or 0x0300 in self.endpoint.out_clusters
+        has_level = 0x0008 in self.endpoint.in_clusters
 
         # Device is a LIGHT if it has ANY lighting-specific cluster
-        is_light = has_lightlink or has_opple or has_color
+        is_light = has_lightlink or has_opple or has_color or has_level
 
         component = "light" if is_light else "switch"
 
         # Log for debugging
         logger.info(f"[{self.device.ieee}] EP{ep} OnOff detected as: {component.upper()} "
-                    f"(lightlink={has_lightlink}, opple={has_opple}, color={has_color})")
+            f"(lightlink={has_lightlink}, opple={has_opple}, color={has_color}, level={has_level})")
 
         # Build base config
         config = {
