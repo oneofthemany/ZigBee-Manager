@@ -5,4 +5,4 @@ bellows
 aiomqtt
 pyaml
 zha-quirks
-pydantic==2.5.3
+pydantic
