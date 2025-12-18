@@ -28,9 +28,9 @@ from handlers.lighting import *
 
 logger = logging.getLogger("device")
 
-# How long before a device is considered unavailable (5 minutes)
-CONSIDER_UNAVAILABLE_BATTERY = 60 * 60 * 6  # 6 hours for battery devices
-CONSIDER_UNAVAILABLE_MAINS = 60 * 60 * 2    # 2 hours for mains-powered devices
+# How long before a device is considered unavailable
+CONSIDER_UNAVAILABLE_BATTERY = 60 * 60 * 25  # 25 hours for battery devices
+CONSIDER_UNAVAILABLE_MAINS = 60 * 60 * 25    # 25 hours for mains-powered devices
 
 
 class ZHADevice:
@@ -409,12 +409,37 @@ class ZHADevice:
     def is_available(self) -> bool:
         """Check if device is considered available."""
         role = self.get_role()
-        if role == "Coordinator": return True
-        if self.last_seen == 0: return False
+        if role == "Coordinator":
+            return True
+
+        # Passive event-driven devices are always "available"
+        # They only report on events, not periodic check-ins
+        if self._is_passive_device():
+            return True
+
+        if self.last_seen == 0:
+            return False
 
         elapsed = (time.time() * 1000) - self.last_seen
         threshold = CONSIDER_UNAVAILABLE_BATTERY if self._is_battery_powered() else CONSIDER_UNAVAILABLE_MAINS
         return elapsed < (threshold * 1000)
+
+    def _is_passive_device(self) -> bool:
+        """Check if device is passive (event-driven only)."""
+        # Binary sensors that only report on state changes
+        passive_capabilities = {
+            'occupancy', 'motion', 'presence',
+            'contact', 'water_leak', 'vibration',
+            'smoke', 'gas', 'tamper', 'sos'
+        }
+
+        # Check if device ONLY has passive capabilities
+        device_caps = set(self.capabilities.get_capabilities())
+        has_passive = device_caps & passive_capabilities
+        has_active = device_caps & {'temperature', 'humidity', 'battery'}
+
+        # If it has passive sensors but no active reporting, it's passive-only
+        return bool(has_passive) and not has_active
 
     def _is_battery_powered(self) -> bool:
         """Check if device is battery powered."""
