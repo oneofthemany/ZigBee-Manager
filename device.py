@@ -676,13 +676,14 @@ class ZHADevice:
         configs.append({
             "component": "sensor",
             "object_id": "linkquality",
-            "unique_id": f"{self.ieee}_linkquality", # Ensure unique ID per entity
+            "unique_id": f"{self.ieee}_linkquality",
             "device": device_info,
             "config": {
                 "name": "Link Quality",
-                "device_class": "signal_strength",
                 "unit_of_measurement": "lqi",
-                "value_template": "{{ value_json.lqi }}"
+                "value_template": "{{ value_json.lqi }}",
+                "state_class": "measurement",  # Optional: allows graphing in HA
+                "icon": "mdi:signal"           # Optional: nice icon
             }
         })
         return configs
