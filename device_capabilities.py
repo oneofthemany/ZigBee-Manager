@@ -240,7 +240,9 @@ class DeviceCapabilities:
             self._capabilities.add('light')
         if self.LEVEL_CONTROL in self._cluster_ids:
             self._capabilities.add('level_control')
-            self._capabilities.add('light')
+            # Level control usually implies light unless it's a cover (handled above)
+            if 'cover' not in self._capabilities:
+                self._capabilities.add('light')
 
         if self.ON_OFF in self._cluster_ids:
             self._capabilities.add('on_off')
@@ -294,7 +296,7 @@ class DeviceCapabilities:
                 # Remove switch capability if it was added in Phase 2
                 self._capabilities.discard('switch')
 
-                # TUYA / SMART LIFE
+        # TUYA / SMART LIFE
         if self.TUYA_MANUFACTURER in self._cluster_ids:
             self._capabilities.add('tuya')
 
@@ -339,6 +341,60 @@ class DeviceCapabilities:
             "capabilities": sorted(list(self._capabilities)),
             "clusters": [f"0x{cid:04X}" for cid in sorted(self._cluster_ids)]
         }
+
+    # =========================================================================
+    # COMPATIBILITY PROPERTIES (Prevents AttributeErrors)
+    # =========================================================================
+    @property
+    def is_light(self):
+        return self.has_capability('light')
+
+    @property
+    def is_switch(self):
+        return self.has_capability('switch')
+
+    @property
+    def supports_brightness(self):
+        # Level control (0x0008) is the standard for brightness
+        return self.has_capability('level_control')
+
+    @property
+    def supports_color_temp(self):
+        return self.has_capability('color_control')
+
+    @property
+    def supports_color_xy(self):
+        return self.has_capability('color_control')
+
+    @property
+    def is_contact_sensor(self):
+        return self.has_capability('contact_sensor') or self.has_capability('ias_zone')
+
+    @property
+    def is_motion_sensor(self):
+        return self.has_capability('motion_sensor') or self.has_capability('occupancy_sensing')
+
+    @property
+    def is_temperature_sensor(self):
+        return self.has_capability('temperature_sensor')
+
+    @property
+    def is_humidity_sensor(self):
+        return self.has_capability('humidity_sensor')
+
+    @property
+    def is_illuminance_sensor(self):
+        return self.has_capability('illuminance_sensor')
+
+    @property
+    def supports_power_monitoring(self):
+        return self.has_capability('power_monitoring') or self.has_capability('metering')
+
+    @property
+    def is_cover(self):
+        return self.has_capability('cover') or self.has_capability('window_covering')
+
+    # =========================================================================
 
     def allows_field(self, field_name: str) -> bool:
         """

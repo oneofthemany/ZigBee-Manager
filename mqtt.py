@@ -467,6 +467,7 @@ class MQTTService:
             # Set availability mode to require ALL topics to be available
             payload['availability_mode'] = 'all'
 
+
             # ==================================================================
             # COMPONENT-SPECIFIC DEFAULTS
             # ==================================================================
@@ -476,27 +477,46 @@ class MQTTService:
                 if 'command_topic' not in payload or not payload['command_topic']:
                     payload['command_topic'] = command_topic
 
-                # Add default payloads if not provided by handler
-                if 'payload_on' not in payload:
-                    payload['payload_on'] = "ON"
-                if 'payload_off' not in payload:
-                    payload['payload_off'] = "OFF"
+                # LOGIC CHANGE: Handle JSON schema vs Default schema
+                if payload.get('schema') == 'json':
+                    # JSON schema doesn't use these fields.
+                    # Remove them if they were accidentally added to prevent validation errors.
+                    keys_to_remove = [
+                        'payload_on',
+                        'payload_off',
+                        'value_template',
+                        'brightness_state_topic',
+                        'brightness_command_topic',
+                        'brightness_value_template',
+                        'brightness_command_template'
+                    ]
+                    for key in keys_to_remove:
+                        payload.pop(key, None)
 
-                # LIGHTS: Ensure brightness and color temp command configuration
-                if component == "light":
-                    # Brightness commands
-                    if 'brightness_value_template' in payload:
-                        if 'brightness_command_topic' not in payload:
-                            payload['brightness_command_topic'] = command_topic
-                        if 'brightness_command_template' not in payload:
-                            payload['brightness_command_template'] = '{"command": "brightness", "value": {{ value }}}'
+                else:
+                    # NON-JSON SCHEMA (Default/Template)
 
-                    # Color temperature commands
-                    if 'color_temp_value_template' in payload:
-                        if 'color_temp_command_topic' not in payload:
-                            payload['color_temp_command_topic'] = command_topic
-                        if 'color_temp_command_template' not in payload:
-                            payload['color_temp_command_template'] = '{"command": "color_temp", "value": {{ value }}}'
+                    # Add default payloads if not provided by handler
+                    if 'payload_on' not in payload:
+                        payload['payload_on'] = "ON"
+                    if 'payload_off' not in payload:
+                        payload['payload_off'] = "OFF"
+
+                    # LIGHTS: Ensure brightness and color temp command configuration
+                    if component == "light":
+                        # Brightness commands
+                        if 'brightness_value_template' in payload:
+                            if 'brightness_command_topic' not in payload:
+                                payload['brightness_command_topic'] = command_topic
+                            if 'brightness_command_template' not in payload:
+                                payload['brightness_command_template'] = '{"command": "brightness", "value": {{ value }}}'
+
+                        # Color temperature commands
+                        if 'color_temp_value_template' in payload:
+                            if 'color_temp_command_topic' not in payload:
+                                payload['color_temp_command_topic'] = command_topic
+                            if 'color_temp_command_template' not in payload:
+                                payload['color_temp_command_template'] = '{"command": "color_temp", "value": {{ value }}}'
 
             elif component == "cover":
                 payload['command_topic'] = command_topic

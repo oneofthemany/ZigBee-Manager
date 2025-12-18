@@ -330,108 +330,87 @@ class OnOffHandler(ClusterHandler):
 
     # --- HA Discovery ---
     def get_discovery_configs(self) -> List[Dict]:
-        """
-        Generate Home Assistant MQTT discovery config.
-        CRITICAL: If a multi-endpoint device, always treats as switch/light.
-        """
         ep = self.endpoint.endpoint_id
 
-        # 1. Check if it is a Contact Sensor
+        # Check if this is a contact sensor (keep existing logic)
         is_contact_sensor = self._is_contact_sensor()
         has_only_sensor_clusters = len(self.endpoint.in_clusters) <= 4 and 0x0500 in self.endpoint.in_clusters
 
         if is_contact_sensor or has_only_sensor_clusters:
-            logger.info(f"[{self.device.ieee}] EP{ep} OnOff detected as: CONTACT_SENSOR (binary_sensor)")
+            # Binary sensors stay template-based
             return [{
                 "component": "binary_sensor",
                 "object_id": f"contact_{ep}",
                 "config": {
                     "name": f"Contact Sensor {ep}",
                     "device_class": "door",
-                    "value_template": f"{{{{ value_json.is_open_{ep} }}}}",
+                    "value_template": f"{{{{ value_json.contact_{ep} }}}}",
                     "payload_on": True,
                     "payload_off": False
                 }
             }]
 
-        # 2. Check for lighting-specific clusters
+        # Determine capabilities
         has_lightlink = 0x1000 in self.endpoint.in_clusters or 0x1000 in self.endpoint.out_clusters
         has_opple = 0xFCC0 in self.endpoint.in_clusters or 0xFCC0 in self.endpoint.out_clusters
-        has_color = 0x0300 in self.endpoint.in_clusters or 0x0300 in self.endpoint.out_clusters
+        has_color = 0x0300 in self.endpoint.in_clusters
         has_level = 0x0008 in self.endpoint.in_clusters
         has_electrical = 0x0B04 in self.endpoint.in_clusters
 
-        # Quirk: Aurora sockets use level control for LED dimming, not lighting
         if has_electrical and has_level and not (has_color or has_lightlink):
             is_light = False
-            logger.info(f"[{self.device.ieee}] EP{ep} Socket quirk: Level=LED, not light")
         else:
             is_light = has_lightlink or has_opple or has_color or has_level
-            logger.info(f"[{self.device.ieee}] EP{ep} OnOff detected as: {'LIGHT' if is_light else 'SWITCH'} "
-                        f"(lightlink={has_lightlink}, opple={has_opple}, color={has_color}, level={has_level})")
 
         component = "light" if is_light else "switch"
         configs = []
 
-        # Build appropriate config
+        # === JSON SCHEMA CONFIG) ===
         config = {
-            "name": f"{'Light' if is_light else 'Switch'} {ep}",
-            "payload_on": "ON",
-            "payload_off": "OFF",
-            "value_template": f"{{{{ value_json.state_{ep} }}}}",
-            "command_topic": "CMD_TOPIC_PLACEHOLDER",
-            "command_template": f'{{"command": "{{{{ value }}}}", "endpoint": {ep}}}'
+            "name": None,  # Use device name only
+            "schema": "json",
+            # state_topic and command_topic are injected by mqtt.py
         }
 
-        # Add light-specific features
-        if is_light and has_level:
-            config["brightness_state_topic"] = "STATE_TOPIC_PLACEHOLDER"
-            config["brightness_value_template"] = f"{{{{ value_json.brightness_{ep} }}}}"
-            config["brightness_scale"] = 100
-            config["brightness_command_topic"] = "CMD_TOPIC_PLACEHOLDER"
-            config["brightness_command_template"] = f'{{"command": "brightness", "value": {{{{ value }}}}, "endpoint": {ep}}}'
+        if is_light:
+            # Determine supported_color_modes
+            color_modes = []
 
-        if is_light and has_color:
-            config["color_mode"] = True
-            config["supported_color_modes"] = ["color_temp", "xy"]
-            config["color_mode_state_topic"] = "STATE_TOPIC_PLACEHOLDER"
-            config["color_mode_value_template"] = f"{{{{ value_json.color_mode }}}}"
-            config["max_mireds"] = 500
-            config["min_mireds"] = 153
-            config["color_temp_state_topic"] = "STATE_TOPIC_PLACEHOLDER"
-            config["color_temp_value_template"] = f"{{{{ value_json.color_temp_mireds }}}}"
-            config["color_temp_command_topic"] = "CMD_TOPIC_PLACEHOLDER"
-            config["color_temp_command_template"] = f'{{"command": "color_temp", "value": {{{{ value }}}}, "endpoint": {ep}}}'
-            config["xy_state_topic"] = "STATE_TOPIC_PLACEHOLDER"
-            config["xy_value_template"] = f"{{{{ [value_json.color_x, value_json.color_y] }}}}"
-            config["xy_command_topic"] = "CMD_TOPIC_PLACEHOLDER"
-            config["xy_command_template"] = f'{{"command": "color_xy", "value": {{{{ value }}}}, "endpoint": {ep}}}'
+            if has_color:
+                color_modes.extend(["color_temp", "xy"])
+                config["min_mireds"] = 153
+                config["max_mireds"] = 500
+            elif has_level:
+                color_modes.append("brightness")
+            else:
+                color_modes.append("onoff")
 
-        configs.append({"component": component, "object_id": f"{component}_{ep}", "config": config})
+            config["supported_color_modes"] = color_modes
+            config["brightness_scale"] = 254 if has_level else 100
 
-        # Add LED brightness control for sockets (only if NOT a light)
-        if not is_light and has_level and has_electrical:
-            configs.append({
-                "component": "number",
-                "object_id": f"led_brightness_{ep}",
-                "config": {
-                    "name": f"LED Brightness {ep}",
-                    "entity_category": "diagnostic",
-                    "min": 0,
-                    "max": 100,
-                    "value_template": f"{{{{ value_json.brightness_{ep} }}}}",
-                    "command_topic": "CMD_TOPIC_PLACEHOLDER",
-                    "command_template": f'{{"command": "brightness", "value": {{{{ value }}}}, "endpoint": {ep}}}'
-                }
-            })
+            # Effects
+            config["effect"] = True
+            config["effect_list"] = ["blink", "breathe", "okay", "channel_change", "finish_effect", "stop_effect"]
+
+        configs.append({
+            "component": component,
+            "object_id": f"{component}_{ep}" if ep > 1 else component,
+            "config": config
+        })
 
         return configs
 
     # --- OPTIMISTIC UPDATES ADDED HERE ---
     async def turn_on(self):
-        await self.cluster.on()
-        self._update_state(True) # Optimistic update
-        logger.info(f"[{self.device.ieee}] Sent ON command (Optimistic)")
+        try:
+            logger.debug(f"[{self.device.ieee}] Calling cluster.on() on EP{self.endpoint.endpoint_id}")
+            result = await self.cluster.on()
+            logger.debug(f"[{self.device.ieee}] cluster.on() result: {result}")
+            self._update_state(True)
+            logger.info(f"[{self.device.ieee}] Sent ON command (Optimistic)")
+        except Exception as e:
+            logger.error(f"[{self.device.ieee}] cluster.on() FAILED: {type(e).__name__}: {e}")
+            raise
 
     async def turn_off(self):
         await self.cluster.off()

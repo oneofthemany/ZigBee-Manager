@@ -5,6 +5,7 @@ Based on ZHA's device architecture.
 import time
 import logging
 import asyncio
+import json
 from typing import Dict, Any, Optional, List
 
 # Import the registry from handlers package
@@ -12,6 +13,7 @@ from handlers.base import HANDLER_REGISTRY
 from error_handler import with_retries, CommandWrapper
 from device_capabilities import DeviceCapabilities
 from zigpy.zcl.clusters.general import Basic
+from json_helpers import sanitise_device_state
 
 # Import handlers to trigger registration decorators
 from handlers.security import *
@@ -302,7 +304,7 @@ class ZHADevice:
     def update_state(self, data: Dict[str, Any], qos: Optional[int] = None, endpoint_id: Optional[int] = None):
         """
         Update device state and notify the service.
-        Includes smart duplicate detection logic and capability filtering.
+        Includes smart duplicate detection logic, capability filtering, and JSON Schema publishing.
         """
         # === FILTERING ===
         if hasattr(self, 'capabilities'):
@@ -339,7 +341,10 @@ class ZHADevice:
                 changed[k] = v
 
         # --- INTELLIGENT STATE MERGING ---
-        if self.capabilities.has_capability('light'):
+        # Safe check for capability
+        has_light = self.capabilities.has_capability('light') if hasattr(self.capabilities, 'has_capability') else False
+
+        if has_light:
             # List of light-related attributes that should trigger state inclusion
             light_attrs = ['state', 'on', 'brightness', 'level', 'color_temp', 'color_temperature',
                            'color_temperature_mireds', 'color_temp_kelvin', 'hue', 'saturation', 'x', 'y']
@@ -364,7 +369,7 @@ class ZHADevice:
                     changed['color_temp'] = self.state['color_temp']
 
         # Handle multi-endpoint devices - add endpoint-specific state fields
-        if endpoint_id is not None and self.capabilities.has_capability('light'):
+        if endpoint_id is not None and has_light:
             state_key = f"state_{endpoint_id}"
             on_key = f"on_{endpoint_id}"
 
@@ -390,12 +395,89 @@ class ZHADevice:
 
         if changed:
             changed['last_seen'] = self.last_seen
+
+            # 1. Update Internal Service/Cache
             self.service.handle_device_update(self, changed, qos=qos, endpoint_id=endpoint_id)
+
+            # 2. Publish JSON Schema Payload (Fix for HA Unknown State)
+            # We now pass 'changed' for triggering logic, but rely on self.state inside for filling gaps.
+            self._publish_json_state(changed, endpoint_id)
 
             if duplicates_detected:
                 self.service._emit_sync("duplicate_attribute_warning", {
                     "ieee": self.ieee, "details": duplicates_detected
                 })
+
+    def _publish_json_state(self, changed_data: Dict[str, Any], endpoint_id: Optional[int] = None):
+        """Helper to format and publish state in JSON format."""
+        if not hasattr(self.service, 'mqtt') or not self.service.mqtt:
+            return
+
+        # ALWAYS start with available=true
+        payload = {
+            'available': True,
+            'linkquality': getattr(self.zigpy_dev, 'lqi', 0) or 0,
+            'last_seen': self.last_seen,
+        }
+        caps = self.capabilities
+
+        # Use safe capability check
+        is_light = caps.has_capability('light') if hasattr(caps, 'has_capability') else False
+        is_switch = caps.has_capability('switch') if hasattr(caps, 'has_capability') else False
+
+        if is_light or is_switch:
+            # State (ON/OFF)
+            # Use self.state as primary source to ensure we always have data, override with changed
+            state_val = (changed_data.get(f'state_{endpoint_id}') or
+                         changed_data.get('state') or
+                         self.state.get(f'state_{endpoint_id}') or
+                         self.state.get('state'))
+
+            on_val = changed_data.get(f'on_{endpoint_id}') or changed_data.get('on')
+
+            if on_val is not None:
+                payload['state'] = 'ON' if on_val else 'OFF'
+            elif state_val is not None:
+                if isinstance(state_val, str):
+                    payload['state'] = state_val.upper()
+                else:
+                    payload['state'] = 'ON' if state_val else 'OFF'
+
+            # Brightness (Convert % to 0-254)
+            if hasattr(caps, 'has_capability') and caps.has_capability('level_control'):
+                bri = (changed_data.get(f'brightness_{endpoint_id}') or
+                       changed_data.get('brightness') or
+                       changed_data.get('level'))
+
+                # Fallback to state if not in changed
+                if bri is None:
+                    bri = self.state.get(f'brightness_{endpoint_id}') or self.state.get('level') or self.state.get('brightness')
+
+                if bri is not None and isinstance(bri, (int, float)):
+                    # Heuristic: If <= 100, assume %, scale to 254.
+                    # Assuming handler normalizes to 0-100 or 0-254.
+                    # Safety check: if > 100 it's definitely 254 scale.
+                    if bri <= 100 and bri > 1:
+                        bri = int(bri * 2.54)
+                    payload['brightness'] = min(254, max(0, int(bri)))
+
+            # Color Temp
+            if hasattr(caps, 'has_capability') and caps.has_capability('color_control'):
+                ct = changed_data.get('color_temp_mireds') or changed_data.get('color_temp')
+                if ct is None:
+                    ct = self.state.get('color_temp_mireds') or self.state.get('color_temp')
+                if ct: payload['color_temp'] = int(ct)
+
+        # Include Link Quality and Last Seen
+        payload['linkquality'] = getattr(self.zigpy_dev, 'lqi', 0) or 0
+        payload['last_seen'] = self.last_seen
+
+        # Publish if we constructed a meaningful payload
+        if payload:
+            safe_name = self.service.friendly_names.get(self.ieee, self.ieee)
+            topic = f"{self.service.mqtt.base_topic}/{safe_name}"
+            asyncio.create_task(self.service.mqtt.publish(topic, json.dumps(payload)))
+
 
     def set_preferred_endpoint(self, attribute: str, endpoint_id: int):
         """Pin a specific endpoint for an attribute."""
@@ -583,46 +665,109 @@ class ZHADevice:
 
     @with_retries(max_retries=3, backoff_base=1.5, timeout=10.0)
     async def send_command(self, command: str, value: Any = None, endpoint_id: Optional[int] = None) -> Any:
-        """Send a command to the device."""
+        """Send a command to the device with optimistic state updates."""
         logger.info(f"[{self.ieee}] CMD: {command}={value} EP={endpoint_id}")
         command = command.lower()
 
         def get_handler(cid):
             if endpoint_id:
-                if (endpoint_id, cid) in self.handlers: return self.handlers[(endpoint_id, cid)]
+                if (endpoint_id, cid) in self.handlers:
+                    return self.handlers[(endpoint_id, cid)]
             return self.handlers.get(cid)
 
-        if command in ['on', 'off', 'toggle']:
-            h = get_handler(0x0006)
-            if h:
-                if command == 'on': await h.turn_on()
-                elif command == 'off': await h.turn_off()
-                else: await h.toggle()
-                return True
-        elif command == 'brightness' and value is not None:
-            h = get_handler(0x0008)
-            if h: await h.set_brightness_pct(int(value)); return True
-        elif command == 'color_temp' and value is not None:
-            h = get_handler(0x0300)
-            if h: await h.set_color_temp_kelvin(int(value)); return True
-        elif command == 'temperature' and value is not None:
-            h = get_handler(0x0201)
-            if h: await h.set_heating_setpoint(float(value)); return True
-        elif command == 'identify':
-            h = get_handler(0x0003)
-            if h: await h.identify(5); return True
-        elif command in ['open', 'close', 'stop']:
-            h = get_handler(0x0102)
-            if h:
-                if command == 'open': await h.open()
-                elif command == 'close': await h.close()
-                else: await h.stop()
-                return True
-        elif command == 'position' and value is not None:
-            h = get_handler(0x0102)
-            if h: await h.set_position(int(value)); return True
+        # Check capabilities safely
+        has_cap = getattr(self.capabilities, 'has_capability', lambda x: False)
 
-        return False
+        # Track optimistic state changes
+        optimistic_state = {}
+        success = False
+
+        # LIGHT / SWITCH LOGIC
+        if has_cap('light') or has_cap('switch'):
+            if command in ['on', 'off', 'toggle']:
+                h = get_handler(0x0006)
+                if h:
+                    if command == 'on':
+                        await h.turn_on()
+                        optimistic_state['state'] = 'ON'
+                        optimistic_state['on'] = True
+                    elif command == 'off':
+                        await h.turn_off()
+                        optimistic_state['state'] = 'OFF'
+                        optimistic_state['on'] = False
+                    else:
+                        await h.toggle()
+                        # Toggle: invert current state
+                        current = self.state.get('on', False)
+                        optimistic_state['state'] = 'OFF' if current else 'ON'
+                        optimistic_state['on'] = not current
+                    success = True
+
+            elif command == 'brightness' and value is not None:
+                h = get_handler(0x0008)
+                if h:
+                    await h.set_brightness_pct(int(value))
+                    # Store both formats for compatibility
+                    optimistic_state['brightness'] = int(value * 2.54) if value <= 100 else int(value)
+                    optimistic_state['level'] = int(value) if value <= 100 else int(value / 2.54)
+                    # Brightness > 0 implies ON
+                    if value > 0:
+                        optimistic_state['state'] = 'ON'
+                        optimistic_state['on'] = True
+                    success = True
+
+            elif command == 'color_temp' and value is not None:
+                h = get_handler(0x0300)
+                if h:
+                    await h.set_color_temp_kelvin(int(value))
+                    # Convert Kelvin to mireds for state
+                    mireds = int(1000000 / value) if value > 0 else 250
+                    optimistic_state['color_temp'] = mireds
+                    optimistic_state['color_temp_mireds'] = mireds
+                    success = True
+
+        # GENERAL COMMANDS (Fallthrough)
+        if not success and command == 'temperature' and value is not None:
+            h = get_handler(0x0201)
+            if h:
+                await h.set_heating_setpoint(float(value))
+                optimistic_state['temperature_setpoint'] = float(value)
+                success = True
+
+        elif not success and command == 'identify':
+            h = get_handler(0x0003)
+            if h:
+                await h.identify(5)
+                success = True
+
+        # COVER COMMANDS
+        if not success and (has_cap('cover') or command in ['open', 'close', 'stop', 'position']):
+            h = get_handler(0x0102)
+            if h:
+                if command == 'open':
+                    await h.open()
+                    optimistic_state['position'] = 100
+                    optimistic_state['state'] = 'open'
+                elif command == 'close':
+                    await h.close()
+                    optimistic_state['position'] = 0
+                    optimistic_state['state'] = 'closed'
+                elif command == 'stop':
+                    await h.stop()
+                elif command == 'position' and value is not None:
+                    await h.set_position(int(value))
+                    optimistic_state['position'] = int(value)
+                success = True
+
+        # =========================================================================
+        # OPTIMISTIC STATE UPDATE
+        # =========================================================================
+        if success and optimistic_state:
+            logger.info(f"[{self.ieee}] Optimistic update: {optimistic_state}")
+            # This triggers handle_device_update AND _publish_json_state
+            self.update_state(optimistic_state, endpoint_id=endpoint_id)
+
+        return success
 
     async def read_attribute_raw(self, ep_id: int, cluster_id: int, attr_name: str) -> Any:
         ep = self.zigpy_dev.endpoints.get(ep_id)
@@ -676,9 +821,8 @@ class ZHADevice:
         seen_handlers = set()
 
         # === FIX: Single Device Info Block ===
-        # This ensures all entities (light, switch, sensor) are grouped under ONE device in HA
         device_info = {
-            "identifiers": [self.ieee], # Use IEEE as the unique device ID
+            "identifiers": [self.ieee],
             "name": self.state.get("manufacturer", "Zigbee") + " " + self.state.get("model", "Device"),
             "model": self.state.get("model", "Unknown"),
             "manufacturer": self.state.get("manufacturer", "Unknown")
@@ -691,13 +835,16 @@ class ZHADevice:
             if hasattr(handler, 'get_discovery_configs'):
                 c = handler.get_discovery_configs()
                 if c:
-                    # Inject standardized device_info into each entity config
                     for config in c:
                         if "device" not in config:
                             config["device"] = device_info
+
+                        # === APPLY JSON SCHEMA DEFAULTS ===
+                        self._apply_json_schema_defaults(config)
+
                     configs.extend(c)
 
-        # Add generic Link Quality sensor, properly linked to the device
+        # Add generic Link Quality sensor
         configs.append({
             "component": "sensor",
             "object_id": "linkquality",
@@ -707,8 +854,44 @@ class ZHADevice:
                 "name": "Link Quality",
                 "unit_of_measurement": "lqi",
                 "value_template": "{{ value_json.lqi }}",
-                "state_class": "measurement",  # Optional: allows graphing in HA
-                "icon": "mdi:signal"           # Optional: nice icon
+                "state_class": "measurement",
+                "icon": "mdi:signal"
             }
         })
         return configs
+
+    def _apply_json_schema_defaults(self, payload: Dict):
+        """
+        Helper to enforce JSON schema on Light/Switch configs.
+        """
+        component = payload.get('component')
+
+        if component in ("light", "switch"):
+            # Force JSON schema
+            if 'schema' not in payload:
+                payload['schema'] = 'json'
+
+            if payload.get('schema') == 'json':
+                # Remove legacy template fields that conflict with JSON schema
+                keys_to_remove = [
+                    'payload_on', 'payload_off', 'value_template',
+                    'brightness_state_topic', 'brightness_command_topic',
+                    'brightness_value_template', 'brightness_command_template',
+                    'color_temp_state_topic', 'color_temp_command_topic',
+                    'color_temp_value_template', 'color_temp_command_template'
+                ]
+                for key in keys_to_remove:
+                    payload.pop(key, None)
+
+            # Ensure command topic is set if missing
+            if 'command_topic' not in payload and 'state_topic' in payload:
+                payload['command_topic'] = payload['state_topic'] + "/set"
+
+        # Covers need specific JSON payloads if not using schema: json
+        elif component == "cover":
+            if 'payload_open' not in payload: payload['payload_open'] = json.dumps({"command": "open"})
+            if 'payload_close' not in payload: payload['payload_close'] = json.dumps({"command": "close"})
+            if 'payload_stop' not in payload: payload['payload_stop'] = json.dumps({"command": "stop"})
+            if 'set_position_template' not in payload:
+                # Matches the core.py extraction
+                payload['set_position_template'] = '{"position": {{ position }}}'

@@ -484,7 +484,6 @@ class ZigbeeService:
     # =========================================================================
     # MQTT COMMAND HANDLER
     # =========================================================================
-
     async def handle_mqtt_command(
             self,
             device_identifier: str,
@@ -494,84 +493,107 @@ class ZigbeeService:
     ):
         """
         Handle incoming MQTT command from Home Assistant.
-        This is the key method for HA control.
+        Supports JSON Schema with optimistic state updates.
         """
-        # Resolve device identifier to IEEE
         ieee = self._resolve_device_identifier(device_identifier)
-
         if not ieee or ieee not in self.devices:
             logger.warning(f"MQTT command for unknown device: {device_identifier}")
             return
 
         device = self.devices[ieee]
-        logger.info(f"[{ieee}] MQTT command: {data} (component={component}, object_id={object_id})")
+        logger.info(f"[{ieee}] MQTT command: {data}")
 
         try:
-            # Extract command and value from various payload formats
-            command = None
-            value = None
+            # Extract endpoint from object_id (e.g., "light_2" -> 2)
             endpoint = None
-
-            # Format 1: {"command": "on"} or {"command": "brightness", "value": 50}
-            if "command" in data:
-                command = data["command"].lower()
-                value = data.get("value")
-                endpoint = data.get("endpoint")
-
-            # Format 2: {"state": "ON"} or {"state": "OFF"}
-            elif "state" in data:
-                state = data["state"]
-                if isinstance(state, str):
-                    command = "on" if state.upper() == "ON" else "off"
-                elif isinstance(state, bool):
-                    command = "on" if state else "off"
-
-            # Format 3: Just "ON" or "OFF" string
-            elif isinstance(data, str):
-                command = "on" if data.upper() == "ON" else "off"
-
-            # Format 4: Brightness value
-            elif "brightness" in data:
-                command = "brightness"
-                value = data["brightness"]
-
-            # Format 5: Color temperature
-            elif "color_temp" in data:
-                command = "color_temp"
-                value = data["color_temp"]
-
-            # Format 6: Position (for covers)
-            elif "position" in data:
-                command = "position"
-                value = data["position"]
-
-            # Determine endpoint from object_id if not specified
-            if endpoint is None and object_id:
-                # Try to extract endpoint from object_id (e.g., "switch_1" -> endpoint 1)
+            if object_id:
                 match = re.search(r'_(\d+)$', object_id)
-                if match:
-                    endpoint = int(match.group(1))
+                endpoint = int(match.group(1)) if match else 1
 
-            if command:
-                result = await device.send_command(command, value, endpoint_id=endpoint)
+            # Track state changes for optimistic update
+            optimistic_state = {}
+            command_success = False
 
+            # =========================================================================
+            # JSON SCHEMA FORMAT
+            # =========================================================================
+            state = data.get('state')
+            brightness = data.get('brightness')
+            color_temp = data.get('color_temp')
+            color = data.get('color')
+            transition = data.get('transition')
+
+            # Handle State
+            if state:
+                cmd = 'on' if str(state).upper() == 'ON' else 'off'
+                result = await device.send_command(cmd, endpoint_id=endpoint)
                 if result:
-                    logger.info(f"[{ieee}] Command '{command}' executed successfully")
+                    optimistic_state['state'] = state.upper() if isinstance(state, str) else ('ON' if state else 'OFF')
+                    optimistic_state['on'] = (cmd == 'on')
+                    command_success = True
 
-                    # Emit state update for UI
-                    self._emit_sync("log", {
-                        "level": "INFO",
-                        "message": f"MQTT: {command}={value}",
-                        "ieee": ieee
-                    })
-                else:
-                    logger.warning(f"[{ieee}] Command '{command}' returned False")
-            else:
-                logger.warning(f"[{ieee}] Could not parse command from: {data}")
+            # Handle Brightness (HA sends 0-254)
+            if brightness is not None:
+                pct = int(brightness / 2.54)
+                result = await device.send_command('brightness', pct, endpoint_id=endpoint)
+                if result:
+                    optimistic_state['brightness'] = int(brightness)
+                    # If brightness > 0, also set state to ON
+                    if brightness > 0:
+                        optimistic_state['state'] = 'ON'
+                        optimistic_state['on'] = True
+                    command_success = True
+
+            # Handle Color Temp (mireds)
+            if color_temp is not None:
+                try:
+                    kelvin = int(1000000 / color_temp)
+                    result = await device.send_command('color_temp', kelvin, endpoint_id=endpoint)
+                    if result:
+                        optimistic_state['color_temp'] = int(color_temp)
+                        command_success = True
+                except ZeroDivisionError:
+                    pass
+
+            # Handle XY Color
+            if color and 'x' in color and 'y' in color:
+                result = await device.send_command('xy_color', (color['x'], color['y']), endpoint_id=endpoint)
+                if result:
+                    optimistic_state['color'] = {'x': color['x'], 'y': color['y']}
+                    command_success = True
+
+            # =========================================================================
+            # LEGACY FORMATS (fallback)
+            # =========================================================================
+            if not command_success and 'command' in data:
+                command = data['command'].lower()
+                value = data.get('value')
+                ep = data.get('endpoint', endpoint)
+
+                result = await device.send_command(command, value, endpoint_id=ep)
+                if result:
+                    command_success = True
+                    # Build optimistic state for legacy commands
+                    if command == 'on':
+                        optimistic_state['state'] = 'ON'
+                    elif command == 'off':
+                        optimistic_state['state'] = 'OFF'
+                    elif command == 'brightness':
+                        optimistic_state['brightness'] = int(value * 2.54) if value <= 100 else value
+
+            # =========================================================================
+            # OPTIMISTIC STATE UPDATE
+            # =========================================================================
+            if command_success and optimistic_state:
+                logger.info(f"[{ieee}] Optimistic update: {optimistic_state}")
+
+                # Merge optimistic changes into device state
+                device.update_state(optimistic_state, qos=0, endpoint_id=endpoint)
 
         except Exception as e:
             logger.error(f"[{ieee}] MQTT command error: {e}")
             traceback.print_exc()
+
 
     def _resolve_device_identifier(self, identifier: str) -> Optional[str]:
         """Resolve a device identifier (name, node_id, or IEEE) to IEEE address."""
@@ -1514,93 +1536,114 @@ class ZigbeeService:
     # =========================================================================
     # DEVICE UPDATE HANDLING
     # =========================================================================
-
     def handle_device_update(self, zha_device, changed_data, full_state=None, qos: Optional[int] = None, endpoint_id: Optional[int] = None):
         """
         Called by ZHADevice when state changes.
-        ENHANCED: Ensures ALL discovery attributes are always present.
-
-        Args:
-            zha_device: The device instance
-            changed_data: Dictionary of only the attributes that changed (for logging)
-            full_state: Complete device state (for cache/MQTT). If None, changed_data is used.
-            qos: MQTT QoS level
-            endpoint_id: Source endpoint ID of the update (optional)
+        ENHANCED: Adapts Light/Switch payload to JSON Schema while keeping Sensors as templates.
         """
         ieee = zha_device.ieee
 
         # Use full_state if provided, otherwise assume changed_data is everything we know
         payload_data = full_state if full_state else changed_data
-        payload = payload_data.copy()
+
+        # Start with base payload
+        payload = {
+            'available': zha_device.is_available(),
+            'linkquality': getattr(zha_device.zigpy_dev, 'lqi', 0) or 0,
+        }
 
         # ========================================================================
-        # 1: Ensure 'available' key is ALWAYS present
+        # 2: Process Capabilities (Lights = JSON Schema, Sensors = Template)
         # ========================================================================
-        # The availability template in MQTT discovery expects this key to always exist
-        payload['available'] = zha_device.is_available()
-        payload['lqi'] = getattr(zha_device.zigpy_dev, 'lqi', 0) or 0
-
-        # ========================================================================
-        # 2: Ensure ALL attributes from discovery configs are present
-        # ========================================================================
-        # This prevents HA from showing "unknown" when attributes are missing
         caps = zha_device.capabilities if hasattr(zha_device, 'capabilities') else None
 
         if caps:
-            # For each endpoint, ensure discovery attributes exist
-            for ep_id in zha_device.zigpy_dev.endpoints.keys():
-                if ep_id == 0:
-                    continue
+            # ---------------------------------------------------------------------
+            # LIGHTS & SWITCHES: Convert to standard JSON Schema (state, brightness, etc.)
+            # ---------------------------------------------------------------------
+            if caps.is_light or caps.is_switch:
+                # Determine State (ON/OFF)
+                # Try specific endpoint key first, then general keys
+                state_val = (payload_data.get(f'state_{endpoint_id}') or
+                             payload_data.get('state') or
+                             zha_device.state.get(f'state_{endpoint_id}') or
+                             zha_device.state.get('state', 'OFF'))
 
-                # === LIGHTS AND SWITCHES ===
-                if caps.is_light or caps.is_switch:
-                    state_key = f"state_{ep_id}"
-                    if state_key not in payload:
-                        # Use existing state if available, otherwise default
-                        payload[state_key] = zha_device.state.get(state_key, "OFF")
+                on_val = payload_data.get(f'on_{endpoint_id}') or payload_data.get('on')
 
-                    # Brightness support
-                    if caps.supports_brightness:
-                        brightness_key = f"brightness_{ep_id}"
-                        if brightness_key not in payload:
-                            payload[brightness_key] = zha_device.state.get(brightness_key, 0)
+                # Normalize to ON/OFF
+                if on_val is not None:
+                    payload['state'] = 'ON' if on_val else 'OFF'
+                elif state_val is not None:
+                    if isinstance(state_val, str):
+                        payload['state'] = state_val.upper()
+                    else:
+                        payload['state'] = 'ON' if state_val else 'OFF'
 
-                # === CONTACT SENSORS ===
-                if caps.is_contact_sensor:
-                    contact_key = f"is_open_{ep_id}"
-                    if contact_key not in payload:
-                        payload[contact_key] = zha_device.state.get(contact_key, False)
+                # Brightness (JSON Schema expects 0-254)
+                if caps.supports_brightness:
+                    bri = (payload_data.get(f'brightness_{endpoint_id}') or
+                           payload_data.get('brightness') or
+                           payload_data.get('level'))
 
-                # === POWER MONITORING ===
-                if caps.supports_power_monitoring:
-                    for attr in ['power', 'voltage', 'current']:
-                        key = f"{attr}_{ep_id}"
-                        if key not in payload:
-                            payload[key] = zha_device.state.get(key, 0)
+                    if bri is None:
+                        bri = zha_device.state.get('brightness') or zha_device.state.get('level', 0)
 
-            # === COLOR TEMPERATURE ===
-            if caps.is_light and caps.supports_color_temp:
-                if 'color_temp_mireds' not in payload:
-                    payload['color_temp_mireds'] = zha_device.state.get('color_temp_mireds', 250)
+                    # Auto-scale 0-100 to 0-254 if detected
+                    if isinstance(bri, (int, float)):
+                        if bri <= 100 and bri > 1:
+                            # User requested 2.54 scaling logic:
+                            bri = int(bri * 2.54)
+                        payload['brightness'] = min(254, max(0, int(bri)))
 
-            # === SENSORS ===
-            if caps.is_temperature_sensor and 'temperature' not in payload:
-                payload['temperature'] = zha_device.state.get('temperature', None)
+                # Color Temperature (Mireds)
+                if caps.supports_color_temp:
+                    ct = payload_data.get('color_temp_mireds') or payload_data.get('color_temp')
+                    if ct is None:
+                        ct = zha_device.state.get('color_temp_mireds', 250)
+                    if ct:
+                        payload['color_temp'] = int(ct)
 
-            if caps.is_humidity_sensor and 'humidity' not in payload:
-                payload['humidity'] = zha_device.state.get('humidity', None)
+            # ---------------------------------------------------------------------
+            # SENSORS: Retain existing keys (Contact, Power, Temp, etc.)
+            # ---------------------------------------------------------------------
 
-            if caps.is_illuminance_sensor and 'illuminance' not in payload:
-                payload['illuminance'] = zha_device.state.get('illuminance', None)
+            # === CONTACT SENSORS ===
+            if caps.is_contact_sensor:
+                # Check for endpoint specific or general contact state
+                contact_key = f"is_open_{endpoint_id}" if endpoint_id else "is_open"
+                val = payload_data.get(contact_key)
+                if val is None:
+                    val = zha_device.state.get(contact_key, False)
+                payload[contact_key] = val
+
+            # === POWER MONITORING ===
+            if caps.supports_power_monitoring:
+                for attr in ['power', 'voltage', 'current']:
+                    key = f"{attr}_{endpoint_id}" if endpoint_id else attr
+                    if key not in payload:
+                        payload[key] = payload_data.get(key) or zha_device.state.get(key, 0)
+
+            # === ENVIRONMENTAL SENSORS ===
+            if caps.is_temperature_sensor:
+                payload['temperature'] = payload_data.get('temperature', zha_device.state.get('temperature'))
+
+            if caps.is_humidity_sensor:
+                payload['humidity'] = payload_data.get('humidity', zha_device.state.get('humidity'))
+
+            if caps.is_illuminance_sensor:
+                payload['illuminance'] = payload_data.get('illuminance', zha_device.state.get('illuminance'))
 
             # === MOTION/OCCUPANCY ===
             if caps.is_motion_sensor:
-                if 'occupancy' not in payload:
-                    payload['occupancy'] = zha_device.state.get('occupancy', False)
-                if 'motion' not in payload:
-                    payload['motion'] = zha_device.state.get('motion', False)
+                payload['occupancy'] = payload_data.get('occupancy', zha_device.state.get('occupancy', False))
+                payload['motion'] = payload_data.get('motion', zha_device.state.get('motion', False))
 
-        # SANITISE payload for JSON before storing/sending
+        # ========================================================================
+        # 3: Finalize, Cache & Publish
+        # ========================================================================
+
+        # SANITISE payload
         from json_helpers import sanitise_device_state
         safe_payload = sanitise_device_state(payload)
 
@@ -1616,14 +1659,59 @@ class ZigbeeService:
         # Publish to MQTT
         if self.mqtt:
             safe_name = self.get_safe_name(ieee)
-            import asyncio
-            import json
             asyncio.create_task(self.mqtt.publish(safe_name, json.dumps(safe_payload), qos=qos))
 
-        # --- ENHANCED LOGGING WITH ENDPOINT ID ---
+        # ========================================================================
+        # 4: Logging
+        # ========================================================================
         friendly_name = self.friendly_names.get(ieee, "Unknown")
 
-        # Log ONLY changed attributes to reduce noise
+        for k, v in changed_data.items():
+            if k != 'last_seen':
+                ep_str = f"[EP{endpoint_id}]" if endpoint_id is not None else ""
+                msg = f"[{ieee}] ({friendly_name}) {ep_str} {k}={v}"
+
+                log_payload = {
+                    "level": "INFO",
+                    "message": msg,
+                    "ieee": ieee,
+                    "device_name": friendly_name,
+                    "category": "attribute_update",
+                    "attribute": k,
+                    "value": v,
+                    "endpoint_id": endpoint_id
+                }
+                from json_helpers import prepare_for_json
+                safe_log_payload = prepare_for_json(log_payload)
+                self._emit_sync("log", safe_log_payload)
+
+        # ========================================================================
+        # 3: Finalize, Cache & Publish
+        # ========================================================================
+
+        # SANITISE payload
+        from json_helpers import sanitise_device_state
+        safe_payload = sanitise_device_state(payload)
+
+        # UPDATE CACHE
+        if ieee not in self.state_cache:
+            self.state_cache[ieee] = {}
+        self.state_cache[ieee].update(safe_payload)
+        self._cache_dirty = True
+
+        # Emit to WebSocket clients
+        self._emit_sync("device_updated", {"ieee": ieee, "data": safe_payload})
+
+        # Publish to MQTT
+        if self.mqtt:
+            safe_name = self.get_safe_name(ieee)
+            asyncio.create_task(self.mqtt.publish(safe_name, json.dumps(safe_payload), qos=qos))
+
+        # ========================================================================
+        # 4: Logging
+        # ========================================================================
+        friendly_name = self.friendly_names.get(ieee, "Unknown")
+
         for k, v in changed_data.items():
             if k != 'last_seen':
                 ep_str = f"[EP{endpoint_id}]" if endpoint_id is not None else ""
