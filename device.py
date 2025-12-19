@@ -334,7 +334,7 @@ class ZHADevice:
                             continue
                             # --- DUPLICATE DETECTION END ---
 
-            always_report = ['occupancy', 'presence', 'motion', 'contact', 'alarm',
+            always_report = ['occupancy', 'presence', 'motion', 'contact', 'alarm', 'temperature',
                              'tamper', 'battery_low', 'vibration', 'on_with_timed_off', 'action']
 
             if k in always_report or self.state.get(k) != v:

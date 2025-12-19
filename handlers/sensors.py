@@ -346,6 +346,71 @@ class OccupancySensingHandler(ClusterHandler):
 
 
 # ============================================================
+# DEVICE TEMPERATURE CONFIGURATION CLUSTER (0x0002)
+# Used by some Xiaomi/Aqara devices for internal temp
+# ============================================================
+@register_handler(0x0002)
+class DeviceTemperatureHandler(ClusterHandler):
+    """
+    Handles Device Temperature Configuration cluster (0x0002).
+    Standard ZCL: CurrentTemperature is int16 in degrees Celsius.
+    Range: -200 to 200 deg C.
+    """
+    CLUSTER_ID = 0x0002
+
+    # Attributes
+    ATTR_CURRENT_TEMPERATURE = 0x0000
+    ATTR_MIN_TEMP_EXPERIENCED = 0x0001
+    ATTR_MAX_TEMP_EXPERIENCED = 0x0002
+    ATTR_OVER_TEMP_TOTAL_DWELL = 0x0003
+
+    # Reporting: Min 60s, Max 3600s, Change 1 degree
+    REPORT_CONFIG = [
+        {"attr": "current_temperature", "min": 60, "max": 3600, "change": 1},
+    ]
+
+    def attribute_updated(self, attrid: int, value: Any, timestamp: Optional[float] = None):
+        if attrid == self.ATTR_CURRENT_TEMPERATURE:
+            if hasattr(value, 'value'):
+                value = value.value
+
+            # 0x0002 reports in Degrees Celsius (int16), NOT centidegrees
+            # However, some Xiaomi/Aqara devices incorrectly report in centidegrees (e.g. 3000 = 30.00C)
+            if value is not None:
+                try:
+                    val = float(value)
+
+                    # Heuristic: ZCL says range is -200 to 200.
+                    # If value > 200, assume it's centidegrees (Xiaomi quirk).
+                    if val > 200:
+                        temp_c = round(val / 100, 2)
+                    else:
+                        temp_c = val
+
+                    # Updates state with specific key 'device_temperature'
+                    self.device.update_state({"device_temperature": temp_c})
+
+                    # Optional: Also map to generic 'temperature' if this is the main sensor
+                    self.device.update_state({"temperature": temp_c})
+
+                    logger.debug(f"[{self.device.ieee}] Device Temperature (0x0002): {temp_c}°C (raw: {value})")
+                except (ValueError, TypeError):
+                    logger.warning(f"[{self.device.ieee}] Invalid device temperature value: {value}")
+
+    def get_discovery_configs(self) -> List[Dict]:
+        return [{
+            "component": "sensor",
+            "object_id": "device_temperature",
+            "config": {
+                "name": "Device Temperature",
+                "device_class": "temperature",
+                "unit_of_measurement": "°C",
+                "value_template": "{{ value_json.device_temperature }}",
+                "entity_category": "diagnostic"  # Marks it as non-primary sensor
+            }
+        }]
+
+# ============================================================
 # TEMPERATURE MEASUREMENT CLUSTER (0x0402)
 # ============================================================
 @register_handler(0x0402)

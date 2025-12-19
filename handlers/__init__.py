@@ -42,6 +42,7 @@ from .sonoff_quirk import (
 
 from .sensors import (
     OccupancySensingHandler,
+    DeviceTemperatureHandler,
     TemperatureMeasurementHandler,
     IlluminanceMeasurementHandler,
     RelativeHumidityHandler,
@@ -110,6 +111,7 @@ __all__ = [
 
     # Sensors
     "OccupancySensingHandler",
+    "DeviceTemperatureHandler",
     "TemperatureMeasurementHandler",
     "IlluminanceMeasurementHandler",
     "RelativeHumidityHandler",
