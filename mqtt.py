@@ -124,6 +124,7 @@ class MQTTService:
             await self.client.publish(self.bridge_status_topic, "online", qos=1, retain=True)
             logger.info(f"📡 Published bridge status: {self.bridge_status_topic} = online")
 
+
             # Notify about status change (for frontend)
             if self.status_change_callback:
                 try:
@@ -239,6 +240,18 @@ class MQTTService:
                             logger.info("📢 HA Online detected - Triggering device republish...")
                             # Run the callback (core.republish_all_devices)
                             asyncio.create_task(self.ha_status_callback())
+                        continue
+
+                    # Group commands
+                    if '/group/' in topic and topic.endswith('/set'):
+                        parts = topic.split('/')
+                        group_name = parts[-2]  # e.g., "pendants_kitchen"
+                        try:
+                            data = json.loads(message.payload.decode())
+                            if hasattr(self, 'group_command_callback') and self.group_command_callback:
+                                await self.group_command_callback(group_name, data)
+                        except Exception as e:
+                            logger.error(f"Group command error: {e}")
                         continue
 
                     # --- CASE 2: Device Command ---

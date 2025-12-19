@@ -506,48 +506,36 @@ class GroupManager:
             logger.warning(f"Cannot publish state - group {group_id} not found")
             return
 
-        # Generate safe name for MQTT topic (same as discovery)
+        base_topic = self.service.mqtt.base_topic
         safe_name = group['name'].replace(' ', '_').lower()
-        topic = f"group/{safe_name}"
+        topic = f"{base_topic}/group/{safe_name}"  # Match discovery state_topic
 
-        # Build comprehensive state payload
-        # Start with base state
-        payload = {
-            "available": True  # Group is available if any member is available
-        }
+        payload = {"available": True}
 
-        # Add state (ON/OFF)
         if 'state' in state:
             payload["state"] = state["state"]
         elif 'brightness' in state:
-            # If brightness command without explicit state, assume ON
             payload["state"] = "ON"
 
-        # Add brightness if present (0-254 scale)
         if "brightness" in state:
             payload["brightness"] = int(state["brightness"])
 
-        # Add color_temp if present (mireds)
         if "color_temp" in state:
             payload["color_temp"] = int(state["color_temp"])
 
-        # Add color if present (XY or HS)
         if "color" in state:
             payload["color"] = state["color"]
 
-        # Publish to MQTT
-        import json
         try:
-            await self.service.mqtt.publish(
+            await self.service.mqtt.client.publish(
                 topic,
                 json.dumps(payload),
                 qos=1,
-                retain=True  # Retain so HA gets state on restart
+                retain=True
             )
-            logger.info(f"📤 Published group {group_id} '{group['name']}' state: {payload}")
+            logger.info(f"📤 Published group {group_id} state: {payload}")
         except Exception as e:
             logger.error(f"Failed to publish group state: {e}")
-
 
     async def _read_group_state(self, group_id: int) -> Dict[str, Any]:
         """
@@ -623,10 +611,6 @@ class GroupManager:
     async def control_group(self, group_id: int, command: Dict) -> Dict:
         """
         Control all devices in a group using Direct Cluster Commands.
-        Prioritizes direct ZCL calls over MQTT wrappers for reliability.
-
-        IMPORTANT: This method now publishes group state to MQTT after execution,
-        which is required for Home Assistant to update the UI.
         """
         if group_id not in self.groups:
             return {"error": "Group not found"}
@@ -645,7 +629,6 @@ class GroupManager:
                     results.append(result)
                     continue
 
-                # Get Zigpy Device
                 zdev = getattr(device, 'zigpy_dev', None)
                 if not zdev:
                     zdev = device if hasattr(device, 'endpoints') else None
@@ -655,15 +638,12 @@ class GroupManager:
                     results.append(result)
                     continue
 
-                # Helper to find endpoint with specific cluster
                 def get_cluster(cluster_id):
                     for endpoint_id, endpoint in zdev.endpoints.items():
                         if endpoint_id == 0: continue
                         if cluster_id in endpoint.in_clusters:
                             return endpoint.in_clusters[cluster_id]
                     return None
-
-                # --- EXECUTE COMMANDS ---
 
                 # 1. ON / OFF
                 if 'state' in command:
@@ -675,19 +655,14 @@ class GroupManager:
                         else:
                             await on_off.off()
                         result["success"] = True
-                    else:
-                        logger.warning(f"Device {ieee} missing OnOff cluster")
 
-                # 2. BRIGHTNESS (Level Control)
+                # 2. BRIGHTNESS
                 if 'brightness' in command:
                     level_ctrl = get_cluster(0x0008)
                     if level_ctrl:
                         val = int(command['brightness'])
-                        # Use move_to_level_with_on_off for better UX (turns on if off)
                         await level_ctrl.move_to_level_with_on_off(val, transition_time=10)
                         result["success"] = True
-                    else:
-                        logger.warning(f"Device {ieee} missing Level cluster")
 
                 # 3. COLOR TEMP
                 if 'color_temp' in command:
@@ -697,7 +672,7 @@ class GroupManager:
                         await color_ctrl.move_to_color_temperature(mireds, transition_time=10)
                         result["success"] = True
 
-                # 4. COVERS (Blinds)
+                # 4. COVERS
                 if 'cover_state' in command:
                     cover_ctrl = get_cluster(0x0102)
                     if cover_ctrl:
@@ -724,26 +699,27 @@ class GroupManager:
                 results.append(result)
                 logger.error(f"Error controlling {ieee}: {e}")
 
+        await self._publish_group_state(group_id, command)
+        return {"success": True, "results": results}
 
     async def _publish_group_discovery(self, group_id: int, group: Dict):
         """
         Publish group to Home Assistant via MQTT discovery
-        Following Zigbee2MQTT group discovery pattern
         """
         if not hasattr(self.service, 'mqtt') or not self.service.mqtt:
             return
 
+        base_topic = self.service.mqtt.base_topic  # Use actual base topic
         node_id = f"group_{group_id}"
         group_name = group['name']
         safe_name = group_name.replace(' ', '_').lower()
-        component = group['type']  # light, switch, cover, lock
+        component = group['type']
 
-        # Build discovery config
         config = {
             "name": group_name,
             "unique_id": node_id,
-            "state_topic": f"zigbee/group/{safe_name}",
-            "command_topic": f"zigbee/group/{safe_name}/set",
+            "state_topic": f"{base_topic}/group/{safe_name}",
+            "command_topic": f"{base_topic}/group/{safe_name}/set",
             "schema": "json",
             "optimistic": False,
             "device": {
@@ -751,27 +727,33 @@ class GroupManager:
                 "name": f"Zigbee Group: {group_name}",
                 "model": f"{component.capitalize()} Group",
                 "manufacturer": "Zigbee Group",
-                "via_device": "zigbee"
-            }
+                "via_device": f"{base_topic}"
+            },
+            "availability": [
+                {
+                    "topic": f"{base_topic}/bridge/state",
+                    "payload_available": "online",
+                    "payload_not_available": "offline"
+                }
+            ]
         }
 
         # Add capability-specific config
         if DeviceCapability.BRIGHTNESS in group['capabilities']:
             config['brightness'] = True
             config['brightness_scale'] = 254
+            config['supported_color_modes'] = ['brightness']
 
         if DeviceCapability.COLOR_TEMP in group['capabilities']:
             config['color_temp'] = True
+            if 'supported_color_modes' not in config:
+                config['supported_color_modes'] = []
+            config['supported_color_modes'].append('color_temp')
 
-        # Support for color (XY or HS)
-        if DeviceCapability.COLOR_XY in group['capabilities'] or \
-                DeviceCapability.COLOR_HS in group['capabilities']:
-            config['color_mode'] = True
-            config['supported_color_modes'] = []
-            if DeviceCapability.COLOR_XY in group['capabilities']:
-                config['supported_color_modes'].append('xy')
-            if DeviceCapability.COLOR_HS in group['capabilities']:
-                config['supported_color_modes'].append('hs')
+        if DeviceCapability.COLOR_XY in group['capabilities']:
+            if 'supported_color_modes' not in config:
+                config['supported_color_modes'] = []
+            config['supported_color_modes'].append('xy')
 
         # Publish discovery
         topic = f"homeassistant/{component}/{node_id}/{component}/config"

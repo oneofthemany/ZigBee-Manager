@@ -205,6 +205,17 @@ class ZigbeeService:
         self.fast_path = FastPathProcessor(self)
         logger.info("Fast-path processor initialised")
 
+        # Create Group Manager
+        from groups import GroupManager
+        self.group_manager = GroupManager(self)
+
+        # Connect MQTT callbacks
+        if self.mqtt:
+            self.mqtt.command_callback = self.handle_mqtt_command
+            self.mqtt.ha_status_callback = self.republish_all_devices
+            self.mqtt.status_change_callback = self.handle_bridge_status_change
+            self.mqtt.group_command_callback = self.group_manager.handle_mqtt_group_command
+
         os.makedirs("logs", exist_ok=True)
 
 
