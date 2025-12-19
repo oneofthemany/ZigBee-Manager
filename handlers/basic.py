@@ -17,6 +17,7 @@ class BasicHandler(ClusterHandler):
     CLUSTER_ID = 0x0000
     ATTR_MANUFACTURER = 0x0004
     ATTR_MODEL = 0x0005
+    ATTR_DATE_CODE = 0x0006
     ATTR_POWER_SOURCE = 0x0007
     ATTR_SW_BUILD_ID = 0x4000
 
@@ -30,6 +31,14 @@ class BasicHandler(ClusterHandler):
         if attrid == self.ATTR_POWER_SOURCE:
             source_name = self.POWER_SOURCES.get(value, f"Unknown({value})")
             self.device.update_state({"power_source": source_name})
+        elif attrid == self.ATTR_MANUFACTURER:
+            self.device.update_state({"manufacturer": str(value)})
+        elif attrid == self.ATTR_MODEL:
+            self.device.update_state({"model": str(value)})
+        elif attrid == self.ATTR_SW_BUILD_ID:
+            self.device.update_state({"sw_version": str(value)})
+        elif attrid == self.ATTR_DATE_CODE:
+            self.device.update_state({"date_code": str(value)})
 
     async def poll(self) -> Dict[str, Any]:
         results = {}
