@@ -485,7 +485,6 @@ class ZigbeeService:
     # =========================================================================
     # MQTT COMMAND HANDLER
     # =========================================================================
-
     async def handle_mqtt_command(
             self,
             device_identifier: str,
@@ -495,80 +494,111 @@ class ZigbeeService:
     ):
         """
         Handle incoming MQTT command from Home Assistant.
-        This is the key method for HA control.
+        Supports JSON Schema with optimistic state updates.
         """
-        # Resolve device identifier to IEEE
         ieee = self._resolve_device_identifier(device_identifier)
-
         if not ieee or ieee not in self.devices:
             logger.warning(f"MQTT command for unknown device: {device_identifier}")
             return
 
         device = self.devices[ieee]
-        logger.info(f"[{ieee}] MQTT command: {data} (component={component}, object_id={object_id})")
+        logger.info(f"[{ieee}] MQTT command: {data}")
 
         try:
-            # Extract command and value from various payload formats
-            command = None
-            value = None
+            # Extract endpoint from object_id (e.g., "light_11" -> 11)
             endpoint = None
-
-            # Format 1: {"command": "on"} or {"command": "brightness", "value": 50}
-            if "command" in data:
-                command = data["command"].lower()
-                value = data.get("value")
-                endpoint = data.get("endpoint")
-
-            # Format 2: {"state": "ON"} or {"state": "OFF"}
-            elif "state" in data:
-                state = data["state"]
-                if isinstance(state, str):
-                    command = "on" if state.upper() == "ON" else "off"
-                elif isinstance(state, bool):
-                    command = "on" if state else "off"
-
-            # Format 3: Just "ON" or "OFF" string
-            elif isinstance(data, str):
-                command = "on" if data.upper() == "ON" else "off"
-
-            # Format 4: Brightness value
-            elif "brightness" in data:
-                command = "brightness"
-                value = data["brightness"]
-
-            # Format 5: Color temperature
-            elif "color_temp" in data:
-                command = "color_temp"
-                value = data["color_temp"]
-
-            # Format 6: Position (for covers)
-            elif "position" in data:
-                command = "position"
-                value = data["position"]
-
-            # Determine endpoint from object_id if not specified
-            if endpoint is None and object_id:
-                # Try to extract endpoint from object_id (e.g., "switch_1" -> endpoint 1)
+            if object_id:
                 match = re.search(r'_(\d+)$', object_id)
-                if match:
-                    endpoint = int(match.group(1))
+                endpoint = int(match.group(1)) if match else None
 
-            if command:
-                result = await device.send_command(command, value, endpoint_id=endpoint)
+            # Fallback: find first light endpoint if this is a light
+            if endpoint is None and device.capabilities.has_capability('light'):
+                for ep_id in device.zigpy_dev.endpoints:
+                    if ep_id == 0:
+                        continue
+                    ep = device.zigpy_dev.endpoints[ep_id]
+                    if 0x0008 in ep.in_clusters or 0x0006 in ep.in_clusters:
+                        endpoint = ep_id
+                        logger.debug(f"[{ieee}] Auto-detected light endpoint: {endpoint}")
+                        break
 
+            # Track state changes for optimistic update
+            optimistic_state = {}
+
+            # =========================================================================
+            # JSON SCHEMA FORMAT - Process ALL attributes
+            # =========================================================================
+            state = data.get('state')
+            brightness = data.get('brightness')
+            color_temp = data.get('color_temp')
+            color = data.get('color')
+
+            # Handle State
+            if state:
+                cmd = 'on' if str(state).upper() == 'ON' else 'off'
+                logger.info(f"[{ieee}] Executing state command: {cmd} EP={endpoint}")
+                result = await device.send_command(cmd, endpoint_id=endpoint)
                 if result:
-                    logger.info(f"[{ieee}] Command '{command}' executed successfully")
+                    optimistic_state['state'] = state.upper() if isinstance(state, str) else ('ON' if state else 'OFF')
+                    optimistic_state['on'] = (cmd == 'on')
 
-                    # Emit state update for UI
-                    self._emit_sync("log", {
-                        "level": "INFO",
-                        "message": f"MQTT: {command}={value}",
-                        "ieee": ieee
-                    })
-                else:
-                    logger.warning(f"[{ieee}] Command '{command}' returned False")
-            else:
-                logger.warning(f"[{ieee}] Could not parse command from: {data}")
+            # Handle Brightness (HA sends 0-254)
+            if brightness is not None:
+                pct = int(brightness / 2.54)
+                logger.info(f"[{ieee}] Executing brightness command: {pct}% (raw={brightness}) EP={endpoint}")
+                result = await device.send_command('brightness', pct, endpoint_id=endpoint)
+                if result:
+                    optimistic_state['brightness'] = int(brightness)
+                    optimistic_state['level'] = pct
+                    if brightness > 0:
+                        optimistic_state['state'] = 'ON'
+                        optimistic_state['on'] = True
+
+            # Handle Color Temp (mireds)
+            if color_temp is not None:
+                try:
+                    kelvin = int(1000000 / color_temp)
+                    logger.info(f"[{ieee}] Executing color_temp command: {kelvin}K (mireds={color_temp}) EP={endpoint}")
+                    result = await device.send_command('color_temp', kelvin, endpoint_id=endpoint)
+                    if result:
+                        optimistic_state['color_temp'] = int(color_temp)
+                except ZeroDivisionError:
+                    pass
+
+            # Handle XY Color
+            if color and 'x' in color and 'y' in color:
+                logger.info(f"[{ieee}] Executing xy_color command: x={color['x']}, y={color['y']} EP={endpoint}")
+                result = await device.send_command('xy_color', (color['x'], color['y']), endpoint_id=endpoint)
+                if result:
+                    optimistic_state['color'] = {'x': color['x'], 'y': color['y']}
+
+            # =========================================================================
+            # LEGACY FORMAT (fallback)
+            # =========================================================================
+            if not optimistic_state and 'command' in data:
+                command = data['command'].lower()
+                value = data.get('value')
+                ep = data.get('endpoint', endpoint)
+
+                logger.info(f"[{ieee}] Executing legacy command: {command}={value} EP={ep}")
+                result = await device.send_command(command, value, endpoint_id=ep)
+                if result:
+                    if command == 'on':
+                        optimistic_state['state'] = 'ON'
+                        optimistic_state['on'] = True
+                    elif command == 'off':
+                        optimistic_state['state'] = 'OFF'
+                        optimistic_state['on'] = False
+                    elif command == 'brightness' and value is not None:
+                        optimistic_state['brightness'] = int(value * 2.54) if value <= 100 else value
+                        optimistic_state['level'] = value
+
+            # =========================================================================
+            # OPTIMISTIC STATE UPDATE
+            # =========================================================================
+            if optimistic_state:
+                logger.info(f"[{ieee}] Optimistic update: {optimistic_state}")
+                device.update_state(optimistic_state, qos=0, endpoint_id=endpoint)
 
         except Exception as e:
             logger.error(f"[{ieee}] MQTT command error: {e}")
