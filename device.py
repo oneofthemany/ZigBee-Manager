@@ -399,14 +399,15 @@ class ZHADevice:
             # 1. Update Internal Service/Cache
             self.service.handle_device_update(self, changed, qos=qos, endpoint_id=endpoint_id)
 
-            # 2. Publish JSON Schema Payload (Fix for HA Unknown State)
-            # We now pass 'changed' for triggering logic, but rely on self.state inside for filling gaps.
-            self._publish_json_state(changed, endpoint_id)
+            # 2. Publish JSON Schema Payload for LIGHTS ONLY
+            if hasattr(self, 'capabilities') and self.capabilities.has_capability('light'):
+                self._publish_json_state(changed, endpoint_id)
 
             if duplicates_detected:
                 self.service._emit_sync("duplicate_attribute_warning", {
                     "ieee": self.ieee, "details": duplicates_detected
                 })
+
 
     def _publish_json_state(self, changed_data: Dict[str, Any], endpoint_id: Optional[int] = None):
         """Helper to format and publish state in JSON format."""
@@ -669,7 +670,7 @@ class ZHADevice:
         logger.info(f"[{self.ieee}] CMD: {command}={value} EP={endpoint_id}")
         command = command.lower()
 
-        # Normalise value types (frontend sends strings)
+        # Normalize value types (frontend sends strings)
         if value is not None and isinstance(value, str):
             if value.replace('.', '').replace('-', '').isdigit():
                 value = float(value) if '.' in value else int(value)
