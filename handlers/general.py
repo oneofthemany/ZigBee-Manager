@@ -453,13 +453,22 @@ class OnOffHandler(ClusterHandler):
             result = await in_cluster.on()
             logger.info(f"[{self.device.ieee}] ON result: {result}")
 
-            if result and isinstance(result, list):
-                if result[0].status == 0:
-                    self._update_state(True)
-                else:
-                    logger.error(f"[{self.device.ieee}] ON FAILED: {result[0].status}")
+            success = False
+            # Check if result is a list/tuple
+            if result and isinstance(result, (list, tuple)):
+                if hasattr(result[0], 'status') and result[0].status == 0:
+                    success = True
+                elif result[0] == 0:
+                    success = True
+            # Check if result is a direct Default_Response object
+            elif hasattr(result, 'status') and result.status == 0:
+                success = True
+
+            if success:
+                self._update_state(True)
             else:
-                logger.error(f"[{self.device.ieee}] ON unexpected response: {result}")
+                logger.error(f"[{self.device.ieee}] ON FAILED/Unexpected: {result}")
+
         except Exception as e:
             logger.error(f"[{self.device.ieee}] ON exception: {e}", exc_info=True)
 
@@ -475,13 +484,22 @@ class OnOffHandler(ClusterHandler):
             result = await in_cluster.off()
             logger.info(f"[{self.device.ieee}] OFF result: {result}")
 
-            if result and isinstance(result, list):
-                if result[0].status == 0:
-                    self._update_state(False)
-                else:
-                    logger.error(f"[{self.device.ieee}] OFF FAILED: {result[0].status}")
+            success = False
+            # Check if result is a list/tuple
+            if result and isinstance(result, (list, tuple)):
+                if hasattr(result[0], 'status') and result[0].status == 0:
+                    success = True
+                elif result[0] == 0:
+                    success = True
+            # Check if result is a direct Default_Response object
+            elif hasattr(result, 'status') and result.status == 0:
+                success = True
+
+            if success:
+                self._update_state(False)
             else:
-                logger.error(f"[{self.device.ieee}] OFF unexpected response: {result}")
+                logger.error(f"[{self.device.ieee}] OFF FAILED/Unexpected: {result}")
+
         except Exception as e:
             logger.error(f"[{self.device.ieee}] OFF exception: {e}", exc_info=True)
 
@@ -496,17 +514,26 @@ class OnOffHandler(ClusterHandler):
             result = await in_cluster.toggle()
             logger.info(f"[{self.device.ieee}] TOGGLE result: {result}")
 
-            if result and isinstance(result, list):
-                if result[0].status == 0:
-                    # Calculate the new state based on the current known state
-                    key = f"on_{self.endpoint.endpoint_id}"
-                    # Fallback to general "on" state if endpoint specific state isn't found
-                    current = self.device.state.get(key, self.device.state.get("on", False))
-                    self._update_state(not current)
-                else:
-                    logger.error(f"[{self.device.ieee}] TOGGLE FAILED: {result[0].status}")
+            success = False
+            # Check if result is a list/tuple
+            if result and isinstance(result, (list, tuple)):
+                if hasattr(result[0], 'status') and result[0].status == 0:
+                    success = True
+                elif result[0] == 0:
+                    success = True
+            # Check if result is a direct Default_Response object
+            elif hasattr(result, 'status') and result.status == 0:
+                success = True
+
+            if success:
+                # Calculate the new state based on the current known state
+                key = f"on_{self.endpoint.endpoint_id}"
+                # Fallback to general "on" state if endpoint specific state isn't found
+                current = self.device.state.get(key, self.device.state.get("on", False))
+                self._update_state(not current)
             else:
-                logger.error(f"[{self.device.ieee}] TOGGLE unexpected response: {result}")
+                logger.error(f"[{self.device.ieee}] TOGGLE FAILED/Unexpected: {result}")
+
         except Exception as e:
             logger.error(f"[{self.device.ieee}] TOGGLE exception: {e}", exc_info=True)
 
