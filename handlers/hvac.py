@@ -320,7 +320,7 @@ class ThermostatHandler(ClusterHandler):
         """Generate Home Assistant discovery configs."""
         
         name_suffix = " Receiver" if self.is_receiver else ""
-        
+        base_topic = "zigbee_ha"
         return [
             {
                 "component": "climate",
@@ -332,13 +332,13 @@ class ThermostatHandler(ClusterHandler):
                     "min_temp": self._min_heat,
                     "max_temp": self._max_heat,
                     "temp_step": 0.5,
-                    "current_temperature_topic": f"zigbee/{self.device.service.get_safe_name(self.device.ieee)}",
+                    "current_temperature_topic": f"{base_topic}/{self.device.service.get_safe_name(self.device.ieee)}",
                     "current_temperature_template": "{{ value_json.local_temperature }}",
-                    "temperature_state_topic": f"zigbee/{self.device.service.get_safe_name(self.device.ieee)}",
+                    "temperature_state_topic": f"{base_topic}/{self.device.service.get_safe_name(self.device.ieee)}",
                     "temperature_state_template": "{{ value_json.occupied_heating_setpoint }}",
-                    "mode_state_topic": f"zigbee/{self.device.service.get_safe_name(self.device.ieee)}",
+                    "mode_state_topic": f"{base_topic}/{self.device.service.get_safe_name(self.device.ieee)}",
                     "mode_state_template": "{{ value_json.system_mode }}",
-                    "action_topic": f"zigbee/{self.device.service.get_safe_name(self.device.ieee)}",
+                    "action_topic": f"{base_topic}/{self.device.service.get_safe_name(self.device.ieee)}",
                     "action_template": "{{ value_json.hvac_action }}",
                     "temperature_command_topic": "CMD_TOPIC_PLACEHOLDER",
                     "mode_command_topic": "CMD_TOPIC_PLACEHOLDER",

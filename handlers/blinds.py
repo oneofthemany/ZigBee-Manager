@@ -127,6 +127,7 @@ class WindowCoveringHandler(ClusterHandler):
     # --- HA DISCOVERY ---
     def get_discovery_configs(self):
         """Generate Home Assistant discovery configs."""
+        base_topic = "zigbee_ha"
         return [{
             "component": "cover",
             "object_id": "cover",
@@ -134,7 +135,7 @@ class WindowCoveringHandler(ClusterHandler):
                 "name": "Window Cover",
                 "device_class": "shutter",
                 "command_topic": "CMD_TOPIC_PLACEHOLDER",
-                "position_topic": f"zigbee/{self.device.service.get_safe_name(self.device.ieee)}",
+                "position_topic": f"{base_topic}/{self.device.service.get_safe_name(self.device.ieee)}",
                 "position_template": "{{ value_json.position }}",
                 "set_position_template": "{ \"command\": \"position\", \"value\": {{ position }} }",
                 "payload_open": "{ \"command\": \"open\" }",
