@@ -14,7 +14,9 @@ let mqttExplorerState = {
     filters: {
         topic: '',
         search: ''
-    }
+    },
+    // Configurable buffer size
+    maxMessages: 500
 };
 
 /**
@@ -73,6 +75,7 @@ function setupEventListeners() {
     if (topicFilterInput) {
         topicFilterInput.addEventListener('input', debounce(() => {
             mqttExplorerState.filters.topic = topicFilterInput.value;
+            // We refresh from server on filter change to get history
             refreshMessages();
         }, 300));
     }
@@ -81,6 +84,7 @@ function setupEventListeners() {
     if (searchInput) {
         searchInput.addEventListener('input', debounce(() => {
             mqttExplorerState.filters.search = searchInput.value;
+            // We refresh from server on filter change to get history
             refreshMessages();
         }, 300));
     }
@@ -166,7 +170,7 @@ async function refreshMessages() {
         if (mqttExplorerState.filters.search) {
             params.append('search', mqttExplorerState.filters.search);
         }
-        params.append('limit', '500');
+        params.append('limit', mqttExplorerState.maxMessages.toString());
 
         const response = await fetch(`/api/mqtt_explorer/messages?${params}`);
         const data = await response.json();
@@ -213,7 +217,6 @@ function updateStatsUI(stats) {
         }
     }
 
-    // Update stat cards (Fixed: Removed invalid optional chaining on left-hand side)
     const totalEl = document.getElementById('mqttTotalMessages');
     if (totalEl) totalEl.textContent = stats.total_messages || 0;
 
@@ -225,7 +228,8 @@ function updateStatsUI(stats) {
 
     const bufferEl = document.getElementById('mqttBufferUsage');
     if (bufferEl) {
-        bufferEl.textContent = `${stats.buffer_size || 0} / ${stats.max_buffer_size || 1000}`;
+        // Display local buffer usage vs max
+        bufferEl.textContent = `${mqttExplorerState.messages.length} / ${mqttExplorerState.maxMessages}`;
     }
 }
 
@@ -246,17 +250,66 @@ function updateUI() {
 }
 
 /**
+ * Helper: Check if topic matches MQTT filter pattern
+ */
+function topicMatches(topic, pattern) {
+    if (!pattern || pattern === '#') return true;
+
+    const topicParts = topic.split('/');
+    const patternParts = pattern.split('/');
+
+    // Multi-level wildcard at end
+    if (patternParts[patternParts.length - 1] === '#') {
+        if (topicParts.length < patternParts.length - 1) return false;
+        for (let i = 0; i < patternParts.length - 1; i++) {
+            if (patternParts[i] !== '+' && patternParts[i] !== topicParts[i]) return false;
+        }
+        return true;
+    }
+
+    // Exact length check for non-# patterns
+    if (topicParts.length !== patternParts.length) return false;
+
+    for (let i = 0; i < topicParts.length; i++) {
+        if (patternParts[i] !== '+' && patternParts[i] !== topicParts[i]) return false;
+    }
+
+    return true;
+}
+
+/**
  * Render messages in the table
  */
 function renderMessages() {
     const tbody = document.getElementById('mqttMessagesBody');
     if (!tbody) return;
 
-    if (mqttExplorerState.messages.length === 0) {
+    // Filter messages for display
+    const displayMessages = mqttExplorerState.messages.filter(msg => {
+        // Topic filter
+        if (mqttExplorerState.filters.topic && !topicMatches(msg.topic, mqttExplorerState.filters.topic)) {
+            return false;
+        }
+        // Search filter
+        if (mqttExplorerState.filters.search) {
+            const searchLower = mqttExplorerState.filters.search.toLowerCase();
+            const topicMatch = msg.topic.toLowerCase().includes(searchLower);
+            const payloadMatch = (msg.payload_raw || "").toLowerCase().includes(searchLower);
+            if (!topicMatch && !payloadMatch) return false;
+        }
+        return true;
+    });
+
+    if (displayMessages.length === 0) {
+        // Show different empty state depending on whether we have hidden data or no data
+        const hasHiddenData = mqttExplorerState.messages.length > 0;
+
         tbody.innerHTML = `
             <tr>
                 <td colspan="5" class="text-center text-muted">
-                    ${mqttExplorerState.monitoring ? 'Waiting for messages...' : 'Start monitoring to see messages'}
+                    ${hasHiddenData
+                        ? 'No messages match your filters'
+                        : (mqttExplorerState.monitoring ? 'Waiting for messages...' : 'Start monitoring to see messages')}
                 </td>
             </tr>
         `;
@@ -265,7 +318,7 @@ function renderMessages() {
 
     tbody.innerHTML = '';
 
-    mqttExplorerState.messages.forEach((msg, index) => {
+    displayMessages.forEach((msg) => {
         const tr = document.createElement('tr');
         tr.className = 'mqtt-message-row';
 
@@ -316,7 +369,7 @@ function renderMessages() {
     if (mqttExplorerState.autoScroll) {
         const container = document.getElementById('mqttMessagesContainer');
         if (container) {
-            container.scrollTop = 0; // Scroll to top (newest first)
+            container.scrollTop = 0;
         }
     }
 }
@@ -408,18 +461,15 @@ async function publishMessage() {
  * Handle incoming WebSocket MQTT messages
  */
 export function handleMQTTMessage(message) {
-    // Add to beginning of messages array (newest first)
+    // Rotating Buffer: Add to beginning (newest first)
     mqttExplorerState.messages.unshift(message);
 
-    // Keep only last 500 messages in memory
-    if (mqttExplorerState.messages.length > 500) {
-        mqttExplorerState.messages = mqttExplorerState.messages.slice(0, 500);
+    // Rotating Buffer
+    if (mqttExplorerState.messages.length > mqttExplorerState.maxMessages) {
+        mqttExplorerState.messages = mqttExplorerState.messages.slice(0, mqttExplorerState.maxMessages);
     }
 
-    // Re-render if no filters are active, otherwise let user refresh manually
-    if (!mqttExplorerState.filters.topic && !mqttExplorerState.filters.search) {
-        renderMessages();
-    }
+    renderMessages();
 }
 
 /**
@@ -450,7 +500,7 @@ function escapeHtml(text) {
  * Utility: Show toast notification
  */
 function showToast(message, type = 'info') {
-    // You can implement this to match your existing toast/notification system
+    // Simple console log fallback if no toast system
     console.log(`[${type}] ${message}`);
 }
 

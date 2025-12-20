@@ -7,6 +7,7 @@ import { state } from './state.js';
 import { fetchAllDevices, handleDeviceUpdate, removeDeviceRow, renderDeviceTable } from './devices.js';
 import { addLogEntry, updateDebugStatus, handleLivePacket, checkDebugStatus } from './logging.js';
 import { updatePairingUI, checkPairingStatus } from './actions.js';
+import { handleMQTTMessage } from './mqtt-explorer.js';
 
 /**
  * Initialize WebSocket connection
@@ -54,7 +55,7 @@ export function initWS() {
 
                 case "device_updated":
                     // core.py sends { type: 'device_updated', payload: { ieee: '...', data: {...} } }
-                    handleDeviceUpdate(msg.payload); // <--- FIX: Pass the payload
+                    handleDeviceUpdate(msg.payload);
                     break;
 
                 case "device_list": // New handler for full list updates
@@ -80,8 +81,6 @@ export function initWS() {
                         updatePairingUI(msg.payload.remaining);
                     } else {
                         // If disabled, force a check/reset.
-                        // Since actions.js is modular, we can rely on checkPairingStatus
-                        // or just call updatePairingUI(0) which effectively resets it in the new logic.
                          if(typeof checkPairingStatus === 'function') checkPairingStatus();
                     }
                     break;
@@ -97,8 +96,6 @@ export function initWS() {
 
                 // handle HA Status
                 case "ha_status":
-                    // core.py emits: self._emit("ha_status", {"status": "online"})
-                    // So we look in msg.data or msg.payload
                     const statusData = msg.data || msg.payload;
                     updateHAStatus(statusData ? statusData.status : 'unknown');
                     break;
