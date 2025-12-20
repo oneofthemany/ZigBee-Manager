@@ -188,21 +188,36 @@ class OnOffHandler(ClusterHandler):
                         "state": "OPEN" if is_open else "CLOSED"
                     })
 
-                # Update state and trigger fast MQTT publish
                 self.device.update_state(updates, endpoint_id=self.endpoint.endpoint_id)
 
-                # Contact sensors MUST publish immediately via the fast path
-                if self.device.service.mqtt and hasattr(self.device.service.mqtt, 'publish_fast'):
-                    import json
-                    safe_name = self.device.service.get_safe_name(self.device.ieee)
+                # Only publish if NO IAS Zone handler (avoid duplicate publishes)
+                if 0x0500 not in self.endpoint.in_clusters:
+                    # Contact sensors MUST publish immediately via the fast path
+                    if self.device.service.mqtt and hasattr(self.device.service.mqtt, 'publish_fast'):
+                        import json
+                        safe_name = self.device.service.get_safe_name(self.device.ieee)
 
-                    # The payload should contain the full device state
-                    # for HA to read the value_template like `value_json.is_open_1`
-                    payload = json.dumps(self.device.state)
+                        # Build minimal payload - only contact sensor fields + metadata
+                        payload = {
+                            'available': True,
+                            'linkquality': self.device.state.get('lqi', 0),
+                            'last_seen': self.device.last_seen,
+                            f'contact_{self.endpoint.endpoint_id}': updates[f'contact_{self.endpoint.endpoint_id}'],
+                            f'is_open_{self.endpoint.endpoint_id}': updates[f'is_open_{self.endpoint.endpoint_id}'],
+                            f'is_closed_{self.endpoint.endpoint_id}': updates[f'is_closed_{self.endpoint.endpoint_id}'],
+                            f'state_{self.endpoint.endpoint_id}': updates[f'state_{self.endpoint.endpoint_id}'],
+                        }
 
-                    # Publish to the main device state topic (not subtopic)
-                    self.device.service.mqtt.publish_fast(f"{safe_name}", payload, qos=1, retain=False)
-                    logger.debug(f"[{self.device.ieee}] Contact sensor fast-published state: {'OPEN' if is_open else 'CLOSED'}")
+                        if self.endpoint.endpoint_id == 1:
+                            payload.update({
+                                'contact': updates['contact'],
+                                'is_open': updates['is_open'],
+                                'is_closed': updates['is_closed'],
+                                'state': updates['state'],
+                            })
+
+                        self.device.service.mqtt.publish_fast(f"{safe_name}", json.dumps(payload), qos=1, retain=True)
+                        logger.debug(f"[{self.device.ieee}] Contact sensor fast-published state: {'OPEN' if is_open else 'CLOSED'}")
 
                 logger.info(f"[{self.device.ieee}] Contact sensor: {'OPEN' if is_open else 'CLOSED'}")
             else:
