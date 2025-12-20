@@ -421,6 +421,9 @@ class ZHADevice:
         # Determine device type
         is_light = caps.has_capability('light')
         is_cover = caps.has_capability('cover')
+        is_switch = caps.has_capability('switch')
+        is_motion = caps.has_capability('motion_sensor')
+        is_contact = caps.has_capability('contact_sensor')
 
         # === LIGHTS ===
         if is_light:
@@ -468,14 +471,53 @@ class ZHADevice:
             else:
                 payload['state'] = 'open'
 
+        # === SENSORS (Binary + Environmental) ===
+
+        # ---- CONTACT SENSOR ----
+        if is_contact:
+            key = f'contact_{endpoint_id}' if endpoint_id is not None else 'contact'
+
+            raw_contact = (
+                changed_data.get(key) if key in changed_data
+                else self.state.get(key)
+            )
+
+            if raw_contact is not None:
+                # Zigbee: True = CLOSED, False = OPEN
+                # HA door: True = OPEN, False = CLOSED
+                ha_contact = not bool(raw_contact)
+
+                payload[key] = ha_contact
+                payload['state'] = 'ON' if ha_contact else 'OFF'
+
+        # ---- MOTION SENSOR ----
+        if is_motion:
+            occ_val = (
+                    changed_data.get('occupancy')
+                    or changed_data.get('motion')
+                    or changed_data.get('presence')
+            )
+
+            if occ_val is None:
+                occ_val = (
+                        self.state.get('occupancy')
+                        or self.state.get('motion')
+                        or self.state.get('presence')
+                )
+
+            if occ_val is not None:
+                payload['occupancy'] = bool(occ_val)
+                payload.setdefault('state', 'ON' if occ_val else 'OFF')
+
+
+        blocked_fields = {f'contact_{endpoint_id}', 'contact'}
+
+
         # === ALLOWED FIELDS ===
         # Use allows_field() to filter - this prevents motion/contact cross-contamination
         for key in list(changed_data.keys()) + list(self.state.keys()):
-            if key in payload:
-                continue  # Already added
-
-            if not caps.allows_field(key):
-                continue  # Capability check failed
+            if key in payload or key in blocked_fields:
+                continue
 
             # Get value from changed_data first, fallback to self.state
             value = changed_data.get(key)

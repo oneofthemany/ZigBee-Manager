@@ -1638,6 +1638,31 @@ class ZigbeeService:
         from json_helpers import sanitise_device_state
         safe_payload = sanitise_device_state(payload_data)
 
+        # ==========================================================
+        # NORMALISE CONTACT SENSORS (Zigbee -> HA semantics)
+        # Zigbee: True = CLOSED, False = OPEN
+        # HA door: True = OPEN, False = CLOSED
+        # ==========================================================
+        device_caps = zha_device.capabilities
+
+        if device_caps.has_capability('contact_sensor'):
+            # Endpoint-aware keys
+            for key in list(safe_payload.keys()):
+                if key == 'contact' or key.startswith('contact_'):
+                    raw = safe_payload.get(key)
+                    if isinstance(raw, bool):
+                        ha_val = not raw
+                        safe_payload[key] = ha_val
+
+                        # Keep is_open / is_closed consistent
+                        ep = key.split('_', 1)[1] if '_' in key else None
+                        open_key = f"is_open_{ep}" if ep else "is_open"
+                        closed_key = f"is_closed_{ep}" if ep else "is_closed"
+
+                        safe_payload[open_key] = ha_val
+                        safe_payload[closed_key] = not ha_val
+
+
         # Remove internal keys (_raw, attr_XXXX_XXXX, startup_behavior_XX_raw)
         keys_to_remove = [k for k in list(safe_payload.keys())
                           if k.endswith('_raw') or k.startswith('attr_')]
