@@ -62,6 +62,30 @@ def convert_radar_state(x):
     except:
         return str(x)
 
+# --- DP DEFINITIONS ---
+
+# Added for Tuya Covers (Fix for _TZE200_zah67ekd)
+TUYA_COVER_DPS = {
+    # Control (0=Open, 1=Stop, 2=Close)
+    1: TuyaDP(1, "control", lambda x: {0: "open", 1: "stop", 2: "close"}.get(x, str(x)), type=0x04),
+
+    # Position (0-100%)
+    2: TuyaDP(2, "position", scale=1, unit="%", type=0x02),
+    3: TuyaDP(3, "position_report", scale=1, unit="%", type=0x02),
+
+    # Direction (0=Forward, 1=Reverse)
+    5: TuyaDP(5, "direction", lambda x: "reverse" if x else "forward", type=0x01),
+
+    # Work State (0=Idle, 1=Closing, 2=Opening) - Mapped to string for safety
+    7: TuyaDP(7, "work_state", lambda x: {0: "idle", 1: "closing", 2: "opening"}.get(x, str(x)), type=0x04),
+
+    # DP 101: Motor Mode / Calibration
+    101: TuyaDP(101, "motor_mode", type=0x04),
+
+    # DP 103: Invert Direction / Exchange
+    103: TuyaDP(103, "invert_direction", lambda x: "ON" if x else "OFF", type=0x01),
+}
+
 # Updated DP Mappings for 24GHz Radar (Standard / Generic)
 TUYA_RADAR_DPS = {
     # Presence/Occupancy - Mapped to "radar_state" to match UI/HA expectations
@@ -173,6 +197,38 @@ class TuyaClusterHandler(ClusterHandler):
         """Identify which DP map to use based on device model."""
         model = str(getattr(self.device.zigpy_dev, 'model', '')).lower()
         manufacturer = str(getattr(self.device.zigpy_dev, 'manufacturer', '')).lower()
+
+        # ---------------------------------------------------------
+        # PRIORITY 1: EXPLICIT MANUFACTURER ID CHECK (FIX for TS0601 Cover)
+        # ---------------------------------------------------------
+        # Fixes incorrect Radar identification for covers like _TZE200_zah67ekd
+        if '_tze200_zah67ekd' in manufacturer:
+            logger.info(f"[{self.device.ieee}] Identified _TZE200_zah67ekd - Using Tuya Cover DP map")
+            return TUYA_COVER_DPS
+
+        # ---------------------------------------------------------
+        # PRIORITY 2: CLUSTER-BASED DETECTION
+        # ---------------------------------------------------------
+        # If the device has the Window Covering Cluster (0x0102), it IS a cover.
+        has_cover_cluster = False
+        try:
+            for ep in self.device.zigpy_dev.endpoints.values():
+                if 0x0102 in ep.in_clusters:
+                    has_cover_cluster = True
+                    break
+        except:
+            pass
+
+        if has_cover_cluster:
+            logger.info(f"[{self.device.ieee}] Detected Cover Cluster 0x0102 - Using Tuya Cover DP map")
+            return TUYA_COVER_DPS
+
+        # ---------------------------------------------------------
+        # PRIORITY 3: MODEL NAME MATCHING
+        # ---------------------------------------------------------
+        if any(x in model for x in ['curtain', 'blind', 'shade', 'roller', 'shutter', 'awning', 'cover']):
+            logger.info(f"[{self.device.ieee}] Detected Cover Model - Using Tuya Cover DP map")
+            return TUYA_COVER_DPS
 
         # Specific check for the ZY-M100-24GV2 variants (_TZE204_7gclukjs)
         # This matches the Z2M definition
@@ -392,6 +448,10 @@ class TuyaClusterHandler(ClusterHandler):
                     if dp_def.name == "illuminance":
                         state_update["illuminance_lux"] = value
                         logger.debug(f"[{self.device.ieee}] Created illuminance_lux alias: {value}")
+
+                    # Aliases for cover (so HA sees standard attributes)
+                    if dp_def.name == "position_report":
+                        state_update["position"] = value
 
                     # === FAST-PATH PUBLISH for presence/state (CRITICAL DPs) ===
                     if dp_id in [1, 104] and self.device.service.mqtt and hasattr(self.device.service.mqtt, 'publish_fast'):
