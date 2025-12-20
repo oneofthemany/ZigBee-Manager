@@ -320,7 +320,7 @@ class ThermostatHandler(ClusterHandler):
         """Generate Home Assistant discovery configs."""
         
         name_suffix = " Receiver" if self.is_receiver else ""
-        base_topic = "zigbee_ha"
+        base_topic = self.device.service.mqtt.base_topic
         return [
             {
                 "component": "climate",

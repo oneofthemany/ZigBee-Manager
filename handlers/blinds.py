@@ -127,7 +127,7 @@ class WindowCoveringHandler(ClusterHandler):
     # --- HA DISCOVERY ---
     def get_discovery_configs(self):
         """Generate Home Assistant discovery configs."""
-        base_topic = "zigbee_ha"
+        base_topic = self.device.service.mqtt.base_topic
         return [{
             "component": "cover",
             "object_id": "cover",
