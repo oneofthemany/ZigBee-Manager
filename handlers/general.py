@@ -371,9 +371,10 @@ class OnOffHandler(ClusterHandler):
         has_color = 0x0300 in self.endpoint.in_clusters or 0x0300 in self.endpoint.out_clusters
         has_level = 0x0008 in self.endpoint.in_clusters
         has_electrical = 0x0B04 in self.endpoint.in_clusters
+        has_multi_state = 0x0012 in self.endpoint.in_clusters
 
         # Quirk: Aurora sockets use level control for LED dimming, not lighting
-        if has_electrical and has_level and not (has_color or has_lightlink):
+        if (has_electrical and has_level or has_multi_state) and not (has_color or has_lightlink):
             is_light = False
             logger.info(f"[{self.device.ieee}] EP{ep} Socket quirk: Level=LED, not light")
         else:
