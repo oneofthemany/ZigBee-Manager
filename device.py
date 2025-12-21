@@ -9,7 +9,7 @@ import json
 from typing import Dict, Any, Optional, List
 
 # Import the registry from handlers package
-from handlers.base import HANDLER_REGISTRY
+from handlers.base import HANDLER_REGISTRY, ClusterHandler
 from error_handler import with_retries, CommandWrapper
 from device_capabilities import DeviceCapabilities
 from zigpy.zcl.clusters.general import Basic
@@ -81,7 +81,6 @@ class ZHADevice:
         self.model = zigpy_dev.model
 
         # --- FORCE INFO INTO STATE IMMEDIATELY ---
-        # Ensure 'state' has manufacturer info from the start
         if self.manufacturer:
             self.state["manufacturer"] = str(self.manufacturer)
         else:
@@ -116,10 +115,7 @@ class ZHADevice:
                     f"Quirk: {self.quirk_name}")
 
     def sanitize_state(self):
-        """
-        Actively purges invalid fields from self.state based on current capabilities.
-        This fixes the 'occupancy: false' on lights issue by cleaning memory.
-        """
+        """Purges invalid fields from self.state based on current capabilities."""
         if not hasattr(self, 'capabilities'):
             return
 
@@ -194,9 +190,72 @@ class ZHADevice:
             "quirk": self.quirk_name
         }
 
+    # =========================================================================
+    # ZOMBIE KILLER: The Fix for Triplicate Events
+    # =========================================================================
+    def _detach_handlers(self):
+        """
+        Aggressively clean up listeners to prevent 'Zombie Handler' duplication.
+        This scans the underlying zigpy device clusters and removes any listener
+        that looks like a Zigbee-Manager handler, even from previous instances.
+        """
+        # 1. Clean up handlers known to this instance (Standard cleanup)
+        if self.handlers:
+            for handler in self.handlers.values():
+                if hasattr(handler, 'cluster') and handler.cluster:
+                    if handler in handler.cluster._listeners:
+                        handler.cluster._listeners.remove(handler)
+            self.handlers.clear()
+
+        # 2. NUCLEAR OPTION: Scan for zombies from previous runs
+        # This fixes the issue where recreating the device wrapper leaves old handlers attached
+        # because the zigpy_dev object persists in memory.
+        cleaned_count = 0
+
+        try:
+            for ep in self.zigpy_dev.endpoints.values():
+                if ep.endpoint_id == 0: continue
+
+                # Check all clusters (In and Out)
+                all_clusters = list(ep.in_clusters.values()) + list(ep.out_clusters.values())
+
+                for cluster in all_clusters:
+                    if not hasattr(cluster, '_listeners'): continue
+
+                    # Create a copy to iterate safely while modifying
+                    # zigpy listeners are usually a list
+                    current_listeners = list(cluster._listeners)
+
+                    for listener in current_listeners:
+                        is_zombie = False
+
+                        # Check if it's one of OUR handlers
+                        # Method A: Instance of ClusterHandler class
+                        if isinstance(listener, ClusterHandler):
+                            is_zombie = True
+
+                        # Method B: Check module name (handles reloads/different class refs)
+                        elif hasattr(listener, '__module__') and 'handlers' in listener.__module__:
+                            is_zombie = True
+
+                        if is_zombie:
+                            if listener in cluster._listeners:
+                                cluster._listeners.remove(listener)
+                                cleaned_count += 1
+
+        except Exception as e:
+            logger.error(f"[{self.ieee}] Error during zombie cleanup: {e}")
+
+        if cleaned_count > 0:
+            logger.warning(f"[{self.ieee}] 🧟 Removed {cleaned_count} zombie handlers from zigpy clusters")
+
+
     def _identify_handlers(self):
         """Scan device endpoints and attach appropriate cluster handlers."""
-        self.handlers.clear()
+
+        # Aggressively clean up old handlers first!
+        self._detach_handlers()
+
         binding_prefs = self.get_binding_preferences()
         preferred_endpoints = {}
 
@@ -234,9 +293,6 @@ class ZHADevice:
                         self.handlers[handler_key] = handler
                         if cid not in self.handlers or ep_id == 1:
                             self.handlers[cid] = handler
-
-                        # direction = "Input/Server" if is_server else "Output/Client"
-                        # logger.debug(f"[{self.ieee}] Attached {handler_cls.__name__} for EP{ep_id} 0x{cid:04x}")
                     except Exception as e:
                         logger.error(f"[{self.ieee}] Failed to attach handler for EP{ep_id} 0x{cid:04x}: {e}")
 
