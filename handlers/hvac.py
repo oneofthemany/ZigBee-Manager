@@ -44,21 +44,21 @@ class ThermostatHandler(ClusterHandler):
     Adopted from ZHA implementation for robust Hive support.
     """
     CLUSTER_ID = 0x0201
-    
+
     # ZHA-aligned reporting configuration
     REPORT_CONFIG = [
         # Local Temperature: Min 30s, Max 300s, Change 0.25°C (25)
-        ("local_temperature", 30, 300, 25),
-        
+        ("local_temperature", 30, 300, 10),
+
         # Setpoints: Min 10s, Max 300s, Change 0.5°C (50)
         ("occupied_heating_setpoint", 10, 300, 50),
         ("occupied_cooling_setpoint", 10, 300, 50),
         ("unoccupied_heating_setpoint", 10, 300, 50),
-        
+
         # PI Demand: Min 30s, Max 300s, Change 5% (5)
         ("pi_heating_demand", 30, 300, 5),
         ("pi_cooling_demand", 30, 300, 5),
-        
+
         # States: Min 10s, Max 300s, Change 1 (Discrete)
         ("system_mode", 10, 300, 1),
         ("running_state", 10, 300, 1),
@@ -76,6 +76,7 @@ class ThermostatHandler(ClusterHandler):
     ATTR_ABS_MAX_COOL_SETPOINT_LIMIT = 0x0006
     ATTR_PI_COOLING_DEMAND = 0x0007
     ATTR_PI_HEATING_DEMAND = 0x0008
+    ATTR_HVAC_SYSTEM_TYPE = 0x0009
     ATTR_LOCAL_TEMP_CALIBRATION = 0x0010
     ATTR_OCCUPIED_COOLING_SETPOINT = 0x0011
     ATTR_OCCUPIED_HEATING_SETPOINT = 0x0012
@@ -91,8 +92,16 @@ class ThermostatHandler(ClusterHandler):
     ATTR_SYSTEM_MODE = 0x001C
     ATTR_ALARM_MASK = 0x001D
     ATTR_RUNNING_MODE = 0x001E
+    ATTR_START_OF_WEEK = 0x0020
+    ATTR_NUMBER_OF_WEEKLY_TRANSITIONS = 0x0021
+    ATTR_NUMBER_OF_DAILY_TRANSITIONS = 0x0022
+    ATTR_TEMP_SETPOINT_HOLD = 0x0023
+    ATTR_TEMP_SETPOINT_HOLD_DURATION = 0x0024
+    ATTR_PROG_OPERATION_MODE = 0x0025
     ATTR_RUNNING_STATE = 0x0029
     ATTR_SETPOINT_CHANGE_SOURCE = 0x0030
+    ATTR_INTERNAL_TEMP = 0x4000  # Often used by SLR1/SLR1c instead of 0x0000
+
 
     SYSTEM_MODES = {
         0x00: "off", 0x01: "auto", 0x03: "cool", 0x04: "heat",
@@ -105,7 +114,7 @@ class ThermostatHandler(ClusterHandler):
         # Default limits (safe defaults)
         self._min_heat = 5.0
         self._max_heat = 32.0
-        
+
         # detect if this is a Hive Receiver (SLR1c, SLR1b, etc.)
         model = str(device.zigpy_dev.model or "").upper()
         if "SLR" in model or "RECEIVER" in model:
@@ -131,16 +140,21 @@ class ThermostatHandler(ClusterHandler):
             self.ATTR_SYSTEM_MODE,
             self.ATTR_OCCUPIED_HEATING_SETPOINT
         ]
-        
+
+        if self.is_receiver:
+            init_attrs.append(self.ATTR_INTERNAL_TEMP)
+        else:
+            init_attrs.append(self.ATTR_LOCAL_TEMP)
+
         logger.info(f"[{self.device.ieee}] Reading ZHA initialization attributes...")
         try:
             # Read attributes
             async with asyncio.timeout(10.0):
                 success, failure = await self.cluster.read_attributes(init_attrs)
-            
+
             if success:
                 logger.info(f"[{self.device.ieee}] Initialization attributes read successfully")
-                
+
                 # Update limits if present
                 if self.ATTR_MIN_HEAT_SETPOINT_LIMIT in success:
                     val = success[self.ATTR_MIN_HEAT_SETPOINT_LIMIT]
@@ -159,7 +173,7 @@ class ThermostatHandler(ClusterHandler):
                 # Process other attributes immediately
                 for attr_id, value in success.items():
                     self.attribute_updated(attr_id, value)
-                    
+
         except Exception as e:
             logger.warning(f"[{self.device.ieee}] Failed to read init attributes: {e}")
 
@@ -199,20 +213,60 @@ class ThermostatHandler(ClusterHandler):
 
         elif attrid == self.ATTR_PI_HEATING_DEMAND:
             updates["heating_demand"] = value
-            
+
         elif attrid == self.ATTR_OCCUPANCY:
             updates["occupancy"] = bool(value)
-            
+
         elif attrid == self.ATTR_MIN_HEAT_SETPOINT_LIMIT:
-             self._min_heat = parsed_value
-             updates["min_temp"] = parsed_value
-             
+            self._min_heat = parsed_value
+            updates["min_temp"] = parsed_value
+
         elif attrid == self.ATTR_MAX_HEAT_SETPOINT_LIMIT:
-             self._max_heat = parsed_value
-             updates["max_temp"] = parsed_value
+            self._max_heat = parsed_value
+            updates["max_temp"] = parsed_value
 
         if updates:
             self.device.update_state(updates)
+
+            # Update derived HVAC action
+            self._update_hvac_action()
+
+    def _update_hvac_action(self):
+        """Derive hvac_action (heating, idle, off) from system_mode and running_state."""
+        state = self.device.state
+        mode = state.get("system_mode", "off")
+        run_state = state.get("running_state", 0)
+
+        action = "idle"
+
+        if mode == "off":
+            action = "off"
+        elif mode == "heat":
+            # Running state bit 0 usually means Heat State On
+            # Check if running_state is non-zero or specific bit is set
+            is_heating = False
+            if isinstance(run_state, int):
+                if run_state & 0x01: is_heating = True
+
+            if is_heating:
+                action = "heating"
+            else:
+                action = "idle"
+
+        self.device.update_state({"hvac_action": action})
+
+    async def handle_command(self, command: str, data: Any):
+        """Handle MQTT commands to set state."""
+        if command == "system_mode":
+            await self.set_system_mode(data)
+
+        elif command in ["temperature", "temperature_setpoint"]:
+            # Handle both 'temperature' (HA standard) and 'temperature_setpoint' (App custom)
+            try:
+                temp = float(data)
+                await self.set_heating_setpoint(temp)
+            except ValueError:
+                logger.error(f"[{self.device.ieee}] Invalid temperature value: {data}")
 
     def parse_value(self, attrid: int, value: Any) -> Any:
         """
@@ -222,25 +276,25 @@ class ThermostatHandler(ClusterHandler):
         if hasattr(value, 'value'): value = value.value
 
         # 1. Temperature Parsing (Centidegrees -> Degrees)
-        if attrid in [self.ATTR_LOCAL_TEMP, self.ATTR_OCCUPIED_HEATING_SETPOINT, 
-                     self.ATTR_OCCUPIED_COOLING_SETPOINT, self.ATTR_MIN_HEAT_SETPOINT_LIMIT,
-                     self.ATTR_MAX_HEAT_SETPOINT_LIMIT]:
+        if attrid in [self.ATTR_LOCAL_TEMP, self.ATTR_OCCUPIED_HEATING_SETPOINT,
+                      self.ATTR_OCCUPIED_COOLING_SETPOINT, self.ATTR_MIN_HEAT_SETPOINT_LIMIT,
+                      self.ATTR_MAX_HEAT_SETPOINT_LIMIT]:
             if isinstance(value, (int, float)) and value != 0x8000:
                 # Zigbee standard is ALWAYS centidegrees (0.01 C)
                 # We simply divide by 100.
                 return round(float(value) / 100, 1)
-        
+
         # 2. System Mode Parsing (Enum -> String)
         if attrid == self.ATTR_SYSTEM_MODE:
-             # If it's already a string, return it
-             if isinstance(value, str): return value
-             # Otherwise map int to string
-             return self.SYSTEM_MODES.get(value, value)
+            # If it's already a string, return it
+            if isinstance(value, str): return value
+            # Otherwise map int to string
+            return self.SYSTEM_MODES.get(value, value)
 
         return value
 
     def get_attr_name(self, attrid: int) -> str:
-        if attrid == self.ATTR_LOCAL_TEMP: 
+        if attrid == self.ATTR_LOCAL_TEMP:
             return "internal_temperature" if self.is_receiver else "local_temperature"
         if attrid == self.ATTR_OCCUPIED_HEATING_SETPOINT: return "occupied_heating_setpoint"
         if attrid == self.ATTR_SYSTEM_MODE: return "system_mode"
@@ -257,26 +311,24 @@ class ThermostatHandler(ClusterHandler):
         }
         # Only poll local temp if it's NOT a receiver (or poll as internal)
         if self.is_receiver:
-             attrs[self.ATTR_LOCAL_TEMP] = "internal_temperature"
+            attrs[self.ATTR_LOCAL_TEMP] = "internal_temperature"
         else:
-             attrs[self.ATTR_LOCAL_TEMP] = "local_temperature"
+            attrs[self.ATTR_LOCAL_TEMP] = "local_temperature"
         return attrs
 
     # --- COMMANDS ---
     async def set_heating_setpoint(self, temperature: float):
         """Set heating setpoint in degrees Celsius."""
         # 1. Clamp to System Capabilities
-        # Only enforce min if we aren't setting to "Frost Protect" levels (some use low values like 1.0)
-        # But generally, respect the capabilities read from the device.
         temperature = max(self._min_heat, min(self._max_heat, float(temperature)))
-        
+
         logger.info(f"[{self.device.ieee}] Setting setpoint to {temperature}°C (Limits: {self._min_heat}-{self._max_heat})")
 
         # 2. Convert to Zigbee Centidegrees (REQUIRED)
         value = int(temperature * 100)
-        
+
         await self.cluster.write_attributes({"occupied_heating_setpoint": value})
-        
+
         # Optimistic update
         self.device.update_state({"heating_setpoint": temperature, "occupied_heating_setpoint": temperature})
 
@@ -284,7 +336,7 @@ class ThermostatHandler(ClusterHandler):
         """Set system mode (off, auto, heat)."""
         # Inverse mapping: string -> int
         mode_map = {v: k for k, v in self.SYSTEM_MODES.items()}
-        
+
         # Handle string input (from UI usually)
         if isinstance(mode, str):
             mode_key = mode.lower()
@@ -295,7 +347,7 @@ class ThermostatHandler(ClusterHandler):
                 logger.info(f"[{self.device.ieee}] Set system mode to {mode_key} ({mode_val})")
             else:
                 logger.warning(f"[{self.device.ieee}] Invalid mode string: {mode}")
-        
+
         # Handle integer input (sometimes passed directly)
         elif isinstance(mode, int):
             if mode in self.SYSTEM_MODES:
@@ -318,7 +370,7 @@ class ThermostatHandler(ClusterHandler):
     # --- HA DISCOVERY ---
     def get_discovery_configs(self) -> List[Dict]:
         """Generate Home Assistant discovery configs."""
-        
+
         name_suffix = " Receiver" if self.is_receiver else ""
         base_topic = self.device.service.mqtt.base_topic
         return [
