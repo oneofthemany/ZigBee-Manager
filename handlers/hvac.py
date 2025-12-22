@@ -243,6 +243,49 @@ class ThermostatHandler(ClusterHandler):
             if "hvac_action" not in updates:
                 self._update_hvac_action()
 
+
+    async def set_target_temperature(self, temperature: float):
+        """
+        Set TRV target temperature (°C).
+        Zigbee requires centidegrees.
+        """
+        temperature = max(self._min_heat, min(self._max_heat, float(temperature)))
+        value = int(temperature * 100)
+
+        await self.cluster.write_attributes({
+            self.ATTR_OCCUPIED_HEATING_SETPOINT: value
+        })
+
+        # Optimistic update
+        self.device.update_state({
+            "temperature": temperature,
+            "heating_setpoint": temperature,
+            "occupied_heating_setpoint": temperature,
+        })
+
+
+    async def set_hvac_mode(self, mode: str):
+        """
+        Set HVAC system mode.
+        Supported: off, heat, auto
+        """
+        mode_map = {
+            "off": 0x00,
+            "auto": 0x01,
+            "heat": 0x04,
+        }
+
+        if mode not in mode_map:
+            logger.warning(f"[{self.device.ieee}] Unsupported HVAC mode: {mode}")
+            return
+
+        await self.cluster.write_attributes({
+            self.ATTR_SYSTEM_MODE: mode_map[mode]
+        })
+
+        self.device.update_state({"system_mode": mode})
+
+
     def _update_hvac_action(self):
         """Derive hvac_action (heating, idle, off) from system_mode and running_state."""
         state = self.device.state
@@ -267,18 +310,89 @@ class ThermostatHandler(ClusterHandler):
 
         self.device.update_state({"hvac_action": action})
 
+
+    def process_command(self, command: str, value: Any):
+        if command in ("temperature", "set_temperature"):
+            self.device.loop.create_task(
+                self.set_target_temperature(float(value))
+            )
+
+        elif command in ("system_mode", "set_mode"):
+            self.device.loop.create_task(
+                self.set_hvac_mode(str(value).lower())
+            )
+
+
     async def handle_command(self, command: str, data: Any):
         """Handle MQTT commands to set state."""
         if command == "system_mode":
             await self.set_system_mode(data)
 
         elif command in ["temperature", "temperature_setpoint"]:
-            # Handle both 'temperature' (HA standard) and 'temperature_setpoint' (App custom)
             try:
                 temp = float(data)
                 await self.set_heating_setpoint(temp)
             except ValueError:
                 logger.error(f"[{self.device.ieee}] Invalid temperature value: {data}")
+
+        elif command == "set_schedule":
+            # data should be a dict containing the schedule details
+            await self.set_weekly_schedule(data)
+
+
+    async def set_weekly_schedule(self, schedule_data: Dict):
+        """
+        Send SetWeeklySchedule command to device.
+        Expected data format:
+        {
+            "day_of_week": 1, # Bitmask: 1=Sun, 2=Mon, 4=Tue... 127=All
+            "transitions": [
+                {"time": 360, "heat": 20.0}, # 06:00, 20°C
+                {"time": 540, "heat": 22.0}, # 09:00, 22°C
+                ...
+            ]
+        }
+        """
+        # 1. Parse Day of Week (Bitmask)
+        # Mon=1, Tue=2, ... Sun=64, All=127 (Standard ZCL usually)
+        # Note: Some devices use different bitmasks, check spec. Standard is:
+        # 0x01=Sun, 0x02=Mon, etc.
+        day_bitmap = schedule_data.get("day_of_week", 0xFF)
+
+        # 2. Parse Transitions
+        raw_transitions = schedule_data.get("transitions", [])
+        payload = []
+
+        for t in raw_transitions:
+            # Time is minutes since midnight (e.g., 6:00 AM = 360)
+            transition_time = int(t["time"])
+            # Heat Setpoint in Centidegrees (20.0 -> 2000)
+            heat_setpoint = int(float(t["heat"]) * 100)
+
+            # Using zigpy's transition struct helper if available, or raw values
+            # Structure: TransitionTime (16bit), HeatSetpoint (16bit)
+            # Some devices also expect CoolSetpoint if in Auto mode
+            payload.append(transition_time)
+            payload.append(heat_setpoint)
+
+            # 3. Send Command (Command ID 0x01 = SetWeeklySchedule)
+        # Arguments:
+        # - Number of Transitions for Sequence
+        # - Day of Week for Sequence
+        # - Mode for Sequence (1=Heat, 2=Cool, 3=Both)
+        # - Payload (The transitions)
+        try:
+            logger.info(f"[{self.device.ieee}] Sending Schedule: {day_bitmap} -> {len(raw_transitions)} transitions")
+
+            # Note: You might need to adjust 'mode_for_sequence' (1 for Heat)
+            await self.cluster.set_weekly_schedule(
+                len(raw_transitions),
+                day_bitmap,
+                1, # 1 = Heat Mode Schedule
+                payload
+            )
+        except Exception as e:
+            logger.error(f"[{self.device.ieee}] Failed to set schedule: {e}")
 
     def parse_value(self, attrid: int, value: Any) -> Any:
         """
@@ -389,7 +503,9 @@ class ThermostatHandler(ClusterHandler):
 
         name_suffix = " Receiver" if self.is_receiver else ""
         base_topic = self.device.service.mqtt.base_topic
-        return [
+
+        # 1. Base entities (Climate + Sensor)
+        configs = [
             {
                 "component": "climate",
                 "object_id": "thermostat",
@@ -425,6 +541,21 @@ class ThermostatHandler(ClusterHandler):
                 }
             }
         ]
+
+        # 2. Add Schedule Input Entity (Text)
+        configs.append({
+            "component": "text",
+            "object_id": "schedule_json",
+            "config": {
+                "name": f"Thermostat{name_suffix} Schedule",
+                "command_topic": "CMD_TOPIC_PLACEHOLDER",
+                "command_template": '{"command": "set_schedule", "value": {{ value }} }',
+                "icon": "mdi:calendar-clock",
+                "entity_category": "config"
+            }
+        })
+
+        return configs
 
 # ============================================================
 # USER INTERFACE CLUSTER (0x0204)

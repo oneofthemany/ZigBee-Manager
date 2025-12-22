@@ -135,6 +135,17 @@ export function renderControlTab(device) {
                                 <button class="btn btn-primary" type="button" onclick="window.setThermostatTemp('${device.ieee}')"><i class="fas fa-check"></i> Set</button>
                             </div>
                         </div>
+                        <div class="col-12 mt-3">
+                            <label class="form-label fw-bold"><i class="fas fa-calendar-alt"></i> Schedule</label>
+                            <div class="d-grid gap-2">
+                                <button class="btn btn-outline-primary" type="button"
+                                    onclick="window.uploadSimpleSchedule('${device.ieee}')">
+                                    <i class="fas fa-upload"></i> Upload Standard Schedule (9-5)
+                                </button>
+                            </div>
+                            <small class="text-muted">Uploads a default schedule: 20°C at 6AM, 18°C at 9AM, 21°C at 5PM, 16°C at 10PM.</small>
+                        </div>
+                        // ...
                     </div>
                 </div>
             </div>
@@ -218,6 +229,41 @@ export function renderControlTab(device) {
     html += '</div>';
     return html;
 }
+
+
+window.uploadSimpleSchedule = async function(ieee) {
+    if (!confirm("This will overwrite the device's internal schedule for ALL days. Continue?")) return;
+
+    // Define a standard "Work Day" schedule
+    // Time is minutes from midnight (e.g., 6:00 = 6*60 = 360)
+    const payload = {
+        command: "set_schedule",
+        value: {
+            day_of_week: 255, // 255 = Apply to All Days (check device specific bitmask)
+            transitions: [
+                { time: 360, heat: 20.0 }, // 06:00 AM
+                { time: 540, heat: 18.0 }, // 09:00 AM (Leave for work)
+                { time: 1020, heat: 21.0 }, // 17:00 PM (Return home)
+                { time: 1320, heat: 16.0 }  // 22:00 PM (Sleep)
+            ]
+        }
+    };
+
+    try {
+        // We use the generic command sender, passing the object as value
+        // You might need to adjust actions.js to handle object values if it doesn't already.
+        // Assuming your backend expects raw JSON in the body:
+        await fetch(`/api/device/${ieee}/command`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(payload)
+        });
+        alert('Schedule command sent!');
+    } catch (error) {
+        console.error('Error:', error);
+        alert('Failed: ' + error.message);
+    }
+};
 
 // Global Helpers for Control Tab
 window.adjustThermostat = function(ieee, delta) {

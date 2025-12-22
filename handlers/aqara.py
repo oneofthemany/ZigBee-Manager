@@ -57,7 +57,7 @@ def parse_xiaomi_struct(data: bytes) -> dict:
                 if pos + 6 > len(data): break
                 value = int.from_bytes(data[pos:pos+6], 'little')
                 pos += 6
-            elif data_type == 0x28:  # int8 (ADDED)
+            elif data_type == 0x28:  # int8 LE
                 if pos + 1 > len(data): break
                 value = struct.unpack('<b', data[pos:pos+1])[0]
                 pos += 1
@@ -251,7 +251,7 @@ class AqaraManufacturerCluster(ClusterHandler):
     ATTR_MOTOR_CALIBRATION = 0x0279     # uint8 - 1=Start Calibration
     ATTR_SCHEDULE = 0x027B              # Data - Schedule programming
     ATTR_SENSOR_TYPE = 0x027C           # uint8 - Internal/External sensor
-    ATTR_EXTERNAL_TEMP_INPUT = 0x027D   # int16 - External temp in 0.01Â°C
+    ATTR_EXTERNAL_TEMP_INPUT = 0x027D   # int16 - External temp in 0.01°C
 
     # ===== Temperature/Humidity Sensor Attributes =====
     ATTR_TEMP_DISPLAY_UNIT = 0xFF01     # uint8 - 0=Celsius, 1=Fahrenheit
@@ -596,6 +596,45 @@ class AqaraManufacturerCluster(ClusterHandler):
             })
 
         return base_attrs
+
+
+    async def set_window_detection(self, enabled: bool):
+        await self.write_attribute(
+            self.ATTR_WINDOW_DETECTION,
+            1 if enabled else 0
+        )
+
+
+    async def set_valve_detection(self, enabled: bool):
+        await self.write_attribute(
+            self.ATTR_VALVE_DETECTION,
+            1 if enabled else 0
+        )
+
+
+    async def start_motor_calibration(self):
+        """
+        Starts valve motor calibration.
+        Takes ~2 minutes, auto-resets to 0.
+        """
+        await self.write_attribute(
+            self.ATTR_MOTOR_CALIBRATION,
+            1
+        )
+
+
+    def process_command(self, command: str, value: Any):
+        loop = self.device.loop
+
+        if command == "motor_calibration":
+            loop.create_task(self.start_motor_calibration())
+
+        elif command == "window_detection":
+            loop.create_task(self.set_window_detection(bool(value)))
+
+        elif command == "valve_detection":
+            loop.create_task(self.set_valve_detection(bool(value)))
+
 
     def get_configuration_options(self) -> List[Dict]:
         """
