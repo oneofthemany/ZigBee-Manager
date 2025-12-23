@@ -242,16 +242,18 @@ class AqaraManufacturerCluster(ClusterHandler):
 
     # ===== Thermostat/TRV Attributes (E1: lumi.airrtc.agl001) =====
     ATTR_SYSTEM_MODE = 0x0271           # uint8 - System mode
-    ATTR_WINDOW_DETECTION = 0x0272      # uint8 - 1=On, 0=Off
-    ATTR_VALVE_DETECTION = 0x0273       # uint8 - 1=On, 0=Off
-    ATTR_CHILD_LOCK = 0x0274            # uint8 - 1=Locked, 0=Unlocked
-    ATTR_BATTERY_REPLACE = 0x0276       # uint8 - Battery low indicator
-    ATTR_WINDOW_OPEN = 0x0277           # uint8 - 1=Open, 0=Closed (status)
-    ATTR_VALVE_ALARM = 0x0278           # uint8 - Valve error status
-    ATTR_MOTOR_CALIBRATION = 0x0279     # uint8 - 1=Start Calibration
-    ATTR_SCHEDULE = 0x027B              # Data - Schedule programming
-    ATTR_SENSOR_TYPE = 0x027C           # uint8 - Internal/External sensor
-    ATTR_EXTERNAL_TEMP_INPUT = 0x027D   # int16 - External temp in 0.01°C
+    ATTR_PRESET = 0x0272                # uint8 - Preset mode
+    ATTR_WINDOW_DETECTION = 0x0273      # uint8 - 1=On, 0=Off
+    ATTR_VALVE_DETECTION = 0x0274       # uint8 - 1=On, 0=Off
+    ATTR_VALVE_ALARM = 0x0275           # uint8 - Valve error status
+    ATTR_SCHEDULE_SETTINGS = 0x0276     # Data - Schedule programming
+    ATTR_CHILD_LOCK = 0x0277            # uint8 - 1=Locked, 0=Unlocked
+    ATTR_AWAY_PRESET_TEMPERATURE = 0x0279  # uint32 - Away temp
+    ATTR_WINDOW_OPEN = 0x027A           # uint8 - 1=Open, 0=Closed (status)
+    ATTR_CALIBRATED = 0x027B            # uint8 - Calibration status (READ-ONLY: 0=not_ready, 1=ready, 2=error, 3=in_progress)
+    ATTR_SCHEDULE = 0x027D              # uint8 - Schedule enable/disable
+    ATTR_SENSOR_TYPE = 0x027E           # uint8 - Internal/External sensor
+    ATTR_MOTOR_CALIBRATION = 0x0270     # uint8 - Write 1 to start calibration
 
     # ===== Temperature/Humidity Sensor Attributes =====
     ATTR_TEMP_DISPLAY_UNIT = 0xFF01     # uint8 - 0=Celsius, 1=Fahrenheit
@@ -513,6 +515,7 @@ class AqaraManufacturerCluster(ClusterHandler):
             logger.error(f"[{self.device.ieee}] Aqara write exception: {e}")
             return False
 
+
     async def read_attribute(self, attr_id: int) -> Any:
         """Read a single attribute with manufacturer code."""
         try:
@@ -612,7 +615,7 @@ class AqaraManufacturerCluster(ClusterHandler):
         Takes ~2 minutes, auto-resets to 0.
         """
         await self.write_attribute(
-            self.ATTR_MOTOR_CALIBRATION,
+            self.ATTR_MOTOR_CALIBRATION,  # 0x0270, not 0x0279!
             1
         )
 
@@ -809,6 +812,33 @@ class AqaraManufacturerCluster(ClusterHandler):
         })
 
         return options
+
+
+    async def discover_attributes(self):
+        """Discover what attributes this device actually supports."""
+        logger.info(f"[{self.device.ieee}] Discovering Aqara cluster attributes...")
+        try:
+            # Try reading all the attributes we think exist
+            attrs_to_check = [
+                (0x0272, "window_detection"),
+                (0x0273, "valve_detection"),
+                (0x0274, "child_lock"),
+                (0x0279, "motor_calibration"),
+            ]
+
+            for attr_id, attr_name in attrs_to_check:
+                try:
+                    result = await self.cluster.read_attributes(
+                        [attr_id],
+                        manufacturer=self.MANUFACTURER_CODE
+                    )
+                    logger.info(f"[{self.device.ieee}] Attr 0x{attr_id:04X} ({attr_name}): {result}")
+                except Exception as e:
+                    logger.warning(f"[{self.device.ieee}] Attr 0x{attr_id:04X} ({attr_name}) not supported: {e}")
+
+        except Exception as e:
+            logger.error(f"[{self.device.ieee}] Discovery failed: {e}")
+
 
     def get_discovery_configs(self) -> List[Dict]:
         """Generate Home Assistant discovery configs for Aqara features."""
