@@ -260,6 +260,7 @@ class ClusterHandler:
             # traceback.print_exc() # Less spam
             return False
 
+
     async def poll(self) -> Dict[str, Any]:
         """
         Poll the cluster for current attribute values.
@@ -282,6 +283,12 @@ class ClusterHandler:
                 value = result[0][attr_id]
                 if hasattr(value, 'value'):
                     value = value.value
+
+                # Skip None values - device doesn't support this attribute
+                if value is None:  # ← ADD THIS CHECK
+                    logger.debug(f"[{self.device.ieee}] Skipping {attr_name} - returned None")
+                    continue
+
                 formatted = self.parse_value(attr_id, value)
                 results[attr_name] = formatted
                 results[attr_name + "_raw"] = value # Store raw for config forms
