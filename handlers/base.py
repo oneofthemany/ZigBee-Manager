@@ -304,8 +304,10 @@ class ClusterHandler:
         """Convert attribute ID to human-readable name."""
         return f"attr_{self.cluster_id:04x}_{attrid:04x}"
 
-    def parse_value(self, attrid: int, value: Any) -> Any:
-        """Parse/format attribute value."""
+    def parse_value(self, attr_id: int, value: Any) -> Any:
+        """Parse raw attribute value. Override in subclasses."""
+        if value is None:
+            return None
         return value
 
     def get_pollable_attributes(self) -> Dict[int, str]:
