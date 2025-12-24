@@ -516,68 +516,68 @@ class AqaraManufacturerCluster(ClusterHandler):
 
     async def write_attribute(self, attr_id: int, value: Any) -> bool:
         """
-        Write attribute to the correct cluster (0xFCC0) with Retries and Type Safety.
+        Write attribute with correct Cluster Routing and Type Casting.
+        Fixes UNSUPPORTED_ATTRIBUTE errors by targeting the Aqara Opple Cluster (0xFCC0)
+        for proprietary attributes.
         """
         from zigpy import types as t
-        import asyncio
 
         # 1. Determine Type & Cast Value
+        # Uses the ATTR_TYPES dictionary you defined at the class level
         target_type = self.ATTR_TYPES.get(attr_id, t.uint8_t)
+
         try:
+            # Safely cast the incoming value (e.g., Python bool True -> Zigbee uint8 1)
             val_converted = target_type(value)
         except ValueError:
             logger.error(f"[{self.device.ieee}] Type Error: Could not cast {value} to {target_type.__name__}")
             return False
 
-        # 2. Determine Target Cluster (Aqara Opple 0xFCC0 for custom attrs)
+        # 2. Determine Target Cluster (The Critical Fix)
+        # Default to the handler's main cluster (usually Thermostat 0x0201)
         target_cluster = self.cluster
+
+        # Logic: Aqara custom attributes (usually 0x02xx) do not exist on the standard Thermostat cluster.
+        # They live on the Manufacturer Specific "Opple" Cluster (0xFCC0).
         if attr_id >= 0x0200:
             OPPLE_CLUSTER_ID = 0xFCC0
+
+            # Check if this device actually has the Opple cluster on this endpoint
             if hasattr(self.cluster, 'endpoint') and OPPLE_CLUSTER_ID in self.cluster.endpoint.in_clusters:
                 target_cluster = self.cluster.endpoint.in_clusters[OPPLE_CLUSTER_ID]
+                logger.debug(f"[{self.device.ieee}] Routing custom attr 0x{attr_id:04X} to Opple Cluster (0xFCC0)")
+            else:
+                logger.warning(f"[{self.device.ieee}] target is Aqara specific (0x{attr_id:04X}) but Cluster 0xFCC0 was not found on endpoint!")
 
-        # 3. Perform the Write with Retry Logic (Fixes Calibration Sleep Issue)
-        max_retries = 3
-        for attempt in range(1, max_retries + 1):
-            try:
-                logger.info(f"[{self.device.ieee}] Writing 0x{attr_id:04X}={val_converted} to Cluster 0x{target_cluster.cluster_id:04X} (Attempt {attempt}/{max_retries})")
+        # 3. Perform the Write
+        try:
+            logger.info(f"[{self.device.ieee}] Writing 0x{attr_id:04X}={val_converted} to Cluster 0x{target_cluster.cluster_id:04X} (Type: {target_type.__name__})")
 
-                # Manufacturer code 0x115F (Lumi) is required
-                result = await target_cluster.write_attributes(
-                    {attr_id: val_converted},
-                    manufacturer=self.MANUFACTURER_CODE
-                )
+            # Manufacturer code 0x115F (Lumi) is strictly required for these attributes
+            result = await target_cluster.write_attributes(
+                {attr_id: val_converted},
+                manufacturer=self.MANUFACTURER_CODE
+            )
 
-                # 4. Handle Result safely (Fixes 'unsupported format string' crash)
-                if result and isinstance(result, (list, tuple)):
-                    # Zigpy returns a list of result records
-                    for record in result:
-                        # Status can be an IntEnum or an Exception/Error object
-                        status = getattr(record, 'status', record)
+            # 4. Check Result
+            if result and isinstance(result, (list, tuple)) and len(result) > 0:
+                record = result[0]
+                # Extract status code (handle both object and raw int responses)
+                status = record.status if hasattr(record, 'status') else record
 
-                        # Check for Success (Status.SUCCESS == 0)
-                        if status == 0 or status == 'Status.SUCCESS':
-                            logger.info(f"[{self.device.ieee}] ✓ Write Success")
-                            return True
-                        else:
-                            logger.warning(f"[{self.device.ieee}] Write Failed with Status: {status}")
-                            return False
-
-                logger.info(f"[{self.device.ieee}] ✓ Write sent (No status record returned)")
-                return True
-
-            except (asyncio.TimeoutError, Exception) as e:
-                # Catch Timeouts (common for Calibration) and other errors
-                error_msg = str(e) or repr(e) # Ensure we don't log empty strings
-
-                if attempt < max_retries:
-                    logger.warning(f"[{self.device.ieee}] Write Attempt {attempt} failed: {error_msg}. Retrying in 1s...")
-                    await asyncio.sleep(1.0) # Wait a bit before retry
+                if status == 0: # Status.SUCCESS
+                    logger.info(f"[{self.device.ieee}] ✓ Write Success")
+                    return True
                 else:
-                    logger.error(f"[{self.device.ieee}] ❌ Write Final Failure: {error_msg}")
+                    logger.warning(f"[{self.device.ieee}] Write Failed with Status: {status} (0x{status:02X})")
                     return False
 
-        return False
+            # Fallback if result format is unexpected
+            return False
+
+        except Exception as e:
+            logger.error(f"[{self.device.ieee}] Write Exception: {e}")
+            return False
 
 
     async def read_attribute(self, attr_id: int) -> Any:
