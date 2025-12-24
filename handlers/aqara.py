@@ -241,19 +241,19 @@ class AqaraManufacturerCluster(ClusterHandler):
     ATTR_TRIGGER_INDICATOR = 0x0152     # uint8 - 0=Off, 1=On
 
     # ===== Thermostat/TRV Attributes (E1: lumi.airrtc.agl001) =====
+    ATTR_MOTOR_CALIBRATION = 0x0270     # 624 decimal - Write 1 to start calibration
     ATTR_SYSTEM_MODE = 0x0271           # uint8 - System mode
     ATTR_PRESET = 0x0272                # uint8 - Preset mode
-    ATTR_WINDOW_DETECTION = 0x0273      # uint8 - 1=On, 0=Off
-    ATTR_VALVE_DETECTION = 0x0274       # uint8 - 1=On, 0=Off
+    ATTR_WINDOW_DETECTION = 0x0273      # 627 decimal - Window detection
+    ATTR_VALVE_DETECTION = 0x0274       # 628 decimal - Valve detection
     ATTR_VALVE_ALARM = 0x0275           # uint8 - Valve error status
     ATTR_SCHEDULE_SETTINGS = 0x0276     # Data - Schedule programming
-    ATTR_CHILD_LOCK = 0x0277            # uint8 - 1=Locked, 0=Unlocked
+    ATTR_CHILD_LOCK = 0x0277            # 631 decimal - Child lock
     ATTR_AWAY_PRESET_TEMPERATURE = 0x0279  # uint32 - Away temp
     ATTR_WINDOW_OPEN = 0x027A           # uint8 - 1=Open, 0=Closed (status)
     ATTR_CALIBRATED = 0x027B            # uint8 - Calibration status (READ-ONLY: 0=not_ready, 1=ready, 2=error, 3=in_progress)
     ATTR_SCHEDULE = 0x027D              # uint8 - Schedule enable/disable
     ATTR_SENSOR_TYPE = 0x027E           # uint8 - Internal/External sensor
-    ATTR_MOTOR_CALIBRATION = 0x0270     # uint8 - Write 1 to start calibration
 
     # ===== Temperature/Humidity Sensor Attributes =====
     ATTR_TEMP_DISPLAY_UNIT = 0xFF01     # uint8 - 0=Celsius, 1=Fahrenheit
@@ -488,27 +488,23 @@ class AqaraManufacturerCluster(ClusterHandler):
         return {}
 
     async def write_attribute(self, attr_id: int, value: Any) -> bool:
-        """Write attribute with manufacturer code."""
+        """Write attribute with manufacturer code and proper typing."""
+        from zigpy import types as t
+
         try:
             logger.info(f"[{self.device.ieee}] Writing Aqara attr 0x{attr_id:04X} = {value}")
+
             result = await self.cluster.write_attributes(
-                {attr_id: value},
+                {attr_id: t.uint8_t(value)},
                 manufacturer=self.MANUFACTURER_CODE
             )
 
-            # Result is a list of WriteAttributesStatusRecord
-            if result and isinstance(result, (list, tuple)):
-                if len(result) > 0:
-                    status_record = result[0]
-                    if hasattr(status_record, 'status'):
-                        success = (status_record.status == 0)
-                    else:
-                        # Sometimes it's just [0] for success
-                        success = (status_record == 0)
-                    logger.info(f"[{self.device.ieee}] Aqara write result: {success} (status={status_record})")
-                    return success
+            if result and isinstance(result, (list, tuple)) and len(result) > 0:
+                status = result[0].status if hasattr(result[0], 'status') else result[0]
+                success = (status == 0)
+                logger.info(f"[{self.device.ieee}] ✓ Aqara write: {'SUCCESS' if success else f'FAILED ({status})'}")
+                return success
 
-            logger.warning(f"[{self.device.ieee}] Unexpected write result: {result}")
             return False
 
         except Exception as e:
@@ -621,19 +617,18 @@ class AqaraManufacturerCluster(ClusterHandler):
 
 
     def process_command(self, command: str, value: Any):
+        """Process commands for Aqara-specific features."""
         import asyncio
+        from zigpy import types as t
 
         if command == "motor_calibration":
-            asyncio.create_task(self.start_motor_calibration())
-
+            asyncio.create_task(self.write_attribute(self.ATTR_MOTOR_CALIBRATION, t.uint8_t(1)))
         elif command == "window_detection":
-            asyncio.create_task(self.set_window_detection(bool(value)))
-
+            asyncio.create_task(self.write_attribute(self.ATTR_WINDOW_DETECTION, t.uint8_t(1 if value else 0)))
         elif command == "valve_detection":
-            asyncio.create_task(self.set_valve_detection(bool(value)))
-
+            asyncio.create_task(self.write_attribute(self.ATTR_VALVE_DETECTION, t.uint8_t(1 if value else 0)))
         elif command == "child_lock":
-            asyncio.create_task(self.write_attribute(self.ATTR_CHILD_LOCK, 1 if value else 0))
+            asyncio.create_task(self.write_attribute(self.ATTR_CHILD_LOCK, t.uint8_t(1 if value else 0)))
 
 
     def get_configuration_options(self) -> List[Dict]:
