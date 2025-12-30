@@ -1780,7 +1780,8 @@ class ZigbeeService:
                     component_type = "sensor"
                 elif has_power_config and has_onoff_output and not has_onoff_input:
                     component_type = "sensor"  # Door/window sensor
-                elif has_multi_state and not (has_level or has_color or has_electrical):
+                # Buttons (multistate + no actuator clusters + no OnOff INPUT)
+                elif has_multi_state and not has_onoff_input and not (has_level or has_color or has_electrical):
                     component_type = "sensor"  # Button/remote
                 elif has_onoff_input:
                     # Real OnOff actuator - determine if light or switch

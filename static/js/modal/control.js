@@ -268,6 +268,13 @@ export function renderControlTab(device) {
 
         sensorEndpoints.forEach(ep => {
             const epId = ep.id;
+
+            // Skip if has OnOff in INPUTS (that's a switch, not a button)
+            const hasOnOffInput = (ep.inputs || []).some(c => c.id === 0x0006);
+            if (hasOnOffInput) {
+                return;
+            }
+
             const hasMultiState = (ep.inputs || []).concat(ep.outputs || []).some(c =>
                 [0x0012, 0x0013, 0x0014].includes(c.id)
             );
