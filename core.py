@@ -15,6 +15,10 @@ from bellows.ash import NcpFailure
 import zigpy.types
 import zigpy.config
 import zigpy.device
+import bellows.ezsp
+import zigpy_znp.api
+from zigpy_znp.zigbee.application import ControllerApplication
+
 
 # Import ZDO types for binding
 import zigpy.zdo.types as zdo_types
@@ -219,6 +223,125 @@ class ZigbeeService:
         os.makedirs("logs", exist_ok=True)
 
 
+    async def _probe_radio_type(self) -> str:
+        """Get radio type from config or probe"""
+
+        # Check if manually specified
+        radio_type = self._config.get('radio_type', 'auto')
+        if radio_type != 'auto':
+            logger.info(f"Using manually configured radio type: {radio_type.upper()}")
+            return radio_type.upper()
+
+        detected_type = None
+
+        # Try ZNP first
+        logger.info(f"Probing {self.port} for ZNP radio...")
+        try:
+            import zigpy_znp.api
+            import zigpy_znp.config
+
+            znp = zigpy_znp.api.ZNP(zigpy_znp.config.CONFIG_SCHEMA({"device": {"path": self.port}}))
+            try:
+                await asyncio.wait_for(znp.connect(), timeout=3.0)
+                detected_type = "ZNP"
+                logger.info("✅ ZNP radio detected")
+            finally:
+                znp.close()
+                # Wait for transport to fully close
+                if hasattr(znp, '_uart') and znp._uart:
+                    transport = getattr(znp._uart, '_transport', None)
+                    if transport:
+                        transport.close()
+                await asyncio.sleep(0.1)  # Let event loop process
+                del znp
+        except Exception as e:
+            logger.info(f"Not ZNP: {e}")
+
+        # If ZNP detected, wait for port release then return
+        if detected_type == "ZNP":
+            await asyncio.sleep(3.0)  # Wait for OS to release port
+            return "ZNP"
+
+        # Try EZSP
+        logger.info(f"Probing {self.port} for EZSP radio...")
+        try:
+            import bellows.ezsp
+            import bellows.config
+
+            ezsp = bellows.ezsp.EZSP(bellows.config.CONFIG_SCHEMA({"device": {"path": self.port}}))
+            try:
+                await asyncio.wait_for(ezsp.connect(), timeout=3.0)
+                detected_type = "EZSP"
+                logger.info("✅ EZSP radio detected")
+            finally:
+                ezsp.close()
+                if hasattr(ezsp, '_uart') and ezsp._uart:
+                    transport = getattr(ezsp._uart, '_transport', None)
+                    if transport:
+                        transport.close()
+                await asyncio.sleep(0.1)
+                del ezsp
+        except Exception as e:
+            logger.info(f"Not EZSP: {e}")
+
+        if detected_type == "EZSP":
+            await asyncio.sleep(3.0)
+            return "EZSP"
+
+        raise RuntimeError(f"No compatible Zigbee radio found on {self.port}")
+
+
+    def _get_radio_config(self) -> dict:
+        """Extract radio-specific config"""
+        radio_type = self._config.get('radio_type', 'auto')
+
+        if radio_type == 'auto':
+            # Will be detected in _probe_radio_type
+            return {}
+        elif radio_type in self._config:
+            return self._config[radio_type]
+        else:
+            logger.warning(f"No config found for radio_type: {radio_type}")
+            return {}
+
+    def _build_ezsp_config(self, ezsp_conf: dict, network_key) -> dict:
+        """Build EZSP config from zigbee.ezsp section"""
+        ezsp_settings = self._config.get('ezsp', {})
+
+        return {
+            "device": {
+                "path": self.port,
+                "baudrate": ezsp_settings.get('baudrate', 460800),
+                "flow_control": ezsp_settings.get('flow_control', 'hardware')
+            },
+            "database_path": "zigbee.db",
+            "ezsp_config": ezsp_conf,  # From enhanced + user overrides
+            "network": {
+                "channel": self._config.get('channel', 25),
+                "key": network_key,
+                "update_id": True,
+            },
+            "topology_scan_period": self._config.get('topology_scan_interval', 0)
+        }
+
+    def _build_znp_config(self, network_key) -> dict:
+        """Build ZNP config from zigbee.znp section"""
+        znp_settings = self._config.get('znp', {})
+
+        return {
+            "device": {
+                "path": self.port,
+                "baudrate": znp_settings.get('baudrate', 115200)
+            },
+            "database_path": "zigbee.db",
+            "network": {
+                "channel": self._config.get('channel', 25),
+                "key": network_key,
+                "update_id": True,
+            },
+            "topology_scan_period": self._config.get('topology_scan_interval', 0)
+        }
+
     async def _default_event_callback(self, event_type: str, data: dict):
         """Default event callback that does nothing."""
         pass
@@ -297,72 +420,81 @@ class ZigbeeService:
         """Start the Zigbee network with enhanced resilience."""
 
         # ========================================================================
-        # STEP 1: Load enhanced configuration FIRST (before building config)
+        # STEP 1: Backwards Compatibility Migration
         # ========================================================================
-        from config_enhanced import get_production_config
-
-        # Get device count for configuration optimization
-        device_count = len(self.devices) if hasattr(self, 'devices') and self.devices else 0
-
-        # Load enhanced EZSP configuration
-        enhanced_config = get_production_config(self._config, device_count)
-        logger.info(f"Loaded enhanced EZSP configuration (device count: {device_count})")
-
-        # ========================================================================
-        # STEP 2: Build EZSP Config (merge enhanced with user overrides)
-        # ========================================================================
-
-        # Start with enhanced configuration as base
-        ezsp_conf = enhanced_config.copy()
-
-        # Apply user overrides from config.yaml if present
-        # This allows users to override the enhanced defaults
-        user_ezsp = self._config.get('ezsp_config', {})
-
-        # OLD MAPPING - Keep for backward compatibility with old config format
-        config_map = {
-            "packet_buffer_count": "CONFIG_PACKET_BUFFER_COUNT",
-            "neighbour_table_size": "CONFIG_NEIGHBOR_TABLE_SIZE",
-            "source_route_table_size": "CONFIG_SOURCE_ROUTE_TABLE_SIZE",
-            "address_table_size": "CONFIG_ADDRESS_TABLE_SIZE",
-            "multicast_table_size": "CONFIG_MULTICAST_TABLE_SIZE",
-            "max_hops": "CONFIG_MAX_HOPS",
-            "indirect_tx_timeout": "CONFIG_INDIRECT_TRANSMISSION_TIMEOUT",
-            "aps_unicast_message_count": "CONFIG_APS_UNICAST_MESSAGE_COUNT"
-        }
-
-        # Apply user overrides (supports both old and new format)
-        for friendly_key, ezsp_key in config_map.items():
-            if friendly_key in user_ezsp:
-                val = user_ezsp[friendly_key]
-                ezsp_conf[ezsp_key] = val
-                logger.info(f"User override: {ezsp_key} = {val}")
-
-        # Also support direct CONFIG_* keys
-        for key, val in user_ezsp.items():
-            if key.startswith('CONFIG_'):
-                ezsp_conf[key] = val
-                logger.info(f"User override: {key} = {val}")
-
-        # Build application configuration
-        conf = {
-            "device": {
-                "path": self.port,
-                "baudrate": 460800,
-                "flow_control": "hardware"
-            },
-            "database_path": "zigbee.db",
-            "ezsp_config": ezsp_conf,  # Now using enhanced + user overrides
-            "network": {
-                "channel": self._config.get('channel', 25),
-                "key": network_key,
-                "update_id": True,
-            },
-            "topology_scan_period": self._config.get('topology_scan_interval', 0)
-        }
+        if 'ezsp_config' in self._config and 'ezsp' not in self._config:
+            logger.info("Migrating old EZSP config format...")
+            self._config['ezsp'] = {
+                'baudrate': self._config.get('baudrate', 460800),
+                'flow_control': self._config.get('flow_control', 'hardware'),
+                'config': self._config['ezsp_config']
+            }
 
         # ========================================================================
-        # STEP 3: Robust Startup with Retries (your existing code)
+        # STEP 2: Probe Radio Type
+        # ========================================================================
+        radio_type = await self._probe_radio_type()
+        logger.info(f"✅ Detected radio type: {radio_type}")
+
+        # ========================================================================
+        # STEP 3: Import Correct Radio Driver
+        # ========================================================================
+        if radio_type == "EZSP":
+            from bellows.zigbee.application import ControllerApplication
+        elif radio_type == "ZNP":
+            from zigpy_znp.zigbee.application import ControllerApplication
+        else:
+            raise RuntimeError(f"Unsupported radio type: {radio_type}")
+
+        # ========================================================================
+        # STEP 4: Build Radio-Specific Configuration
+        # ========================================================================
+        if radio_type == "EZSP":
+            # Load enhanced EZSP configuration
+            from config_enhanced import get_production_config
+            device_count = len(self.devices) if hasattr(self, 'devices') and self.devices else 0
+            enhanced_config = get_production_config(self._config, device_count)
+            logger.info(f"Loaded enhanced EZSP config (device count: {device_count})")
+
+            # Merge with user overrides
+            ezsp_conf = enhanced_config.copy()
+            user_ezsp = self._config.get('ezsp', {}).get('config', {})
+
+            # Support old format too
+            if not user_ezsp and 'ezsp_config' in self._config:
+                user_ezsp = self._config['ezsp_config']
+
+            # OLD MAPPING - Keep for backward compatibility
+            config_map = {
+                "packet_buffer_count": "CONFIG_PACKET_BUFFER_COUNT",
+                "neighbour_table_size": "CONFIG_NEIGHBOR_TABLE_SIZE",
+                "source_route_table_size": "CONFIG_SOURCE_ROUTE_TABLE_SIZE",
+                "address_table_size": "CONFIG_ADDRESS_TABLE_SIZE",
+                "multicast_table_size": "CONFIG_MULTICAST_TABLE_SIZE",
+                "max_hops": "CONFIG_MAX_HOPS",
+                "indirect_tx_timeout": "CONFIG_INDIRECT_TRANSMISSION_TIMEOUT",
+                "aps_unicast_message_count": "CONFIG_APS_UNICAST_MESSAGE_COUNT"
+            }
+
+            # Apply user overrides
+            for friendly_key, ezsp_key in config_map.items():
+                if friendly_key in user_ezsp:
+                    ezsp_conf[ezsp_key] = user_ezsp[friendly_key]
+                    logger.info(f"User override: {ezsp_key} = {user_ezsp[friendly_key]}")
+
+            # Also support direct CONFIG_* keys
+            for key, val in user_ezsp.items():
+                if key.startswith('CONFIG_'):
+                    ezsp_conf[key] = val
+                    logger.info(f"User override: {key} = {val}")
+
+            conf = self._build_ezsp_config(ezsp_conf, network_key)
+
+        elif radio_type == "ZNP":
+            conf = self._build_znp_config(network_key)
+
+        # ========================================================================
+        # STEP 5: Robust Startup with Retries
         # ========================================================================
         for attempt in range(12):
             try:
@@ -374,17 +506,15 @@ class ZigbeeService:
                 )
 
                 # ================================================================
-                # STEP 4: Wrap with resilience system (ADD THIS)
+                # STEP 6: Wrap with resilience system (EZSP only for now)
                 # ================================================================
-                from resilience import wrap_with_resilience
-
-                self.resilience = wrap_with_resilience(
-                    self.app,
-                    event_callback=self.event_callback
-                )
-
-                logger.info("✅ Resilience system enabled")
-                # ================================================================
+                if radio_type == "EZSP":
+                    from resilience import wrap_with_resilience
+                    self.resilience = wrap_with_resilience(
+                        self.app,
+                        event_callback=self.event_callback
+                    )
+                    logger.info("✅ Resilience system enabled")
 
                 # Register as listener for application-level events
                 self.app.add_listener(self)
@@ -402,7 +532,6 @@ class ZigbeeService:
                 # Start background tasks
                 self._save_task = asyncio.create_task(self._periodic_save())
                 self._watchdog_task = asyncio.create_task(self.polling_scheduler._availability_watchdog_loop())
-                #self._watchdog_task = asyncio.create_task(self._loop_watchdog())
 
                 # Load saved polling intervals
                 for ieee, interval in self.polling_config.items():
@@ -411,13 +540,12 @@ class ZigbeeService:
 
                 await self._emit("log", {
                     "level": "INFO",
-                    "message": f"Zigbee Core Started on {self.port}",
+                    "message": f"Zigbee Core Started on {self.port} ({radio_type})",
                     "ieee": None
                 })
-                logger.info(f"Zigbee network started successfully on {self.port}")
+                logger.info(f"Zigbee network started successfully on {self.port} ({radio_type})")
 
                 # CRITICAL: Announce all devices to Home Assistant after startup
-                # This ensures MQTT is connected and all devices are loaded
                 asyncio.create_task(self.announce_all_devices())
 
                 return
@@ -449,7 +577,7 @@ class ZigbeeService:
             logger.info("Zigbee network stopped")
 
     # =========================================================================
-    # REPUBLISH / BIRTH MESSAGE HANDLER (NEW)
+    # REPUBLISH / BIRTH MESSAGE HANDLER
     # =========================================================================
 
     async def republish_all_devices(self):

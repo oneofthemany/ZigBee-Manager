@@ -6,3 +6,4 @@ aiomqtt
 pyaml
 zha-quirks
 pydantic
+zigpy-znp
