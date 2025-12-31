@@ -3,7 +3,7 @@ database:
   path: zigbee.db
 
 mqtt:
-  base_topic: zigbee_ha
+  base_topic: zigbee_manager
   broker_host: 192.168.1.1
   broker_port: 1883
   username: mqtt
