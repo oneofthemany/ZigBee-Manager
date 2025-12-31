@@ -770,8 +770,8 @@ class ZHADevice:
         return commands
 
     @with_retries(max_retries=3, backoff_base=1.5, timeout=10.0)
-    async def send_command(self, command: str, value: Any = None, endpoint_id: Optional[int] = None) -> Any:
-        """Send a command to the device with optimistic state updates."""
+    async def send_command(self, command: str, value=None, endpoint_id=None, data: Optional[Dict] = None):
+        """Execute command on device."""
         logger.info(f"[{self.ieee}] CMD: {command}={value} EP={endpoint_id}")
         command = command.lower()
 
@@ -803,7 +803,10 @@ class ZHADevice:
                         optimistic_state['state'] = 'ON'
                         optimistic_state['on'] = True
                     elif command == 'off':
-                        await h.turn_off()
+                        # Extract transition from data dict
+                        transition = data.get('transition') if data else None
+                        transition_time = int(transition * 10) if transition else None
+                        await h.turn_off(transition_time=transition_time)
                         optimistic_state['state'] = 'OFF'
                         optimistic_state['on'] = False
                     else:

@@ -548,7 +548,7 @@ class ZigbeeService:
             if state:
                 cmd = 'on' if str(state).upper() == 'ON' else 'off'
                 logger.info(f"[{ieee}] Executing state command: {cmd} EP={endpoint}")
-                result = await device.send_command(cmd, endpoint_id=endpoint)
+                result = await device.send_command(cmd, endpoint_id=endpoint, data=data)
                 if result:
                     optimistic_state['state'] = state.upper() if isinstance(state, str) else ('ON' if state else 'OFF')
                     optimistic_state['on'] = (cmd == 'on')

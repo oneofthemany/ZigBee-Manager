@@ -3,7 +3,7 @@ General cluster handlers for Zigbee devices.
 Handles: On/Off, Level Control, Color, Scenes, Groups, Basic
 """
 import logging
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 import time
 
 from .base import ClusterHandler, register_handler
@@ -498,33 +498,33 @@ class OnOffHandler(ClusterHandler):
             logger.error(f"[{self.device.ieee}] ON exception: {e}", exc_info=True)
 
 
-    async def turn_off(self):
+    async def turn_off(self, transition_time: Optional[int] = None):
+        """Turn off, optionally with transition via LevelControl."""
         try:
-            # Force use of INPUT cluster
             in_cluster = self.endpoint.in_clusters.get(0x0006)
             if not in_cluster:
                 logger.error(f"[{self.device.ieee}] No OnOff INPUT cluster!")
                 return
 
-            result = await in_cluster.off()
-            logger.info(f"[{self.device.ieee}] OFF result: {result}")
+            # If transition requested and LevelControl available, use it
+            if transition_time is not None and 0x0008 in self.endpoint.in_clusters:
+                level_cluster = self.endpoint.in_clusters[0x0008]
+                result = await level_cluster.move_to_level_with_on_off(0, transition_time)
+                logger.info(f"[{self.device.ieee}] OFF with transition: {transition_time/10}s")
+            else:
+                result = await in_cluster.off()
+                logger.info(f"[{self.device.ieee}] OFF (instant)")
 
-            success = False
-            # Check if result is a list/tuple
+            # Standard success check...
             if result and isinstance(result, (list, tuple)):
-                if hasattr(result[0], 'status') and result[0].status == 0:
-                    success = True
-                elif result[0] == 0:
-                    success = True
-            # Check if result is a direct Default_Response object
-            elif hasattr(result, 'status') and result.status == 0:
+                success = hasattr(result[0], 'status') and result[0].status == 0 or result[0] == 0
+            elif hasattr(result, 'status'):
+                success = result.status == 0
+            else:
                 success = True
 
             if success:
                 self._update_state(False)
-            else:
-                logger.error(f"[{self.device.ieee}] OFF FAILED/Unexpected: {result}")
-
         except Exception as e:
             logger.error(f"[{self.device.ieee}] OFF exception: {e}", exc_info=True)
 

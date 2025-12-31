@@ -658,12 +658,21 @@ class GroupManager:
                 # 1. ON / OFF
                 if 'state' in command:
                     on_off = get_cluster(0x0006)
+                    level_ctrl = get_cluster(0x0008)
+                    transition = command.get('transition')
+
                     if on_off:
                         state = command['state'].upper()
                         if state == 'ON':
                             await on_off.on()
                         else:
-                            await on_off.off()
+                            # OFF with transition via LevelControl if available
+                            if transition and level_ctrl:
+                                transition_time = int(transition * 10)
+                                await level_ctrl.move_to_level_with_on_off(0, transition_time)
+                                logger.info(f"[{ieee}] Group OFF with transition: {transition}s")
+                            else:
+                                await on_off.off()
                         result["success"] = True
 
                 # 2. BRIGHTNESS
