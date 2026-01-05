@@ -1003,7 +1003,10 @@ class ZHADevice:
         Helper to enforce JSON schema on Light/Cover configs.
         """
         component = payload.get('component')
-        config = payload.get('config', payload)  # Get nested config or use payload directly
+        if component not in ['light', 'cover']:
+            return
+
+        config = payload.get('config', payload)
 
         if component == "light":
             if 'schema' not in config:
