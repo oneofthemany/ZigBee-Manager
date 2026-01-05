@@ -53,24 +53,25 @@ class OnOffHandler(ClusterHandler):
             self._update_state(not current)
 
 
+
     def _is_light_endpoint(self) -> bool:
+        """Check if this endpoint is a light (not a controller)."""
         ep = self.endpoint
 
-        has_level = 0x0008 in ep.in_clusters
+        # Must have OnOff in INPUTS to be controllable
+        if 0x0006 not in ep.in_clusters:
+            return False
+
+        has_level = 0x0008 in ep.in_clusters  # Not out_clusters!
         has_color = 0x0300 in ep.in_clusters
         has_lightlink = 0x1000 in ep.in_clusters
         has_opple = 0xFCC0 in ep.in_clusters
         has_electrical = 0x0B04 in ep.in_clusters
 
-        has_lighting_cluster = (
-                has_level
-                or has_color
-                or has_lightlink
-                or has_opple
-        )
+        has_lighting_cluster = (has_level or has_color or has_lightlink or has_opple)
 
-        # ⚠️ Electrical Measurement present → treat as socket, not light
         return has_lighting_cluster and not has_electrical
+
 
     def _handle_on_with_timed_off(self, args):
         """Handle on_with_timed_off command from motion sensors (Philips Hue)."""
@@ -349,7 +350,21 @@ class OnOffHandler(ClusterHandler):
     def get_discovery_configs(self) -> List[Dict]:
         ep = self.endpoint.endpoint_id
 
-        # Detect capabilities first (moved up so we can use them in logic)
+        # ===== Check if OnOff is in INPUT clusters (controllable) =====
+        has_onoff_input = 0x0006 in self.endpoint.in_clusters
+        has_onoff_output = 0x0006 in self.endpoint.out_clusters
+
+        # If OnOff is OUTPUT-only, this is a controller (button/sensor), not an actuator
+        if has_onoff_output and not has_onoff_input:
+            logger.debug(f"[{self.device.ieee}] EP{ep} has OnOff in OUTPUT only - skipping discovery (controller endpoint)")
+            return []
+
+        # If no OnOff in INPUT at all, nothing to control
+        if not has_onoff_input:
+            logger.debug(f"[{self.device.ieee}] EP{ep} has no OnOff in INPUT - skipping discovery")
+            return []
+
+        # Detect capabilities first
         has_lightlink = 0x1000 in self.endpoint.in_clusters or 0x1000 in self.endpoint.out_clusters
         has_opple = 0xFCC0 in self.endpoint.in_clusters or 0xFCC0 in self.endpoint.out_clusters
         has_color = 0x0300 in self.endpoint.in_clusters or 0x0300 in self.endpoint.out_clusters
