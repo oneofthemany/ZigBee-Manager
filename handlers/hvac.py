@@ -47,17 +47,17 @@ class ThermostatHandler(ClusterHandler):
 
     # ZHA-aligned reporting configuration
     REPORT_CONFIG = [
-        # Local Temperature: Min 30s, Max 300s, Change 0.25°C (25)
-        ("local_temperature", 30, 300, 10),
+        # Local Temperature: Min 30s, Max 300s, Change 0.5°C (50)
+        ("local_temperature", 60, 300, 50),
 
-        # Setpoints: Min 10s, Max 300s, Change 0.5°C (50)
-        ("occupied_heating_setpoint", 10, 300, 50),
-        ("occupied_cooling_setpoint", 10, 300, 50),
-        ("unoccupied_heating_setpoint", 10, 300, 50),
+        # Setpoints: Min 10s, Max 300s, Change 0.1°C (10)
+        ("occupied_heating_setpoint", 0, 300, 10),   # min=0 for instant updates
+        ("occupied_cooling_setpoint", 0, 300, 10),
+        ("unoccupied_heating_setpoint", 0, 300, 10),
 
-        # PI Demand: Min 30s, Max 300s, Change 5% (5)
-        ("pi_heating_demand", 30, 300, 5),
-        ("pi_cooling_demand", 30, 300, 5),
+        # PI Demand: Min 60s, Max 300s, Change 10% (10)
+        ("pi_heating_demand", 60, 300, 10),
+        ("pi_cooling_demand", 60, 300, 10),
 
         # States: Min 10s, Max 300s, Change 1 (Discrete)
         ("system_mode", 10, 300, 1),
