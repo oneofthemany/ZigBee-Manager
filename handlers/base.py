@@ -19,6 +19,9 @@ except ImportError:
         return None
     CLUSTER_NAMES = {}
 
+
+from packet_stats import packet_stats
+
 logger = logging.getLogger("handlers.base")
 
 # Registry to map Cluster IDs to Handler Classes
@@ -95,6 +98,9 @@ class ClusterHandler:
         """
         Called by zigpy when a cluster attribute is updated.
         """
+
+        packet_stats.record_rx(str(self.device.ieee))
+
         cluster_name = CLUSTER_NAMES.get(self.cluster_id, f"0x{self.cluster_id:04X}")
 
         logger.debug( # Changed to DEBUG level to reduce log spam
@@ -153,6 +159,8 @@ class ClusterHandler:
         Called by zigpy when a cluster command is received.
         Override in subclasses for command handling.
         """
+        packet_stats.record_rx(str(self.device.ieee))
+
         cluster_name = CLUSTER_NAMES.get(self.cluster_id, f"0x{self.cluster_id:04X}")
 
         # Log that we received the callback

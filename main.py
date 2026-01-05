@@ -1,6 +1,6 @@
 """
-Zigbee Gateway - Main Application
-FastAPI-based web server for Zigbee device management.
+ZigBee Manager - Main Application
+FastAPI-based web server for ZigBee device management.
 """
 import uvicorn
 import json
@@ -525,6 +525,34 @@ async def get_join_stats():
         "by_type": by_type
     }
 
+
+@app.get("/api/network/packet-stats")
+async def get_packet_stats():
+    """Get per-device packet statistics."""
+    from packet_stats import packet_stats
+    return {
+        "success": True,
+        "stats": packet_stats.get_all_stats(),
+        "summary": packet_stats.get_summary()
+    }
+
+
+@app.get("/api/network/packet-stats/{ieee}")
+async def get_device_packet_stats(ieee: str):
+    """Get packet statistics for a specific device."""
+    from packet_stats import packet_stats
+    stats = packet_stats.get_device_stats(ieee)
+    if stats:
+        return {"success": True, "stats": stats}
+    return {"success": False, "error": "Device not found in statistics"}
+
+
+@app.post("/api/network/packet-stats/reset")
+async def reset_packet_stats():
+    """Reset all packet statistics."""
+    from packet_stats import packet_stats
+    packet_stats.reset()
+    return {"success": True, "message": "Statistics reset"}
 
 # ============================================================================
 # ROUTES - HOME ASSISTANT STATUS

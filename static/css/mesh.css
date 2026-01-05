@@ -42,9 +42,87 @@
     line-height: 1.4;
 }
 
-/* Signal Quality Indicators */
+/* Signal Quality Indicators (may already exist) */
 .signal-excellent { color: #00b894; }
 .signal-good { color: #fdcb6e; }
 .signal-fair { color: #e17055; }
 .signal-poor { color: #d63031; }
 .signal-weak { color: #636e72; }
+
+/* Connection Table Styles */
+#connectionTable th {
+    position: sticky;
+    top: 0;
+    background: #212529;
+    z-index: 1;
+}
+
+#connectionTable td {
+    vertical-align: middle;
+}
+
+/* Packet Stats Table */
+#packetStatsTable th {
+    position: sticky;
+    top: 0;
+    background: #212529;
+    z-index: 1;
+}
+
+#packetStatsTable .progress {
+    background-color: #e9ecef;
+}
+
+/* Summary Cards */
+#packetStatsSummary .card {
+    border: 1px solid #dee2e6;
+}
+
+#packetStatsSummary .card-body {
+    padding: 0.5rem;
+}
+
+/* Tab styling within mesh container */
+.mesh-wrapper .nav-tabs {
+    border-bottom: 1px solid #dee2e6;
+    background: #f8f9fa;
+}
+
+.mesh-wrapper .nav-tabs .nav-link {
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: #6c757d;
+    padding: 0.5rem 1rem;
+}
+
+.mesh-wrapper .nav-tabs .nav-link:hover {
+    border-color: transparent;
+    color: #495057;
+}
+
+.mesh-wrapper .nav-tabs .nav-link.active {
+    color: #0d6efd;
+    border-bottom-color: #0d6efd;
+    background: transparent;
+}
+
+/* Load indicator bar colors */
+.load-bar-low { background-color: #198754; }
+.load-bar-medium { background-color: #ffc107; }
+.load-bar-high { background-color: #dc3545; }
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .mesh-controls {
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+
+    .mesh-legend {
+        font-size: 0.75rem;
+    }
+
+    #packetStatsSummary .col-md-2 {
+        width: 33.33%;
+    }
+}

@@ -28,7 +28,7 @@ import zigpy.zdo.types as zdo_types
 from zigpy.zcl.clusters.security import IasZone
 
 # Import Device Wrapper
-from device import ZHADevice
+from device import ZigManDevice
 from handlers.zigbee_debug import get_debugger
 from handlers.fast_path import FastPathProcessor
 #from handlers.sensors import configure_illuminance_reporting, configure_temperature_reporting
@@ -36,6 +36,7 @@ from handlers.fast_path import FastPathProcessor
 
 # import services
 from json_helpers import prepare_for_json, sanitise_device_state
+from packet_stats import packet_stats
 
 # Try Loading Quirks
 logger = logging.getLogger("core")
@@ -213,7 +214,7 @@ class ZigbeeService:
 
         self.event_callback = event_callback or self._default_event_callback
 
-        self.devices: Dict[str, ZHADevice] = {}
+        self.devices: Dict[str, ZigManDevice] = {}
         self.friendly_names = self._load_json("names.json")
         self.device_settings = self._load_json("device_settings.json")
         self.polling_config = self._load_json("polling_config.json")
@@ -817,7 +818,7 @@ class ZigbeeService:
         logger.info(f"Device joined: {ieee}")
 
         # Create device wrapper
-        self.devices[ieee] = ZHADevice(self, device)
+        self.devices[ieee] = ZigManDevice(self, device)
 
         # Mark as immediately seen (device just joined!)
         self.devices[ieee].last_seen = int(time.time() * 1000)
@@ -849,7 +850,7 @@ class ZigbeeService:
 
         if ieee in self.devices:
             # Re-wrap with full endpoint information
-            self.devices[ieee] = ZHADevice(self, device)
+            self.devices[ieee] = ZigManDevice(self, device)
             # Mark as seen
             self.devices[ieee].last_seen = int(time.time() * 1000)
 
@@ -862,7 +863,7 @@ class ZigbeeService:
             asyncio.create_task(self._async_device_initialized(ieee))
         else:
             # New device
-            self.devices[ieee] = ZHADevice(self, device)
+            self.devices[ieee] = ZigManDevice(self, device)
             # Mark as seen
             self.devices[ieee].last_seen = int(time.time() * 1000)
             asyncio.create_task(self._async_device_initialized(ieee))
@@ -928,7 +929,9 @@ class ZigbeeService:
             dst_ep: int,
             message: bytes
     ):
+
         """Raw message interceptor - called for EVERY Zigbee message."""
+        packet_stats.record_rx(str(sender.ieee), size=len(message) if message else 0)
         ieee = str(sender.ieee)
 
         # === FAST PATH: Try immediate processing for time-critical messages ===
@@ -974,7 +977,7 @@ class ZigbeeService:
     async def _async_device_restored(self, device: zigpy.device.Device):
         """Handle a device restored from database on startup."""
         ieee = str(device.ieee)
-        self.devices[ieee] = ZHADevice(self, device)
+        self.devices[ieee] = ZigManDevice(self, device)
 
         # If this is the coordinator, mark it as seen immediately
         if self.devices[ieee].get_role() == "Coordinator":
@@ -1429,6 +1432,7 @@ class ZigbeeService:
                 await self.mqtt.remove_discovery(ieee, configs)
 
             return {"success": True}
+
         # EXCEPTION HANDLER:
         except NcpFailure as e:
             logger.error(f"[{ieee}] NCP Failure during device removal: {e}")
@@ -1723,13 +1727,18 @@ class ZigbeeService:
     # =========================================================================
 
     def get_simple_mesh(self):
-        """Get network topology for mesh visualization using REAL neighbor data."""
+        """Get network topology for mesh visualization with packet statistics."""
+        from packet_stats import packet_stats
+
         nodes = []
         connections = []
+        device_stats = packet_stats.get_all_stats()
 
-        # 1. Build Nodes
+        # 1. Build Nodes with stats
         for ieee, zdev in self.devices.items():
             d = zdev.zigpy_dev
+            stats = device_stats.get(ieee, {})
+
             nodes.append({
                 "id": ieee,
                 "ieee_address": ieee,
@@ -1740,7 +1749,17 @@ class ZigbeeService:
                 "model": str(d.model) if d.model else "Unknown",
                 "lqi": getattr(d, 'lqi', 0) or 0,
                 "online": zdev.is_available(),
-                "polling_interval": self.polling_scheduler.get_interval(ieee)
+                "polling_interval": self.polling_scheduler.get_interval(ieee),
+                # Packet statistics
+                "packet_stats": {
+                    "rx_packets": stats.get("rx_packets", 0),
+                    "tx_packets": stats.get("tx_packets", 0),
+                    "total_packets": stats.get("total_packets", 0),
+                    "rx_rate": stats.get("rx_rate_per_min", 0),
+                    "tx_rate": stats.get("tx_rate_per_min", 0),
+                    "errors": stats.get("errors", 0),
+                    "error_rate": stats.get("error_rate", 0)
+                }
             })
 
         # 2. Build Links from Zigpy Topology
@@ -1749,7 +1768,6 @@ class ZigbeeService:
                 src_str = str(src_ieee)
                 for neighbor in neighbors:
                     dst_str = str(neighbor.ieee)
-                    # Filter out links to unknown devices to prevent ghost nodes
                     if src_str in self.devices and dst_str in self.devices:
                         connections.append({
                             "source": src_str,
@@ -1758,15 +1776,70 @@ class ZigbeeService:
                             "relationship": getattr(neighbor, 'relationship', 'Unknown')
                         })
 
-        # 3. Fallback: If topology is empty (no scan yet), attach EndDevices to parents if known
-        # This handles the "hub and spoke" visually until a scan completes
-        if not connections:
-            for ieee, zdev in self.devices.items():
-                # If EndDevice has a known parent in zigpy
-                # (Not always populated without scan, but worth a try)
-                pass
+        # 3. Build connection table data
+        connection_table = self._build_connection_table()
 
-        return {"success": True, "nodes": nodes, "connections": connections}
+        return {
+            "nodes": nodes,
+            "links": connections,
+            "connection_table": connection_table,
+            "stats_summary": packet_stats.get_summary()
+        }
+
+
+    def _build_connection_table(self):
+        """Build textual connection table from topology."""
+        table = []
+
+        # Get coordinator IEEE
+        coord_ieee = str(self.app.ieee) if hasattr(self.app, 'ieee') else None
+
+        if hasattr(self.app, 'topology') and self.app.topology.neighbors:
+            # Build parent-child relationships
+            for src_ieee, neighbors in self.app.topology.neighbors.items():
+                src_str = str(src_ieee)
+                src_name = self.friendly_names.get(src_str, src_str[-8:])
+
+                for neighbor in neighbors:
+                    dst_str = str(neighbor.ieee)
+                    if dst_str not in self.devices:
+                        continue
+
+                    dst_name = self.friendly_names.get(dst_str, dst_str[-8:])
+                    relationship = getattr(neighbor, 'relationship', 0)
+
+                    # Relationship types from Zigbee spec
+                    rel_str = {
+                        0: "Parent",
+                        1: "Child",
+                        2: "Sibling",
+                        3: "None",
+                        4: "Previous Child"
+                    }.get(relationship, f"Unknown({relationship})")
+
+                    # Determine device types
+                    src_dev = self.devices.get(src_str)
+                    dst_dev = self.devices.get(dst_str)
+
+                    src_role = src_dev.get_role() if src_dev else "Unknown"
+                    dst_role = dst_dev.get_role() if dst_dev else "Unknown"
+
+                    table.append({
+                        "source_ieee": src_str,
+                        "source_name": src_name,
+                        "source_role": src_role,
+                        "target_ieee": dst_str,
+                        "target_name": dst_name,
+                        "target_role": dst_role,
+                        "relationship": rel_str,
+                        "lqi": neighbor.lqi or 0,
+                        "depth": getattr(neighbor, 'depth', None)
+                    })
+
+        # Sort by source name, then target
+        table.sort(key=lambda x: (x["source_name"], x["target_name"]))
+
+        return table
 
     async def scan_network_topology(self):
         """Force a topology scan to populate neighbor tables."""
@@ -1799,7 +1872,7 @@ class ZigbeeService:
     # DEVICE UPDATE HANDLING
     # =========================================================================
     def handle_device_update(self, zha_device, changed_data, full_state=None, qos: Optional[int] = None, endpoint_id: Optional[int] = None):
-        """Called by ZHADevice when state changes."""
+        """Called by ZigManDevice when state changes."""
         ieee = zha_device.ieee
 
         # Cancel any pending debounced update for this device

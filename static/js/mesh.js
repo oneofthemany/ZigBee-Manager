@@ -1,6 +1,6 @@
 /**
  * mesh.js
- * Mesh visualization initialization
+ * Enhanced mesh visualisation with connection table and packet statistics
  */
 
 // Module-level state
@@ -13,7 +13,7 @@ let meshInitialized = false;
 let labelsVisible = true;
 
 /**
- * Initialize mesh module - sets up tab listeners
+ * Initialise mesh module
  */
 export function initMesh() {
     console.log('Mesh module initialized');
@@ -36,7 +36,7 @@ export function initMesh() {
 }
 
 /**
- * Load mesh topology visualization
+ * Load mesh topology visualisation with connection table
  */
 export async function loadMeshTopology() {
     const meshContainer = document.querySelector('.mesh-topology-container');

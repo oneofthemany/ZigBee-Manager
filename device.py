@@ -1,5 +1,5 @@
 """
-ZHA Device Wrapper - Handles cluster handlers and state management.
+Zigbee Manager Device Wrapper - Handles cluster handlers and state management.
 Based on ZHA's device architecture.
 """
 import time
@@ -14,6 +14,7 @@ from error_handler import with_retries, CommandWrapper
 from device_capabilities import DeviceCapabilities
 from zigpy.zcl.clusters.general import Basic
 from json_helpers import sanitise_device_state
+from packet_stats import packet_stats
 
 # Import handlers to trigger registration decorators
 from handlers.security import *
@@ -35,7 +36,7 @@ CONSIDER_UNAVAILABLE_BATTERY = 60 * 60 * 25  # 25 hours for battery devices
 CONSIDER_UNAVAILABLE_MAINS = 60 * 60 * 25    # 25 hours for mains-powered devices
 
 
-class ZHADevice:
+class ZigManDevice:
     """
     Wrapper around a zigpy device that manages cluster handlers
     and state aggregation.
@@ -772,139 +773,145 @@ class ZHADevice:
     @with_retries(max_retries=3, backoff_base=1.5, timeout=10.0)
     async def send_command(self, command: str, value=None, endpoint_id=None, data: Optional[Dict] = None):
         """Execute command on device."""
-        logger.info(f"[{self.ieee}] CMD: {command}={value} EP={endpoint_id}")
-        command = command.lower()
+        try:
+            packet_stats.record_tx(self.ieee)
+            logger.info(f"[{self.ieee}] CMD: {command}={value} EP={endpoint_id}")
+            command = command.lower()
 
-        # Normalize value types (frontend sends strings)
-        if value is not None and isinstance(value, str):
-            if value.replace('.', '').replace('-', '').isdigit():
-                value = float(value) if '.' in value else int(value)
+            # Normalize value types (frontend sends strings)
+            if value is not None and isinstance(value, str):
+                if value.replace('.', '').replace('-', '').isdigit():
+                    value = float(value) if '.' in value else int(value)
 
-        def get_handler(cid):
-            if endpoint_id:
-                if (endpoint_id, cid) in self.handlers:
-                    return self.handlers[(endpoint_id, cid)]
-            return self.handlers.get(cid)
+            def get_handler(cid):
+                if endpoint_id:
+                    if (endpoint_id, cid) in self.handlers:
+                        return self.handlers[(endpoint_id, cid)]
+                return self.handlers.get(cid)
 
-        # Check capabilities safely
-        has_cap = getattr(self.capabilities, 'has_capability', lambda x: False)
+            # Check capabilities safely
+            has_cap = getattr(self.capabilities, 'has_capability', lambda x: False)
 
-        # Track optimistic state changes
-        optimistic_state = {}
-        success = False
+            # Track optimistic state changes
+            optimistic_state = {}
+            success = False
 
-        # LIGHT / SWITCH LOGIC
-        if has_cap('light') or has_cap('switch'):
-            if command in ['on', 'off', 'toggle']:
-                h = get_handler(0x0006)
-                if h:
-                    if command == 'on':
-                        await h.turn_on()
-                        optimistic_state['state'] = 'ON'
-                        optimistic_state['on'] = True
-                    elif command == 'off':
-                        # Extract transition from data dict
-                        transition = data.get('transition') if data else None
-                        transition_time = int(transition * 10) if transition else None
-                        await h.turn_off(transition_time=transition_time)
-                        optimistic_state['state'] = 'OFF'
-                        optimistic_state['on'] = False
-                    else:
-                        await h.toggle()
-                        # Toggle: invert current state
-                        current = self.state.get('on', False)
-                        optimistic_state['state'] = 'OFF' if current else 'ON'
-                        optimistic_state['on'] = not current
-                    success = True
+            # LIGHT / SWITCH LOGIC
+            if has_cap('light') or has_cap('switch'):
+                if command in ['on', 'off', 'toggle']:
+                    h = get_handler(0x0006)
+                    if h:
+                        if command == 'on':
+                            await h.turn_on()
+                            optimistic_state['state'] = 'ON'
+                            optimistic_state['on'] = True
+                        elif command == 'off':
+                            # Extract transition from data dict
+                            transition = data.get('transition') if data else None
+                            transition_time = int(transition * 10) if transition else None
+                            await h.turn_off(transition_time=transition_time)
+                            optimistic_state['state'] = 'OFF'
+                            optimistic_state['on'] = False
+                        else:
+                            await h.toggle()
+                            # Toggle: invert current state
+                            current = self.state.get('on', False)
+                            optimistic_state['state'] = 'OFF' if current else 'ON'
+                            optimistic_state['on'] = not current
+                        success = True
 
-            elif command == 'brightness' and value is not None:
-                h = get_handler(0x0008)
-                if h:
-                    await h.set_brightness_pct(int(value))
-                    # Store both formats for compatibility
-                    optimistic_state['brightness'] = int(value * 2.54) if value <= 100 else int(value)
-                    optimistic_state['level'] = int(value) if value <= 100 else int(value / 2.54)
-                    # Brightness > 0 implies ON
-                    if value > 0:
-                        optimistic_state['state'] = 'ON'
-                        optimistic_state['on'] = True
-                    success = True
+                elif command == 'brightness' and value is not None:
+                    h = get_handler(0x0008)
+                    if h:
+                        await h.set_brightness_pct(int(value))
+                        # Store both formats for compatibility
+                        optimistic_state['brightness'] = int(value * 2.54) if value <= 100 else int(value)
+                        optimistic_state['level'] = int(value) if value <= 100 else int(value / 2.54)
+                        # Brightness > 0 implies ON
+                        if value > 0:
+                            optimistic_state['state'] = 'ON'
+                            optimistic_state['on'] = True
+                        success = True
 
-            elif command == 'color_temp' and value is not None:
-                h = get_handler(0x0300)
-                if h:
-                    await h.set_color_temp_kelvin(int(value))
-                    # Convert Kelvin to mireds for state
-                    mireds = int(1000000 / value) if value > 0 else 250
-                    optimistic_state['color_temp'] = mireds
-                    optimistic_state['color_temp_mireds'] = mireds
-                    success = True
+                elif command == 'color_temp' and value is not None:
+                    h = get_handler(0x0300)
+                    if h:
+                        await h.set_color_temp_kelvin(int(value))
+                        # Convert Kelvin to mireds for state
+                        mireds = int(1000000 / value) if value > 0 else 250
+                        optimistic_state['color_temp'] = mireds
+                        optimistic_state['color_temp_mireds'] = mireds
+                        success = True
 
-        # AQARA MANUFACTURER CLUSTER COMMANDS (0xFCC0)
-        if not success and command in ['window_detection', 'valve_detection', 'motor_calibration', 'child_lock']:
-            h = get_handler(0xFCC0)
-            if h and hasattr(h, 'process_command'):
-                h.process_command(command, value)
-                success = True
-                # Optimistic updates
-                if command == 'motor_calibration':
-                    optimistic_state['motor_calibration'] = 'calibrating' if value else 'idle'
-                else:
-                    optimistic_state[command] = bool(value)
-
-        # HVAC COMMANDS - route to handler if process_command exists
-        if not success and command in ['temperature', 'system_mode']:
-            h = get_handler(0x0201)
-            if h:
-                if hasattr(h, 'process_command'):
+            # AQARA MANUFACTURER CLUSTER COMMANDS (0xFCC0)
+            if not success and command in ['window_detection', 'valve_detection', 'motor_calibration', 'child_lock']:
+                h = get_handler(0xFCC0)
+                if h and hasattr(h, 'process_command'):
                     h.process_command(command, value)
                     success = True
                     # Optimistic updates
-                    if command == 'temperature':
+                    if command == 'motor_calibration':
+                        optimistic_state['motor_calibration'] = 'calibrating' if value else 'idle'
+                    else:
+                        optimistic_state[command] = bool(value)
+
+            # HVAC COMMANDS - route to handler if process_command exists
+            if not success and command in ['temperature', 'system_mode']:
+                h = get_handler(0x0201)
+                if h:
+                    if hasattr(h, 'process_command'):
+                        h.process_command(command, value)
+                        success = True
+                        # Optimistic updates
+                        if command == 'temperature':
+                            optimistic_state['temperature_setpoint'] = float(value)
+                        elif command == 'system_mode':
+                            optimistic_state['system_mode'] = str(value).lower()
+                    elif command == 'temperature':
+                        # Fallback for compatibility with Hive receivers
+                        await h.set_heating_setpoint(float(value))
                         optimistic_state['temperature_setpoint'] = float(value)
-                    elif command == 'system_mode':
-                        optimistic_state['system_mode'] = str(value).lower()
-                elif command == 'temperature':
-                    # Fallback for compatibility with Hive receivers
-                    await h.set_heating_setpoint(float(value))
-                    optimistic_state['temperature_setpoint'] = float(value)
+                        success = True
+
+            # GENERAL COMMANDS (Fallthrough)
+            elif not success and command == 'identify':
+                h = get_handler(0x0003)
+                if h:
+                    await h.identify(5)
                     success = True
 
-        # GENERAL COMMANDS (Fallthrough)
-        elif not success and command == 'identify':
-            h = get_handler(0x0003)
-            if h:
-                await h.identify(5)
-                success = True
+            # COVER COMMANDS
+            if not success and (has_cap('cover') or command in ['open', 'close', 'stop', 'position']):
+                h = get_handler(0x0102)
+                if h:
+                    if command == 'open':
+                        await h.open()
+                        optimistic_state['position'] = 100
+                        optimistic_state['state'] = 'open'
+                    elif command == 'close':
+                        await h.close()
+                        optimistic_state['position'] = 0
+                        optimistic_state['state'] = 'closed'
+                    elif command == 'stop':
+                        await h.stop()
+                    elif command == 'position' and value is not None:
+                        await h.set_position(int(value))
+                        optimistic_state['position'] = int(value)
+                    success = True
 
-        # COVER COMMANDS
-        if not success and (has_cap('cover') or command in ['open', 'close', 'stop', 'position']):
-            h = get_handler(0x0102)
-            if h:
-                if command == 'open':
-                    await h.open()
-                    optimistic_state['position'] = 100
-                    optimistic_state['state'] = 'open'
-                elif command == 'close':
-                    await h.close()
-                    optimistic_state['position'] = 0
-                    optimistic_state['state'] = 'closed'
-                elif command == 'stop':
-                    await h.stop()
-                elif command == 'position' and value is not None:
-                    await h.set_position(int(value))
-                    optimistic_state['position'] = int(value)
-                success = True
+            # =========================================================================
+            # OPTIMISTIC STATE UPDATE
+            # =========================================================================
+            if success and optimistic_state:
+                logger.info(f"[{self.ieee}] Optimistic update: {optimistic_state}")
+                # This triggers handle_device_update AND _publish_json_state
+                self.update_state(optimistic_state, endpoint_id=endpoint_id)
 
-        # =========================================================================
-        # OPTIMISTIC STATE UPDATE
-        # =========================================================================
-        if success and optimistic_state:
-            logger.info(f"[{self.ieee}] Optimistic update: {optimistic_state}")
-            # This triggers handle_device_update AND _publish_json_state
-            self.update_state(optimistic_state, endpoint_id=endpoint_id)
+            return success
 
-        return success
+        except Exception as e:
+            packet_stats.record_error(self.ieee)  # Track error
+            raise
 
     async def read_attribute_raw(self, ep_id: int, cluster_id: int, attr_name: str) -> Any:
         ep = self.zigpy_dev.endpoints.get(ep_id)
