@@ -149,12 +149,7 @@ function buildMeshUI() {
                                     <tr>
                                         <th>Source Device</th>
                                         <th>Role</th>
-                                        <th>→</th>
-                                        <th>Target Device</th>
-                                        <th>Role</th>
-                                        <th>Relationship</th>
-                                        <th>LQI</th>
-                                        <th>Signal</th>
+                                        <th>Connections</th>
                                     </tr>
                                 </thead>
                                 <tbody id="connectionTableBody"></tbody>
@@ -345,7 +340,7 @@ Rate: ${stats.rx_rate || 0}/min`;
 }
 
 /**
- * Populate the connection table
+ * Populate the connection table with a Tree View
  */
 function populateConnectionTable(connections) {
     const tbody = document.getElementById('connectionTableBody');
@@ -354,7 +349,7 @@ function populateConnectionTable(connections) {
     if (!connections || connections.length === 0) {
         tbody.innerHTML = `
             <tr>
-                <td colspan="8" class="text-center text-muted py-4">
+                <td colspan="3" class="text-center text-muted py-4">
                     <i class="fas fa-info-circle"></i> No connection data available.
                     Try running a topology scan.
                 </td>
@@ -363,6 +358,7 @@ function populateConnectionTable(connections) {
         return;
     }
 
+    // Helpers (Internal to this scope as before)
     const getLqiClass = (lqi) => {
         if (lqi >= 200) return 'signal-excellent';
         if (lqi >= 150) return 'signal-good';
@@ -372,34 +368,100 @@ function populateConnectionTable(connections) {
     };
 
     const getSignalBars = (lqi) => {
-        const bars = Math.ceil(lqi / 51); // 0-5 bars
+        const bars = Math.ceil(lqi / 51);
         let html = '';
         for (let i = 0; i < 5; i++) {
             const active = i < bars;
-            html += `<span style="display:inline-block; width:4px; height:${8 + i*3}px;
+            html += `<span style="display:inline-block; width:4px; height:${8 + i * 3}px;
                      background:${active ? '#198754' : '#dee2e6'}; margin-right:1px;"></span>`;
         }
         return html;
     };
 
-    tbody.innerHTML = connections.map(conn => `
-        <tr>
-            <td>
-                <span class="fw-medium">${escapeHtml(conn.source_name)}</span>
-                <small class="text-muted d-block">${conn.source_ieee.slice(-8)}</small>
-            </td>
-            <td><span class="badge ${getRoleBadgeClass(conn.source_role)}">${conn.source_role}</span></td>
-            <td class="text-center text-muted">→</td>
-            <td>
-                <span class="fw-medium">${escapeHtml(conn.target_name)}</span>
-                <small class="text-muted d-block">${conn.target_ieee.slice(-8)}</small>
-            </td>
-            <td><span class="badge ${getRoleBadgeClass(conn.target_role)}">${conn.target_role}</span></td>
-            <td><span class="badge bg-secondary">${conn.relationship}</span></td>
-            <td class="${getLqiClass(conn.lqi)} fw-bold">${conn.lqi}</td>
-            <td>${getSignalBars(conn.lqi)}</td>
-        </tr>
-    `).join('');
+    // 1. Group connections by Source IEEE Address
+    const grouped = {};
+    connections.forEach(conn => {
+        const sourceId = conn.source_ieee;
+        if (!grouped[sourceId]) {
+            grouped[sourceId] = {
+                name: conn.source_name,
+                ieee: conn.source_ieee,
+                role: conn.source_role,
+                targets: []
+            };
+        }
+        grouped[sourceId].targets.push(conn);
+    });
+
+    // 2. Build HTML
+    let html = '';
+
+    // Sort groups alphabetically by name
+    const sortedGroups = Object.values(grouped).sort((a, b) =>
+        (a.name || '').localeCompare(b.name || '')
+    );
+
+    sortedGroups.forEach((group, index) => {
+        const collapseId = `conn-collapse-${index}`;
+
+        // Parent Row (Source Device)
+        html += `
+            <tr style="cursor: pointer;">
+                <td data-bs-toggle="collapse" data-bs-target="#${collapseId}" aria-expanded="false" class="d-flex align-items-center border-0">
+                    <i class="fas fa-chevron-right me-3 transition-icon text-muted"></i>
+                    <div>
+                        <span class="fw-medium">${escapeHtml(group.name)}</span>
+                        <small class="text-muted d-block">${group.ieee.slice(-8)}</small>
+                    </div>
+                </td>
+                <td class="align-middle">
+                    <span class="badge ${getRoleBadgeClass(group.role)}">${group.role}</span>
+                </td>
+                <td class="align-middle">
+                    <span class="badge bg-light text-dark border">${group.targets.length} Neighbors</span>
+                </td>
+            </tr>
+        `;
+
+        // Child Row (Expanded Details)
+        html += `
+            <tr>
+                <td colspan="3" class="child-row-cell">
+                    <div class="collapse" id="${collapseId}">
+                        <div class="p-3 bg-light border-bottom shadow-inset">
+                            <table class="table table-sm table-bordered nested-connection-table mb-0">
+                                <thead>
+                                    <tr>
+                                        <th>Target Device</th>
+                                        <th>Role</th>
+                                        <th>Relationship</th>
+                                        <th>LQI</th>
+                                        <th>Signal</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${group.targets.map(t => `
+                                        <tr>
+                                            <td>
+                                                <span class="fw-medium">${escapeHtml(t.target_name)}</span>
+                                                <small class="text-muted d-block">${t.target_ieee.slice(-8)}</small>
+                                            </td>
+                                            <td><span class="badge ${getRoleBadgeClass(t.target_role)}">${t.target_role}</span></td>
+                                            <td><span class="badge bg-secondary">${t.relationship}</span></td>
+                                            <td class="${getLqiClass(t.lqi)} fw-bold">${t.lqi}</td>
+                                            <td>${getSignalBars(t.lqi)}</td>
+                                        </tr>
+                                    `).join('')}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </td>
+            </tr>
+        `;
+    });
+
+    tbody.innerHTML = html;
 }
 
 /**

@@ -126,3 +126,30 @@
         width: 33.33%;
     }
 }
+
+/* Tree View Table Extensions */
+.transition-icon {
+    transition: transform 0.2s ease-in-out;
+}
+
+[aria-expanded="true"] .transition-icon {
+    transform: rotate(90deg);
+}
+
+/* Remove border from the wrapper td of the expanded content */
+.child-row-cell {
+    padding: 0 !important;
+    border: none !important;
+}
+
+/* Style the nested table to look distinct */
+.nested-connection-table {
+    margin: 0;
+    background-color: #f8f9fa;
+}
+
+.nested-connection-table th {
+    background-color: #e9ecef;
+    font-size: 0.85rem;
+    color: #495057;
+}
