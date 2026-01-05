@@ -525,7 +525,7 @@ class IlluminanceMeasurementHandler(ClusterHandler, SensorReportingMixin):
                     lux = 0
             else:
                 lux = 0
-            self.device.update_state({"illuminance": lux, "illuminance_lux": lux})
+            self.device.update_state({"illuminance": lux})
             logger.debug(f"[{self.device.ieee}] Illuminance: {lux} lux (raw: {value})")
 
     def get_attr_name(self, attrid: int) -> str:
