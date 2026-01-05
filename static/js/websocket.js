@@ -8,6 +8,7 @@ import { fetchAllDevices, handleDeviceUpdate, removeDeviceRow, renderDeviceTable
 import { addLogEntry, updateDebugStatus, handleLivePacket, checkDebugStatus } from './logging.js';
 import { updatePairingUI, checkPairingStatus } from './actions.js';
 import { handleMQTTMessage } from './mqtt-explorer.js';
+//import { updateMeshStats } from './mesh.js';
 
 /**
  * Initialize WebSocket connection
@@ -92,6 +93,7 @@ export function initWS() {
                 case "debug_packet":
                 case "packet":
                     handleLivePacket(msg.data || msg.payload);
+                    //updateMeshStats(msg.data || msg.payload);
                     break;
 
                 // handle HA Status
