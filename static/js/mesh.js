@@ -1,6 +1,6 @@
 /**
  * mesh.js
- * Enhanced mesh visualisation with connection table and packet statistics
+ * Enhanced mesh visualization with connection table and packet statistics
  */
 
 // Module-level state
@@ -13,20 +13,17 @@ let meshInitialized = false;
 let labelsVisible = true;
 
 /**
- * Initialise mesh module
+ * Initialize mesh module
  */
 export function initMesh() {
     console.log('Mesh module initialized');
 
-    // Listen for mesh tab activation (Bootstrap 5 event)
     const tabEl = document.querySelector('button[data-bs-target="#topology"]');
     if (tabEl) {
         tabEl.addEventListener('shown.bs.tab', function (event) {
             console.log('Mesh tab activated');
-            // Small delay to ensure container has dimensions
             setTimeout(() => {
                 const container = document.querySelector('.mesh-topology-container');
-                // Load if it's empty or just has the loading text
                 if (container && (container.children.length === 0 || container.innerHTML.trim() === "")) {
                     loadMeshTopology();
                 }
@@ -36,7 +33,7 @@ export function initMesh() {
 }
 
 /**
- * Load mesh topology visualisation with connection table
+ * Load mesh topology visualization with connection table
  */
 export async function loadMeshTopology() {
     const meshContainer = document.querySelector('.mesh-topology-container');
@@ -54,140 +51,279 @@ export async function loadMeshTopology() {
     `;
 
     try {
-        const meshHTML = `
-            <div class="mesh-visualisation-wrapper" style="height: 600px; position: relative; border: 1px solid #dee2e6; border-radius: 4px; overflow: hidden;">
-                <svg class="mesh-svg" id="dashboard-mesh-svg" style="width: 100%; height: 100%; background: #f8f9fa;"></svg>
+        const response = await fetch('/api/network/simple-mesh');
+        const data = await response.json();
+        dashboardMeshData = data;
 
-                <div class="mesh-controls" style="position: absolute; top: 10px; right: 10px; background: rgba(255,255,255,0.9); padding: 5px; border-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
-                    <button class="btn btn-sm btn-light border" onclick="dashboardMeshRefresh()" title="Refresh & Scan"><i class="fas fa-sync"></i></button>
-                    <button class="btn btn-sm btn-light border" onclick="dashboardMeshReset()" title="Reset Zoom"><i class="fas fa-compress-arrows-alt"></i></button>
-                    <button class="btn btn-sm btn-light border" onclick="toggleMeshLabels()" title="Toggle Labels"><i class="fas fa-tag"></i></button>
-                </div>
+        // Build the full UI with tabs for visualization, table, and stats
+        meshContainer.innerHTML = buildMeshUI();
 
-                <div class="mesh-legend" style="position: absolute; bottom: 10px; left: 10px; background: rgba(255,255,255,0.9); padding: 8px; border-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); font-size: 0.75rem;">
-                    <div class="mb-1"><i class="fas fa-circle text-primary"></i> Coordinator</div>
-                    <div class="mb-1"><i class="fas fa-circle text-success"></i> Router</div>
-                    <div><i class="fas fa-circle text-warning"></i> End Device</div>
-                </div>
-            </div>
-        `;
+        // Initialize the D3 visualization
+        initializeD3Visualization(data);
 
-        meshContainer.innerHTML = meshHTML;
+        // Populate the connection table
+        populateConnectionTable(data.connection_table || []);
 
-        // Initialize D3
-        if (typeof d3 === 'undefined') {
-            throw new Error("D3.js library not loaded");
-        }
-
-        await initDashboardMesh();
+        // Populate packet statistics
+        populatePacketStats(data.nodes || [], data.stats_summary || {});
 
     } catch (error) {
-        console.error('Error loading mesh:', error);
-        meshContainer.innerHTML = `<div class="alert alert-danger m-3">Failed to load mesh: ${error.message}</div>`;
+        console.error('Failed to load mesh topology:', error);
+        meshContainer.innerHTML = `
+            <div class="alert alert-danger m-3">
+                <i class="fas fa-exclamation-triangle"></i>
+                Failed to load mesh topology: ${error.message}
+            </div>
+        `;
     }
 }
 
-async function initDashboardMesh() {
-    const svg = d3.select("#dashboard-mesh-svg");
+/**
+ * Build the mesh UI with tabs
+ */
+function buildMeshUI() {
+    return `
+        <div class="mesh-wrapper">
+            <!-- Controls -->
+            <div class="mesh-controls p-2 bg-light border-bottom d-flex justify-content-between align-items-center">
+                <div class="btn-group btn-group-sm">
+                    <button class="btn btn-outline-primary" onclick="dashboardMeshRefresh()" title="Refresh topology">
+                        <i class="fas fa-sync-alt"></i> Scan
+                    </button>
+                    <button class="btn btn-outline-secondary" onclick="dashboardMeshReset()" title="Reset view">
+                        <i class="fas fa-expand"></i> Reset
+                    </button>
+                    <button class="btn btn-outline-secondary" onclick="dashboardMeshCenter()" title="Center view">
+                        <i class="fas fa-crosshairs"></i> Center
+                    </button>
+                    <button class="btn btn-outline-secondary" onclick="toggleMeshLabels()" title="Toggle labels">
+                        <i class="fas fa-tags"></i> Labels
+                    </button>
+                </div>
+                <div class="mesh-legend small">
+                    <span class="me-2"><i class="fas fa-square text-primary"></i> Coordinator</span>
+                    <span class="me-2"><i class="fas fa-circle text-success"></i> Router</span>
+                    <span class="me-2"><i class="fas fa-circle text-secondary"></i> End Device</span>
+                    <span class="text-muted">|</span>
+                    <span class="ms-2 signal-excellent">● &gt;200</span>
+                    <span class="signal-good">● 150-200</span>
+                    <span class="signal-fair">● 100-150</span>
+                    <span class="signal-poor">● &lt;100</span>
+                </div>
+            </div>
+
+            <!-- Sub-tabs for different views -->
+            <ul class="nav nav-tabs px-2 pt-2" role="tablist">
+                <li class="nav-item">
+                    <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#meshVisualization">
+                        <i class="fas fa-project-diagram"></i> Visualisation
+                    </button>
+                </li>
+                <li class="nav-item">
+                    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#meshConnectionTable">
+                        <i class="fas fa-table"></i> Connection Table
+                    </button>
+                </li>
+                <li class="nav-item">
+                    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#meshPacketStats">
+                        <i class="fas fa-chart-bar"></i> Packet Statistics
+                    </button>
+                </li>
+            </ul>
+
+            <!-- Tab content -->
+            <div class="tab-content">
+                <!-- Visualisation Tab -->
+                <div class="tab-pane fade show active" id="meshVisualization">
+                    <div class="mesh-visualisation-wrapper" style="height: 1000px; position: relative; border: 1px solid #dee2e6; border-radius: 0 0 4px 4px; overflow: hidden;">
+                        <svg class="mesh-svg" id="dashboard-mesh-svg" style="width: 100%; height: 100%;"></svg>
+                    </div>
+                </div>
+
+                <!-- Connection Table Tab -->
+                <div class="tab-pane fade" id="meshConnectionTable">
+                    <div class="p-3" style="max-height: 1000px; overflow-y: auto;">
+                        <div class="table-responsive">
+                            <table class="table table-sm table-striped table-hover" id="connectionTable">
+                                <thead class="table-dark sticky-top">
+                                    <tr>
+                                        <th>Source Device</th>
+                                        <th>Role</th>
+                                        <th>→</th>
+                                        <th>Target Device</th>
+                                        <th>Role</th>
+                                        <th>Relationship</th>
+                                        <th>LQI</th>
+                                        <th>Signal</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="connectionTableBody"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Packet Statistics Tab -->
+                <div class="tab-pane fade" id="meshPacketStats">
+                    <div class="p-3">
+                        <!-- Summary Cards -->
+                        <div class="row g-2 mb-3" id="packetStatsSummary"></div>
+
+                        <!-- Device Stats Table -->
+                        <div class="table-responsive" style="max-height: 1000px; overflow-y: auto;">
+                            <table class="table table-sm table-striped table-hover" id="packetStatsTable">
+                                <thead class="table-dark sticky-top">
+                                    <tr>
+                                        <th>Device</th>
+                                        <th>RX Packets</th>
+                                        <th>TX Packets</th>
+                                        <th>Total</th>
+                                        <th>RX/min</th>
+                                        <th>TX/min</th>
+                                        <th>Errors</th>
+                                        <th>Error %</th>
+                                        <th>Load</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="packetStatsBody"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+/**
+ * Initialize D3 visualization
+ */
+function initializeD3Visualization(data) {
+    const svg = d3.select('#dashboard-mesh-svg');
     const container = svg.node().parentElement;
     const width = container.clientWidth;
     const height = container.clientHeight;
 
-    dashboardSvg = svg.attr("viewBox", `0 0 ${width} ${height}`);
+    svg.selectAll('*').remove();
 
+    // Set up zoom
     dashboardZoom = d3.zoom()
         .scaleExtent([0.1, 4])
-        .on("zoom", (event) => {
-            if (dashboardG) dashboardG.attr("transform", event.transform);
+        .on('zoom', (event) => {
+            dashboardG.attr('transform', event.transform);
         });
 
-    dashboardSvg.call(dashboardZoom);
-    dashboardG = dashboardSvg.append("g");
+    svg.call(dashboardZoom);
 
-    meshInitialized = true;
-    await loadDashboardMeshData();
-}
+    dashboardG = svg.append('g');
+    dashboardSvg = svg;
 
-async function loadDashboardMeshData() {
-    try {
-        const res = await fetch('/api/network/simple-mesh');
-        const data = await res.json();
+    // Arrow marker for directed links
+    svg.append('defs').append('marker')
+        .attr('id', 'arrowhead')
+        .attr('viewBox', '-0 -5 10 10')
+        .attr('refX', 20)
+        .attr('refY', 0)
+        .attr('orient', 'auto')
+        .attr('markerWidth', 6)
+        .attr('markerHeight', 6)
+        .append('path')
+        .attr('d', 'M 0,-5 L 10,0 L 0,5')
+        .attr('fill', '#999');
 
-        if (!data.success) throw new Error(data.error);
+    // Process nodes and links
+    const nodes = data.nodes || [];
+    const links = data.links || [];
 
-        dashboardMeshData = data;
-        renderDashboardMesh();
-    } catch (error) {
-        console.error("Failed to fetch mesh data", error);
-    }
-}
+    // Color scale for LQI
+    const getLinkColor = (lqi) => {
+        if (lqi >= 200) return '#00b894';
+        if (lqi >= 150) return '#fdcb6e';
+        if (lqi >= 100) return '#e17055';
+        return '#d63031';
+    };
 
-function renderDashboardMesh() {
-    if (!dashboardMeshData || !dashboardMeshData.nodes) return;
-
-    dashboardG.selectAll("*").remove();
-
-    const width = dashboardSvg.node().parentElement.clientWidth;
-    const height = dashboardSvg.node().parentElement.clientHeight;
-
-    const nodes = dashboardMeshData.nodes.map(d => ({...d}));
-    const links = dashboardMeshData.connections.map(d => ({...d}));
-
+    // Create simulation
     dashboardSimulation = d3.forceSimulation(nodes)
-        .force("link", d3.forceLink(links).id(d => d.ieee_address).distance(100))
-        .force("charge", d3.forceManyBody().strength(-300))
-        .force("center", d3.forceCenter(width / 2, height / 2))
-        .force("collide", d3.forceCollide(30));
+        .force('link', d3.forceLink(links).id(d => d.id).distance(100))
+        .force('charge', d3.forceManyBody().strength(-300))
+        .force('center', d3.forceCenter(width / 2, height / 2))
+        .force('collision', d3.forceCollide().radius(40));
 
-    const link = dashboardG.append("g")
-        .selectAll("line")
+    // Draw links
+    const link = dashboardG.append('g')
+        .selectAll('line')
         .data(links)
-        .enter().append("line")
-        .attr("stroke", "#999")
-        .attr("stroke-width", d => Math.max(1, (d.lqi || 0) / 50));
+        .join('line')
+        .attr('stroke', d => getLinkColor(d.lqi))
+        .attr('stroke-opacity', 0.6)
+        .attr('stroke-width', d => Math.max(1, d.lqi / 50))
+        .attr('marker-end', 'url(#arrowhead)');
 
-    const node = dashboardG.append("g")
-        .selectAll("g")
+    // Draw nodes
+    const node = dashboardG.append('g')
+        .selectAll('g')
         .data(nodes)
-        .enter().append("g")
+        .join('g')
         .call(d3.drag()
-            .on("start", dragstarted)
-            .on("drag", dragged)
-            .on("end", dragended));
+            .on('start', dragstarted)
+            .on('drag', dragged)
+            .on('end', dragended));
 
-    node.append("circle")
-        .attr("r", d => d.role === 'Coordinator' ? 15 : (d.role === 'Router' ? 10 : 7))
-        .attr("fill", d => {
-            if (d.role === 'Coordinator') return '#0d6efd'; // Primary
-            if (d.role === 'Router') return '#198754';      // Success
-            return '#ffc107';                               // Warning (EndDevice)
-        })
-        .attr("stroke", "#fff")
-        .attr("stroke-width", 1.5);
-
-    const labels = node.append("text")
-        .text(d => d.friendly_name || d.ieee_address)
-        .attr("x", 12)
-        .attr("y", 4)
-        .style("font-size", "10px")
-        .style("pointer-events", "none")
-        .style("opacity", labelsVisible ? 1 : 0)
-        .attr("class", "node-label");
-
-    node.append("title")
-        .text(d => `${d.friendly_name}\n${d.ieee_address}\nLQI: ${d.lqi}\nRole: ${d.role}`);
-
-    dashboardSimulation.on("tick", () => {
-        link
-            .attr("x1", d => d.source.x)
-            .attr("y1", d => d.source.y)
-            .attr("x2", d => d.target.x)
-            .attr("y2", d => d.target.y);
-
-        node
-            .attr("transform", d => `translate(${d.x},${d.y})`);
+    // Node shapes based on role
+    node.each(function(d) {
+        const el = d3.select(this);
+        if (d.role === 'Coordinator') {
+            el.append('rect')
+                .attr('width', 24)
+                .attr('height', 24)
+                .attr('x', -12)
+                .attr('y', -12)
+                .attr('fill', '#0d6efd')
+                .attr('rx', 4);
+        } else {
+            el.append('circle')
+                .attr('r', 10)
+                .attr('fill', d.role === 'Router' ? '#198754' : '#6c757d')
+                .attr('stroke', d.online ? '#fff' : '#dc3545')
+                .attr('stroke-width', 2);
+        }
     });
 
+    // Labels
+    node.append('text')
+        .attr('class', 'mesh-label')
+        .attr('dx', 15)
+        .attr('dy', 4)
+        .attr('font-size', '11px')
+        .attr('fill', '#333')
+        .text(d => d.friendly_name || d.id.slice(-8));
+
+    // Tooltips
+    node.append('title')
+        .text(d => {
+            const stats = d.packet_stats || {};
+            return `${d.friendly_name || d.id}
+Role: ${d.role}
+LQI: ${d.lqi}
+NWK: ${d.network_address}
+Online: ${d.online ? 'Yes' : 'No'}
+RX: ${stats.rx_packets || 0} | TX: ${stats.tx_packets || 0}
+Rate: ${stats.rx_rate || 0}/min`;
+        });
+
+    // Simulation tick
+    dashboardSimulation.on('tick', () => {
+        link
+            .attr('x1', d => d.source.x)
+            .attr('y1', d => d.source.y)
+            .attr('x2', d => d.target.x)
+            .attr('y2', d => d.target.y);
+
+        node.attr('transform', d => `translate(${d.x},${d.y})`);
+    });
+
+    // Drag functions
     function dragstarted(event, d) {
         if (!event.active) dashboardSimulation.alphaTarget(0.3).restart();
         d.fx = d.x;
@@ -204,51 +340,231 @@ function renderDashboardMesh() {
         d.fx = null;
         d.fy = null;
     }
+
+    meshInitialized = true;
 }
 
-// --- CONTROLS ---
+/**
+ * Populate the connection table
+ */
+function populateConnectionTable(connections) {
+    const tbody = document.getElementById('connectionTableBody');
+    if (!tbody) return;
 
-export async function dashboardMeshRefresh() {
-    const btn = document.querySelector('.mesh-controls button i.fa-sync')?.parentElement;
-    if(btn) {
-        const originalIcon = btn.innerHTML;
-        btn.innerHTML = '<i class="fas fa-spin fa-spinner"></i>';
-        btn.disabled = true;
+    if (!connections || connections.length === 0) {
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="8" class="text-center text-muted py-4">
+                    <i class="fas fa-info-circle"></i> No connection data available.
+                    Try running a topology scan.
+                </td>
+            </tr>
+        `;
+        return;
     }
-    
-    try {
-        // Trigger the scan
-        await fetch('/api/network/scan', { method: 'POST' });
-        
-        // Wait a moment for results to start populating (2s)
-        await new Promise(r => setTimeout(r, 2000));
-        
-        // Reload the visualisation
-        await loadDashboardMeshData();
-    } catch (e) {
-        console.error("Scan failed", e);
-    } finally {
-        if(btn) {
-            btn.disabled = false;
-            btn.innerHTML = '<i class="fas fa-sync"></i>';
+
+    const getLqiClass = (lqi) => {
+        if (lqi >= 200) return 'signal-excellent';
+        if (lqi >= 150) return 'signal-good';
+        if (lqi >= 100) return 'signal-fair';
+        if (lqi >= 50) return 'signal-poor';
+        return 'signal-weak';
+    };
+
+    const getSignalBars = (lqi) => {
+        const bars = Math.ceil(lqi / 51); // 0-5 bars
+        let html = '';
+        for (let i = 0; i < 5; i++) {
+            const active = i < bars;
+            html += `<span style="display:inline-block; width:4px; height:${8 + i*3}px;
+                     background:${active ? '#198754' : '#dee2e6'}; margin-right:1px;"></span>`;
         }
+        return html;
+    };
+
+    tbody.innerHTML = connections.map(conn => `
+        <tr>
+            <td>
+                <span class="fw-medium">${escapeHtml(conn.source_name)}</span>
+                <small class="text-muted d-block">${conn.source_ieee.slice(-8)}</small>
+            </td>
+            <td><span class="badge ${getRoleBadgeClass(conn.source_role)}">${conn.source_role}</span></td>
+            <td class="text-center text-muted">→</td>
+            <td>
+                <span class="fw-medium">${escapeHtml(conn.target_name)}</span>
+                <small class="text-muted d-block">${conn.target_ieee.slice(-8)}</small>
+            </td>
+            <td><span class="badge ${getRoleBadgeClass(conn.target_role)}">${conn.target_role}</span></td>
+            <td><span class="badge bg-secondary">${conn.relationship}</span></td>
+            <td class="${getLqiClass(conn.lqi)} fw-bold">${conn.lqi}</td>
+            <td>${getSignalBars(conn.lqi)}</td>
+        </tr>
+    `).join('');
+}
+
+/**
+ * Populate packet statistics
+ */
+function populatePacketStats(nodes, summary) {
+    // Summary cards
+    const summaryContainer = document.getElementById('packetStatsSummary');
+    if (summaryContainer) {
+        summaryContainer.innerHTML = `
+            <div class="col-md-2">
+                <div class="card text-center">
+                    <div class="card-body py-2">
+                        <div class="small text-muted">Devices</div>
+                        <div class="h5 mb-0">${summary.total_devices || nodes.length}</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-2">
+                <div class="card text-center">
+                    <div class="card-body py-2">
+                        <div class="small text-muted">Total RX</div>
+                        <div class="h5 mb-0">${formatNumber(summary.total_rx_packets || 0)}</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-2">
+                <div class="card text-center">
+                    <div class="card-body py-2">
+                        <div class="small text-muted">Total TX</div>
+                        <div class="h5 mb-0">${formatNumber(summary.total_tx_packets || 0)}</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-2">
+                <div class="card text-center">
+                    <div class="card-body py-2">
+                        <div class="small text-muted">Errors</div>
+                        <div class="h5 mb-0 ${summary.total_errors > 0 ? 'text-danger' : ''}">${summary.total_errors || 0}</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-2">
+                <div class="card text-center">
+                    <div class="card-body py-2">
+                        <div class="small text-muted">Avg/Device</div>
+                        <div class="h5 mb-0">${summary.avg_packets_per_device || 0}</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-2">
+                <div class="card text-center">
+                    <div class="card-body py-2">
+                        <div class="small text-muted">Uptime</div>
+                        <div class="h5 mb-0">${formatUptime(summary.uptime_seconds || 0)}</div>
+                    </div>
+                </div>
+            </div>
+        `;
     }
+
+    // Device stats table
+    const tbody = document.getElementById('packetStatsBody');
+    if (!tbody) return;
+
+    // Sort by total packets (busiest first)
+    const sortedNodes = [...nodes].sort((a, b) => {
+        const aTotal = (a.packet_stats?.total_packets || 0);
+        const bTotal = (b.packet_stats?.total_packets || 0);
+        return bTotal - aTotal;
+    });
+
+    // Calculate max for load bar
+    const maxTotal = Math.max(...sortedNodes.map(n => n.packet_stats?.total_packets || 0), 1);
+
+    tbody.innerHTML = sortedNodes.map(node => {
+        const stats = node.packet_stats || {};
+        const loadPercent = Math.round((stats.total_packets || 0) / maxTotal * 100);
+
+        return `
+            <tr>
+                <td>
+                    <span class="fw-medium">${escapeHtml(node.friendly_name)}</span>
+                    <small class="text-muted d-block">${node.ieee_address.slice(-8)}</small>
+                </td>
+                <td class="text-end">${formatNumber(stats.rx_packets || 0)}</td>
+                <td class="text-end">${formatNumber(stats.tx_packets || 0)}</td>
+                <td class="text-end fw-bold">${formatNumber(stats.total_packets || 0)}</td>
+                <td class="text-end">${stats.rx_rate || 0}</td>
+                <td class="text-end">${stats.tx_rate || 0}</td>
+                <td class="text-end ${stats.errors > 0 ? 'text-danger' : ''}">${stats.errors || 0}</td>
+                <td class="text-end ${stats.error_rate > 5 ? 'text-danger' : ''}">${stats.error_rate || 0}%</td>
+                <td style="width: 100px;">
+                    <div class="progress" style="height: 8px;">
+                        <div class="progress-bar ${getLoadBarClass(loadPercent)}"
+                             style="width: ${loadPercent}%"></div>
+                    </div>
+                </td>
+            </tr>
+        `;
+    }).join('');
+}
+
+// Helper functions
+function getRoleBadgeClass(role) {
+    switch (role) {
+        case 'Coordinator': return 'bg-primary';
+        case 'Router': return 'bg-success';
+        default: return 'bg-secondary';
+    }
+}
+
+function getLoadBarClass(percent) {
+    if (percent >= 80) return 'bg-danger';
+    if (percent >= 50) return 'bg-warning';
+    return 'bg-success';
+}
+
+function formatNumber(n) {
+    if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
+    if (n >= 1000) return (n / 1000).toFixed(1) + 'K';
+    return n.toString();
+}
+
+function formatUptime(seconds) {
+    if (seconds < 60) return `${Math.round(seconds)}s`;
+    if (seconds < 3600) return `${Math.round(seconds / 60)}m`;
+    if (seconds < 86400) return `${Math.round(seconds / 3600)}h`;
+    return `${Math.round(seconds / 86400)}d`;
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+// Exported control functions
+export function dashboardMeshRefresh() {
+    loadMeshTopology();
 }
 
 export function dashboardMeshReset() {
     if (dashboardSvg && dashboardZoom) {
-        dashboardSvg.transition().duration(750).call(dashboardZoom.transform, d3.zoomIdentity);
+        dashboardSvg.transition().duration(750).call(
+            dashboardZoom.transform,
+            d3.zoomIdentity
+        );
     }
 }
 
 export function dashboardMeshCenter() {
-    // Reset handles centering via identity transform usually
-    dashboardMeshReset();
+    if (dashboardSimulation && dashboardSvg && dashboardZoom) {
+        const svg = dashboardSvg.node();
+        const width = svg.clientWidth;
+        const height = svg.clientHeight;
+
+        dashboardSvg.transition().duration(750).call(
+            dashboardZoom.transform,
+            d3.zoomIdentity.translate(width / 2, height / 2).scale(1)
+        );
+    }
 }
 
 export function toggleMeshLabels() {
     labelsVisible = !labelsVisible;
-    if (dashboardG) {
-        dashboardG.selectAll('.node-label').style('opacity', labelsVisible ? 1 : 0);
-    }
+    d3.selectAll('.mesh-label').style('display', labelsVisible ? 'block' : 'none');
 }
