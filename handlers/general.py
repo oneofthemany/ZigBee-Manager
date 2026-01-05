@@ -350,37 +350,12 @@ class OnOffHandler(ClusterHandler):
     def get_discovery_configs(self) -> List[Dict]:
         ep = self.endpoint.endpoint_id
 
-        # ===== Check if OnOff is in INPUT clusters (controllable) =====
-        has_onoff_input = 0x0006 in self.endpoint.in_clusters
-        has_onoff_output = 0x0006 in self.endpoint.out_clusters
 
-        # If OnOff is OUTPUT-only, this is a controller (button/sensor), not an actuator
-        if has_onoff_output and not has_onoff_input:
-            logger.debug(f"[{self.device.ieee}] EP{ep} has OnOff in OUTPUT only - skipping discovery (controller endpoint)")
-            return []
-
-        # If no OnOff in INPUT at all, nothing to control
-        if not has_onoff_input:
-            logger.debug(f"[{self.device.ieee}] EP{ep} has no OnOff in INPUT - skipping discovery")
-            return []
-
-        # Detect capabilities first
-        has_lightlink = 0x1000 in self.endpoint.in_clusters or 0x1000 in self.endpoint.out_clusters
-        has_opple = 0xFCC0 in self.endpoint.in_clusters or 0xFCC0 in self.endpoint.out_clusters
-        has_color = 0x0300 in self.endpoint.in_clusters or 0x0300 in self.endpoint.out_clusters
-        has_level = 0x0008 in self.endpoint.in_clusters
-        has_electrical = 0x0B04 in self.endpoint.in_clusters
-        has_multi_state = 0x0012 in self.endpoint.in_clusters
-        has_sonoff = 0xFC11 in self.endpoint.in_clusters
-
-        # Check if this is a contact sensor
+        # ===== STEP 1: Check if this is a sensor endpoint FIRST =====
         is_contact_sensor = self._is_contact_sensor()
-
-        if has_sonoff:
-            is_contact_sensor = False
-
         has_only_sensor_clusters = len(self.endpoint.in_clusters) <= 4 and 0x0500 in self.endpoint.in_clusters
 
+        # Contact sensors get binary_sensor discovery regardless of OnOff direction
         if is_contact_sensor or has_only_sensor_clusters:
             return [{
                 "component": "binary_sensor",
@@ -394,8 +369,34 @@ class OnOffHandler(ClusterHandler):
                 }
             }]
 
-        # Quirk: Force Switch for Electrical, Multistate, OR Sonoff
-        # If any of these are present, it is definitely a SWITCH/SOCKET, not a light
+        # ===== STEP 2: Check OnOff direction for NON-SENSOR endpoints =====
+        has_onoff_input = 0x0006 in self.endpoint.in_clusters
+        has_onoff_output = 0x0006 in self.endpoint.out_clusters
+
+        # If OnOff is OUTPUT-only and NOT a sensor, this is a controller (skip)
+        if has_onoff_output and not has_onoff_input:
+            logger.debug(f"[{self.device.ieee}] EP{ep} has OnOff in OUTPUT only - controller endpoint, skipping")
+            return []
+
+        # If no OnOff in INPUT at all, nothing to control
+        if not has_onoff_input:
+            logger.debug(f"[{self.device.ieee}] EP{ep} has no OnOff in INPUT - skipping")
+            return []
+
+        # ===== STEP 3: Detect capabilities (INPUT clusters only) =====
+        has_lightlink = 0x1000 in self.endpoint.in_clusters
+        has_opple = 0xFCC0 in self.endpoint.in_clusters
+        has_color = 0x0300 in self.endpoint.in_clusters
+        has_level = 0x0008 in self.endpoint.in_clusters
+        has_electrical = 0x0B04 in self.endpoint.in_clusters
+        has_multi_state = 0x0012 in self.endpoint.in_clusters
+        has_sonoff = 0xFC11 in self.endpoint.in_clusters
+
+        # Sonoff devices are never contact sensors
+        if has_sonoff:
+            is_contact_sensor = False  # Already handled above - kept for clarity
+
+        # ===== STEP 4: Light vs Switch detection =====
         if (has_electrical and has_level or has_multi_state or has_sonoff) and not (has_color or has_lightlink):
             is_light = False
             logger.info(f"[{self.device.ieee}] EP{ep} Force SWITCH: Electrical/Multistate/Sonoff present")
