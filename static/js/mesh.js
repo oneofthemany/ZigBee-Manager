@@ -11,6 +11,7 @@ let dashboardG = null;
 let dashboardZoom = null;
 let meshInitialized = false;
 let labelsVisible = true;
+let statsInterval = null;
 
 /**
  * Initialize mesh module
@@ -51,21 +52,35 @@ export async function loadMeshTopology() {
     `;
 
     try {
-        const response = await fetch('/api/network/simple-mesh');
-        const data = await response.json();
-        dashboardMeshData = data;
+            const response = await fetch('/api/network/simple-mesh');
+            const data = await response.json();
+            dashboardMeshData = data;
 
-        // Build the full UI with tabs for visualization, table, and stats
-        meshContainer.innerHTML = buildMeshUI();
+            // Build the full UI
+            const meshContainer = document.querySelector('.mesh-topology-container');
+            meshContainer.innerHTML = buildMeshUI();
 
-        // Initialize the D3 visualization
-        initializeD3Visualization(data);
+            // Initialize D3 and Tables
+            initializeD3Visualization(data);
+            populateConnectionTable(data.connection_table || []);
+            populatePacketStats(data.nodes || [], data.stats_summary || {});
 
-        // Populate the connection table
-        populateConnectionTable(data.connection_table || []);
+            // Setup Tab Event Listeners for Auto-Refresh
+            const statsTabBtn = document.querySelector('button[data-bs-target="#meshPacketStats"]');
+            const otherTabs = document.querySelectorAll('button[data-bs-target="#meshVisualization"], button[data-bs-target="#meshConnectionTable"]');
 
-        // Populate packet statistics
-        populatePacketStats(data.nodes || [], data.stats_summary || {});
+            if (statsTabBtn) {
+                // When Packet Stats tab is shown, start polling every 2 seconds
+                statsTabBtn.addEventListener('shown.bs.tab', () => {
+                    refreshPacketStats(); // Immediate update
+                    statsInterval = setInterval(refreshPacketStats, 2000);
+                });
+
+                // When leaving the tab, stop polling
+                statsTabBtn.addEventListener('hidden.bs.tab', () => {
+                    if (statsInterval) clearInterval(statsInterval);
+                });
+            }
 
     } catch (error) {
         console.error('Failed to load mesh topology:', error);
@@ -161,22 +176,20 @@ function buildMeshUI() {
                 <!-- Packet Statistics Tab -->
                 <div class="tab-pane fade" id="meshPacketStats">
                     <div class="p-3">
-                        <!-- Summary Cards -->
                         <div class="row g-2 mb-3" id="packetStatsSummary"></div>
 
-                        <!-- Device Stats Table -->
                         <div class="table-responsive" style="max-height: 1000px; overflow-y: auto;">
                             <table class="table table-sm table-striped table-hover" id="packetStatsTable">
                                 <thead class="table-dark sticky-top">
                                     <tr>
                                         <th>Device</th>
-                                        <th>RX Packets</th>
-                                        <th>TX Packets</th>
-                                        <th>Total</th>
-                                        <th>RX/min</th>
-                                        <th>TX/min</th>
-                                        <th>Errors</th>
-                                        <th>Error %</th>
+                                        <th class="text-end">RX Packets</th>
+                                        <th class="text-end">TX Packets</th>
+                                        <th class="text-end">Total</th>
+                                        <th class="text-end">RX/min</th>
+                                        <th class="text-end">TX/min</th>
+                                        <th class="text-end">Errors</th>
+                                        <th class="text-end">Error %</th>
                                         <th>Load</th>
                                     </tr>
                                 </thead>
@@ -185,6 +198,7 @@ function buildMeshUI() {
                         </div>
                     </div>
                 </div>
+
             </div>
         </div>
     `;
@@ -465,9 +479,38 @@ function populateConnectionTable(connections) {
 }
 
 /**
+ * Silently refresh packet statistics without redrawing the whole UI
+ */
+async function refreshPacketStats() {
+    // specific check to ensure we don't run if the tab isn't actually visible
+    const statsTab = document.getElementById('meshPacketStats');
+    if (!statsTab || !statsTab.classList.contains('active')) return;
+
+    try {
+        const response = await fetch('/api/network/simple-mesh');
+        const data = await response.json();
+
+        // Update global data ref
+        dashboardMeshData = data;
+
+        // Only update the stats table and summary
+        populatePacketStats(data.nodes || [], data.stats_summary || {});
+    } catch (error) {
+        console.error("Silent stats refresh failed:", error);
+    }
+}
+
+/**
  * Populate packet statistics
  */
 function populatePacketStats(nodes, summary) {
+    // --- CONFIGURATION ---
+    // Define the "Red Line" for network traffic.
+    // 5 Packets Per Second (300/min) is generally considered high for a single ZigBee device.
+    const PPS_THRESHOLD = 5;
+    const PPM_THRESHOLD = PPS_THRESHOLD * 60; // Convert to Per Minute for calculation
+    // ---------------------
+
     // Summary cards
     const summaryContainer = document.getElementById('packetStatsSummary');
     if (summaryContainer) {
@@ -527,19 +570,25 @@ function populatePacketStats(nodes, summary) {
     const tbody = document.getElementById('packetStatsBody');
     if (!tbody) return;
 
-    // Sort by total packets (busiest first)
+    // Sort by Total Rate (Activity) instead of historical volume
     const sortedNodes = [...nodes].sort((a, b) => {
-        const aTotal = (a.packet_stats?.total_packets || 0);
-        const bTotal = (b.packet_stats?.total_packets || 0);
-        return bTotal - aTotal;
+        const aRate = (a.packet_stats?.rx_rate || 0) + (a.packet_stats?.tx_rate || 0);
+        const bRate = (b.packet_stats?.rx_rate || 0) + (b.packet_stats?.tx_rate || 0);
+        return bRate - aRate; // Busiest right now at the top
     });
-
-    // Calculate max for load bar
-    const maxTotal = Math.max(...sortedNodes.map(n => n.packet_stats?.total_packets || 0), 1);
 
     tbody.innerHTML = sortedNodes.map(node => {
         const stats = node.packet_stats || {};
-        const loadPercent = Math.round((stats.total_packets || 0) / maxTotal * 100);
+
+        // Calculate current activity: RX Rate + TX Rate (Packets Per Minute)
+        const currentPpm = (stats.rx_rate || 0) + (stats.tx_rate || 0);
+
+        // Calculate % Load against our defined Threshold
+        // If currentPpm = 300 and Threshold = 300, we are at 100% load
+        const loadPercent = Math.round((currentPpm / PPM_THRESHOLD) * 100);
+
+        // Cap visual bar at 100% so it doesn't overflow, but allow logic to see higher
+        const visualPercent = Math.min(loadPercent, 100);
 
         return `
             <tr>
@@ -554,10 +603,10 @@ function populatePacketStats(nodes, summary) {
                 <td class="text-end">${stats.tx_rate || 0}</td>
                 <td class="text-end ${stats.errors > 0 ? 'text-danger' : ''}">${stats.errors || 0}</td>
                 <td class="text-end ${stats.error_rate > 5 ? 'text-danger' : ''}">${stats.error_rate || 0}%</td>
-                <td style="width: 100px;">
-                    <div class="progress" style="height: 8px;">
+                <td style="width: 100px; vertical-align: middle;">
+                    <div class="progress" style="height: 8px;" title="Current: ${currentPpm} PPM / Threshold: ${PPM_THRESHOLD} PPM">
                         <div class="progress-bar ${getLoadBarClass(loadPercent)}"
-                             style="width: ${loadPercent}%"></div>
+                             style="width: ${visualPercent}%"></div>
                     </div>
                 </td>
             </tr>
