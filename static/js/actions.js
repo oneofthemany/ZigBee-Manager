@@ -97,6 +97,86 @@ export async function doAction(action, ieee) {
     }
 }
 
+
+/**
+ * Remove device with ban option
+ */
+export async function removeDevice(ieee, ban = false) {
+    const msg = ban
+        ? "Remove AND ban this device (prevents rejoining)?"
+        : "Remove this device?";
+
+    if (!confirm(msg)) return;
+
+    try {
+        const res = await fetch('/api/device/remove', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ieee, force: false, ban })
+        });
+        const data = await res.json();
+
+        if (data.success) {
+            addLogEntry({
+                timestamp: getTimestamp(),
+                level: 'INFO',
+                message: ban ? `Device removed and banned` : `Device removed`
+            });
+        } else {
+            alert(`Error: ${data.error}`);
+        }
+    } catch (e) {
+        console.error(e);
+    }
+}
+
+/**
+ * Ban a device by IEEE
+ */
+export async function banDevice(ieee, reason = null) {
+    try {
+        const res = await fetch('/api/ban', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ieee, reason })
+        });
+        return await res.json();
+    } catch (e) {
+        console.error(e);
+        return { success: false, error: e.message };
+    }
+}
+
+/**
+ * Unban a device
+ */
+export async function unbanDevice(ieee) {
+    try {
+        const res = await fetch('/api/unban', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ieee })
+        });
+        return await res.json();
+    } catch (e) {
+        console.error(e);
+        return { success: false, error: e.message };
+    }
+}
+
+/**
+ * Get banned devices list
+ */
+export async function getBannedDevices() {
+    try {
+        const res = await fetch('/api/banned');
+        return await res.json();
+    } catch (e) {
+        console.error(e);
+        return { banned: [], count: 0 };
+    }
+}
+
 /**
  * Prompt to rename device
  */

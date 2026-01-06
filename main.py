@@ -106,6 +106,7 @@ value.
 class DeviceRequest(BaseModel):
     ieee: str
     force: Optional[bool] = False
+    ban: bool = False
 
 
 class RenameRequest(BaseModel):
@@ -148,6 +149,15 @@ class ConfigUpdateRequest(BaseModel):
 class PermitJoinRequest(BaseModel):
     duration: int = 240
     target_ieee: Optional[str] = None
+
+
+class BanRequest(BaseModel):
+    ieee: str
+    reason: Optional[str] = None
+
+class UnbanRequest(BaseModel):
+    ieee: str
+
 
 # ============================================================================
 # WEBSOCKET CONNECTION MANAGER
@@ -427,8 +437,17 @@ async def touchlink_scan():
 
 @app.post("/api/device/remove")
 async def remove_device(request: DeviceRequest):
-    """Remove a device from the network."""
-    return await zigbee_service.remove_device(request.ieee, force=request.force)
+    """Remove a device from the network, optionally banning it."""
+
+    if request.ban:
+        zigbee_service.ban_device(request.ieee, reason="Banned on removal")
+
+    result = await zigbee_service.remove_device(request.ieee, force=request.force)
+
+    if request.ban:
+        result["banned"] = True
+
+    return result
 
 
 @app.post("/api/device/rename")
@@ -482,6 +501,37 @@ async def read_attribute(request: AttributeReadRequest):
 async def bind_devices(request: BindRequest):
     """Bind two devices."""
     return await zigbee_service.bind_devices(request.source_ieee, request.target_ieee, request.cluster_id)
+
+
+
+@app.post("/api/ban")
+async def ban_device(request: BanRequest):
+    """Ban a device by IEEE address."""
+    return zigbee_service.ban_device(request.ieee, request.reason)
+
+
+@app.post("/api/unban")
+async def unban_device(request: UnbanRequest):
+    """Remove a device from the ban list."""
+    return zigbee_service.unban_device(request.ieee)
+
+
+@app.get("/api/banned")
+async def get_banned_devices():
+    """Get list of all banned IEEE addresses."""
+    return {
+        "banned": zigbee_service.get_banned_devices(),
+        "count": len(zigbee_service.get_banned_devices())
+    }
+
+
+@app.get("/api/banned/{ieee}")
+async def check_banned(ieee: str):
+    """Check if a specific device is banned."""
+    return {
+        "ieee": ieee,
+        "banned": zigbee_service.is_device_banned(ieee)
+    }
 
 # ============================================================================
 # ROUTES - NETWORK INFORMATION

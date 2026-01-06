@@ -31,6 +31,7 @@ from zigpy.zcl.clusters.security import IasZone
 from device import ZigManDevice
 from handlers.zigbee_debug import get_debugger
 from handlers.fast_path import FastPathProcessor
+from device_ban import get_ban_manager
 #from handlers.sensors import configure_illuminance_reporting, configure_temperature_reporting
 
 
@@ -229,6 +230,9 @@ class ZigbeeService:
 
         # Pairing state
         self.pairing_expiration = 0
+
+        # Banning
+        self.ban_manager = get_ban_manager()
 
         # Polling scheduler
         self.polling_scheduler = PollingScheduler(self)
@@ -815,6 +819,20 @@ class ZigbeeService:
     def device_joined(self, device: zigpy.device.Device):
         """Called when a device joins the network."""
         ieee = str(device.ieee)
+
+        # CHECK BAN LIST FIRST
+        if self.ban_manager.is_banned(ieee):
+            logger.warning(f"🚫 BLOCKED: Banned device {ieee} attempted to join - sending leave request")
+            self._emit_sync("log", {
+                "level": "WARNING",
+                "message": f"Blocked banned device: {ieee}",
+                "ieee": ieee,
+                "category": "security"
+            })
+            # Kick the device off the network
+            asyncio.create_task(self._kick_banned_device(device))
+            return  # Don't process this device further
+
         logger.info(f"Device joined: {ieee}")
 
         # Create device wrapper
@@ -838,6 +856,61 @@ class ZigbeeService:
         msg = f"[{ieee}] ({name}) Device Joined"
         self._emit_sync("log", {"level": "INFO", "message": msg, "ieee": ieee, "device_name": name, "category": "connection"})
         self._emit_sync("device_joined", {"ieee": ieee})
+
+    async def _kick_banned_device(self, device: zigpy.device.Device):
+        """Send leave request to a banned device."""
+        ieee = str(device.ieee)
+        try:
+            logger.info(f"[{ieee}] Sending leave request to banned device...")
+            await device.zdo.leave()
+            logger.info(f"[{ieee}] Leave request sent successfully")
+        except Exception as e:
+            logger.warning(f"[{ieee}] Leave request failed (device may have already left): {e}")
+
+        # Also try to remove from zigpy's device list
+        try:
+            z_ieee = zigpy.types.EUI64.convert(ieee)
+            if z_ieee in self.app.devices:
+                await self.app.remove(z_ieee)
+                logger.info(f"[{ieee}] Removed from zigpy device list")
+        except Exception as e:
+            logger.debug(f"[{ieee}] Could not remove from zigpy: {e}")
+
+    # 4. Add API methods to ZigbeeService for managing the ban list:
+
+    def ban_device(self, ieee: str, reason: str = None) -> dict:
+        """Ban a device by IEEE address."""
+        ieee = str(ieee).lower()
+        success = self.ban_manager.ban(ieee, reason)
+
+        # If device is currently connected, kick it
+        if success and ieee in self.devices:
+            device = self.devices[ieee]
+            asyncio.create_task(self._kick_banned_device(device.zigpy_dev))
+
+        return {
+            "success": success,
+            "ieee": ieee,
+            "message": f"Device {ieee} has been banned" if success else f"Device {ieee} was already banned"
+        }
+
+    def unban_device(self, ieee: str) -> dict:
+        """Remove a device from the ban list."""
+        ieee = str(ieee).lower()
+        success = self.ban_manager.unban(ieee)
+        return {
+            "success": success,
+            "ieee": ieee,
+            "message": f"Device {ieee} has been unbanned" if success else f"Device {ieee} was not banned"
+        }
+
+    def get_banned_devices(self) -> list:
+        """Get list of all banned IEEE addresses."""
+        return self.ban_manager.get_banned_list()
+
+    def is_device_banned(self, ieee: str) -> bool:
+        """Check if a device is banned."""
+        return self.ban_manager.is_banned(ieee)
 
     def raw_device_initialized(self, device: zigpy.device.Device):
         """Called when device descriptors are read but endpoints not yet configured."""
