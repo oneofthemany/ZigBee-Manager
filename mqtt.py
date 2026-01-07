@@ -226,6 +226,11 @@ class MQTTService:
                     topic = str(message.topic)
                     payload = message.payload.decode('utf-8') if message.payload else ""
 
+                    # IGNORE RETAINED MESSAGES ON COMMAND TOPICS
+                    if message.retain and topic.endswith('/set'):
+                        logger.debug(f"Ignoring retained command: {topic}")
+                        continue
+
                     logger.debug(f"MQTT RX: {topic} = {payload}")
 
                     # --- CASE 1: Home Assistant Birth Message ---
