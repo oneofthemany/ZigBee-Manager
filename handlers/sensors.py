@@ -200,6 +200,13 @@ class OccupancySensingHandler(ClusterHandler):
                 value = value.value
 
             if attrid == self.ATTR_OCCUPANCY:
+                # ===== ADD DIAGNOSTIC =====
+                import traceback
+                caller = ''.join(traceback.format_stack()[-4:-1])  # Get calling function
+                logger.warning(f"[{self.device.ieee}] Occupancy attribute_updated called, "
+                               f"value={value}, is_occupied={bool(value & 0x01)}, "
+                               f"caller_snippet={caller[-200:]}")  # Last 200 chars of stack
+
                 # Occupancy is a bitmap, bit 0 = occupied
                 is_occupied = bool(value & 0x01) if isinstance(value, int) else bool(value)
 
@@ -210,7 +217,6 @@ class OccupancySensingHandler(ClusterHandler):
                 })
 
                 # === FAST-PATH PUBLISH ===
-                # Use non-blocking publish for immediate MQTT update
                 if self.device.service.mqtt and hasattr(self.device.service.mqtt, 'publish_fast'):
                     safe_name = self.device.service.get_safe_name(self.device.ieee)
                     payload = json.dumps({
@@ -219,7 +225,6 @@ class OccupancySensingHandler(ClusterHandler):
                         'presence': is_occupied
                     })
                     self.device.service.mqtt.publish_fast(f"{safe_name}/state", payload, qos=0)
-                # === END FAST-PATH PUBLISH ===
 
                 status = "MOTION DETECTED" if is_occupied else "Motion cleared"
                 logger.info(f"[{self.device.ieee}] Occupancy Sensing: {status}")
@@ -257,15 +262,28 @@ class OccupancySensingHandler(ClusterHandler):
         """
         Configure occupancy sensing cluster.
 
-        Override base configure() to also read configuration values from device
-        (timeout, sensitivity) so they can be displayed in the UI.
+        Motion should be EVENT-DRIVEN only, not periodic.
+        Use min=0, max=0 (or 65535) to disable periodic reporting.
         """
-        # First do standard binding and reporting configuration
-        await super().configure()
+        manufacturer = str(self.device.zigpy_dev.manufacturer or "").lower()
+        model = str(self.device.zigpy_dev.model or "").lower()
 
-        # Now read configuration attributes
+        # Bind cluster
+        await self.cluster.bind()
+
+        # Configure reporting - EVENT ONLY (no periodic reports)
+        # min=0 (instant), max=0 (disable periodic), change=1 (any change)
+        await self.cluster.configure_reporting(
+            0x0000,        # occupancy attribute
+            0,           # min_interval: report immediately
+            0,          # max_interval: 0 = disable periodic reports
+            1       # reportable_change: report on any change
+        )
+        logger.info(f"[{self.device.ieee}] Occupancy configured (event-driven only)")
+
+        # Read configuration attributes
         try:
-            # Read PIR timeout (how long motion stays active)
+            # Read PIR timeout
             try:
                 result = await self.cluster.read_attributes([self.ATTR_PIR_O_TO_U_DELAY])
                 if result and self.ATTR_PIR_O_TO_U_DELAY in result[0]:
@@ -281,8 +299,7 @@ class OccupancySensingHandler(ClusterHandler):
                 logger.debug(f"[{self.device.ieee}] Could not read motion timeout: {e}")
 
             # Read sensitivity (Philips/Aqara specific)
-            man = (self.device.zigpy_dev.manufacturer or "").lower()
-            if 'philips' in man or 'lumi' in man or 'signify' in man:
+            if 'philips' in manufacturer or 'lumi' in manufacturer or 'signify' in manufacturer:
                 try:
                     result = await self.cluster.read_attributes([self.ATTR_SENSITIVITY])
                     if result and self.ATTR_SENSITIVITY in result[0]:
