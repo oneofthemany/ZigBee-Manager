@@ -3,8 +3,6 @@
  * Frontend logic for Presence Detection Zones
  */
 
-import { showToast } from './utils.js'; // Assuming you have a utils file, or remove if not
-
 // ============================================================================
 // STATE
 // ============================================================================
@@ -66,13 +64,12 @@ async function fetchZones() {
 async function fetchDevicesForModal() {
     try {
         const response = await fetch('/api/devices');
-        const devices = await response.json();
-        // Filter for routers or devices capable of neighbors usually,
-        // but for now allow all except basic battery sensors if desired.
-        deviceListCache = devices;
-        renderDeviceList(devices);
+        if (!response.ok) throw new Error("Failed to fetch devices");
+        deviceListCache = await response.json();
+        return deviceListCache;
     } catch (error) {
         console.error("Error fetching devices:", error);
+        return [];
     }
 }
 
@@ -134,7 +131,7 @@ function createZoneCard(zone) {
             </div>
             <div class="card-footer bg-transparent border-top-0 d-flex gap-2">
                 <button class="btn btn-sm btn-outline-primary flex-grow-1" onclick="window.viewZoneDetails('${zone.name}')">
-                    <i class="bi bi-graph-up"></i> Details
+                    <i class="bi bi-graph-up"></i> Details & Devices
                 </button>
                 <button class="btn btn-sm btn-outline-warning" onclick="window.recalibrateZone('${zone.name}')" title="Recalibrate">
                     <i class="bi bi-arrow-clockwise"></i>
@@ -149,44 +146,24 @@ function createZoneCard(zone) {
 }
 
 // ============================================================================
-// ACTIONS (Exposed to Window)
+// VIEW ZONE DETAILS (Updated with Tabs and Devices)
 // ============================================================================
-
-export async function recalibrateZone(zoneName) {
-    if (!confirm(`Force recalibration for ${zoneName}?`)) return;
-    try {
-        await fetch(`/api/zones/${zoneName}/recalibrate`, { method: 'POST' });
-        fetchZones(); // Refresh UI
-    } catch (e) {
-        alert("Recalibration failed: " + e.message);
-    }
-}
-
-export async function deleteZone(zoneName) {
-    if (!confirm(`Are you sure you want to delete zone "${zoneName}"?`)) return;
-    try {
-        await fetch(`/api/zones/${zoneName}`, { method: 'DELETE' });
-        fetchZones(); // Refresh UI
-    } catch (e) {
-        alert("Delete failed: " + e.message);
-    }
-}
-
-export function viewZoneDetails(zoneName) {
+export async function viewZoneDetails(zoneName) {
     const zone = zonesData.get(zoneName);
     if (!zone) return;
 
-    document.getElementById('zone-details-title').innerText = zone.name;
-    document.getElementById('zone-details-state').innerText = zone.state;
+    // Refresh device list to resolve friendly names
+    await fetchDevicesForModal();
 
-    const container = document.getElementById('zone-links-container');
-    container.innerHTML = '';
+    const modalTitle = document.getElementById('zone-details-title');
+    const modalBody = document.querySelector('#zoneDetailsModal .modal-body');
 
-    // Render links table
+    modalTitle.innerText = zone.name;
+
+    // --- Build Links HTML ---
+    let linksHtml = '';
     if (zone.links && Object.keys(zone.links).length > 0) {
-        const table = document.createElement('table');
-        table.className = 'table table-sm table-striped small';
-        table.innerHTML = `
+        linksHtml = `<div class="table-responsive"><table class="table table-sm table-striped small">
             <thead>
                 <tr>
                     <th>Link</th>
@@ -210,14 +187,152 @@ export function viewZoneDetails(zoneName) {
                     `;
                 }).join('')}
             </tbody>
-        `;
-        container.appendChild(table);
+        </table></div>`;
     } else {
-        container.innerHTML = '<p class="text-muted">No link data available yet. Wait for calibration.</p>';
+        linksHtml = '<div class="alert alert-secondary">No link data available. Wait for calibration.</div>';
     }
+
+    // --- Build Devices HTML ---
+    // Ensure we have device_ieees in data (requires backend update)
+    const deviceList = zone.device_ieees || [];
+
+    const devicesListHtml = deviceList.map(ieee => {
+        const device = deviceListCache.find(d => d.ieee.toLowerCase() === ieee.toLowerCase()) || { friendly_name: ieee, model: 'Unknown' };
+        const displayName = device.friendly_name === ieee ? ieee : `${device.friendly_name} (${ieee})`;
+
+        return `
+            <li class="list-group-item d-flex justify-content-between align-items-center">
+                <div>
+                    <strong>${displayName}</strong><br>
+                    <small class="text-muted">${device.model}</small>
+                </div>
+                <button class="btn btn-sm btn-outline-danger" onclick="window.removeDeviceFromZone('${zone.name}', '${ieee}')" title="Remove Device">
+                    <i class="fas fa-trash"></i>
+                </button>
+            </li>
+        `;
+    }).join('');
+
+    const availableDevices = deviceListCache.filter(d => !deviceList.includes(d.ieee.toLowerCase()));
+    const addOptions = availableDevices.map(d =>
+        `<option value="${d.ieee}">${d.friendly_name || d.ieee}</option>`
+    ).join('');
+
+    // --- Inject Content with Tabs ---
+    modalBody.innerHTML = `
+        <div class="mb-3 d-flex justify-content-between align-items-center">
+             <span><strong>Status:</strong> <span class="badge bg-${zone.state === 'occupied' ? 'success' : 'secondary'}">${zone.state}</span></span>
+             ${zone.occupied_since ? `<span class="badge bg-light text-dark border">Since: ${new Date(zone.occupied_since * 1000).toLocaleTimeString()}</span>` : ''}
+        </div>
+
+        <ul class="nav nav-tabs mb-3" id="zoneDetailsTabs" role="tablist">
+            <li class="nav-item" role="presentation">
+                <button class="nav-link active" id="stats-tab" data-bs-toggle="tab" data-bs-target="#tab-stats" type="button">Link Statistics</button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="devices-tab" data-bs-toggle="tab" data-bs-target="#tab-devices" type="button">Managed Devices</button>
+            </li>
+        </ul>
+
+        <div class="tab-content">
+            <!-- Stats Tab -->
+            <div class="tab-pane fade show active" id="tab-stats">
+                ${linksHtml}
+            </div>
+
+            <!-- Devices Tab -->
+            <div class="tab-pane fade" id="tab-devices">
+                <div class="card mb-3">
+                    <div class="card-header bg-light small fw-bold">Add Device</div>
+                    <div class="card-body p-2">
+                        <div class="input-group">
+                            <select class="form-select form-select-sm" id="zone-add-select">
+                                <option value="">Select device...</option>
+                                ${addOptions}
+                            </select>
+                            <button class="btn btn-sm btn-success" onclick="window.addDeviceToZoneFromModal('${zone.name}')">Add</button>
+                        </div>
+                    </div>
+                </div>
+
+                <h6 class="small text-muted mb-2">Devices in Zone (${deviceList.length})</h6>
+                <ul class="list-group list-group-flush border rounded overflow-auto" style="max-height: 300px;">
+                    ${devicesListHtml}
+                </ul>
+            </div>
+        </div>
+    `;
 
     const modal = new bootstrap.Modal(document.getElementById('zoneDetailsModal'));
     modal.show();
+}
+
+// ============================================================================
+// ACTIONS (Exposed to Window)
+// ============================================================================
+
+export async function addDeviceToZoneFromModal(zoneName) {
+    const select = document.getElementById('zone-add-select');
+    const ieee = select.value;
+    if (!ieee) return;
+
+    try {
+        const response = await fetch(`/api/zones/${zoneName}/devices`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ add: [ieee], remove: [] })
+        });
+
+        if (!response.ok) throw new Error("Failed to add device");
+
+        // Refresh zones data and re-render modal
+        await fetchZones();
+        viewZoneDetails(zoneName); // Re-open modal to refresh list
+
+    } catch (e) {
+        alert("Error adding device: " + e.message);
+    }
+}
+
+export async function removeDeviceFromZone(zoneName, ieee) {
+    if (!confirm(`Remove device ${ieee} from zone? This will trigger recalibration.`)) return;
+
+    try {
+        const response = await fetch(`/api/zones/${zoneName}/devices`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ add: [], remove: [ieee] })
+        });
+
+        if (!response.ok) throw new Error("Failed to remove device");
+
+        // Refresh zones data and re-render modal
+        await fetchZones();
+        viewZoneDetails(zoneName); // Re-open modal to refresh list
+
+    } catch (e) {
+        alert("Error removing device: " + e.message);
+    }
+}
+
+export async function recalibrateZone(zoneName) {
+    if (!confirm(`Force recalibration for ${zoneName}?`)) return;
+    try {
+        await fetch(`/api/zones/${zoneName}/recalibrate`, { method: 'POST' });
+        fetchZones();
+    } catch (e) {
+        alert("Recalibration failed: " + e.message);
+    }
+}
+
+export async function deleteZone(zoneName) {
+    if (!confirm(`Are you sure you want to delete zone "${zoneName}"?`)) return;
+    try {
+        await fetch(`/api/zones/${zoneName}`, { method: 'DELETE' });
+        fetchZones();
+    } catch (e) {
+        alert("Delete failed: " + e.message);
+    }
 }
 
 // ============================================================================
@@ -228,7 +343,7 @@ function openCreateZoneModal() {
     document.getElementById('zone-name-input').value = '';
     selectedDevices.clear();
     updateSelectedCount();
-    fetchDevicesForModal(); // Load devices
+    fetchDevicesForModal().then(devices => renderDeviceList(devices)); // Load and render
 
     const modal = new bootstrap.Modal(document.getElementById('createZoneModal'));
     modal.show();
@@ -253,15 +368,19 @@ function renderDeviceList(devices) {
         `;
 
         item.onclick = (e) => {
-            e.preventDefault();
-            if (selectedDevices.has(device.ieee)) {
-                selectedDevices.delete(device.ieee);
-                item.querySelector('input').checked = false;
-                item.classList.remove('active');
-            } else {
+            if (e.target.tagName !== 'INPUT') {
+                e.preventDefault();
+                const checkbox = item.querySelector('input');
+                checkbox.checked = !checkbox.checked;
+            }
+            const isChecked = item.querySelector('input').checked;
+
+            if (isChecked) {
                 selectedDevices.add(device.ieee);
-                item.querySelector('input').checked = true;
                 item.classList.add('active');
+            } else {
+                selectedDevices.delete(device.ieee);
+                item.classList.remove('active');
             }
             updateSelectedCount();
         };

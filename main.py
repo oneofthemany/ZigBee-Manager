@@ -309,13 +309,10 @@ async def lifespan(app: FastAPI):
 
 
     # Initialize Zone Manager
-    await zigbee_service.init_zones()
-
-    # Register Zone API Routes
     register_zone_routes(
         app,
-        zigbee_service.zone_manager,
-        zigbee_service.devices
+        lambda: zigbee_service.zone_manager,
+        lambda: zigbee_service.devices
     )
     logger.info("Zone API routes registered")
 

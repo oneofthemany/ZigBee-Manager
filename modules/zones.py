@@ -1,21 +1,31 @@
 """
 Zones - RSSI-based presence detection for ZigBee-Manager.
-
-Creates virtual zones from groups of devices and monitors RSSI fluctuations
-between mesh nodes to detect human presence without dedicated sensors.
+Robust version with topology integration matching core.py logic.
 """
 
 import asyncio
 import logging
 import time
 import statistics
+import json
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Set, Any, Callable
 from collections import deque
 from enum import Enum, auto
-import json
 
 logger = logging.getLogger(__name__)
+
+
+def normalize_ieee(ieee: Any) -> str:
+    """Normalize IEEE to lowercase string with consistent formatting."""
+    if ieee is None:
+        return ""
+    # Convert to string and lowercase
+    s = str(ieee).lower().strip()
+    # Ensure standard format (add colons if missing and length is 16 hex chars)
+    if len(s) == 16 and ":" not in s:
+        s = ":".join(s[i:i+2] for i in range(0, 16, 2))
+    return s
 
 
 class ZoneState(Enum):
@@ -40,14 +50,13 @@ class LinkStats:
     """Statistics for a single mesh link."""
     source_ieee: str
     target_ieee: str
-    samples: deque = field(default_factory=lambda: deque(maxlen=120))  # ~2 min at 1/sec
+    samples: deque = field(default_factory=lambda: deque(maxlen=120))
     baseline_mean: Optional[float] = None
     baseline_std: Optional[float] = None
     last_rssi: Optional[int] = None
     last_lqi: Optional[int] = None
 
     def add_sample(self, rssi: int, lqi: int) -> None:
-        """Add a new RSSI/LQI sample."""
         self.samples.append(RSSISample(
             source_ieee=self.source_ieee,
             target_ieee=self.target_ieee,
@@ -58,28 +67,21 @@ class LinkStats:
         self.last_lqi = lqi
 
     def compute_baseline(self) -> bool:
-        """Compute baseline from current samples. Returns True if sufficient data."""
-        if len(self.samples) < 30:  # Need at least 30 samples
+        if len(self.samples) < 30:
             return False
-
         rssi_values = [s.rssi for s in self.samples]
         self.baseline_mean = statistics.mean(rssi_values)
         self.baseline_std = statistics.stdev(rssi_values) if len(rssi_values) > 1 else 1.0
-
-        # Minimum std to avoid false positives in very stable environments
         if self.baseline_std < 1.0:
             self.baseline_std = 1.0
-
         return True
 
     def get_deviation(self) -> Optional[float]:
-        """Get current deviation from baseline in standard deviations."""
         if self.baseline_mean is None or self.last_rssi is None:
             return None
         return abs(self.last_rssi - self.baseline_mean) / self.baseline_std
 
     def get_recent_variance(self, window: int = 10) -> Optional[float]:
-        """Get variance of recent samples."""
         if len(self.samples) < window:
             return None
         recent = list(self.samples)[-window:]
@@ -92,18 +94,11 @@ class ZoneConfig:
     """Configuration for a single zone."""
     name: str
     device_ieees: List[str]
-
-    # Detection thresholds
-    deviation_threshold: float = 2.5  # Std devs from baseline to trigger
-    variance_threshold: float = 4.0   # Variance threshold for fluctuation
-    min_links_triggered: int = 2      # Min links showing fluctuation
-
-    # Timing
-    calibration_time: int = 120       # Seconds to calibrate baseline
-    clear_delay: int = 30             # Seconds of stability before clearing
-    sample_interval: float = 1.0      # Seconds between samples
-
-    # MQTT
+    deviation_threshold: float = 2.5
+    variance_threshold: float = 4.0
+    min_links_triggered: int = 2
+    calibration_time: int = 120
+    clear_delay: int = 30
     mqtt_topic_override: Optional[str] = None
 
 
@@ -114,13 +109,11 @@ class Zone:
     state: ZoneState = ZoneState.CALIBRATING
     links: Dict[str, LinkStats] = field(default_factory=dict)
 
-    # State tracking
     calibration_start: Optional[float] = None
     last_trigger_time: Optional[float] = None
     last_clear_time: Optional[float] = None
     occupied_since: Optional[float] = None
 
-    # Callbacks
     on_occupied: Optional[Callable[['Zone'], None]] = None
     on_vacant: Optional[Callable[['Zone'], None]] = None
 
@@ -133,58 +126,63 @@ class Zone:
         return self.config.device_ieees
 
     def get_link_key(self, source: str, target: str) -> str:
-        """Generate consistent key for a link (order-independent)."""
-        return f"{min(source, target)}:{max(source, target)}"
+        s = normalize_ieee(source)
+        t = normalize_ieee(target)
+        return f"{min(s, t)}:{max(s, t)}"
 
     def get_or_create_link(self, source: str, target: str) -> LinkStats:
-        """Get or create link stats for a device pair."""
         key = self.get_link_key(source, target)
         if key not in self.links:
             self.links[key] = LinkStats(source_ieee=source, target_ieee=target)
         return self.links[key]
 
     def record_rssi(self, source_ieee: str, target_ieee: str, rssi: int, lqi: int) -> None:
-        """Record an RSSI measurement for this zone."""
-        # Only track links between zone devices
-        if source_ieee not in self.device_ieees or target_ieee not in self.device_ieees:
+        s_norm = normalize_ieee(source_ieee)
+        t_norm = normalize_ieee(target_ieee)
+
+        # EXPANDED LOGIC: Track link if AT LEAST ONE device is in the zone.
+        source_in_zone = s_norm in self.device_ieees
+        target_in_zone = t_norm in self.device_ieees
+
+        if not source_in_zone and not target_in_zone:
             return
 
-        link = self.get_or_create_link(source_ieee, target_ieee)
+        link = self.get_or_create_link(s_norm, t_norm)
         link.add_sample(rssi, lqi)
 
     def check_calibration(self) -> bool:
-        """Check if calibration is complete. Returns True if zone is ready."""
         if self.state != ZoneState.CALIBRATING:
             return True
 
+        # Check actual sample counts in links, not just if link objects exist
+        valid_links = [l for l in self.links.values() if len(l.samples) > 0]
+
         if self.calibration_start is None:
-            self.calibration_start = time.time()
+            if len(valid_links) > 0:
+                self.calibration_start = time.time()
+                logger.info(f"Zone '{self.name}' started calibration timer (active links: {len(valid_links)})")
             return False
 
         elapsed = time.time() - self.calibration_start
         if elapsed < self.config.calibration_time:
             return False
 
-        # Attempt to compute baselines for all links
         ready_links = 0
         for link in self.links.values():
             if link.compute_baseline():
                 ready_links += 1
 
-        if ready_links >= self.config.min_links_triggered:
+        if ready_links > 0:
             self.state = ZoneState.VACANT
             logger.info(f"Zone '{self.name}' calibrated with {ready_links} links")
             return True
 
-        # Not enough data, extend calibration
-        logger.debug(f"Zone '{self.name}' extending calibration, only {ready_links} links ready")
         return False
 
     def evaluate(self) -> ZoneState:
-        """Evaluate current zone state based on RSSI patterns."""
         if self.state == ZoneState.CALIBRATING:
-            if not self.check_calibration():
-                return self.state
+            self.check_calibration()
+            return self.state
 
         triggered_links = 0
         high_variance_links = 0
@@ -192,30 +190,25 @@ class Zone:
         for link in self.links.values():
             deviation = link.get_deviation()
             variance = link.get_recent_variance()
-
             if deviation is not None and deviation > self.config.deviation_threshold:
                 triggered_links += 1
-
             if variance is not None and variance > self.config.variance_threshold:
                 high_variance_links += 1
 
+        total_triggers = triggered_links
+
+        is_fluctuating = (total_triggers >= self.config.min_links_triggered)
+
         now = time.time()
-
-        # Check for presence
-        is_fluctuating = (triggered_links >= self.config.min_links_triggered or
-                          high_variance_links >= self.config.min_links_triggered)
-
         if is_fluctuating:
             self.last_trigger_time = now
-
             if self.state != ZoneState.OCCUPIED:
                 self.state = ZoneState.OCCUPIED
                 self.occupied_since = now
-                logger.info(f"Zone '{self.name}' -> OCCUPIED (links: {triggered_links}, variance: {high_variance_links})")
+                logger.info(f"Zone '{self.name}' -> OCCUPIED (active links: {total_triggers})")
                 if self.on_occupied:
                     self.on_occupied(self)
         else:
-            # Check clear delay
             if self.state == ZoneState.OCCUPIED:
                 if self.last_trigger_time:
                     stable_duration = now - self.last_trigger_time
@@ -227,14 +220,13 @@ class Zone:
                         self.occupied_since = None
                         if self.on_vacant:
                             self.on_vacant(self)
-
         return self.state
 
     def to_dict(self) -> Dict[str, Any]:
-        """Serialize zone state for API/MQTT."""
         return {
             'name': self.name,
             'state': self.state.name.lower(),
+            'device_ieees': self.device_ieees,
             'device_count': len(self.device_ieees),
             'link_count': len(self.links),
             'occupied_since': self.occupied_since,
@@ -258,7 +250,6 @@ class Zone:
         }
 
     def recalibrate(self) -> None:
-        """Force recalibration of the zone."""
         self.state = ZoneState.CALIBRATING
         self.calibration_start = None
         for link in self.links.values():
@@ -278,12 +269,13 @@ class ZoneManager:
         self._running = False
         self._sample_task: Optional[asyncio.Task] = None
         self._eval_task: Optional[asyncio.Task] = None
-
-        # Map device IEEE to zones for fast lookup
         self._device_to_zones: Dict[str, Set[str]] = {}
+        self._topology_logged = False
+        self._force_collect = False
 
     def create_zone(self, config: ZoneConfig) -> Zone:
-        """Create and register a new zone."""
+        config.device_ieees = [normalize_ieee(i) for i in config.device_ieees]
+
         zone = Zone(
             config=config,
             on_occupied=self._on_zone_occupied,
@@ -291,7 +283,6 @@ class ZoneManager:
         )
         self.zones[config.name] = zone
 
-        # Update device->zone mapping
         for ieee in config.device_ieees:
             if ieee not in self._device_to_zones:
                 self._device_to_zones[ieee] = set()
@@ -301,74 +292,62 @@ class ZoneManager:
         return zone
 
     def remove_zone(self, name: str) -> bool:
-        """Remove a zone by name."""
         if name not in self.zones:
             return False
-
         zone = self.zones.pop(name)
-
-        # Clean up device->zone mapping
         for ieee in zone.device_ieees:
             if ieee in self._device_to_zones:
                 self._device_to_zones[ieee].discard(name)
                 if not self._device_to_zones[ieee]:
                     del self._device_to_zones[ieee]
-
-        logger.info(f"Removed zone '{name}'")
         return True
 
     def get_zone(self, name: str) -> Optional[Zone]:
-        """Get a zone by name."""
         return self.zones.get(name)
 
     def record_link_quality(self, source_ieee: str, target_ieee: str, rssi: int, lqi: int) -> None:
-        """Record RSSI/LQI from any message between devices."""
-        # Find zones containing both devices
-        source_zones = self._device_to_zones.get(source_ieee, set())
-        target_zones = self._device_to_zones.get(target_ieee, set())
-        common_zones = source_zones & target_zones
+        s_norm = normalize_ieee(source_ieee)
+        t_norm = normalize_ieee(target_ieee)
 
-        for zone_name in common_zones:
+        affected_zones = set()
+
+        if s_norm in self._device_to_zones:
+            affected_zones.update(self._device_to_zones[s_norm])
+
+        if t_norm in self._device_to_zones:
+            affected_zones.update(self._device_to_zones[t_norm])
+
+        # Diagnostic log (verbose)
+        if self._force_collect and not affected_zones:
+            # logger.debug(f"Link {s_norm}->{t_norm} ignored (not in any zone)")
+            pass
+
+        for zone_name in affected_zones:
             zone = self.zones.get(zone_name)
             if zone:
-                zone.record_rssi(source_ieee, target_ieee, rssi, lqi)
+                zone.record_rssi(s_norm, t_norm, rssi, lqi)
 
     async def start(self) -> None:
-        """Start the zone manager background tasks."""
         if self._running:
             return
-
         self._running = True
         self._sample_task = asyncio.create_task(self._sample_loop())
         self._eval_task = asyncio.create_task(self._eval_loop())
         logger.info("Zone manager started")
 
     async def stop(self) -> None:
-        """Stop the zone manager."""
         self._running = False
-
         if self._sample_task:
             self._sample_task.cancel()
-            try:
-                await self._sample_task
-            except asyncio.CancelledError:
-                pass
-
         if self._eval_task:
             self._eval_task.cancel()
-            try:
-                await self._eval_task
-            except asyncio.CancelledError:
-                pass
-
-        logger.info("Zone manager stopped")
 
     async def _sample_loop(self) -> None:
-        """Periodically request LQI data from devices."""
+        logger.info("Starting Zone sample loop...")
         while self._running:
             try:
                 await self._collect_neighbor_data()
-                await asyncio.sleep(1.0)  # Sample every second
+                await asyncio.sleep(1.0)
             except asyncio.CancelledError:
                 break
             except Exception as e:
@@ -376,193 +355,182 @@ class ZoneManager:
                 await asyncio.sleep(5.0)
 
     async def _eval_loop(self) -> None:
-        """Periodically evaluate all zones."""
         while self._running:
             try:
                 for zone in self.zones.values():
                     zone.evaluate()
-                await asyncio.sleep(0.5)  # Evaluate twice per second
+                await asyncio.sleep(0.5)
             except asyncio.CancelledError:
                 break
             except Exception as e:
                 logger.error(f"Error in eval loop: {e}")
-                await asyncio.sleep(1.0)
 
     async def _collect_neighbor_data(self) -> None:
-        """Collect neighbor/LQI data from the coordinator and routers."""
+        """
+        Collect link quality data using logic mirroring core.py's connection table builder.
+        """
+        # Log every call initially (remove after debugging)
+        logger.info(f"_collect_neighbor_data called, app_controller={self.app_controller is not None}")
+
         if not self.app_controller:
+            logger.warning("Zone sampling: app_controller is None!")
             return
 
+        # Check topology exists
+        has_topology = hasattr(self.app_controller, 'topology')
+        has_neighbors = has_topology and hasattr(self.app_controller.topology, 'neighbors')
+        #logger.info(f"has_topology={has_topology}, has_neighbors={has_neighbors}")
 
-        # --- Borrow from Cached Topology ---
-        if hasattr(self.app_controller, 'topology') and self.app_controller.topology.neighbors:
-            for src_ieee, neighbors in self.app_controller.topology.neighbors.items():
-                source_str = str(src_ieee)
-                for neighbor in neighbors:
-                    target_str = str(neighbor.ieee)
+        if has_neighbors:
+            neighbor_count = len(self.app_controller.topology.neighbors)
+            #logger.info(f"Topology has {neighbor_count} source nodes")
+            #logger.info(f"Zone device mappings: {list(self._device_to_zones.keys())}")
 
-                    # Convert LQI to RSSI if RSSI is missing
-                    lqi = neighbor.lqi or 0
-                    rssi = self._lqi_to_rssi(lqi)
+        # Reset diagnostic flag once we have app_controller
+        if self._topology_logged:
+            logger.info(f"Zone sampling: app_controller is now available")
+            self._topology_logged = False
 
-                    self.record_link_quality(
-                        source_ieee=source_str,
-                        target_ieee=target_str,
-                        rssi=rssi,
-                        lqi=lqi
-                    )
+        links_found = 0
+
+        # 1. Read from Cached Topology (primary source)
+        if hasattr(self.app_controller, 'topology') and hasattr(self.app_controller.topology, 'neighbors'):
+            topology_neighbors = self.app_controller.topology.neighbors
+
+            if self._force_collect:
+                #logger.info(f"Topology has {len(topology_neighbors)} source nodes")
+                #logger.info(f"Zone devices: {list(self._device_to_zones.keys())}")
+
+                for src_ieee, neighbors in topology_neighbors.items():
+                    src_str = normalize_ieee(src_ieee)
+
+                    for neighbor in neighbors:
+                        dst_str = normalize_ieee(neighbor.ieee)
+                        lqi = getattr(neighbor, 'lqi', 0) or 0
+                        rssi = self._lqi_to_rssi(lqi)
+
+                        # Check if either device is in a zone BEFORE recording
+                        if src_str in self._device_to_zones or dst_str in self._device_to_zones:
+                            links_found += 1
+                            self.record_link_quality(src_str, dst_str, rssi, lqi)
+
+                            if self._force_collect:
+                                logger.info(f"  Link: {src_str[:17]} <-> {dst_str[:17]} LQI={lqi}")
+        else:
+            if self._force_collect:
+                logger.warning("Topology.neighbors not available!")
+
+        # 2. Active Polling from Coordinator
         try:
-            # Get neighbor table from coordinator
-            neighbors = await self._get_neighbors(self.app_controller.ieee)
+            coord_ieee = str(self.app_controller.ieee)
+            neighbors = await self._get_neighbors(coord_ieee)
 
             for neighbor in neighbors:
-                self.record_link_quality(
-                    source_ieee=str(self.app_controller.ieee),
-                    target_ieee=str(neighbor.get('ieee', '')),
-                    rssi=neighbor.get('rssi', 0),
-                    lqi=neighbor.get('lqi', 0),
-                )
-
-            # Also poll routers in zones for their neighbor tables
-            router_ieees = set()
-            for zone in self.zones.values():
-                for ieee in zone.device_ieees:
-                    device = self.app_controller.devices.get(ieee)
-                    if device and device.node_desc and device.node_desc.is_router:
-                        router_ieees.add(ieee)
-
-            for ieee in router_ieees:
-                try:
-                    neighbors = await self._get_neighbors(ieee)
-                    for neighbor in neighbors:
-                        self.record_link_quality(
-                            source_ieee=str(ieee),
-                            target_ieee=str(neighbor.get('ieee', '')),
-                            rssi=neighbor.get('rssi', 0),
-                            lqi=neighbor.get('lqi', 0),
-                        )
-                except Exception as e:
-                    logger.debug(f"Failed to get neighbors from {ieee}: {e}")
-
+                target_ieee = normalize_ieee(neighbor.get('ieee', ''))
+                if coord_ieee in self._device_to_zones or target_ieee in self._device_to_zones:
+                    links_found += 1
+                    self.record_link_quality(
+                        source_ieee=coord_ieee,
+                        target_ieee=target_ieee,
+                        rssi=neighbor.get('rssi', 0),
+                        lqi=neighbor.get('lqi', 0),
+                    )
         except Exception as e:
-            logger.debug(f"Error collecting neighbor data: {e}")
+            if self._force_collect:
+                logger.debug(f"Coordinator Mgmt_Lqi_req failed: {e}")
 
-    async def _get_neighbors(self, ieee: str) -> List[Dict[str, Any]]:
-        """Get neighbor table from a device via ZDO Mgmt_Lqi_req."""
-        if not self.app_controller:
-            return []
+        if self._force_collect:
+            logger.info(f"Collection complete: {links_found} relevant links found")
+            self._force_collect = False
 
-        device = self.app_controller.devices.get(ieee)
+    async def _get_neighbors(self, ieee: Any) -> List[Dict[str, Any]]:
+        # Helper to find device by ieee string or object
+        device = None
+        if hasattr(self.app_controller, 'devices'):
+            device = self.app_controller.devices.get(ieee)
+            if not device:
+                s_ieee = normalize_ieee(ieee)
+                for k, v in self.app_controller.devices.items():
+                    if normalize_ieee(k) == s_ieee:
+                        device = v
+                        break
+
         if not device:
             return []
 
         neighbors = []
         start_index = 0
 
-        while True:
+        for _ in range(3):
             try:
-                # ZDO Mgmt_Lqi_req
                 status, count, start, neighbor_list = await device.zdo.Mgmt_Lqi_req(start_index)
+                if status != 0: break
 
-                if status != 0:
-                    break
-
-                for neighbor in neighbor_list:
+                for n in neighbor_list:
                     neighbors.append({
-                        'ieee': str(neighbor.ieee),
-                        'nwk': neighbor.nwk,
-                        'lqi': neighbor.lqi,
-                        'rssi': self._lqi_to_rssi(neighbor.lqi),
-                        'device_type': neighbor.device_type,
-                        'depth': neighbor.depth,
+                        'ieee': str(n.ieee),
+                        'lqi': n.lqi,
+                        'rssi': self._lqi_to_rssi(n.lqi)
                     })
 
-                if start + len(neighbor_list) >= count:
-                    break
-
+                if start + len(neighbor_list) >= count: break
                 start_index = start + len(neighbor_list)
-
-            except Exception as e:
-                logger.debug(f"Mgmt_Lqi_req failed: {e}")
+            except Exception:
                 break
 
         return neighbors
 
     def _lqi_to_rssi(self, lqi: int) -> int:
-        """Convert LQI to approximate RSSI (dBm)."""
-        # This is an approximation - actual conversion depends on radio stack
-        # Using linear mapping: LQI 255 -> -30dBm, LQI 0 -> -100dBm
         return int(-100 + (lqi / 255) * 70)
 
     def _on_zone_occupied(self, zone: Zone) -> None:
-        """Handle zone becoming occupied."""
         if self.mqtt_handler:
             asyncio.create_task(self._publish_zone_state(zone))
 
     def _on_zone_vacant(self, zone: Zone) -> None:
-        """Handle zone becoming vacant."""
         if self.mqtt_handler:
             asyncio.create_task(self._publish_zone_state(zone))
 
     async def _publish_zone_state(self, zone: Zone) -> None:
-        """Publish zone state to MQTT."""
-        if not self.mqtt_handler:
-            return
-
-        # Publish as binary_sensor occupancy
+        if not self.mqtt_handler: return
         topic = zone.config.mqtt_topic_override or f"zigbee/zone/{zone.name.lower().replace(' ', '_')}"
-
-        payload = {
-            'occupancy': zone.state == ZoneState.OCCUPIED,
-            'state': zone.state.name.lower(),
-        }
-
+        payload = {'occupancy': zone.state == ZoneState.OCCUPIED, 'state': zone.state.name.lower()}
         try:
-            await self.mqtt_handler.publish(f"{topic}/state", payload)
+            await self.mqtt_handler.publish(f"{topic}/state", json.dumps(payload))
         except Exception as e:
             logger.error(f"Failed to publish zone state: {e}")
 
     async def publish_discovery(self, zone: Zone) -> None:
-        """Publish Home Assistant MQTT discovery for a zone."""
-        if not self.mqtt_handler:
-            return
-
+        if not self.mqtt_handler: return
         safe_name = zone.name.lower().replace(' ', '_')
         unique_id = f"zigbee_zone_{safe_name}"
-
         discovery_payload = {
             'name': f"{zone.name} Presence",
             'unique_id': unique_id,
             'device_class': 'occupancy',
             'state_topic': f"zigbee/zone/{safe_name}/state",
             'value_template': '{{ value_json.occupancy }}',
-            'payload_on': True,
-            'payload_off': False,
+            'payload_on': True, 'payload_off': False,
             'device': {
                 'identifiers': [unique_id],
                 'name': f"Zone: {zone.name}",
                 'model': 'RSSI Presence Zone',
                 'manufacturer': 'ZigBee-Manager',
-            },
-            'json_attributes_topic': f"zigbee/zone/{safe_name}/attributes",
+            }
         }
-
         try:
             await self.mqtt_handler.publish(
                 f"homeassistant/binary_sensor/{unique_id}/config",
-                json.dumps(discovery_payload),  # <--- Wrap in json.dumps()
+                json.dumps(discovery_payload),
                 retain=True
             )
-            logger.info(f"Published HA discovery for zone '{zone.name}'")
         except Exception as e:
             logger.error(f"Failed to publish zone discovery: {e}")
 
     def list_zones(self) -> List[Dict[str, Any]]:
-        """List all zones with their current state."""
         return [zone.to_dict() for zone in self.zones.values()]
 
     def save_config(self) -> List[Dict[str, Any]]:
-        """Export zone configurations for persistence."""
         configs = []
         for zone in self.zones.values():
             configs.append({
@@ -578,7 +546,6 @@ class ZoneManager:
         return configs
 
     def load_config(self, configs: List[Dict[str, Any]]) -> None:
-        """Load zone configurations."""
         for cfg in configs:
             zone_config = ZoneConfig(
                 name=cfg['name'],
@@ -591,3 +558,9 @@ class ZoneManager:
                 mqtt_topic_override=cfg.get('mqtt_topic_override'),
             )
             self.create_zone(zone_config)
+
+    def force_recalibrate_all(self):
+        """Force recalibration and collection immediately."""
+        self._force_collect = True
+        for zone in self.zones.values():
+            zone.recalibrate()

@@ -51,34 +51,37 @@ class ZoneResponse(BaseModel):
     links: Dict[str, Dict[str, Any]]
 
 
-def register_zone_routes(app, zone_manager, device_registry=None):
-    """
-    Register zone API routes on the FastAPI app.
-
-    Args:
-        app: FastAPI application instance
-        zone_manager: ZoneManager instance
-        device_registry: Optional device registry for IEEE lookups
-    """
+def register_zone_routes(app, zone_manager_or_getter, device_registry_or_getter=None):
     from fastapi import HTTPException
     from .zones import ZoneConfig
 
+    def get_zm():
+        zm = zone_manager_or_getter() if callable(zone_manager_or_getter) else zone_manager_or_getter
+        return zm
+
+    def get_devices():
+        if device_registry_or_getter is None:
+            return None
+        return device_registry_or_getter() if callable(device_registry_or_getter) else device_registry_or_getter
+
     @app.get("/api/zones", tags=["zones"])
-    async def list_zones() -> List[Dict[str, Any]]:
-        """List all zones with current status."""
-        return zone_manager.list_zones()
+    async def list_zones():
+        zm = get_zm()
+        if not zm:
+            return []
+        return zm.list_zones()
 
     @app.post("/api/zones", tags=["zones"])
     async def create_zone(request: ZoneCreateRequest) -> Dict[str, Any]:
         """Create a new presence detection zone."""
-        if request.name in zone_manager.zones:
+        if request.name in zone_manager_or_getter.zones:
             raise HTTPException(status_code=400, detail=f"Zone '{request.name}' already exists")
 
         # Validate device IEEEs if registry available
-        if device_registry:
+        if device_registry_or_getter:
             invalid_ieees = []
             for ieee in request.device_ieees:
-                if ieee not in device_registry:
+                if ieee not in device_registry_or_getter:
                     invalid_ieees.append(ieee)
             if invalid_ieees:
                 raise HTTPException(
@@ -103,17 +106,17 @@ def register_zone_routes(app, zone_manager, device_registry=None):
             mqtt_topic_override=request.mqtt_topic_override,
         )
 
-        zone = zone_manager.create_zone(config)
+        zone = zone_manager_or_getter.create_zone(config)
 
         # Publish HA discovery
-        await zone_manager.publish_discovery(zone)
+        await zone_manager_or_getter.publish_discovery(zone)
 
         return zone.to_dict()
 
     @app.get("/api/zones/{zone_name}", tags=["zones"])
     async def get_zone(zone_name: str) -> Dict[str, Any]:
         """Get zone details and current status."""
-        zone = zone_manager.get_zone(zone_name)
+        zone = zone_manager_or_getter.get_zone(zone_name)
         if not zone:
             raise HTTPException(status_code=404, detail=f"Zone '{zone_name}' not found")
         return zone.to_dict()
@@ -121,7 +124,7 @@ def register_zone_routes(app, zone_manager, device_registry=None):
     @app.patch("/api/zones/{zone_name}", tags=["zones"])
     async def update_zone(zone_name: str, request: ZoneUpdateRequest) -> Dict[str, Any]:
         """Update zone configuration."""
-        zone = zone_manager.get_zone(zone_name)
+        zone = zone_manager_or_getter.get_zone(zone_name)
         if not zone:
             raise HTTPException(status_code=404, detail=f"Zone '{zone_name}' not found")
 
@@ -142,14 +145,14 @@ def register_zone_routes(app, zone_manager, device_registry=None):
     @app.delete("/api/zones/{zone_name}", tags=["zones"])
     async def delete_zone(zone_name: str) -> Dict[str, str]:
         """Delete a zone."""
-        if not zone_manager.remove_zone(zone_name):
+        if not zone_manager_or_getter.remove_zone(zone_name):
             raise HTTPException(status_code=404, detail=f"Zone '{zone_name}' not found")
         return {"status": "deleted", "zone": zone_name}
 
     @app.post("/api/zones/{zone_name}/recalibrate", tags=["zones"])
     async def recalibrate_zone(zone_name: str) -> Dict[str, Any]:
         """Force zone recalibration."""
-        zone = zone_manager.get_zone(zone_name)
+        zone = zone_manager_or_getter.get_zone(zone_name)
         if not zone:
             raise HTTPException(status_code=404, detail=f"Zone '{zone_name}' not found")
 
@@ -159,7 +162,7 @@ def register_zone_routes(app, zone_manager, device_registry=None):
     @app.post("/api/zones/{zone_name}/devices", tags=["zones"])
     async def modify_zone_devices(zone_name: str, request: ZoneDevicesRequest) -> Dict[str, Any]:
         """Add or remove devices from a zone."""
-        zone = zone_manager.get_zone(zone_name)
+        zone = zone_manager_or_getter.get_zone(zone_name)
         if not zone:
             raise HTTPException(status_code=404, detail=f"Zone '{zone_name}' not found")
 
@@ -167,16 +170,16 @@ def register_zone_routes(app, zone_manager, device_registry=None):
         for ieee in request.add:
             if ieee not in zone.config.device_ieees:
                 zone.config.device_ieees.append(ieee)
-                if ieee not in zone_manager._device_to_zones:
-                    zone_manager._device_to_zones[ieee] = set()
-                zone_manager._device_to_zones[ieee].add(zone_name)
+                if ieee not in zone_manager_or_getter._device_to_zones:
+                    zone_manager_or_getter._device_to_zones[ieee] = set()
+                zone_manager_or_getter._device_to_zones[ieee].add(zone_name)
 
         # Remove devices
         for ieee in request.remove:
             if ieee in zone.config.device_ieees:
                 zone.config.device_ieees.remove(ieee)
-                if ieee in zone_manager._device_to_zones:
-                    zone_manager._device_to_zones[ieee].discard(zone_name)
+                if ieee in zone_manager_or_getter._device_to_zones:
+                    zone_manager_or_getter._device_to_zones[ieee].discard(zone_name)
 
         # Trigger recalibration if devices changed
         if request.add or request.remove:
@@ -187,7 +190,7 @@ def register_zone_routes(app, zone_manager, device_registry=None):
     @app.get("/api/zones/{zone_name}/links", tags=["zones"])
     async def get_zone_links(zone_name: str) -> Dict[str, Any]:
         """Get detailed link statistics for a zone."""
-        zone = zone_manager.get_zone(zone_name)
+        zone = zone_manager_or_getter.get_zone(zone_name)
         if not zone:
             raise HTTPException(status_code=404, detail=f"Zone '{zone_name}' not found")
 
@@ -227,14 +230,14 @@ def register_zone_routes(app, zone_manager, device_registry=None):
         """
         Suggest devices for a zone based on room name matching.
         """
-        if not device_registry:
+        if not device_registry_or_getter:
             # Return empty if registry not ready yet
             return {"room": room_name, "suggested_devices": [], "count": 0}
 
         suggested = []
         room_lower = room_name.lower()
 
-        for ieee, device in device_registry.items():
+        for ieee, device in device_registry_or_getter.items():
             # Handle ZigManDevice wrapper vs Raw Zigpy Device
             # If it's a wrapper, we might need to access .zigpy_dev for specific attributes
             zigpy_dev = getattr(device, 'zigpy_dev', device)

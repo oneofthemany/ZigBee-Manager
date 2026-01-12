@@ -609,6 +609,9 @@ class ZigbeeService:
                 # CRITICAL: Announce all devices to Home Assistant after startup
                 asyncio.create_task(self.announce_all_devices())
 
+                # Initialise zones
+                asyncio.create_task(self._init_zones_internal())
+
                 return
 
             except Exception as e:
@@ -621,6 +624,15 @@ class ZigbeeService:
                 await asyncio.sleep(2)
 
         raise RuntimeError("Failed to start Zigbee Radio after 12 attempts. Check hardware.")
+
+
+    async def _init_zones_internal(self):
+        """Internal zones init called from start()."""
+        try:
+            await asyncio.sleep(2)  # Brief delay for network stability
+            await self.init_zones()
+        except Exception as e:
+            logger.error(f"Failed to initialise zones: {e}")
 
     async def init_zones(self, mqtt_handler=None):
         """Initialise zone manager after Zigbee network is started."""
