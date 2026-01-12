@@ -1,6 +1,7 @@
 """
 Zones - RSSI-based presence detection for ZigBee-Manager.
 Robust version with topology integration matching core.py logic.
+Includes dedicated motion.log.
 """
 
 import asyncio
@@ -14,6 +15,38 @@ from collections import deque
 from enum import Enum, auto
 
 logger = logging.getLogger(__name__)
+
+def setup_motion_logging():
+    """Configure a separate file handler for zone/motion events."""
+    import os
+    from logging.handlers import RotatingFileHandler
+
+    # Try local logs dir first, then system path
+    log_dir = "./logs"
+
+    if os.path.exists(log_dir):
+        log_file = os.path.join(log_dir, "motion.log")
+
+        # Create handler
+        try:
+            handler = RotatingFileHandler(log_file, maxBytes=5*1024*1024, backupCount=3)
+            formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+            handler.setFormatter(formatter)
+            handler.setLevel(logging.INFO)
+
+            # Add to logger
+            logger.addHandler(handler)
+            logger.propagate = False # Logs appear ONLY in motion.log, not main system log
+            logger.info(f"Motion logging initialized to {log_file}")
+        except Exception as e:
+            print(f"Failed to create log handler: {e}")
+
+# Initialize immediately
+try:
+    setup_motion_logging()
+except Exception as e:
+    print(f"Failed to setup motion logging: {e}")
+# ---------------------------------------
 
 
 def normalize_ieee(ieee: Any) -> str:
@@ -53,7 +86,7 @@ class LinkStats:
     samples: deque = field(default_factory=lambda: deque(maxlen=120))
     baseline_mean: Optional[float] = None
     baseline_std: Optional[float] = None
-    last_rssi: Optional[int] = None
+    last_rssi: Optional[float] = None
     last_lqi: Optional[int] = None
 
     def add_sample(self, rssi: int, lqi: int) -> None:
@@ -72,8 +105,8 @@ class LinkStats:
         rssi_values = [s.rssi for s in self.samples]
         self.baseline_mean = statistics.mean(rssi_values)
         self.baseline_std = statistics.stdev(rssi_values) if len(rssi_values) > 1 else 1.0
-        if self.baseline_std < 1.0:
-            self.baseline_std = 1.0
+        if self.baseline_std < 0.5:
+            self.baseline_std = 0.5
         return True
 
     def get_deviation(self) -> Optional[float]:
@@ -140,7 +173,7 @@ class Zone:
         s_norm = normalize_ieee(source_ieee)
         t_norm = normalize_ieee(target_ieee)
 
-        # EXPANDED LOGIC: Track link if AT LEAST ONE device is in the zone.
+        # Track link if AT LEAST ONE device is in the zone.
         source_in_zone = s_norm in self.device_ieees
         target_in_zone = t_norm in self.device_ieees
 
@@ -150,11 +183,15 @@ class Zone:
         link = self.get_or_create_link(s_norm, t_norm)
         link.add_sample(rssi, lqi)
 
+        # LOGGING: Detailed signal changes during calibration
+        if self.state == ZoneState.CALIBRATING:
+            logger.info(f"CALIB [{self.name}]: {s_norm}->{t_norm} | RSSI: {rssi} (LQI:{lqi}) | Samples: {len(link.samples)}")
+
     def check_calibration(self) -> bool:
         if self.state != ZoneState.CALIBRATING:
             return True
 
-        # Check actual sample counts in links, not just if link objects exist
+        # Check actual sample counts in links
         valid_links = [l for l in self.links.values() if len(l.samples) > 0]
 
         if self.calibration_start is None:
@@ -244,6 +281,8 @@ class Zone:
                     'deviation': link.get_deviation(),
                     'variance': link.get_recent_variance(),
                     'sample_count': len(link.samples),
+                    'min_rssi': min([s.rssi for s in link.samples]) if link.samples else None,
+                    'max_rssi': max([s.rssi for s in link.samples]) if link.samples else None,
                 }
                 for key, link in self.links.items()
             }
@@ -262,10 +301,11 @@ class Zone:
 class ZoneManager:
     """Manages all presence detection zones."""
 
-    def __init__(self, app_controller=None, mqtt_handler=None):
+    def __init__(self, app_controller=None, mqtt_handler=None, event_emitter=None):
         self.zones: Dict[str, Zone] = {}
         self.app_controller = app_controller
         self.mqtt_handler = mqtt_handler
+        self.event_emitter = event_emitter
         self._running = False
         self._sample_task: Optional[asyncio.Task] = None
         self._eval_task: Optional[asyncio.Task] = None
@@ -311,16 +351,24 @@ class ZoneManager:
 
         affected_zones = set()
 
+        # Check source device mapping
         if s_norm in self._device_to_zones:
-            affected_zones.update(self._device_to_zones[s_norm])
+            # For each zone that contains Source, check if it also contains Target
+            for z_name in self._device_to_zones[s_norm]:
+                zone = self.zones.get(z_name)
+                if zone and t_norm in zone.device_ieees:
+                    affected_zones.add(z_name)
 
+        # Check target device mapping (redundant but safe)
         if t_norm in self._device_to_zones:
-            affected_zones.update(self._device_to_zones[t_norm])
+            for z_name in self._device_to_zones[t_norm]:
+                zone = self.zones.get(z_name)
+                if zone and s_norm in zone.device_ieees:
+                    affected_zones.add(z_name)
 
         # Diagnostic log (verbose)
-        if self._force_collect and not affected_zones:
-            # logger.debug(f"Link {s_norm}->{t_norm} ignored (not in any zone)")
-            pass
+        if self._force_collect and affected_zones:
+            logger.info(f"Diagnostic: Found INTRA-ZONE link for {affected_zones}: {s_norm}<->{t_norm} (LQI:{lqi})")
 
         for zone_name in affected_zones:
             zone = self.zones.get(zone_name)
@@ -369,79 +417,52 @@ class ZoneManager:
         """
         Collect link quality data using logic mirroring core.py's connection table builder.
         """
-        # Log every call initially (remove after debugging)
-        logger.info(f"_collect_neighbor_data called, app_controller={self.app_controller is not None}")
-
         if not self.app_controller:
-            logger.warning("Zone sampling: app_controller is None!")
             return
 
-        # Check topology exists
-        has_topology = hasattr(self.app_controller, 'topology')
-        has_neighbors = has_topology and hasattr(self.app_controller.topology, 'neighbors')
-        logger.info(f"has_topology={has_topology}, has_neighbors={has_neighbors}")
+        # Trigger diagnostic log if forced
+        if self._force_collect:
+            logger.info(f"--- FORCED COLLECTION: Checking Topology ---")
+            if hasattr(self.app_controller, 'topology') and hasattr(self.app_controller.topology, 'neighbors'):
+                count = len(self.app_controller.topology.neighbors)
+                logger.info(f"Topology has {count} source nodes.")
+                if count > 0:
+                    first_key = next(iter(self.app_controller.topology.neighbors))
+                    logger.info(f"Topology Key Type: {type(first_key)} - Value: {first_key}")
+            else:
+                logger.error("Topology or neighbors attribute MISSING!")
 
-        if has_neighbors:
-            neighbor_count = len(self.app_controller.topology.neighbors)
-            logger.info(f"Topology has {neighbor_count} source nodes")
-            logger.info(f"Zone device mappings: {list(self._device_to_zones.keys())}")
+            logger.info(f"Zones Configured: {list(self.zones.keys())}")
 
-        # Reset diagnostic flag once we have app_controller
-        if self._topology_logged:
-            logger.info(f"Zone sampling: app_controller is now available")
-            self._topology_logged = False
-
-        links_found = 0
-
-        # 1. Read from Cached Topology (primary source)
+        # 1. Borrow from Cached Topology
         if hasattr(self.app_controller, 'topology') and hasattr(self.app_controller.topology, 'neighbors'):
-            topology_neighbors = self.app_controller.topology.neighbors
-
-            if self._force_collect:
-                logger.info(f"Topology has {len(topology_neighbors)} source nodes")
-                logger.info(f"Zone devices: {list(self._device_to_zones.keys())}")
-
-            for src_ieee, neighbors in topology_neighbors.items():
-                src_str = normalize_ieee(src_ieee)
+            for src_ieee, neighbors in self.app_controller.topology.neighbors.items():
+                src_str = str(src_ieee)
 
                 for neighbor in neighbors:
-                    dst_str = normalize_ieee(neighbor.ieee)
+                    dst_str = str(neighbor.ieee)
+
                     lqi = getattr(neighbor, 'lqi', 0) or 0
                     rssi = self._lqi_to_rssi(lqi)
 
-                    # Check if either device is in a zone BEFORE recording
-                    if src_str in self._device_to_zones or dst_str in self._device_to_zones:
-                        links_found += 1
-                        self.record_link_quality(src_str, dst_str, rssi, lqi)
-
-                        if self._force_collect:
-                            logger.info(f"  Link: {src_str[:17]} <-> {dst_str[:17]} LQI={lqi}")
-        else:
-            if self._force_collect:
-                logger.warning("Topology.neighbors not available!")
-
-        # 2. Active Polling from Coordinator
-        try:
-            coord_ieee = str(self.app_controller.ieee)
-            neighbors = await self._get_neighbors(coord_ieee)
-
-            for neighbor in neighbors:
-                target_ieee = normalize_ieee(neighbor.get('ieee', ''))
-                if coord_ieee in self._device_to_zones or target_ieee in self._device_to_zones:
-                    links_found += 1
-                    self.record_link_quality(
-                        source_ieee=coord_ieee,
-                        target_ieee=target_ieee,
-                        rssi=neighbor.get('rssi', 0),
-                        lqi=neighbor.get('lqi', 0),
-                    )
-        except Exception as e:
-            if self._force_collect:
-                logger.debug(f"Coordinator Mgmt_Lqi_req failed: {e}")
+                    self.record_link_quality(src_str, dst_str, rssi, lqi)
 
         if self._force_collect:
-            logger.info(f"Collection complete: {links_found} relevant links found")
             self._force_collect = False
+            logger.info("--- FORCED COLLECTION END ---")
+
+        # 2. Active Polling (Coordinator)
+        try:
+            neighbors = await self._get_neighbors(self.app_controller.ieee)
+            for neighbor in neighbors:
+                self.record_link_quality(
+                    source_ieee=str(self.app_controller.ieee),
+                    target_ieee=str(neighbor.get('ieee', '')),
+                    rssi=neighbor.get('rssi', 0),
+                    lqi=neighbor.get('lqi', 0),
+                )
+        except Exception:
+            pass
 
     async def _get_neighbors(self, ieee: Any) -> List[Dict[str, Any]]:
         # Helper to find device by ieee string or object
@@ -492,7 +513,30 @@ class ZoneManager:
             asyncio.create_task(self._publish_zone_state(zone))
 
     async def _publish_zone_state(self, zone: Zone) -> None:
+        """Publish zone state to MQTT and WebSocket."""
+        # 1. WebSocket Broadcast (Frontend Live Updates)
+        if self.event_emitter:
+            ws_payload = {
+                'zone': {
+                    'name': zone.name,
+                    'state': zone.state.name.lower(),
+                    'occupied': zone.state == ZoneState.OCCUPIED,
+                    # Send essential link stats for live graphing
+                    'links': {
+                        k: {
+                            'last_rssi': l.last_rssi,
+                            'deviation': l.get_deviation(),
+                            'baseline_mean': l.baseline_mean
+                        } for k, l in zone.links.items()
+                    }
+                }
+            }
+            # 'zone_update' matches the check in websocket.js
+            await self.event_emitter('zone_update', ws_payload)
+
+        # 2. MQTT Publish (Home Assistant)
         if not self.mqtt_handler: return
+
         topic = zone.config.mqtt_topic_override or f"zigbee/zone/{zone.name.lower().replace(' ', '_')}"
         payload = {'occupancy': zone.state == ZoneState.OCCUPIED, 'state': zone.state.name.lower()}
         try:

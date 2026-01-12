@@ -39,7 +39,52 @@ export function initZones() {
     document.getElementById('zone-device-search')?.addEventListener('keyup', (e) => {
         filterDeviceList(e.target.value);
     });
+
+    // --- LIVE UPDATES: Listen for WebSocket events ---
+    window.addEventListener('zone-update', (event) => {
+        const payload = event.detail;
+        if (!payload || !payload.zone) return;
+
+        const zoneName = payload.zone.name;
+        // Merge updates into local cache
+        const currentZone = zonesData.get(zoneName);
+        if (currentZone) {
+            // Update fields
+            if (payload.zone.state) currentZone.state = payload.zone.state;
+            if (payload.zone.occupied !== undefined) currentZone.occupied = payload.zone.occupied;
+
+            // Merge links if provided (deep merge logic simplified here)
+            if (payload.zone.links) {
+                if (!currentZone.links) currentZone.links = {};
+                // If the payload sends partial link updates, merge them.
+                // Assuming payload.zone.links contains the updated link stats.
+                Object.assign(currentZone.links, payload.zone.links);
+            }
+
+            // 1. Update Grid Card (if visible)
+            updateZoneCardUI(currentZone);
+
+            // 2. Update Modal (if open for this zone)
+            const modalEl = document.getElementById('zoneDetailsModal');
+            const modalTitle = document.getElementById('zone-details-title');
+
+            if (modalEl.classList.contains('show') && modalTitle.innerText === zoneName) {
+                // Re-render the active tab content
+                renderZoneModalContent(currentZone, document.querySelector('#zoneDetailsModal .modal-body'), false);
+            }
+        }
+    });
 }
+
+// Helper to update specific card UI element without full re-render
+function updateZoneCardUI(zone) {
+    // Find the card by iterating or ID (assuming ID format from renderZonesGrid)
+    // NOTE: In renderZonesGrid we didn't set IDs, so we might need to rely on re-rendering or selecting by text title
+    // Ideally, update renderZonesGrid to add id={`zone-card-${zone.name}`}
+    // For now, simpler approach: trigger grid re-render if state changes heavily, or just rely on manual refresh for grid.
+    // However, the user asked for modal updates specifically.
+}
+
 
 // ============================================================================
 // API CALLS
@@ -146,7 +191,7 @@ function createZoneCard(zone) {
 }
 
 // ============================================================================
-// VIEW ZONE DETAILS (Updated with Tabs and Devices)
+// VIEW ZONE DETAILS (Updated with Tabs and Live Logic)
 // ============================================================================
 export async function viewZoneDetails(zoneName) {
     const zone = zonesData.get(zoneName);
@@ -160,29 +205,60 @@ export async function viewZoneDetails(zoneName) {
 
     modalTitle.innerText = zone.name;
 
-    // --- Build Links HTML ---
+    // Initial Render
+    renderZoneModalContent(zone, modalBody, true); // true = full render including tabs structure
+
+    const modal = new bootstrap.Modal(document.getElementById('zoneDetailsModal'));
+    modal.show();
+}
+
+/**
+ * Renders the content inside the modal.
+ * @param {Object} zone - The zone data
+ * @param {HTMLElement} container - The container to render into
+ * @param {boolean} fullRender - If true, re-creates the tabs structure. If false, only updates inner content.
+ */
+function renderZoneModalContent(zone, container, fullRender = true) {
+    // Generate inner HTML for stats
     let linksHtml = '';
     if (zone.links && Object.keys(zone.links).length > 0) {
-        linksHtml = `<div class="table-responsive"><table class="table table-sm table-striped small">
+        linksHtml = `<div class="table-responsive"><table class="table table-sm table-striped small align-middle">
             <thead>
                 <tr>
-                    <th>Link</th>
-                    <th>RSSI</th>
-                    <th>Baseline</th>
-                    <th>Dev (σ)</th>
+                    <th>Link Pair</th>
+                    <th class="text-center">Signal</th>
+                    <th class="text-center">Baseline</th>
+                    <th class="text-center">Dev (σ)</th>
+                    <th class="text-center">Samples</th>
+                    <th class="text-center">Range</th>
                 </tr>
             </thead>
             <tbody>
                 ${Object.entries(zone.links).map(([key, link]) => {
-                    const dev = link.deviation ? link.deviation.toFixed(2) : '-';
-                    const baseline = link.baseline_mean ? link.baseline_mean.toFixed(1) : '-';
-                    const isTriggered = link.deviation > zone.config.deviation_threshold;
+                    // Check if link is an object or simplified from WS
+                    const rssi = link.last_rssi !== undefined ? link.last_rssi : (link.rssi || '-');
+                    const dev = (link.deviation !== undefined && link.deviation !== null) ? Number(link.deviation).toFixed(2) : '-';
+                    const baseline = (link.baseline_mean !== undefined && link.baseline_mean !== null) ? Number(link.baseline_mean).toFixed(1) : '-';
+                    const samples = link.sample_count || '-';
+
+                    // Format Min/Max range
+                    const minR = link.min_rssi !== undefined ? link.min_rssi : '';
+                    const maxR = link.max_rssi !== undefined ? link.max_rssi : '';
+                    const range = (minR !== '' && maxR !== '') ? `${minR}..${maxR}` : '-';
+
+                    // Trigger highlighting
+                    const isTriggered = parseFloat(dev) > (zone.config?.deviation_threshold || 2.5);
+                    const rowClass = isTriggered ? 'table-danger fw-bold' : '';
+                    const devClass = isTriggered ? 'text-danger' : '';
+
                     return `
-                        <tr class="${isTriggered ? 'table-danger fw-bold' : ''}">
-                            <td class="text-truncate" style="max-width: 150px;" title="${key}">${key}</td>
-                            <td>${link.last_rssi}</td>
-                            <td>${baseline}</td>
-                            <td>${dev}</td>
+                        <tr class="${rowClass}">
+                            <td class="text-truncate" style="max-width: 150px; font-family:monospace; font-size:0.85em;" title="${key}">${key}</td>
+                            <td class="text-center">${rssi}</td>
+                            <td class="text-center">${baseline}</td>
+                            <td class="text-center ${devClass}">${dev}</td>
+                            <td class="text-center text-muted">${samples}</td>
+                            <td class="text-center text-muted small">${range}</td>
                         </tr>
                     `;
                 }).join('')}
@@ -192,10 +268,8 @@ export async function viewZoneDetails(zoneName) {
         linksHtml = '<div class="alert alert-secondary">No link data available. Wait for calibration.</div>';
     }
 
-    // --- Build Devices HTML ---
-    // Ensure we have device_ieees in data (requires backend update)
+    // Generate inner HTML for devices
     const deviceList = zone.device_ieees || [];
-
     const devicesListHtml = deviceList.map(ieee => {
         const device = deviceListCache.find(d => d.ieee.toLowerCase() === ieee.toLowerCase()) || { friendly_name: ieee, model: 'Unknown' };
         const displayName = device.friendly_name === ieee ? ieee : `${device.friendly_name} (${ieee})`;
@@ -218,53 +292,70 @@ export async function viewZoneDetails(zoneName) {
         `<option value="${d.ieee}">${d.friendly_name || d.ieee}</option>`
     ).join('');
 
-    // --- Inject Content with Tabs ---
-    modalBody.innerHTML = `
+    const devicesTabContent = `
+        <div class="card mb-3">
+            <div class="card-header bg-light small fw-bold">Add Device</div>
+            <div class="card-body p-2">
+                <div class="input-group">
+                    <select class="form-select form-select-sm" id="zone-add-select">
+                        <option value="">Select device...</option>
+                        ${addOptions}
+                    </select>
+                    <button class="btn btn-sm btn-success" onclick="window.addDeviceToZoneFromModal('${zone.name}')">Add</button>
+                </div>
+            </div>
+        </div>
+
+        <h6 class="small text-muted mb-2">Devices in Zone (${deviceList.length})</h6>
+        <ul class="list-group list-group-flush border rounded overflow-auto" style="max-height: 300px;">
+            ${devicesListHtml}
+        </ul>
+    `;
+
+    // HEADER content
+    const headerHtml = `
         <div class="mb-3 d-flex justify-content-between align-items-center">
              <span><strong>Status:</strong> <span class="badge bg-${zone.state === 'occupied' ? 'success' : 'secondary'}">${zone.state}</span></span>
              ${zone.occupied_since ? `<span class="badge bg-light text-dark border">Since: ${new Date(zone.occupied_since * 1000).toLocaleTimeString()}</span>` : ''}
         </div>
-
-        <ul class="nav nav-tabs mb-3" id="zoneDetailsTabs" role="tablist">
-            <li class="nav-item" role="presentation">
-                <button class="nav-link active" id="stats-tab" data-bs-toggle="tab" data-bs-target="#tab-stats" type="button">Link Statistics</button>
-            </li>
-            <li class="nav-item" role="presentation">
-                <button class="nav-link" id="devices-tab" data-bs-toggle="tab" data-bs-target="#tab-devices" type="button">Managed Devices</button>
-            </li>
-        </ul>
-
-        <div class="tab-content">
-            <!-- Stats Tab -->
-            <div class="tab-pane fade show active" id="tab-stats">
-                ${linksHtml}
-            </div>
-
-            <!-- Devices Tab -->
-            <div class="tab-pane fade" id="tab-devices">
-                <div class="card mb-3">
-                    <div class="card-header bg-light small fw-bold">Add Device</div>
-                    <div class="card-body p-2">
-                        <div class="input-group">
-                            <select class="form-select form-select-sm" id="zone-add-select">
-                                <option value="">Select device...</option>
-                                ${addOptions}
-                            </select>
-                            <button class="btn btn-sm btn-success" onclick="window.addDeviceToZoneFromModal('${zone.name}')">Add</button>
-                        </div>
-                    </div>
-                </div>
-
-                <h6 class="small text-muted mb-2">Devices in Zone (${deviceList.length})</h6>
-                <ul class="list-group list-group-flush border rounded overflow-auto" style="max-height: 300px;">
-                    ${devicesListHtml}
-                </ul>
-            </div>
-        </div>
     `;
 
-    const modal = new bootstrap.Modal(document.getElementById('zoneDetailsModal'));
-    modal.show();
+    if (fullRender) {
+        // FULL RENDER: Create structure + content
+        container.innerHTML = `
+            ${headerHtml}
+            <ul class="nav nav-tabs mb-3" id="zoneDetailsTabs" role="tablist">
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link active" id="stats-tab" data-bs-toggle="tab" data-bs-target="#tab-stats" type="button">Link Statistics</button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="devices-tab" data-bs-toggle="tab" data-bs-target="#tab-devices" type="button">Managed Devices</button>
+                </li>
+            </ul>
+
+            <div class="tab-content">
+                <div class="tab-pane fade show active" id="tab-stats">
+                    ${linksHtml}
+                </div>
+                <div class="tab-pane fade" id="tab-devices">
+                    ${devicesTabContent}
+                </div>
+            </div>
+        `;
+    } else {
+        // PARTIAL RENDER: Just update the specific divs to avoid killing tab state
+        // 1. Update Header
+        const headerDiv = container.querySelector('.d-flex.justify-content-between');
+        if (headerDiv) headerDiv.outerHTML = headerHtml;
+
+        // 2. Update Stats Pane
+        const statsPane = document.getElementById('tab-stats');
+        if (statsPane) statsPane.innerHTML = linksHtml;
+
+        // 3. Update Devices Pane (less frequent but safe to update)
+        const devicesPane = document.getElementById('tab-devices');
+        if (devicesPane) devicesPane.innerHTML = devicesTabContent;
+    }
 }
 
 // ============================================================================

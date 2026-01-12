@@ -48,6 +48,13 @@ export function initWS() {
                 return;
             }
 
+            if (msg.type === 'zone_update' || msg.type === 'zone_state') {
+                // Dispatch a custom event that zones.js can listen to
+                const customEvent = new CustomEvent('zone-update', { detail: msg });
+                window.dispatchEvent(customEvent);
+                return;
+            }
+
             switch (msg.type) {
                 case "log":
                     addLogEntry(msg.payload || msg.data);
@@ -61,7 +68,8 @@ export function initWS() {
                 case "device_list": // New handler for full list updates
                     state.devices = msg.data;
                     renderDeviceTable();
-                    if(typeof updateMesh === 'function') updateMesh();
+                    // Check if updateMesh is available globally or imported
+                    if (window.updateMesh) window.updateMesh();
                     break;
 
                 case "device_joined":
@@ -123,7 +131,7 @@ function updateHAStatus(status) {
     const badge = document.getElementById('ha-status-badge');
     if (!badge) return;
 
-    // Normalise status string
+    // Normalize status string
     const s = (status || 'unknown').toLowerCase();
 
     if (s === 'online') {

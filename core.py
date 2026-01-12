@@ -640,9 +640,11 @@ class ZigbeeService:
         import yaml
 
         # Initialise the manager
+        # PASS self._emit as the event_emitter so zones can push to WebSocket
         self.zone_manager = ZoneManager(
             app_controller=self.app,
             mqtt_handler=mqtt_handler or self.mqtt,
+            event_emitter=self._emit
         )
 
         # Hook RSSI listener to Zigpy application
