@@ -1,27 +1,25 @@
 ```
 ├── __init__.py
-├── config_enhanced.py
-├── config.yaml
+│
 ├── core.py
 ├── deploy.sh
-├── device_capabilities.py
 ├── device.py
-├── error_handler.py
-├── groups.json
-├── groups.py
-├── handlers
-├── inspect_clusters.py
-├── json_helpers.py
 ├── main.py
 ├── mqtt.py
-├── mqtt_queue.py
-├── names.json
 ├── requirements.txt
-├── resilience.py
 ├── zigbee.db
 ├── zigbee.db-shm
-├──  zigbee.db-wal
+├── zigbee.db-wal
 │
+├── config
+│    ├── config.yaml
+│    └── zones.yaml
+│
+├── data
+│    ├── device_settings.json
+│    ├── device_state_cache.json
+│    ├── groups.json
+│    └── names.json
 ├── docs
 │    ├── debugging.md
 │    └── onboarding.md
@@ -40,6 +38,7 @@
 │    ├── power.py
 │    ├── security.py
 │    ├── sensors.py
+│    ├── sonoff_quirk.py
 │    ├── switches.py
 │    ├── tuya.py
 │    └── zigbee_debug.py
@@ -48,12 +47,28 @@
 │    ├── zigbee_debug.log
 │    └── zigbee.log
 │
+├── modules
+│    ├── __init__.py
+│    ├── config_enhanced.py
+│    ├── device_ban.py
+│    ├── device_capabilities.py
+│    ├── error_handler.py
+│    ├── groups.py
+│    ├── json_helpers.py
+│    ├── mqtt_explorer.py
+│    ├── mqtt_queue.py
+│    ├── packets_stats.py
+│    ├── reslience.py
+│    ├── zones_api.py
+│    └── zones.log
+│
 ├── static
 │    ├── index.html
 │    ├── css
-│    ├── debug.css
-│    ├── groups.css
+│    │   ├── debug.css
+│    │   ├── groups.css
 │    │   ├── mesh.css
+│    │   ├── mqtt-explorer.css
 │    │   └── styles.css
 │    └── js
 │        ├── actions.js
@@ -69,6 +84,7 @@
 │        ├── table-sort.js
 │        ├── utils.js
 │        ├── websocket.js
+│        ├── zones.js
 │        └── modal
 │              ├── binding.js
 │              ├── clusters.js
@@ -76,14 +92,5 @@
 │              ├── control.js
 │              └── overview.js
 └── utils
-      ├── check_ncp.py
-      ├── fix_lights_as_switches.py
-      ├── hive_helper.py
-      ├── hive_ready.py
-      ├── light_discovery.py
-      ├── mqtt_cleaner.py
-      ├── test_hive.py
-      ├── verify_tuya_radar.py
-      ├── diagose_lights.py
-      └── wipe_zigbee.py
+      └── zombie_killer.py
 ```
