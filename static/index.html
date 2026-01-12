@@ -14,805 +14,805 @@
     <link rel="stylesheet" href="/static/css/mqtt-explorer.css">
 </head>
 <body>
-    <nav class="navbar navbar-dark bg-dark mb-4">
-        <div class="container-fluid">
-            <span class="navbar-brand mb-0 h1"><i class="fas fa-project-diagram me-2"></i>Zigbee Manager</span>
-            
-            <!-- Connection Status Group -->
-            <div class="d-flex align-items-center gap-3">
-                <!-- Home Assistant Status Badge -->
-                <span class="badge rounded-pill bg-secondary" id="ha-status-badge" title="Home Assistant Connection">
+<nav class="navbar navbar-dark bg-dark mb-4">
+    <div class="container-fluid">
+        <span class="navbar-brand mb-0 h1"><i class="fas fa-project-diagram me-2"></i>Zigbee Manager</span>
+
+        <!-- Connection Status Group -->
+        <div class="d-flex align-items-center gap-3">
+            <!-- Home Assistant Status Badge -->
+            <span class="badge rounded-pill bg-secondary" id="ha-status-badge" title="Home Assistant Connection">
                     <i class="fas fa-home"></i> HA: Unknown
                 </span>
 
-                <!-- Zigbee Status -->
-                <span class="navbar-text" id="connection-status">
+            <!-- Zigbee Status -->
+            <span class="navbar-text" id="connection-status">
                     <i class="fas fa-circle text-danger"></i> Disconnected
                 </span>
 
-                <!-- Pairing Dropdown Group -->
-                <div class="btn-group">
-                    <button id="pairBtn" class="btn btn-success btn-sm" onclick="togglePairing()">
-                        <i class="fas fa-plus-circle"></i> Enable Pairing (All)
-                    </button>
-                    <button type="button" class="btn btn-success btn-sm dropdown-toggle dropdown-toggle-split" data-bs-toggle="dropdown" aria-expanded="false">
-                        <span class="visually-hidden">Toggle Dropdown</span>
-                    </button>
-                    <ul class="dropdown-menu dropdown-menu-end">
-                        <li><a class="dropdown-item" href="#" onclick="togglePairing()">Enable Pairing (All)</a></li>
-                        <li><hr class="dropdown-divider"></li>
-                        <li><h6 class="dropdown-header">Advanced Pairing:</h6></li>
-                        <li><a class="dropdown-item" href="#" onclick="startTouchlinkScan()">
-                            <i class="fas fa-bolt text-warning"></i> Touchlink Scan (Bulbs)
-                        </a></li>
-                        <li><hr class="dropdown-divider"></li>
-                        <li><h6 class="dropdown-header">Pair via specific device:</h6></li>
-                        <!-- Router list populated by JS -->
-                        <div id="routerList">
-                            <li><span class="dropdown-item-text text-muted small">Loading routers...</span></li>
-                        </div>
-                    </ul>
-                </div>
+            <!-- Pairing Dropdown Group -->
+            <div class="btn-group">
+                <button id="pairBtn" class="btn btn-success btn-sm" onclick="togglePairing()">
+                    <i class="fas fa-plus-circle"></i> Enable Pairing (All)
+                </button>
+                <button type="button" class="btn btn-success btn-sm dropdown-toggle dropdown-toggle-split" data-bs-toggle="dropdown" aria-expanded="false">
+                    <span class="visually-hidden">Toggle Dropdown</span>
+                </button>
+                <ul class="dropdown-menu dropdown-menu-end">
+                    <li><a class="dropdown-item" href="#" onclick="togglePairing()">Enable Pairing (All)</a></li>
+                    <li><hr class="dropdown-divider"></li>
+                    <li><h6 class="dropdown-header">Advanced Pairing:</h6></li>
+                    <li><a class="dropdown-item" href="#" onclick="startTouchlinkScan()">
+                        <i class="fas fa-bolt text-warning"></i> Touchlink Scan (Bulbs)
+                    </a></li>
+                    <li><hr class="dropdown-divider"></li>
+                    <li><h6 class="dropdown-header">Pair via specific device:</h6></li>
+                    <!-- Router list populated by JS -->
+                    <div id="routerList">
+                        <li><span class="dropdown-item-text text-muted small">Loading routers...</span></li>
+                    </div>
+                </ul>
+            </div>
 
+        </div>
+    </div>
+</nav>
+
+<div class="container-fluid">
+    <ul class="nav nav-tabs mb-3" id="mainTabs" role="tablist">
+        <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#devices"><i class="fas fa-list"></i> Devices</button></li>
+        <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#topology"><i class="fas fa-network-wired"></i> Topology</button></li>
+        <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#settings"><i class="fas fa-cog"></i> Settings</button></li>
+        <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#groups"><i class="fas fa-layer-group"></i> Groups</button></li>
+        <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#zones"><i class="fas fa-target"></i> Zones</button></li>
+        <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#mqtt-explorer"><i class="fas fa-broadcast-tower"></i> MQTT Explorer</button></li>
+        <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#debug"><i class="fas fa-terminal"></i> Debug Log</button></li>
+    </ul>
+
+    <div class="tab-content">
+        <!-- DEVICES TAB -->
+        <div class="tab-pane fade show active" id="devices">
+
+            <!-- COORDINATOR INFO CARD (New) -->
+            <div class="card shadow-sm mb-3 coordinator-card">
+                <div class="card-body py-2">
+                    <div class="row align-items-center" id="coordinator-info">
+                        <div class="col-md-12 text-center text-muted">
+                            <i class="fas fa-spinner fa-spin"></i> Loading Coordinator Info...
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Main Device List -->
+            <div class="card shadow-sm">
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle mb-0 sortable">
+                            <thead class="table-light">
+                            <tr>
+                                <th class="sortable-header" data-column="type" data-type="string">
+                                    Type <i class="fas fa-sort sort-icon text-muted"></i>
+                                </th>
+                                <th class="sortable-header" data-column="friendly_name" data-type="string">
+                                    Friendly Name <i class="fas fa-sort sort-icon text-muted"></i>
+                                </th>
+                                <th class="sortable-header" data-column="ieee" data-type="string">
+                                    IEEE Address <i class="fas fa-sort sort-icon text-muted"></i>
+                                </th>
+                                <th class="sortable-header" data-column="manufacturer" data-type="string">
+                                    Vendor <i class="fas fa-sort sort-icon text-muted"></i>
+                                </th>
+                                <th class="sortable-header" data-column="model" data-type="string">
+                                    Model <i class="fas fa-sort sort-icon text-muted"></i>
+                                </th>
+                                <th class="sortable-header" data-column="lqi" data-type="number">
+                                    LQI <i class="fas fa-sort sort-icon text-muted"></i>
+                                </th>
+                                <th class="sortable-header" data-column="last_seen_ts" data-type="number">
+                                    Last Seen <i class="fas fa-sort sort-icon text-muted"></i>
+                                </th>
+                                <th class="sortable-header" data-column="available" data-type="boolean">
+                                    Status <i class="fas fa-sort sort-icon text-muted"></i>
+                                </th>
+                                <th>Action</th>
+                            </tr>
+                            </thead>
+                            <tbody id="deviceTableBody"></tbody>
+                        </table>
+                    </div>
+                </div>
             </div>
         </div>
-    </nav>
 
-    <div class="container-fluid">
-        <ul class="nav nav-tabs mb-3" id="mainTabs" role="tablist">
-            <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#devices"><i class="fas fa-list"></i> Devices</button></li>
-            <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#topology"><i class="fas fa-network-wired"></i> Topology</button></li>
-            <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#settings"><i class="fas fa-cog"></i> Settings</button></li>
-            <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#groups"><i class="fas fa-layer-group"></i> Groups</button></li>
-            <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#zones"><i class="fas fa-target"></i> Zones</button></li>
-            <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#mqtt-explorer"><i class="fas fa-broadcast-tower"></i> MQTT Explorer</button></li>
-            <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#debug"><i class="fas fa-terminal"></i> Debug Log</button></li>
-        </ul>
-
-        <div class="tab-content">
-            <!-- DEVICES TAB -->
-            <div class="tab-pane fade show active" id="devices">
-                
-                <!-- COORDINATOR INFO CARD (New) -->
-                <div class="card shadow-sm mb-3 coordinator-card">
-                    <div class="card-body py-2">
-                        <div class="row align-items-center" id="coordinator-info">
-                            <div class="col-md-12 text-center text-muted">
-                                <i class="fas fa-spinner fa-spin"></i> Loading Coordinator Info...
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Main Device List -->
-                <div class="card shadow-sm">
-                    <div class="card-body p-0">
-                        <div class="table-responsive">
-                            <table class="table table-hover align-middle mb-0 sortable">
-                                <thead class="table-light">
-                                    <tr>
-                                        <th class="sortable-header" data-column="type" data-type="string">
-                                            Type <i class="fas fa-sort sort-icon text-muted"></i>
-                                        </th>
-                                        <th class="sortable-header" data-column="friendly_name" data-type="string">
-                                            Friendly Name <i class="fas fa-sort sort-icon text-muted"></i>
-                                        </th>
-                                        <th class="sortable-header" data-column="ieee" data-type="string">
-                                            IEEE Address <i class="fas fa-sort sort-icon text-muted"></i>
-                                        </th>
-                                        <th class="sortable-header" data-column="manufacturer" data-type="string">
-                                            Vendor <i class="fas fa-sort sort-icon text-muted"></i>
-                                        </th>
-                                        <th class="sortable-header" data-column="model" data-type="string">
-                                            Model <i class="fas fa-sort sort-icon text-muted"></i>
-                                        </th>
-                                        <th class="sortable-header" data-column="lqi" data-type="number">
-                                            LQI <i class="fas fa-sort sort-icon text-muted"></i>
-                                        </th>
-                                        <th class="sortable-header" data-column="last_seen_ts" data-type="number">
-                                            Last Seen <i class="fas fa-sort sort-icon text-muted"></i>
-                                        </th>
-                                        <th class="sortable-header" data-column="available" data-type="boolean">
-                                            Status <i class="fas fa-sort sort-icon text-muted"></i>
-                                        </th>
-                                        <th>Action</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="deviceTableBody"></tbody>
-                            </table>
-                        </div>
-                    </div>
+        <!-- TOPOLOGY TAB -->
+        <div class="tab-pane fade" id="topology">
+            <div class="card shadow-sm">
+                <div class="card-body p-0">
+                    <div class="mesh-topology-container" style="height: 75vh; background: #f8f9fa; overflow: hidden;"></div>
                 </div>
             </div>
+        </div>
 
-            <!-- TOPOLOGY TAB -->
-            <div class="tab-pane fade" id="topology">
-                <div class="card shadow-sm">
-                    <div class="card-body p-0">
-                        <div class="mesh-topology-container" style="height: 75vh; background: #f8f9fa; overflow: hidden;"></div>
+        <!-- SETTINGS TAB -->
+        <div class="tab-pane fade" id="settings">
+            <div class="card shadow-sm h-100">
+                <div class="card-header bg-light d-flex justify-content-between align-items-center py-2">
+                    <span class="fw-bold"><i class="fas fa-file-code"></i> config.yaml</span>
+                    <div class="btn-group">
+                        <button class="btn btn-success btn-sm" onclick="saveConfigYaml()">
+                            <i class="fas fa-save"></i> Save Configuration
+                        </button>
+                        <button class="btn btn-danger btn-sm ms-2" onclick="restartSystem()">
+                            <i class="fas fa-power-off"></i> Restart Service
+                        </button>
+                        <button class="btn btn-warning btn-sm ms-2" onclick="openBannedModal()">
+                            <i class="fas fa-ban"></i> Banned Devices
+                        </button>
                     </div>
                 </div>
-            </div>
-
-            <!-- SETTINGS TAB -->
-            <div class="tab-pane fade" id="settings">
-                <div class="card shadow-sm h-100">
-                    <div class="card-header bg-light d-flex justify-content-between align-items-center py-2">
-                        <span class="fw-bold"><i class="fas fa-file-code"></i> config.yaml</span>
-                        <div class="btn-group">
-                            <button class="btn btn-success btn-sm" onclick="saveConfigYaml()">
-                                <i class="fas fa-save"></i> Save Configuration
-                            </button>
-                            <button class="btn btn-danger btn-sm ms-2" onclick="restartSystem()">
-                                <i class="fas fa-power-off"></i> Restart Service
-                            </button>
-                            <button class="btn btn-warning btn-sm ms-2" onclick="openBannedModal()">
-                                <i class="fas fa-ban"></i> Banned Devices
-                            </button>
-                        </div>
-                    </div>
-                    <div class="card-body p-0">
+                <div class="card-body p-0">
                         <textarea id="configEditor" class="form-control border-0 p-3"
                                   style="height: 70vh; font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace; font-size: 14px; background-color: #2d2d2d; color: #f8f8f2; resize: none;"
                                   spellcheck="false"></textarea>
+                </div>
+                <div class="card-footer text-muted small">
+                    <i class="fas fa-info-circle"></i> Changes will take effect after restarting the service. Ensure YAML syntax is correct.
+                </div>
+            </div>
+        </div>
+
+
+        <!-- GROUPS TAB -->
+        <div class="tab-pane fade" id="groups">
+            <!-- Create Group Section -->
+            <div class="card shadow-sm mb-3">
+                <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                    <span class="fw-bold"><i class="fas fa-plus-circle"></i> Create New Group</span>
+                    <button class="btn btn-sm btn-outline-secondary" onclick="resetGroupCreation()">
+                        <i class="fas fa-redo"></i> Reset
+                    </button>
+                </div>
+                <div class="card-body">
+                    <!-- Step 1: Group Name -->
+                    <div class="mb-3">
+                        <label for="groupName" class="form-label">Group Name</label>
+                        <input type="text" class="form-control" id="groupName" placeholder="e.g., Living Room Lights">
+                        <small class="text-muted">Give your group a descriptive name</small>
                     </div>
-                    <div class="card-footer text-muted small">
-                        <i class="fas fa-info-circle"></i> Changes will take effect after restarting the service. Ensure YAML syntax is correct.
+
+                    <!-- Step 2: Select Base Device -->
+                    <div class="mb-3">
+                        <label class="form-label">Step 1: Select First Device</label>
+                        <select class="form-select" id="baseDevice" onchange="onBaseDeviceSelected()">
+                            <option value="">-- Choose a device --</option>
+                        </select>
+                        <small class="text-muted">This determines what other devices can be grouped</small>
                     </div>
+
+                    <!-- Step 3: Selected Device Info -->
+                    <div id="baseDeviceInfo" class="alert alert-info d-none mb-3">
+                        <strong>Selected Device:</strong> <span id="baseDeviceName"></span><br>
+                        <strong>Type:</strong> <span id="baseDeviceType"></span><br>
+                        <strong>Capabilities:</strong>
+                        <div id="baseDeviceCapabilities" class="mt-2"></div>
+                    </div>
+
+                    <!-- Step 4: Select Compatible Devices -->
+                    <div id="compatibleDevicesSection" class="d-none mb-3">
+                        <label class="form-label">Step 2: Select Additional Devices</label>
+                        <div id="compatibleDevicesList" class="border rounded p-2" style="max-height: 300px; overflow-y: auto;">
+                            <p class="text-muted text-center">Loading compatible devices...</p>
+                        </div>
+                        <small class="text-muted">Only compatible devices are shown</small>
+                    </div>
+
+                    <!-- Common Capabilities Info -->
+                    <div id="commonCapabilitiesSection" class="d-none alert alert-success mb-3">
+                        <strong><i class="fas fa-info-circle"></i> Common Capabilities:</strong>
+                        <div id="commonCapabilitiesInfo" class="mt-2"></div>
+                        <small class="d-block mt-2 text-muted">
+                            These controls will be available for the entire group
+                        </small>
+                    </div>
+
+                    <!-- Create Button -->
+                    <button class="btn btn-primary w-100" id="createGroupBtn" onclick="createGroup()" disabled>
+                        <i class="fas fa-plus-circle"></i> Create Group
+                    </button>
                 </div>
             </div>
 
-
-            <!-- GROUPS TAB -->
-            <div class="tab-pane fade" id="groups">
-                <!-- Create Group Section -->
-                <div class="card shadow-sm mb-3">
-                    <div class="card-header bg-light d-flex justify-content-between align-items-center">
-                        <span class="fw-bold"><i class="fas fa-plus-circle"></i> Create New Group</span>
-                        <button class="btn btn-sm btn-outline-secondary" onclick="resetGroupCreation()">
-                            <i class="fas fa-redo"></i> Reset
-                        </button>
+            <!-- Existing Groups Section -->
+            <div class="card shadow-sm">
+                <div class="card-header bg-light">
+                    <span class="fw-bold"><i class="fas fa-layer-group"></i> Existing Groups</span>
+                    <span class="badge bg-secondary ms-2" id="groupCount">0</span>
+                </div>
+                <div class="card-body p-0">
+                    <div id="groupsList">
+                        <div class="text-center text-muted p-4">
+                            No groups created yet. Create a group above to get started.
+                        </div>
                     </div>
-                    <div class="card-body">
-                        <!-- Step 1: Group Name -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Group Control Modal -->
+        <div class="modal fade" id="groupControlModal" tabindex="-1">
+            <div class="modal-dialog modal-lg">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">
+                            <i class="fas fa-sliders-h"></i> <span id="groupControlTitle"></span>
+                        </h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <!-- Group Info -->
                         <div class="mb-3">
-                            <label for="groupName" class="form-label">Group Name</label>
-                            <input type="text" class="form-control" id="groupName" placeholder="e.g., Living Room Lights">
-                            <small class="text-muted">Give your group a descriptive name</small>
+                            <h6>Group Information</h6>
+                            <div id="groupInfoDisplay"></div>
                         </div>
 
-                        <!-- Step 2: Select Base Device -->
+                        <!-- Control Panel -->
                         <div class="mb-3">
-                            <label class="form-label">Step 1: Select First Device</label>
-                            <select class="form-select" id="baseDevice" onchange="onBaseDeviceSelected()">
-                                <option value="">-- Choose a device --</option>
-                            </select>
-                            <small class="text-muted">This determines what other devices can be grouped</small>
-                        </div>
-
-                        <!-- Step 3: Selected Device Info -->
-                        <div id="baseDeviceInfo" class="alert alert-info d-none mb-3">
-                            <strong>Selected Device:</strong> <span id="baseDeviceName"></span><br>
-                            <strong>Type:</strong> <span id="baseDeviceType"></span><br>
-                            <strong>Capabilities:</strong>
-                            <div id="baseDeviceCapabilities" class="mt-2"></div>
-                        </div>
-
-                        <!-- Step 4: Select Compatible Devices -->
-                        <div id="compatibleDevicesSection" class="d-none mb-3">
-                            <label class="form-label">Step 2: Select Additional Devices</label>
-                            <div id="compatibleDevicesList" class="border rounded p-2" style="max-height: 300px; overflow-y: auto;">
-                                <p class="text-muted text-center">Loading compatible devices...</p>
+                            <h6>Controls</h6>
+                            <div id="groupControlPanel">
+                                <!-- Dynamically populated based on group capabilities -->
                             </div>
-                            <small class="text-muted">Only compatible devices are shown</small>
                         </div>
 
-                        <!-- Common Capabilities Info -->
-                        <div id="commonCapabilitiesSection" class="d-none alert alert-success mb-3">
-                            <strong><i class="fas fa-info-circle"></i> Common Capabilities:</strong>
-                            <div id="commonCapabilitiesInfo" class="mt-2"></div>
-                            <small class="d-block mt-2 text-muted">
-                                These controls will be available for the entire group
-                            </small>
+                        <!-- Members List -->
+                        <div class="mb-3">
+                            <h6>Group Members</h6>
+                            <div id="groupMembersList"></div>
                         </div>
 
-                        <!-- Create Button -->
-                        <button class="btn btn-primary w-100" id="createGroupBtn" onclick="createGroup()" disabled>
-                            <i class="fas fa-plus-circle"></i> Create Group
+                        <!-- Add Device -->
+                        <div class="mb-3">
+                            <h6>Add Device to Group</h6>
+                            <div class="input-group">
+                                <select class="form-select" id="addDeviceSelect">
+                                    <option value="">-- Select device to add --</option>
+                                </select>
+                                <button class="btn btn-success" onclick="addDeviceToGroup()">
+                                    <i class="fas fa-plus"></i> Add
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-danger" onclick="deleteCurrentGroup()">
+                            <i class="fas fa-trash"></i> Delete Group
+                        </button>
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+
+        <!-- Zones Tab-->
+
+        <div class="tab-pane fade" id="zones" role="tabpanel" aria-labelledby="zones-tab">
+            <div class="container-fluid p-3">
+                <!-- Header -->
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <div>
+                        <h5 class="mb-0">
+                            <i class="bi bi-geo-alt me-2"></i>Presence Detection Zones
+                        </h5>
+                        <small class="text-muted">Monitor RSSI fluctuations between mesh devices to detect room occupancy</small>
+                    </div>
+                    <div class="btn-group">
+                        <button class="btn btn-outline-secondary" id="btn-refresh-zones">
+                            <i class="bi bi-arrow-clockwise"></i>
+                        </button>
+                        <button class="btn btn-primary" id="btn-create-zone">
+                            <i class="bi bi-plus-lg me-1"></i>Create Zone
                         </button>
                     </div>
                 </div>
 
-                <!-- Existing Groups Section -->
-                <div class="card shadow-sm">
-                    <div class="card-header bg-light">
-                        <span class="fw-bold"><i class="fas fa-layer-group"></i> Existing Groups</span>
-                        <span class="badge bg-secondary ms-2" id="groupCount">0</span>
+                <!-- Info Card -->
+                <div class="card mb-3 border-info">
+                    <div class="card-body py-2">
+                        <div class="row align-items-center">
+                            <div class="col-auto">
+                                <i class="bi bi-info-circle text-info fs-4"></i>
+                            </div>
+                            <div class="col">
+                                <strong>How it works:</strong>
+                                When you move through a room, your body affects the radio signals between Zigbee devices.
+                                Zones detect these RSSI fluctuations to determine occupancy without dedicated sensors.
+                                <span class="text-muted">Best with mains-powered devices (lights, plugs, switches).</span>
+                            </div>
+                        </div>
                     </div>
-                    <div class="card-body p-0">
-                        <div id="groupsList">
-                            <div class="text-center text-muted p-4">
-                                No groups created yet. Create a group above to get started.
+                </div>
+
+                <!-- Zones Grid -->
+                <div class="row" id="zones-container">
+                    <!-- Zone cards rendered here by JavaScript -->
+                    <div class="col-12">
+                        <div class="d-flex justify-content-center align-items-center" style="min-height: 200px;">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">Loading...</span>
                             </div>
                         </div>
                     </div>
                 </div>
             </div>
+        </div>
 
-            <!-- Group Control Modal -->
-            <div class="modal fade" id="groupControlModal" tabindex="-1">
-                <div class="modal-dialog modal-lg">
-                    <div class="modal-content">
-                        <div class="modal-header">
-                            <h5 class="modal-title">
-                                <i class="fas fa-sliders-h"></i> <span id="groupControlTitle"></span>
-                            </h5>
-                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+
+        <!-- Zones Modal -->
+        <div class="modal fade" id="createZoneModal" tabindex="-1">
+            <div class="modal-dialog modal-lg">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">
+                            <i class="bi bi-geo-alt me-2"></i>Create Presence Zone
+                        </h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <!-- Zone Name -->
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Zone Name</label>
+                            <input type="text" class="form-control" id="zone-name-input"
+                                   placeholder="e.g., Living Room, Kitchen, Office">
                         </div>
-                        <div class="modal-body">
-                            <!-- Group Info -->
-                            <div class="mb-3">
-                                <h6>Group Information</h6>
-                                <div id="groupInfoDisplay"></div>
-                            </div>
 
-                            <!-- Control Panel -->
-                            <div class="mb-3">
-                                <h6>Controls</h6>
-                                <div id="groupControlPanel">
-                                    <!-- Dynamically populated based on group capabilities -->
-                                </div>
+                        <!-- Device Selection -->
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">
+                                Select Devices
+                                <span class="badge bg-primary ms-2" id="zone-selected-count">0</span> selected
+                            </label>
+                            <p class="text-muted small mb-2">
+                                Choose devices in this room. Routers (mains-powered) work best.
+                                <strong>Minimum 2 devices required.</strong>
+                            </p>
+                            <input type="text" class="form-control mb-2" id="zone-device-search"
+                                   placeholder="Search devices...">
+                            <div class="list-group overflow-auto" id="zone-device-list" style="max-height: 250px;">
+                                <!-- Devices rendered here -->
                             </div>
+                        </div>
 
-                            <!-- Members List -->
-                            <div class="mb-3">
-                                <h6>Group Members</h6>
-                                <div id="groupMembersList"></div>
-                            </div>
-
-                            <!-- Add Device -->
-                            <div class="mb-3">
-                                <h6>Add Device to Group</h6>
-                                <div class="input-group">
-                                    <select class="form-select" id="addDeviceSelect">
-                                        <option value="">-- Select device to add --</option>
-                                    </select>
-                                    <button class="btn btn-success" onclick="addDeviceToGroup()">
-                                        <i class="fas fa-plus"></i> Add
+                        <!-- Advanced Settings (Collapsed) -->
+                        <div class="accordion" id="zoneAdvancedAccordion">
+                            <div class="accordion-item">
+                                <h2 class="accordion-header">
+                                    <button class="accordion-button collapsed" type="button"
+                                            data-bs-toggle="collapse" data-bs-target="#zoneAdvancedSettings">
+                                        <i class="bi bi-gear me-2"></i>Advanced Settings
                                     </button>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="modal-footer">
-                            <button type="button" class="btn btn-danger" onclick="deleteCurrentGroup()">
-                                <i class="fas fa-trash"></i> Delete Group
-                            </button>
-                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-
-            <!-- Zones Tab-->
-
-            <div class="tab-pane fade" id="zones" role="tabpanel" aria-labelledby="zones-tab">
-                <div class="container-fluid p-3">
-                    <!-- Header -->
-                    <div class="d-flex justify-content-between align-items-center mb-3">
-                        <div>
-                            <h5 class="mb-0">
-                                <i class="bi bi-geo-alt me-2"></i>Presence Detection Zones
-                            </h5>
-                            <small class="text-muted">Monitor RSSI fluctuations between mesh devices to detect room occupancy</small>
-                        </div>
-                        <div class="btn-group">
-                            <button class="btn btn-outline-secondary" id="btn-refresh-zones">
-                                <i class="bi bi-arrow-clockwise"></i>
-                            </button>
-                            <button class="btn btn-primary" id="btn-create-zone">
-                                <i class="bi bi-plus-lg me-1"></i>Create Zone
-                            </button>
-                        </div>
-                    </div>
-
-                    <!-- Info Card -->
-                    <div class="card mb-3 border-info">
-                        <div class="card-body py-2">
-                            <div class="row align-items-center">
-                                <div class="col-auto">
-                                    <i class="bi bi-info-circle text-info fs-4"></i>
-                                </div>
-                                <div class="col">
-                                    <strong>How it works:</strong>
-                                    When you move through a room, your body affects the radio signals between Zigbee devices.
-                                    Zones detect these RSSI fluctuations to determine occupancy without dedicated sensors.
-                                    <span class="text-muted">Best with mains-powered devices (lights, plugs, switches).</span>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Zones Grid -->
-                    <div class="row" id="zones-container">
-                        <!-- Zone cards rendered here by JavaScript -->
-                        <div class="col-12">
-                            <div class="d-flex justify-content-center align-items-center" style="min-height: 200px;">
-                                <div class="spinner-border text-primary" role="status">
-                                    <span class="visually-hidden">Loading...</span>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-
-            <!-- Zones Modal -->
-            <div class="modal fade" id="createZoneModal" tabindex="-1">
-                <div class="modal-dialog modal-lg">
-                    <div class="modal-content">
-                        <div class="modal-header">
-                            <h5 class="modal-title">
-                                <i class="bi bi-geo-alt me-2"></i>Create Presence Zone
-                            </h5>
-                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                        </div>
-                        <div class="modal-body">
-                            <!-- Zone Name -->
-                            <div class="mb-3">
-                                <label class="form-label fw-bold">Zone Name</label>
-                                <input type="text" class="form-control" id="zone-name-input"
-                                       placeholder="e.g., Living Room, Kitchen, Office">
-                            </div>
-
-                            <!-- Device Selection -->
-                            <div class="mb-3">
-                                <label class="form-label fw-bold">
-                                    Select Devices
-                                    <span class="badge bg-primary ms-2" id="zone-selected-count">0</span> selected
-                                </label>
-                                <p class="text-muted small mb-2">
-                                    Choose devices in this room. Routers (mains-powered) work best.
-                                    <strong>Minimum 2 devices required.</strong>
-                                </p>
-                                <input type="text" class="form-control mb-2" id="zone-device-search"
-                                       placeholder="Search devices...">
-                                <div class="list-group overflow-auto" id="zone-device-list" style="max-height: 250px;">
-                                    <!-- Devices rendered here -->
-                                </div>
-                            </div>
-
-                            <!-- Advanced Settings (Collapsed) -->
-                            <div class="accordion" id="zoneAdvancedAccordion">
-                                <div class="accordion-item">
-                                    <h2 class="accordion-header">
-                                        <button class="accordion-button collapsed" type="button"
-                                                data-bs-toggle="collapse" data-bs-target="#zoneAdvancedSettings">
-                                            <i class="bi bi-gear me-2"></i>Advanced Settings
-                                        </button>
-                                    </h2>
-                                    <div id="zoneAdvancedSettings" class="accordion-collapse collapse">
-                                        <div class="accordion-body">
-                                            <div class="row">
-                                                <div class="col-md-6 mb-3">
-                                                    <label class="form-label">Deviation Threshold (σ)</label>
-                                                    <input type="number" class="form-control" id="zone-deviation-threshold"
-                                                           value="2.5" min="1" max="5" step="0.1">
-                                                    <small class="text-muted">Lower = more sensitive (2.0-3.5)</small>
-                                                </div>
-                                                <div class="col-md-6 mb-3">
-                                                    <label class="form-label">Variance Threshold</label>
-                                                    <input type="number" class="form-control" id="zone-variance-threshold"
-                                                           value="4.0" min="1" max="10" step="0.5">
-                                                    <small class="text-muted">Lower = more sensitive</small>
-                                                </div>
-                                                <div class="col-md-6 mb-3">
-                                                    <label class="form-label">Minimum Links Triggered</label>
-                                                    <input type="number" class="form-control" id="zone-min-links"
-                                                           value="2" min="1" max="5">
-                                                    <small class="text-muted">More devices = higher value</small>
-                                                </div>
-                                                <div class="col-md-6 mb-3">
-                                                    <label class="form-label">Clear Delay (seconds)</label>
-                                                    <input type="number" class="form-control" id="zone-clear-delay"
-                                                           value="30" min="10" max="120">
-                                                    <small class="text-muted">Time of stability before clearing</small>
-                                                </div>
-                                                <div class="col-md-6 mb-3">
-                                                    <label class="form-label">Calibration Time (seconds)</label>
-                                                    <input type="number" class="form-control" id="zone-calibration-time"
-                                                           value="120" min="60" max="300">
-                                                    <small class="text-muted">Baseline learning period</small>
-                                                </div>
+                                </h2>
+                                <div id="zoneAdvancedSettings" class="accordion-collapse collapse">
+                                    <div class="accordion-body">
+                                        <div class="row">
+                                            <div class="col-md-6 mb-3">
+                                                <label class="form-label">Deviation Threshold (σ)</label>
+                                                <input type="number" class="form-control" id="zone-deviation-threshold"
+                                                       value="2.5" min="1" max="5" step="0.1">
+                                                <small class="text-muted">Lower = more sensitive (2.0-3.5)</small>
+                                            </div>
+                                            <div class="col-md-6 mb-3">
+                                                <label class="form-label">Variance Threshold</label>
+                                                <input type="number" class="form-control" id="zone-variance-threshold"
+                                                       value="4.0" min="1" max="10" step="0.5">
+                                                <small class="text-muted">Lower = more sensitive</small>
+                                            </div>
+                                            <div class="col-md-6 mb-3">
+                                                <label class="form-label">Minimum Links Triggered</label>
+                                                <input type="number" class="form-control" id="zone-min-links"
+                                                       value="2" min="1" max="5">
+                                                <small class="text-muted">More devices = higher value</small>
+                                            </div>
+                                            <div class="col-md-6 mb-3">
+                                                <label class="form-label">Clear Delay (seconds)</label>
+                                                <input type="number" class="form-control" id="zone-clear-delay"
+                                                       value="30" min="10" max="120">
+                                                <small class="text-muted">Time of stability before clearing</small>
+                                            </div>
+                                            <div class="col-md-6 mb-3">
+                                                <label class="form-label">Calibration Time (seconds)</label>
+                                                <input type="number" class="form-control" id="zone-calibration-time"
+                                                       value="120" min="60" max="300">
+                                                <small class="text-muted">Baseline learning period</small>
                                             </div>
                                         </div>
                                     </div>
                                 </div>
                             </div>
                         </div>
-                        <div class="modal-footer">
-                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                            <button type="button" class="btn btn-primary" id="btn-save-zone">
-                                <i class="bi bi-check-lg me-1"></i>Create Zone
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="button" class="btn btn-primary" id="btn-save-zone">
+                            <i class="bi bi-check-lg me-1"></i>Create Zone
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Zone Details Modal -->
+        <div class="modal fade" id="zoneDetailsModal" tabindex="-1">
+            <div class="modal-dialog modal-lg">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">
+                            <i class="bi bi-graph-up me-2"></i>
+                            <span id="zone-details-title">Zone Details</span>
+                        </h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="mb-3">
+                            <strong>Status:</strong> <span id="zone-details-state"></span>
+                        </div>
+                        <h6 class="mb-2">Link Statistics</h6>
+                        <div id="zone-links-container">
+                            <!-- Link details rendered here -->
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- DEBUG TAB -->
+        <div class="tab-pane fade" id="debug">
+            <div class="card shadow-sm h-100">
+                <div class="card-header bg-light py-2">
+                    <div class="row g-2 align-items-center">
+                        <div class="col-auto">
+                            <span class="fw-bold">Live Logs</span>
+                            <span id="debugStatusBadge" class="badge bg-secondary ms-2">Disabled</span>
+                        </div>
+                        <div class="col-auto ms-auto">
+                            <div class="btn-group btn-group-sm" role="group">
+                                <button id="debugEnableBtn" class="btn btn-success" onclick="toggleDebug(true)">
+                                    <i class="fas fa-bug"></i> Enable Debug
+                                </button>
+                                <button id="debugDisableBtn" class="btn btn-danger d-none" onclick="toggleDebug(false)">
+                                    <i class="fas fa-stop"></i> Disable Debug
+                                </button>
+                            </div>
+                        </div>
+                        <div class="col-auto">
+                            <button id="verboseLogBtn" class="btn btn-sm btn-outline-secondary" onclick="toggleVerboseLogging()">
+                                <i class="fas fa-eye-slash"></i> Standard
+                            </button>
+                        </div>
+                        <div class="col-auto">
+                            <select id="logLevelFilter" class="form-select form-select-sm" onchange="filterLogs()">
+                                <option value="ALL">All Levels</option>
+                                <option value="INFO">Info & Above</option>
+                                <option value="WARNING">Warning & Error</option>
+                                <option value="DEBUG">Debug (All)</option>
+                            </select>
+                        </div>
+                        <div class="col-auto">
+                            <input type="text" id="logIeeeFilter" class="form-control form-control-sm" placeholder="Filter IEEE..." onkeyup="filterLogs()">
+                        </div>
+                        <div class="col-auto">
+                            <button class="btn btn-sm btn-outline-secondary" onclick="clearLogs()">
+                                <i class="fas fa-trash"></i> Clear
+                            </button>
+                        </div>
+                        <div class="col-auto">
+                            <button class="btn btn-sm btn-outline-info" onclick="viewDebugPackets()">
+                                <i class="fas fa-network-wired"></i> Packets
+                            </button>
+                        </div>
+                        <div class="col-auto">
+                            <button class="btn btn-sm btn-outline-primary" onclick="downloadDebugLog()">
+                                <i class="fas fa-download"></i> Download
                             </button>
                         </div>
                     </div>
                 </div>
-            </div>
-
-            <!-- Zone Details Modal -->
-            <div class="modal fade" id="zoneDetailsModal" tabindex="-1">
-                <div class="modal-dialog modal-lg">
-                    <div class="modal-content">
-                        <div class="modal-header">
-                            <h5 class="modal-title">
-                                <i class="bi bi-graph-up me-2"></i>
-                                <span id="zone-details-title">Zone Details</span>
-                            </h5>
-                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                        </div>
-                        <div class="modal-body">
-                            <div class="mb-3">
-                                <strong>Status:</strong> <span id="zone-details-state"></span>
-                            </div>
-                            <h6 class="mb-2">Link Statistics</h6>
-                            <div id="zone-links-container">
-                                <!-- Link details rendered here -->
-                            </div>
-                        </div>
-                        <div class="modal-footer">
-                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-                        </div>
-                    </div>
+                <div class="card-body bg-dark p-0">
+                    <div id="logs" class="p-2 font-monospace small" style="height: 65vh; overflow-y: auto; color: #e0e0e0;"></div>
                 </div>
             </div>
+        </div>
+    </div>
+</div>
 
-            <!-- DEBUG TAB -->
-            <div class="tab-pane fade" id="debug">
-                <div class="card shadow-sm h-100">
-                    <div class="card-header bg-light py-2">
-                        <div class="row g-2 align-items-center">
-                            <div class="col-auto">
-                                <span class="fw-bold">Live Logs</span>
-                                <span id="debugStatusBadge" class="badge bg-secondary ms-2">Disabled</span>
-                            </div>
-                            <div class="col-auto ms-auto">
-                                <div class="btn-group btn-group-sm" role="group">
-                                    <button id="debugEnableBtn" class="btn btn-success" onclick="toggleDebug(true)">
-                                        <i class="fas fa-bug"></i> Enable Debug
-                                    </button>
-                                    <button id="debugDisableBtn" class="btn btn-danger d-none" onclick="toggleDebug(false)">
-                                        <i class="fas fa-stop"></i> Disable Debug
-                                    </button>
-                                </div>
-                            </div>
-                            <div class="col-auto">
-                                <button id="verboseLogBtn" class="btn btn-sm btn-outline-secondary" onclick="toggleVerboseLogging()">
-                                    <i class="fas fa-eye-slash"></i> Standard
+<!-- Updated to modal-xl for better spacing -->
+<div class="modal fade" id="capModal" tabindex="-1">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Device Management</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="capModalBody"></div>
+        </div>
+    </div>
+</div>
+
+
+<!-- MQTT EXPLORER TAB -->
+
+<div class="tab-pane fade" id="mqtt-explorer">
+    <div class="row">
+        <!-- Left column: Message list -->
+        <div class="col-lg-8">
+            <div class="card shadow-sm h-100">
+                <div class="card-header bg-light py-2">
+                    <div class="row g-2 align-items-center">
+                        <div class="col-auto">
+                            <span class="fw-bold">MQTT Messages</span>
+                            <span id="mqttStatusBadge" class="badge bg-secondary ms-2">Stopped</span>
+                        </div>
+                        <div class="col-auto ms-auto">
+                            <div class="btn-group btn-group-sm" role="group">
+                                <button id="mqttStartBtn" class="btn btn-success">
+                                    <i class="fas fa-play"></i> Start
                                 </button>
-                            </div>
-                            <div class="col-auto">
-                                <select id="logLevelFilter" class="form-select form-select-sm" onchange="filterLogs()">
-                                    <option value="ALL">All Levels</option>
-                                    <option value="INFO">Info & Above</option>
-                                    <option value="WARNING">Warning & Error</option>
-                                    <option value="DEBUG">Debug (All)</option>
-                                </select>
-                            </div>
-                            <div class="col-auto">
-                                <input type="text" id="logIeeeFilter" class="form-control form-control-sm" placeholder="Filter IEEE..." onkeyup="filterLogs()">
-                            </div>
-                            <div class="col-auto">
-                                <button class="btn btn-sm btn-outline-secondary" onclick="clearLogs()">
+                                <button id="mqttStopBtn" class="btn btn-danger d-none">
+                                    <i class="fas fa-stop"></i> Stop
+                                </button>
+                                <button id="mqttRefreshBtn" class="btn btn-primary">
+                                    <i class="fas fa-sync"></i> Refresh
+                                </button>
+                                <button id="mqttClearBtn" class="btn btn-warning">
                                     <i class="fas fa-trash"></i> Clear
                                 </button>
                             </div>
-                            <div class="col-auto">
-                                <button class="btn btn-sm btn-outline-info" onclick="viewDebugPackets()">
-                                    <i class="fas fa-network-wired"></i> Packets
-                                </button>
-                            </div>
-                            <div class="col-auto">
-                                <button class="btn btn-sm btn-outline-primary" onclick="downloadDebugLog()">
-                                    <i class="fas fa-download"></i> Download
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="card-body bg-dark p-0">
-                        <div id="logs" class="p-2 font-monospace small" style="height: 65vh; overflow-y: auto; color: #e0e0e0;"></div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Updated to modal-xl for better spacing -->
-    <div class="modal fade" id="capModal" tabindex="-1">
-        <div class="modal-dialog modal-xl">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title">Device Management</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body" id="capModalBody"></div>
-            </div>
-        </div>
-    </div>
-
-
-    <!-- MQTT EXPLORER TAB -->
-
-    <div class="tab-pane fade" id="mqtt-explorer">
-        <div class="row">
-            <!-- Left column: Message list -->
-            <div class="col-lg-8">
-                <div class="card shadow-sm h-100">
-                    <div class="card-header bg-light py-2">
-                        <div class="row g-2 align-items-center">
-                            <div class="col-auto">
-                                <span class="fw-bold">MQTT Messages</span>
-                                <span id="mqttStatusBadge" class="badge bg-secondary ms-2">Stopped</span>
-                            </div>
-                            <div class="col-auto ms-auto">
-                                <div class="btn-group btn-group-sm" role="group">
-                                    <button id="mqttStartBtn" class="btn btn-success">
-                                        <i class="fas fa-play"></i> Start
-                                    </button>
-                                    <button id="mqttStopBtn" class="btn btn-danger d-none">
-                                        <i class="fas fa-stop"></i> Stop
-                                    </button>
-                                    <button id="mqttRefreshBtn" class="btn btn-primary">
-                                        <i class="fas fa-sync"></i> Refresh
-                                    </button>
-                                    <button id="mqttClearBtn" class="btn btn-warning">
-                                        <i class="fas fa-trash"></i> Clear
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="card-body p-0">
-                        <!-- Statistics -->
-                        <div class="row g-0 border-bottom">
-                            <div class="col-3 p-2 border-end text-center">
-                                <div class="small text-muted">Total Messages</div>
-                                <div class="fw-bold" id="mqttTotalMessages">0</div>
-                            </div>
-                            <div class="col-3 p-2 border-end text-center">
-                                <div class="small text-muted">Msg/sec</div>
-                                <div class="fw-bold" id="mqttMessagesPerSec">0.00</div>
-                            </div>
-                            <div class="col-3 p-2 border-end text-center">
-                                <div class="small text-muted">Topics</div>
-                                <div class="fw-bold" id="mqttUniqueTopics">0</div>
-                            </div>
-                            <div class="col-3 p-2 text-center">
-                                <div class="small text-muted">Buffer</div>
-                                <div class="fw-bold" id="mqttBufferUsage">0 / 1000</div>
-                            </div>
-                        </div>
-
-                        <!-- Filters -->
-                        <div class="p-2 border-bottom bg-light">
-                            <div class="row g-2">
-                                <div class="col-md-5">
-                                    <input type="text" id="mqttTopicFilter" class="form-control form-control-sm"
-                                           placeholder="Filter by topic (supports + and # wildcards)">
-                                </div>
-                                <div class="col-md-5">
-                                    <input type="text" id="mqttSearchFilter" class="form-control form-control-sm"
-                                           placeholder="Search in topic or payload...">
-                                </div>
-                                <div class="col-md-2">
-                                    <div class="form-check">
-                                        <input class="form-check-input" type="checkbox" id="mqttAutoScroll" checked>
-                                        <label class="form-check-label small" for="mqttAutoScroll">
-                                            Auto-scroll
-                                        </label>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Messages Table -->
-                        <div id="mqttMessagesContainer" style="max-height: 600px; overflow-y: auto;">
-                            <table class="table table-sm table-hover mb-0">
-                                <thead class="table-light sticky-top">
-                                <tr>
-                                    <th style="width: 120px;">Time</th>
-                                    <th style="width: 250px;">Topic</th>
-                                    <th>Payload</th>
-                                    <th style="width: 100px;" class="text-center">QoS/Retain</th>
-                                    <th style="width: 80px;" class="text-end">Size</th>
-                                </tr>
-                                </thead>
-                                <tbody id="mqttMessagesBody">
-                                <tr>
-                                    <td colspan="5" class="text-center text-muted py-4">
-                                        Start monitoring to see messages
-                                    </td>
-                                </tr>
-                                </tbody>
-                            </table>
                         </div>
                     </div>
                 </div>
-            </div>
 
-            <!-- Right column: Publish & Info -->
-            <div class="col-lg-4">
-                <!-- Publish Card -->
-                <div class="card shadow-sm mb-3">
-                    <div class="card-header bg-light">
-                        <i class="fas fa-paper-plane"></i> Publish Message
+                <div class="card-body p-0">
+                    <!-- Statistics -->
+                    <div class="row g-0 border-bottom">
+                        <div class="col-3 p-2 border-end text-center">
+                            <div class="small text-muted">Total Messages</div>
+                            <div class="fw-bold" id="mqttTotalMessages">0</div>
+                        </div>
+                        <div class="col-3 p-2 border-end text-center">
+                            <div class="small text-muted">Msg/sec</div>
+                            <div class="fw-bold" id="mqttMessagesPerSec">0.00</div>
+                        </div>
+                        <div class="col-3 p-2 border-end text-center">
+                            <div class="small text-muted">Topics</div>
+                            <div class="fw-bold" id="mqttUniqueTopics">0</div>
+                        </div>
+                        <div class="col-3 p-2 text-center">
+                            <div class="small text-muted">Buffer</div>
+                            <div class="fw-bold" id="mqttBufferUsage">0 / 1000</div>
+                        </div>
                     </div>
-                    <div class="card-body">
-                        <div class="mb-2">
-                            <label class="form-label small">Topic</label>
-                            <input type="text" id="mqttPublishTopic" class="form-control form-control-sm"
-                                   placeholder="e.g., zigbee/test">
-                        </div>
-                        <div class="mb-2">
-                            <label class="form-label small">Payload</label>
-                            <textarea id="mqttPublishPayload" class="form-control form-control-sm font-monospace"
-                                      rows="4" placeholder='{"test": "message"}'></textarea>
-                        </div>
-                        <div class="row g-2 mb-2">
-                            <div class="col-6">
-                                <label class="form-label small">QoS</label>
-                                <select id="mqttPublishQos" class="form-select form-select-sm">
-                                    <option value="0">0 - At most once</option>
-                                    <option value="1">1 - At least once</option>
-                                    <option value="2">2 - Exactly once</option>
-                                </select>
+
+                    <!-- Filters -->
+                    <div class="p-2 border-bottom bg-light">
+                        <div class="row g-2">
+                            <div class="col-md-5">
+                                <input type="text" id="mqttTopicFilter" class="form-control form-control-sm"
+                                       placeholder="Filter by topic (supports + and # wildcards)">
                             </div>
-                            <div class="col-6">
-                                <label class="form-label small">&nbsp;</label>
-                                <div class="form-check mt-2">
-                                    <input class="form-check-input" type="checkbox" id="mqttPublishRetain">
-                                    <label class="form-check-label small" for="mqttPublishRetain">
-                                        Retain
+                            <div class="col-md-5">
+                                <input type="text" id="mqttSearchFilter" class="form-control form-control-sm"
+                                       placeholder="Search in topic or payload...">
+                            </div>
+                            <div class="col-md-2">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="mqttAutoScroll" checked>
+                                    <label class="form-check-label small" for="mqttAutoScroll">
+                                        Auto-scroll
                                     </label>
                                 </div>
                             </div>
                         </div>
-                        <button id="mqttPublishBtn" class="btn btn-primary btn-sm w-100">
-                            <i class="fas fa-paper-plane"></i> Publish
+                    </div>
+
+                    <!-- Messages Table -->
+                    <div id="mqttMessagesContainer" style="max-height: 600px; overflow-y: auto;">
+                        <table class="table table-sm table-hover mb-0">
+                            <thead class="table-light sticky-top">
+                            <tr>
+                                <th style="width: 120px;">Time</th>
+                                <th style="width: 250px;">Topic</th>
+                                <th>Payload</th>
+                                <th style="width: 100px;" class="text-center">QoS/Retain</th>
+                                <th style="width: 80px;" class="text-end">Size</th>
+                            </tr>
+                            </thead>
+                            <tbody id="mqttMessagesBody">
+                            <tr>
+                                <td colspan="5" class="text-center text-muted py-4">
+                                    Start monitoring to see messages
+                                </td>
+                            </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right column: Publish & Info -->
+        <div class="col-lg-4">
+            <!-- Publish Card -->
+            <div class="card shadow-sm mb-3">
+                <div class="card-header bg-light">
+                    <i class="fas fa-paper-plane"></i> Publish Message
+                </div>
+                <div class="card-body">
+                    <div class="mb-2">
+                        <label class="form-label small">Topic</label>
+                        <input type="text" id="mqttPublishTopic" class="form-control form-control-sm"
+                               placeholder="e.g., zigbee/test">
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label small">Payload</label>
+                        <textarea id="mqttPublishPayload" class="form-control form-control-sm font-monospace"
+                                  rows="4" placeholder='{"test": "message"}'></textarea>
+                    </div>
+                    <div class="row g-2 mb-2">
+                        <div class="col-6">
+                            <label class="form-label small">QoS</label>
+                            <select id="mqttPublishQos" class="form-select form-select-sm">
+                                <option value="0">0 - At most once</option>
+                                <option value="1">1 - At least once</option>
+                                <option value="2">2 - Exactly once</option>
+                            </select>
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label small">&nbsp;</label>
+                            <div class="form-check mt-2">
+                                <input class="form-check-input" type="checkbox" id="mqttPublishRetain">
+                                <label class="form-check-label small" for="mqttPublishRetain">
+                                    Retain
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                    <button id="mqttPublishBtn" class="btn btn-primary btn-sm w-100">
+                        <i class="fas fa-paper-plane"></i> Publish
+                    </button>
+                </div>
+            </div>
+
+            <!-- Help Card -->
+            <div class="card shadow-sm">
+                <div class="card-header bg-light">
+                    <i class="fas fa-info-circle"></i> Help
+                </div>
+                <div class="card-body small">
+                    <h6 class="fw-bold">Topic Wildcards</h6>
+                    <ul class="mb-3">
+                        <li><code>+</code> - Single level wildcard<br>
+                            <span class="text-muted">e.g., <code>zigbee/+/state</code></span>
+                        </li>
+                        <li><code>#</code> - Multi-level wildcard<br>
+                            <span class="text-muted">e.g., <code>zigbee/#</code></span>
+                        </li>
+                    </ul>
+
+                    <h6 class="fw-bold">Features</h6>
+                    <ul class="mb-0">
+                        <li>Real-time message monitoring</li>
+                        <li>Topic filtering with wildcards</li>
+                        <li>Payload search</li>
+                        <li>Message inspection</li>
+                        <li>Test message publishing</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Message Details Modal -->
+<div class="modal fade" id="mqttMessageModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="fas fa-envelope"></i> Message Details
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <h6 id="mqttMessageModalTitle" class="font-monospace mb-3"></h6>
+                <div id="mqttMessageDetails"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Debug Packets Modal -->
+<div class="modal fade" id="debugPacketsModal" tabindex="-1">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-network-wired"></i> Debug Packets</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row mb-3">
+                    <div class="col-md-3">
+                        <select id="packetImportanceFilter" class="form-select form-select-sm">
+                            <option value="">All Importance</option>
+                            <option value="critical">Critical</option>
+                            <option value="high">High</option>
+                            <option value="medium">Medium</option>
+                            <option value="normal">Normal</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <input type="text" id="packetIeeeFilter" class="form-control form-control-sm" placeholder="Filter by IEEE...">
+                    </div>
+                    <div class="col-md-3">
+                        <input type="number" id="packetClusterFilter" class="form-control form-control-sm" placeholder="Cluster ID (hex)">
+                    </div>
+                    <div class="col-md-3">
+                        <button class="btn btn-sm btn-primary w-100" onclick="refreshDebugPackets()">
+                            <i class="fas fa-sync"></i> Refresh
                         </button>
                     </div>
                 </div>
-
-                <!-- Help Card -->
-                <div class="card shadow-sm">
-                    <div class="card-header bg-light">
-                        <i class="fas fa-info-circle"></i> Help
-                    </div>
-                    <div class="card-body small">
-                        <h6 class="fw-bold">Topic Wildcards</h6>
-                        <ul class="mb-3">
-                            <li><code>+</code> - Single level wildcard<br>
-                                <span class="text-muted">e.g., <code>zigbee/+/state</code></span>
-                            </li>
-                            <li><code>#</code> - Multi-level wildcard<br>
-                                <span class="text-muted">e.g., <code>zigbee/#</code></span>
-                            </li>
-                        </ul>
-
-                        <h6 class="fw-bold">Features</h6>
-                        <ul class="mb-0">
-                            <li>Real-time message monitoring</li>
-                            <li>Topic filtering with wildcards</li>
-                            <li>Payload search</li>
-                            <li>Message inspection</li>
-                            <li>Test message publishing</li>
-                        </ul>
-                    </div>
+                <div id="debugPacketsContent" style="max-height: 60vh; overflow-y: auto;">
+                    <div class="text-center p-4"><i class="fas fa-spinner fa-spin"></i> Loading...</div>
                 </div>
             </div>
         </div>
     </div>
+</div>
 
-    <!-- Message Details Modal -->
-    <div class="modal fade" id="mqttMessageModal" tabindex="-1">
-        <div class="modal-dialog modal-lg">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title">
-                        <i class="fas fa-envelope"></i> Message Details
-                    </h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body">
-                    <h6 id="mqttMessageModalTitle" class="font-monospace mb-3"></h6>
-                    <div id="mqttMessageDetails"></div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+<!-- Motion Events Modal -->
+<div class="modal fade" id="motionEventsModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-running"></i> Motion Detection Events</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="motionEventsContent" style="max-height: 60vh; overflow-y: auto;">
+                    <div class="text-center p-4"><i class="fas fa-spinner fa-spin"></i> Loading...</div>
                 </div>
             </div>
         </div>
     </div>
+</div>
 
-    <!-- Debug Packets Modal -->
-    <div class="modal fade" id="debugPacketsModal" tabindex="-1">
-        <div class="modal-dialog modal-xl">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title"><i class="fas fa-network-wired"></i> Debug Packets</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+<!-- Banned Devices Modal -->
+<div class="modal fade" id="bannedDevicesModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-ban text-danger"></i> Banned Devices</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="bannedListContainer" class="list-group">
+                    <div class="text-center text-muted">Loading...</div>
                 </div>
-                <div class="modal-body">
-                    <div class="row mb-3">
-                        <div class="col-md-3">
-                            <select id="packetImportanceFilter" class="form-select form-select-sm">
-                                <option value="">All Importance</option>
-                                <option value="critical">Critical</option>
-                                <option value="high">High</option>
-                                <option value="medium">Medium</option>
-                                <option value="normal">Normal</option>
-                            </select>
-                        </div>
-                        <div class="col-md-3">
-                            <input type="text" id="packetIeeeFilter" class="form-control form-control-sm" placeholder="Filter by IEEE...">
-                        </div>
-                        <div class="col-md-3">
-                            <input type="number" id="packetClusterFilter" class="form-control form-control-sm" placeholder="Cluster ID (hex)">
-                        </div>
-                        <div class="col-md-3">
-                            <button class="btn btn-sm btn-primary w-100" onclick="refreshDebugPackets()">
-                                <i class="fas fa-sync"></i> Refresh
-                            </button>
-                        </div>
-                    </div>
-                    <div id="debugPacketsContent" style="max-height: 60vh; overflow-y: auto;">
-                        <div class="text-center p-4"><i class="fas fa-spinner fa-spin"></i> Loading...</div>
-                    </div>
-                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
             </div>
         </div>
     </div>
+</div>
 
-    <!-- Motion Events Modal -->
-    <div class="modal fade" id="motionEventsModal" tabindex="-1">
-        <div class="modal-dialog modal-lg">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title"><i class="fas fa-running"></i> Motion Detection Events</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body">
-                    <div id="motionEventsContent" style="max-height: 60vh; overflow-y: auto;">
-                        <div class="text-center p-4"><i class="fas fa-spinner fa-spin"></i> Loading...</div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Banned Devices Modal -->
-    <div class="modal fade" id="bannedDevicesModal" tabindex="-1">
-        <div class="modal-dialog">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title"><i class="fas fa-ban text-danger"></i> Banned Devices</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body">
-                    <div id="bannedListContainer" class="list-group">
-                        <div class="text-center text-muted">Loading...</div>
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    <script type="module" src="/static/js/main.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script type="module" src="/static/js/main.js"></script>
 </body>
 </html>
