@@ -64,6 +64,7 @@
             <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#topology"><i class="fas fa-network-wired"></i> Topology</button></li>
             <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#settings"><i class="fas fa-cog"></i> Settings</button></li>
             <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#groups"><i class="fas fa-layer-group"></i> Groups</button></li>
+            <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#zones"><i class="fas fa-target"></i> Zones</button></li>
             <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#mqtt-explorer"><i class="fas fa-broadcast-tower"></i> MQTT Explorer</button></li>
             <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#debug"><i class="fas fa-terminal"></i> Debug Log</button></li>
         </ul>
@@ -292,6 +293,180 @@
                 </div>
             </div>
 
+
+            <!-- Zones Tab-->
+
+            <div class="tab-pane fade" id="zones" role="tabpanel" aria-labelledby="zones-tab">
+                <div class="container-fluid p-3">
+                    <!-- Header -->
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <div>
+                            <h5 class="mb-0">
+                                <i class="bi bi-geo-alt me-2"></i>Presence Detection Zones
+                            </h5>
+                            <small class="text-muted">Monitor RSSI fluctuations between mesh devices to detect room occupancy</small>
+                        </div>
+                        <div class="btn-group">
+                            <button class="btn btn-outline-secondary" id="btn-refresh-zones">
+                                <i class="bi bi-arrow-clockwise"></i>
+                            </button>
+                            <button class="btn btn-primary" id="btn-create-zone">
+                                <i class="bi bi-plus-lg me-1"></i>Create Zone
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Info Card -->
+                    <div class="card mb-3 border-info">
+                        <div class="card-body py-2">
+                            <div class="row align-items-center">
+                                <div class="col-auto">
+                                    <i class="bi bi-info-circle text-info fs-4"></i>
+                                </div>
+                                <div class="col">
+                                    <strong>How it works:</strong>
+                                    When you move through a room, your body affects the radio signals between Zigbee devices.
+                                    Zones detect these RSSI fluctuations to determine occupancy without dedicated sensors.
+                                    <span class="text-muted">Best with mains-powered devices (lights, plugs, switches).</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Zones Grid -->
+                    <div class="row" id="zones-container">
+                        <!-- Zone cards rendered here by JavaScript -->
+                        <div class="col-12">
+                            <div class="d-flex justify-content-center align-items-center" style="min-height: 200px;">
+                                <div class="spinner-border text-primary" role="status">
+                                    <span class="visually-hidden">Loading...</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+
+            <!-- Zones Modal -->
+            <div class="modal fade" id="createZoneModal" tabindex="-1">
+                <div class="modal-dialog modal-lg">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title">
+                                <i class="bi bi-geo-alt me-2"></i>Create Presence Zone
+                            </h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                        </div>
+                        <div class="modal-body">
+                            <!-- Zone Name -->
+                            <div class="mb-3">
+                                <label class="form-label fw-bold">Zone Name</label>
+                                <input type="text" class="form-control" id="zone-name-input"
+                                       placeholder="e.g., Living Room, Kitchen, Office">
+                            </div>
+
+                            <!-- Device Selection -->
+                            <div class="mb-3">
+                                <label class="form-label fw-bold">
+                                    Select Devices
+                                    <span class="badge bg-primary ms-2" id="zone-selected-count">0</span> selected
+                                </label>
+                                <p class="text-muted small mb-2">
+                                    Choose devices in this room. Routers (mains-powered) work best.
+                                    <strong>Minimum 2 devices required.</strong>
+                                </p>
+                                <input type="text" class="form-control mb-2" id="zone-device-search"
+                                       placeholder="Search devices...">
+                                <div class="list-group overflow-auto" id="zone-device-list" style="max-height: 250px;">
+                                    <!-- Devices rendered here -->
+                                </div>
+                            </div>
+
+                            <!-- Advanced Settings (Collapsed) -->
+                            <div class="accordion" id="zoneAdvancedAccordion">
+                                <div class="accordion-item">
+                                    <h2 class="accordion-header">
+                                        <button class="accordion-button collapsed" type="button"
+                                                data-bs-toggle="collapse" data-bs-target="#zoneAdvancedSettings">
+                                            <i class="bi bi-gear me-2"></i>Advanced Settings
+                                        </button>
+                                    </h2>
+                                    <div id="zoneAdvancedSettings" class="accordion-collapse collapse">
+                                        <div class="accordion-body">
+                                            <div class="row">
+                                                <div class="col-md-6 mb-3">
+                                                    <label class="form-label">Deviation Threshold (σ)</label>
+                                                    <input type="number" class="form-control" id="zone-deviation-threshold"
+                                                           value="2.5" min="1" max="5" step="0.1">
+                                                    <small class="text-muted">Lower = more sensitive (2.0-3.5)</small>
+                                                </div>
+                                                <div class="col-md-6 mb-3">
+                                                    <label class="form-label">Variance Threshold</label>
+                                                    <input type="number" class="form-control" id="zone-variance-threshold"
+                                                           value="4.0" min="1" max="10" step="0.5">
+                                                    <small class="text-muted">Lower = more sensitive</small>
+                                                </div>
+                                                <div class="col-md-6 mb-3">
+                                                    <label class="form-label">Minimum Links Triggered</label>
+                                                    <input type="number" class="form-control" id="zone-min-links"
+                                                           value="2" min="1" max="5">
+                                                    <small class="text-muted">More devices = higher value</small>
+                                                </div>
+                                                <div class="col-md-6 mb-3">
+                                                    <label class="form-label">Clear Delay (seconds)</label>
+                                                    <input type="number" class="form-control" id="zone-clear-delay"
+                                                           value="30" min="10" max="120">
+                                                    <small class="text-muted">Time of stability before clearing</small>
+                                                </div>
+                                                <div class="col-md-6 mb-3">
+                                                    <label class="form-label">Calibration Time (seconds)</label>
+                                                    <input type="number" class="form-control" id="zone-calibration-time"
+                                                           value="120" min="60" max="300">
+                                                    <small class="text-muted">Baseline learning period</small>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                            <button type="button" class="btn btn-primary" id="btn-save-zone">
+                                <i class="bi bi-check-lg me-1"></i>Create Zone
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Zone Details Modal -->
+            <div class="modal fade" id="zoneDetailsModal" tabindex="-1">
+                <div class="modal-dialog modal-lg">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title">
+                                <i class="bi bi-graph-up me-2"></i>
+                                <span id="zone-details-title">Zone Details</span>
+                            </h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                        </div>
+                        <div class="modal-body">
+                            <div class="mb-3">
+                                <strong>Status:</strong> <span id="zone-details-state"></span>
+                            </div>
+                            <h6 class="mb-2">Link Statistics</h6>
+                            <div id="zone-links-container">
+                                <!-- Link details rendered here -->
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
 
             <!-- DEBUG TAB -->
             <div class="tab-pane fade" id="debug">
