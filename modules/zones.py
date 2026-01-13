@@ -529,6 +529,8 @@ class ZoneManager:
         self._evaluation_task: Optional[asyncio.Task] = None
         self._topology_logged = False
         self._force_collect = False
+        self._zigbee_service = None
+        self._neighbor_scan_task = None
 
     def create_zone(self, config: ZoneConfig) -> Zone:
         """Create a new zone."""
@@ -558,6 +560,133 @@ class ZoneManager:
         logger.info(f"Created zone '{config.name}' with {len(config.device_ieees)} devices")
         return zone
 
+
+    async def configure_zone_devices(self, zigbee_service):
+        """
+        Configure all zone devices for LQI reporting.
+        Called from core.py after zones are loaded.
+        """
+        from modules.zone_device_config import configure_zone_device_reporting
+
+        self._zigbee_service = zigbee_service
+
+        # Collect all unique device IEEEs from all zones
+        all_device_ieees = set()
+        for zone in self.zones.values():
+            all_device_ieees.update(zone.device_ieees)
+
+        if all_device_ieees:
+            logger.info(f"Configuring {len(all_device_ieees)} zone devices for LQI reporting")
+            await configure_zone_device_reporting(zigbee_service, list(all_device_ieees))
+
+
+    async def start_zone(self):
+        """Start zone manager background tasks."""
+        self._running = True
+
+        # Existing tasks
+        self._presence_task = asyncio.create_task(self._presence_check_loop())
+        self._calibration_task = asyncio.create_task(self._calibration_loop())
+
+        # Add periodic neighbor scan for fresh LQI data
+        self._neighbor_scan_task = asyncio.create_task(self._periodic_neighbor_scan())
+
+        logger.info("Zone manager started")
+
+
+    async def _periodic_neighbor_scan(self):
+        """
+        Periodically scan neighbor tables for fresh LQI data.
+        Supplements attribute reporting with active scanning.
+        """
+        while self._running:
+            try:
+                await asyncio.sleep(30)  # Every 30 seconds
+
+                if not self._zigbee_service:
+                    continue
+
+                app = self._zigbee_service.app
+                coord_ieee = str(app.ieee)
+
+                # Get coordinator's neighbor table
+                if hasattr(app, 'topology') and hasattr(app.topology, 'neighbors'):
+                    neighbors = app.topology.neighbors.get(app.ieee, [])
+
+                    for neighbor in neighbors:
+                        target_ieee = str(neighbor.ieee)
+                        lqi = getattr(neighbor, 'lqi', None)
+
+                        if lqi is not None:
+                            rssi = int(-100 + (lqi / 255) * 70)
+                            self.record_link_quality(
+                                source_ieee=coord_ieee,
+                                target_ieee=target_ieee,
+                                rssi=rssi,
+                                lqi=lqi
+                            )
+
+                # Also scan routers that are in zones
+                zone_routers = set()
+                for zone in self.zones.values():
+                    for ieee in zone.device_ieees:
+                        if ieee in self._zigbee_service.devices:
+                            dev = self._zigbee_service.devices[ieee]
+                            if dev.get_role() == "Router":
+                                zone_routers.add(ieee)
+
+                # Request neighbor updates from routers
+                for router_ieee in zone_routers:
+                    try:
+                        dev = self._zigbee_service.devices[router_ieee]
+                        # Mgmt_Lqi_req returns neighbor table with LQI
+                        result = await asyncio.wait_for(
+                            dev.zigpy_dev.zdo.Mgmt_Lqi_req(start_index=0),
+                            timeout=5.0
+                        )
+
+                        if result and len(result) > 1:
+                            neighbors = result[1]
+                            for n in neighbors:
+                                if hasattr(n, 'lqi') and n.lqi:
+                                    target = str(n.ieee) if hasattr(n, 'ieee') else None
+                                    if target:
+                                        rssi = int(-100 + (n.lqi / 255) * 70)
+                                        self.record_link_quality(
+                                            source_ieee=router_ieee,
+                                            target_ieee=target,
+                                            rssi=rssi,
+                                            lqi=n.lqi
+                                        )
+                    except Exception as e:
+                        logger.debug(f"Router {router_ieee} LQI scan failed: {e}")
+                        continue
+
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"Neighbor scan error: {e}")
+                await asyncio.sleep(10)
+
+
+    async def stop_zone(self):
+        """Stop zone manager."""
+        self._running = False
+
+        # Cancel all tasks
+        for task in [
+            getattr(self, '_presence_task', None),
+            getattr(self, '_calibration_task', None),
+            getattr(self, '_neighbor_scan_task', None),
+        ]:
+            if task:
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+
+        logger.info("Zone manager stopped")
 
     def _emit_calibration_progress(self, data: dict):
         """Broadcast calibration updates via core event callback."""

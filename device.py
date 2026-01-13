@@ -30,6 +30,8 @@ from handlers.blinds import *
 from handlers.aqara import *
 from handlers.lightlink import *
 from handlers.lighting import *
+from handlers.diagnostics import *
+
 
 logger = logging.getLogger("device")
 

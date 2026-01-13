@@ -586,27 +586,61 @@ class ZigbeeService:
                 # ================================================================
                 if radio_type == "EZSP":
                     try:
-                        # Access the EZSP protocol object
+                        # Method 1: Hook at bellows EZSP callback level
                         ezsp = self.app._ezsp
 
-                        # Wrap the frame reception handler to extract LQI metadata
-                        if hasattr(ezsp, 'frame_received'):
-                            original_frame_received = ezsp.frame_received
+                        # Store original callback
+                        if hasattr(ezsp, '_protocol') and hasattr(ezsp._protocol, 'cb'):
+                            original_cb = ezsp._protocol.cb
 
-                            def frame_received_with_lqi(frame_name, args):
-                                # Store LQI if present in frame
-                                if 'lastHopLqi' in args:
-                                    ezsp._last_packet_lqi = args['lastHopLqi']
-                                elif 'lqi' in args:
-                                    ezsp._last_packet_lqi = args['lqi']
+                            class LQICapturingCallback:
+                                def __init__(self, original, service):
+                                    self._original = original
+                                    self._service = service
 
-                                # Call original handler
-                                return original_frame_received(frame_name, args)
+                                def __getattr__(self, name):
+                                    return getattr(self._original, name)
 
-                            ezsp.frame_received = frame_received_with_lqi
-                            logger.info("✅ Hooked EZSP frame handler for live LQI extraction")
+                                def incomingMessageHandler(self, *args, **kwargs):
+                                    """Intercept incoming messages to extract LQI."""
+                                    # args typically: (messageType, apsFrame, lastHopLqi, lastHopRssi, sender, ...)
+                                    try:
+                                        if len(args) >= 4:
+                                            lqi = args[2] if len(args) > 2 else None  # lastHopLqi
+                                            rssi = args[3] if len(args) > 3 else None  # lastHopRssi
+                                            sender_nwk = args[4] if len(args) > 4 else None
+
+                                            if lqi is not None and sender_nwk is not None:
+                                                # Convert NWK to IEEE
+                                                for ieee, dev in self._service.app.devices.items():
+                                                    if dev.nwk == sender_nwk:
+                                                        sender_ieee = str(ieee)
+
+                                                        zone_mgr = getattr(self._service, 'zone_manager', None)
+                                                        if zone_mgr:
+                                                            coord_ieee = str(self._service.app.ieee)
+                                                            if rssi is None:
+                                                                rssi = int(-100 + (lqi / 255) * 70)
+
+                                                            zone_mgr.record_link_quality(
+                                                                source_ieee=coord_ieee,
+                                                                target_ieee=sender_ieee,
+                                                                rssi=rssi,
+                                                                lqi=lqi
+                                                            )
+                                                        break
+                                    except Exception:
+                                        pass
+
+                                    # Call original handler
+                                    if hasattr(self._original, 'incomingMessageHandler'):
+                                        return self._original.incomingMessageHandler(*args, **kwargs)
+
+                            ezsp._protocol.cb = LQICapturingCallback(original_cb, self)
+                            logger.info("✅ Hooked EZSP incomingMessageHandler for live LQI")
+
                     except Exception as e:
-                        logger.warning(f"Could not hook EZSP radio layer: {e}")
+                        logger.warning(f"Could not hook EZSP for LQI capture: {e}")
 
                 # ================================================================
                 # STEP 8: HOOK handle_message TO CAPTURE RSSI WITH LIVE LQI
@@ -614,35 +648,22 @@ class ZigbeeService:
                 self._original_handle_message = self.handle_message
 
                 def wrapped_handle_message(sender, profile, cluster, src_ep, dst_ep, message):
-                    # Call original first
                     result = self._original_handle_message(sender, profile, cluster, src_ep, dst_ep, message)
 
-                    # Capture RSSI/LQI for zones
-                    if hasattr(self, 'zone_manager') and self.zone_manager:
+                    # Capture LQI from sender device object (set by zigpy)
+                    zone_mgr = getattr(self, 'zone_manager', None)
+                    if zone_mgr:
                         ieee = str(sender.ieee)
-                        coordinator_ieee = str(self.app.ieee)
-                        lqi = None
-
-                        # Method 1: Try to get LQI from EZSP frame metadata (most accurate)
-                        if radio_type == "EZSP":
-                            try:
-                                ezsp = self.app._ezsp
-                                if hasattr(ezsp, '_last_packet_lqi'):
-                                    lqi = ezsp._last_packet_lqi
-                                    delattr(ezsp, '_last_packet_lqi')  # Consume it
-                            except:
-                                pass
-
-                        # Method 2: Fall back to device cached LQI
-                        if lqi is None:
-                            lqi = getattr(sender, 'lqi', None)
+                        lqi = getattr(sender, 'lqi', None)
+                        rssi = getattr(sender, 'rssi', None)
 
                         if lqi is not None:
-                            # Convert LQI to approximate RSSI
-                            rssi = int(-100 + (lqi / 255) * 70)
+                            coord_ieee = str(self.app.ieee)
+                            if rssi is None:
+                                rssi = int(-100 + (lqi / 255) * 70)
 
-                            self.zone_manager.record_link_quality(
-                                source_ieee=coordinator_ieee,
+                            zone_mgr.record_link_quality(
+                                source_ieee=coord_ieee,
                                 target_ieee=ieee,
                                 rssi=rssi,
                                 lqi=lqi
@@ -650,9 +671,8 @@ class ZigbeeService:
 
                     return result
 
-                # Replace the method on self
                 self.handle_message = wrapped_handle_message
-                logger.info("✅ Live RSSI/LQI capture hook installed")
+                logger.info("✅ Wrapped handle_message for fallback LQI capture")
 
                 # Load existing devices from database
                 for ieee, zigpy_dev in self.app.devices.items():
@@ -741,7 +761,7 @@ class ZigbeeService:
                 logger.error(f"Failed to load zones config: {e}")
 
         # Start background tasks
-        await self.zone_manager.start()
+        await self.zone_manager.start_zone()
 
         # Publish Discovery
         for zone in self.zone_manager.zones.values():
@@ -755,7 +775,7 @@ class ZigbeeService:
 
 
         if self.zone_manager:
-            await self.zone_manager.stop()
+            await self.zone_manager.stop_zone()
             try:
                 import yaml
                 # Save to data directory
