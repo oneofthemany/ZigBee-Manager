@@ -48,7 +48,7 @@ export function initWS() {
                 return;
             }
 
-            if (msg.type === 'zone_update' || msg.type === 'zone_state') {
+            if (msg.type === 'zone_update' || msg.type === 'zone_state' || msg.type === 'zone_calibration') {
                 // Dispatch a custom event that zones.js can listen to
                 const customEvent = new CustomEvent('zone-update', { detail: msg });
                 window.dispatchEvent(customEvent);

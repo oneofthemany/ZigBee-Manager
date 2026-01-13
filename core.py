@@ -581,6 +581,39 @@ class ZigbeeService:
                 # Register as listener for application-level events
                 self.app.add_listener(self)
 
+
+                # === HOOK RSSI CAPTURE FOR ZONES  ===
+                self._original_handle_message = self.handle_message
+
+                def wrapped_handle_message(sender, profile, cluster, src_ep, dst_ep, message):
+                    # Call original first
+                    result = self._original_handle_message(sender, profile, cluster, src_ep, dst_ep, message)
+
+                    # Capture RSSI/LQI for zones if available
+                    if hasattr(self, 'zone_manager') and self.zone_manager:
+                        ieee = str(sender.ieee)
+                        coordinator_ieee = str(self.app.ieee)
+
+                        # Get LQI from device object (updated by zigpy on packet reception)
+                        lqi = getattr(sender, 'lqi', None)
+
+                        if lqi is not None:
+                            # Convert LQI to approximate RSSI
+                            rssi = int(-100 + (lqi / 255) * 70)
+
+                            self.zone_manager.record_link_quality(
+                                source_ieee=coordinator_ieee,
+                                target_ieee=ieee,
+                                rssi=rssi,
+                                lqi=lqi
+                            )
+
+                    return result
+
+                # Replace the method on self
+                self.handle_message = wrapped_handle_message
+                logger.info("✅ Live RSSI/LQI capture hooked for zones")
+
                 # Load existing devices from database
                 for ieee, zigpy_dev in self.app.devices.items():
                     await self._async_device_restored(zigpy_dev)
@@ -1102,6 +1135,38 @@ class ZigbeeService:
         """Raw message interceptor - called for EVERY Zigbee message."""
         packet_stats.record_rx(str(sender.ieee), size=len(message) if message else 0)
         ieee = str(sender.ieee)
+
+
+        # === CAPTURE LIVE RSSI/LQI FOR ZONES ===
+        if hasattr(self, 'zone_manager') and self.zone_manager:
+            # Get RSSI/LQI from device's last packet metadata
+            rssi = getattr(sender, 'rssi', None)
+            lqi = getattr(sender, 'lqi', None)
+
+            # Zigpy stores last LQI on device object
+            if lqi is None and hasattr(sender, 'last_seen'):
+                # Try to get from device's radio layer
+                if hasattr(sender, '_application') and hasattr(sender._application, '_device'):
+                    radio_dev = sender._application._device
+                    lqi = getattr(radio_dev, 'lqi', None)
+
+            # If we have valid data, record it
+            if rssi is not None or lqi is not None:
+                coordinator_ieee = str(self.app.ieee)
+
+                # Convert if needed
+                if rssi is None and lqi is not None:
+                    rssi = int(-100 + (lqi / 255) * 70)
+                if lqi is None and rssi is not None:
+                    lqi = int((rssi + 100) * 255 / 70)
+                    lqi = max(0, min(255, lqi))
+
+                self.zone_manager.record_link_quality(
+                    source_ieee=coordinator_ieee,
+                    target_ieee=ieee,
+                    rssi=rssi,
+                    lqi=lqi
+                )
 
         # === FAST PATH: Try immediate processing for time-critical messages ===
         try:
