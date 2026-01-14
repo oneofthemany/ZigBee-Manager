@@ -23,7 +23,7 @@ import traceback
 # LOGGING CONFIGURATION
 # ============================================================================
 
-os.makedirs("logs", exist_ok=True)
+os.makedirs("./logs", exist_ok=True)
 
 # Create dedicated logger for debug with RotatingFileHandler
 debug_logger = logging.getLogger("zigbee.debug")
@@ -32,7 +32,7 @@ debug_logger.propagate = False  # Don't propagate to root logger
 
 # File handler with rotation - 10MB per file, keep 5 backups
 debug_file_handler = RotatingFileHandler(
-    'logs/zigbee_debug.log',
+    './logs/zigbee_debug.log',
     maxBytes=10*1024*1024,  # 10 MB
     backupCount=5
 )
@@ -161,7 +161,7 @@ class ZigbeeDebugger:
         self.filter_ieee: Optional[str] = None
         self.filter_cluster: Optional[int] = None
 
-        # NEW: Callbacks for real-time streaming
+        # Callbacks for real-time streaming
         self._callbacks: List[Callable] = []
 
         # Statistics
