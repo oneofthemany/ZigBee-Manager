@@ -25,29 +25,40 @@ TARGET_CLUSTERS = {
 }
 
 async def configure_zone_device_reporting(zigbee_service, device_ieees: list):
-    """
-    Configure zone devices to report LQI changes.
-    """
+    """Configure zone devices to report LQI changes."""
     configured_count = 0
+    skipped_count = 0
+    failed_count = 0
 
     for ieee in device_ieees:
         if ieee not in zigbee_service.devices:
+            logger.warning(f"[{ieee}] Device not found")
             continue
 
         device = zigbee_service.devices[ieee]
         zigpy_dev = device.zigpy_dev
 
-        # Skip battery devices (they sleep and can't be forced)
-        if device.power_source == "Battery" or device.node_desc.is_end_device:
-            logger.debug(f"[{ieee}] Skipping battery device")
+        # Use get_role() - the authoritative method
+        role = device.get_role()
+        if role not in ("Router", "Coordinator"):
+            logger.info(f"[{ieee}] Skipping {role} - only routers support aggressive reporting")
+            skipped_count += 1
             continue
 
-        # Try configuring fallback reporting on common clusters
-        success = await _configure_aggressive_reporting(ieee, zigpy_dev)
-        if success:
-            configured_count += 1
+        try:
+            success = await _configure_aggressive_reporting(ieee, zigpy_dev)
+            if success:
+                configured_count += 1
+                logger.info(f"[{ieee}] ✅ Aggressive LQI reporting configured")
+            else:
+                logger.warning(f"[{ieee}] No suitable clusters found for LQI reporting")
+                failed_count += 1
+        except Exception as e:
+            logger.error(f"[{ieee}] Failed to configure: {e}")
+            failed_count += 1
 
-    logger.info(f"[Zone] Configured {configured_count} devices for fast LQI reporting")
+    logger.info(f"[Zone] Configured: {configured_count}, Skipped: {skipped_count}, Failed: {failed_count}")
+    return {"configured": configured_count, "skipped": skipped_count, "failed": failed_count}
 
 
 async def _configure_aggressive_reporting(ieee, zigpy_dev):
