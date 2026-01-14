@@ -64,7 +64,7 @@
         <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#topology"><i class="fas fa-network-wired"></i> Topology</button></li>
         <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#settings"><i class="fas fa-cog"></i> Settings</button></li>
         <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#groups"><i class="fas fa-layer-group"></i> Groups</button></li>
-        <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#zones"><i class="fas fa-target"></i> Zones</button></li>
+        <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#zones"><i class="fas fa-bullseye"></i> Zones</button></li>
         <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#mqtt-explorer"><i class="fas fa-broadcast-tower"></i> MQTT Explorer</button></li>
         <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#debug"><i class="fas fa-terminal"></i> Debug Log</button></li>
     </ul>
@@ -295,7 +295,6 @@
 
 
         <!-- Zones Tab-->
-
         <div class="tab-pane fade" id="zones" role="tabpanel" aria-labelledby="zones-tab">
             <div class="container-fluid p-3">
                 <!-- Header -->
@@ -441,28 +440,173 @@
             </div>
         </div>
 
-        <!-- Zone Details Modal -->
-        <div class="modal fade" id="zoneDetailsModal" tabindex="-1">
-            <div class="modal-dialog modal-lg">
-                <div class="modal-content">
-                    <div class="modal-header">
-                        <h5 class="modal-title">
-                            <i class="bi bi-graph-up me-2"></i>
-                            <span id="zone-details-title">Zone Details</span>
-                        </h5>
-                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                    </div>
-                    <div class="modal-body">
-                        <div class="mb-3">
-                            <strong>Status:</strong> <span id="zone-details-state"></span>
+        <!-- MQTT EXPLORER TAB -->
+        <div class="tab-pane fade" id="mqtt-explorer">
+            <div class="row">
+                <!-- Left column: Message list -->
+                <div class="col-lg-8">
+                    <div class="card shadow-sm h-100">
+                        <div class="card-header bg-light py-2">
+                            <div class="row g-2 align-items-center">
+                                <div class="col-auto">
+                                    <span class="fw-bold">MQTT Messages</span>
+                                    <span id="mqttStatusBadge" class="badge bg-secondary ms-2">Stopped</span>
+                                </div>
+                                <div class="col-auto ms-auto">
+                                    <div class="btn-group btn-group-sm" role="group">
+                                        <button id="mqttStartBtn" class="btn btn-success">
+                                            <i class="fas fa-play"></i> Start
+                                        </button>
+                                        <button id="mqttStopBtn" class="btn btn-danger d-none">
+                                            <i class="fas fa-stop"></i> Stop
+                                        </button>
+                                        <button id="mqttRefreshBtn" class="btn btn-primary">
+                                            <i class="fas fa-sync"></i> Refresh
+                                        </button>
+                                        <button id="mqttClearBtn" class="btn btn-warning">
+                                            <i class="fas fa-trash"></i> Clear
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
-                        <h6 class="mb-2">Link Statistics</h6>
-                        <div id="zone-links-container">
-                            <!-- Link details rendered here -->
+
+                        <div class="card-body p-0">
+                            <!-- Statistics -->
+                            <div class="row g-0 border-bottom">
+                                <div class="col-3 p-2 border-end text-center">
+                                    <div class="small text-muted">Total Messages</div>
+                                    <div class="fw-bold" id="mqttTotalMessages">0</div>
+                                </div>
+                                <div class="col-3 p-2 border-end text-center">
+                                    <div class="small text-muted">Msg/sec</div>
+                                    <div class="fw-bold" id="mqttMessagesPerSec">0.00</div>
+                                </div>
+                                <div class="col-3 p-2 border-end text-center">
+                                    <div class="small text-muted">Topics</div>
+                                    <div class="fw-bold" id="mqttUniqueTopics">0</div>
+                                </div>
+                                <div class="col-3 p-2 text-center">
+                                    <div class="small text-muted">Buffer</div>
+                                    <div class="fw-bold" id="mqttBufferUsage">0 / 1000</div>
+                                </div>
+                            </div>
+
+                            <!-- Filters -->
+                            <div class="p-2 border-bottom bg-light">
+                                <div class="row g-2">
+                                    <div class="col-md-5">
+                                        <input type="text" id="mqttTopicFilter" class="form-control form-control-sm"
+                                               placeholder="Filter by topic (supports + and # wildcards)">
+                                    </div>
+                                    <div class="col-md-5">
+                                        <input type="text" id="mqttSearchFilter" class="form-control form-control-sm"
+                                               placeholder="Search in topic or payload...">
+                                    </div>
+                                    <div class="col-md-2">
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" id="mqttAutoScroll" checked>
+                                            <label class="form-check-label small" for="mqttAutoScroll">
+                                                Auto-scroll
+                                            </label>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Messages Table -->
+                            <div id="mqttMessagesContainer" style="max-height: 600px; overflow-y: auto;">
+                                <table class="table table-sm table-hover mb-0">
+                                    <thead class="table-light sticky-top">
+                                    <tr>
+                                        <th style="width: 120px;">Time</th>
+                                        <th style="width: 250px;">Topic</th>
+                                        <th>Payload</th>
+                                        <th style="width: 100px;" class="text-center">QoS/Retain</th>
+                                        <th style="width: 80px;" class="text-end">Size</th>
+                                    </tr>
+                                    </thead>
+                                    <tbody id="mqttMessagesBody">
+                                    <tr>
+                                        <td colspan="5" class="text-center text-muted py-4">
+                                            Start monitoring to see messages
+                                        </td>
+                                    </tr>
+                                    </tbody>
+                                </table>
+                            </div>
                         </div>
                     </div>
-                    <div class="modal-footer">
-                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                </div>
+
+                <!-- Right column: Publish & Info -->
+                <div class="col-lg-4">
+                    <!-- Publish Card -->
+                    <div class="card shadow-sm mb-3">
+                        <div class="card-header bg-light">
+                            <i class="fas fa-paper-plane"></i> Publish Message
+                        </div>
+                        <div class="card-body">
+                            <div class="mb-2">
+                                <label class="form-label small">Topic</label>
+                                <input type="text" id="mqttPublishTopic" class="form-control form-control-sm"
+                                       placeholder="e.g., zigbee/test">
+                            </div>
+                            <div class="mb-2">
+                                <label class="form-label small">Payload</label>
+                                <textarea id="mqttPublishPayload" class="form-control form-control-sm font-monospace"
+                                          rows="4" placeholder='{"test": "message"}'></textarea>
+                            </div>
+                            <div class="row g-2 mb-2">
+                                <div class="col-6">
+                                    <label class="form-label small">QoS</label>
+                                    <select id="mqttPublishQos" class="form-select form-select-sm">
+                                        <option value="0">0 - At most once</option>
+                                        <option value="1">1 - At least once</option>
+                                        <option value="2">2 - Exactly once</option>
+                                    </select>
+                                </div>
+                                <div class="col-6">
+                                    <label class="form-label small">&nbsp;</label>
+                                    <div class="form-check mt-2">
+                                        <input class="form-check-input" type="checkbox" id="mqttPublishRetain">
+                                        <label class="form-check-label small" for="mqttPublishRetain">
+                                            Retain
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+                            <button id="mqttPublishBtn" class="btn btn-primary btn-sm w-100">
+                                <i class="fas fa-paper-plane"></i> Publish
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Help Card -->
+                    <div class="card shadow-sm">
+                        <div class="card-header bg-light">
+                            <i class="fas fa-info-circle"></i> Help
+                        </div>
+                        <div class="card-body small">
+                            <h6 class="fw-bold">Topic Wildcards</h6>
+                            <ul class="mb-3">
+                                <li><code>+</code> - Single level wildcard<br>
+                                    <span class="text-muted">e.g., <code>zigbee/+/state</code></span>
+                                </li>
+                                <li><code>#</code> - Multi-level wildcard<br>
+                                    <span class="text-muted">e.g., <code>zigbee/#</code></span>
+                                </li>
+                            </ul>
+
+                            <h6 class="fw-bold">Features</h6>
+                            <ul class="mb-0">
+                                <li>Real-time message monitoring</li>
+                                <li>Topic filtering with wildcards</li>
+                                <li>Payload search</li>
+                                <li>Message inspection</li>
+                                <li>Test message publishing</li>
+                            </ul>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -542,179 +686,6 @@
 </div>
 
 
-<!-- MQTT EXPLORER TAB -->
-
-<div class="tab-pane fade" id="mqtt-explorer">
-    <div class="row">
-        <!-- Left column: Message list -->
-        <div class="col-lg-8">
-            <div class="card shadow-sm h-100">
-                <div class="card-header bg-light py-2">
-                    <div class="row g-2 align-items-center">
-                        <div class="col-auto">
-                            <span class="fw-bold">MQTT Messages</span>
-                            <span id="mqttStatusBadge" class="badge bg-secondary ms-2">Stopped</span>
-                        </div>
-                        <div class="col-auto ms-auto">
-                            <div class="btn-group btn-group-sm" role="group">
-                                <button id="mqttStartBtn" class="btn btn-success">
-                                    <i class="fas fa-play"></i> Start
-                                </button>
-                                <button id="mqttStopBtn" class="btn btn-danger d-none">
-                                    <i class="fas fa-stop"></i> Stop
-                                </button>
-                                <button id="mqttRefreshBtn" class="btn btn-primary">
-                                    <i class="fas fa-sync"></i> Refresh
-                                </button>
-                                <button id="mqttClearBtn" class="btn btn-warning">
-                                    <i class="fas fa-trash"></i> Clear
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="card-body p-0">
-                    <!-- Statistics -->
-                    <div class="row g-0 border-bottom">
-                        <div class="col-3 p-2 border-end text-center">
-                            <div class="small text-muted">Total Messages</div>
-                            <div class="fw-bold" id="mqttTotalMessages">0</div>
-                        </div>
-                        <div class="col-3 p-2 border-end text-center">
-                            <div class="small text-muted">Msg/sec</div>
-                            <div class="fw-bold" id="mqttMessagesPerSec">0.00</div>
-                        </div>
-                        <div class="col-3 p-2 border-end text-center">
-                            <div class="small text-muted">Topics</div>
-                            <div class="fw-bold" id="mqttUniqueTopics">0</div>
-                        </div>
-                        <div class="col-3 p-2 text-center">
-                            <div class="small text-muted">Buffer</div>
-                            <div class="fw-bold" id="mqttBufferUsage">0 / 1000</div>
-                        </div>
-                    </div>
-
-                    <!-- Filters -->
-                    <div class="p-2 border-bottom bg-light">
-                        <div class="row g-2">
-                            <div class="col-md-5">
-                                <input type="text" id="mqttTopicFilter" class="form-control form-control-sm"
-                                       placeholder="Filter by topic (supports + and # wildcards)">
-                            </div>
-                            <div class="col-md-5">
-                                <input type="text" id="mqttSearchFilter" class="form-control form-control-sm"
-                                       placeholder="Search in topic or payload...">
-                            </div>
-                            <div class="col-md-2">
-                                <div class="form-check">
-                                    <input class="form-check-input" type="checkbox" id="mqttAutoScroll" checked>
-                                    <label class="form-check-label small" for="mqttAutoScroll">
-                                        Auto-scroll
-                                    </label>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Messages Table -->
-                    <div id="mqttMessagesContainer" style="max-height: 600px; overflow-y: auto;">
-                        <table class="table table-sm table-hover mb-0">
-                            <thead class="table-light sticky-top">
-                            <tr>
-                                <th style="width: 120px;">Time</th>
-                                <th style="width: 250px;">Topic</th>
-                                <th>Payload</th>
-                                <th style="width: 100px;" class="text-center">QoS/Retain</th>
-                                <th style="width: 80px;" class="text-end">Size</th>
-                            </tr>
-                            </thead>
-                            <tbody id="mqttMessagesBody">
-                            <tr>
-                                <td colspan="5" class="text-center text-muted py-4">
-                                    Start monitoring to see messages
-                                </td>
-                            </tr>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Right column: Publish & Info -->
-        <div class="col-lg-4">
-            <!-- Publish Card -->
-            <div class="card shadow-sm mb-3">
-                <div class="card-header bg-light">
-                    <i class="fas fa-paper-plane"></i> Publish Message
-                </div>
-                <div class="card-body">
-                    <div class="mb-2">
-                        <label class="form-label small">Topic</label>
-                        <input type="text" id="mqttPublishTopic" class="form-control form-control-sm"
-                               placeholder="e.g., zigbee/test">
-                    </div>
-                    <div class="mb-2">
-                        <label class="form-label small">Payload</label>
-                        <textarea id="mqttPublishPayload" class="form-control form-control-sm font-monospace"
-                                  rows="4" placeholder='{"test": "message"}'></textarea>
-                    </div>
-                    <div class="row g-2 mb-2">
-                        <div class="col-6">
-                            <label class="form-label small">QoS</label>
-                            <select id="mqttPublishQos" class="form-select form-select-sm">
-                                <option value="0">0 - At most once</option>
-                                <option value="1">1 - At least once</option>
-                                <option value="2">2 - Exactly once</option>
-                            </select>
-                        </div>
-                        <div class="col-6">
-                            <label class="form-label small">&nbsp;</label>
-                            <div class="form-check mt-2">
-                                <input class="form-check-input" type="checkbox" id="mqttPublishRetain">
-                                <label class="form-check-label small" for="mqttPublishRetain">
-                                    Retain
-                                </label>
-                            </div>
-                        </div>
-                    </div>
-                    <button id="mqttPublishBtn" class="btn btn-primary btn-sm w-100">
-                        <i class="fas fa-paper-plane"></i> Publish
-                    </button>
-                </div>
-            </div>
-
-            <!-- Help Card -->
-            <div class="card shadow-sm">
-                <div class="card-header bg-light">
-                    <i class="fas fa-info-circle"></i> Help
-                </div>
-                <div class="card-body small">
-                    <h6 class="fw-bold">Topic Wildcards</h6>
-                    <ul class="mb-3">
-                        <li><code>+</code> - Single level wildcard<br>
-                            <span class="text-muted">e.g., <code>zigbee/+/state</code></span>
-                        </li>
-                        <li><code>#</code> - Multi-level wildcard<br>
-                            <span class="text-muted">e.g., <code>zigbee/#</code></span>
-                        </li>
-                    </ul>
-
-                    <h6 class="fw-bold">Features</h6>
-                    <ul class="mb-0">
-                        <li>Real-time message monitoring</li>
-                        <li>Topic filtering with wildcards</li>
-                        <li>Payload search</li>
-                        <li>Message inspection</li>
-                        <li>Test message publishing</li>
-                    </ul>
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
-
 <!-- Message Details Modal -->
 <div class="modal fade" id="mqttMessageModal" tabindex="-1">
     <div class="modal-dialog modal-lg">
@@ -728,6 +699,34 @@
             <div class="modal-body">
                 <h6 id="mqttMessageModalTitle" class="font-monospace mb-3"></h6>
                 <div id="mqttMessageDetails"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+
+<!-- Zone Details Modal -->
+<div class="modal fade" id="zoneDetailsModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="bi bi-graph-up me-2"></i>
+                    <span id="zone-details-title">Zone Details</span>
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <strong>Status:</strong> <span id="zone-details-state"></span>
+                </div>
+                <h6 class="mb-2">Link Statistics</h6>
+                <div id="zone-links-container">
+                    <!-- Link details rendered here -->
+                </div>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
