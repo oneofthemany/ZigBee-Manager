@@ -1194,57 +1194,15 @@ class ZigbeeService:
             dst_ep: int,
             message: bytes
     ):
-
         """Raw message interceptor - called for EVERY Zigbee message."""
-        packet_stats.record_rx(str(sender.ieee), size=len(message) if message else 0)
         ieee = str(sender.ieee)
 
-
-        # === CAPTURE LIVE RSSI/LQI FOR ZONES ===
-        if hasattr(self, 'zone_manager') and self.zone_manager:
-            # Get RSSI/LQI from device's last packet metadata
-            rssi = getattr(sender, 'rssi', None)
-            lqi = getattr(sender, 'lqi', None)
-
-            # Zigpy stores last LQI on device object
-            if lqi is None and hasattr(sender, 'last_seen'):
-                # Try to get from device's radio layer
-                if hasattr(sender, '_application') and hasattr(sender._application, '_device'):
-                    radio_dev = sender._application._device
-                    lqi = getattr(radio_dev, 'lqi', None)
-
-            # If we have valid data, record it
-            if rssi is not None or lqi is not None:
-                coordinator_ieee = str(self.app.ieee)
-
-                # Convert if needed
-                if rssi is None and lqi is not None:
-                    rssi = int(-100 + (lqi / 255) * 70)
-                if lqi is None and rssi is not None:
-                    lqi = int((rssi + 100) * 255 / 70)
-                    lqi = max(0, min(255, lqi))
-
-                self.zone_manager.record_link_quality(
-                    source_ieee=coordinator_ieee,
-                    target_ieee=ieee,
-                    rssi=rssi,
-                    lqi=lqi
-                )
-
-        # === FAST PATH: Try immediate processing for time-critical messages ===
-        try:
-            fast_pathed = self.fast_path.process_frame(
-                ieee, profile, cluster, src_ep, dst_ep, message
-            )
-            if fast_pathed:
-                # Fast path handled it, but continue for debug/logging
-                logger.debug(f"[{ieee}] Fast-pathed: cluster=0x{cluster:04x}")
-        except Exception as e:
-            logger.debug(f"[{ieee}] Fast path error: {e}")
-
-        # Capture packet for debugging
+        # ---------------------------------------------------------------------
+        # 1. DEBUGGER (PRIORITY 1) - Capture packet BEFORE any logic crashes
+        # ---------------------------------------------------------------------
         try:
             debugger = get_debugger()
+            # Capture if debugger exists AND is enabled
             if debugger and debugger.enabled:
                 debugger.capture_packet(
                     sender_ieee=ieee,
@@ -1257,15 +1215,89 @@ class ZigbeeService:
                     direction="RX"
                 )
         except Exception as e:
+            # Never let the debugger crash the actual message handling
             logger.debug(f"Debug capture error: {e}")
 
-        # Handle Tuya manufacturer-specific cluster
-        if cluster == 0xEF00 and ieee in self.devices:
-            self.devices[ieee].handle_raw_message(cluster, message)
+        # ---------------------------------------------------------------------
+        # 2. STATS & LOGGING
+        # ---------------------------------------------------------------------
+        try:
+            packet_stats.record_rx(ieee, size=len(message) if message else 0)
 
-        # Log for debugging (only at debug level to avoid spam)
-        logger.debug(f"[{ieee}] Raw message: profile=0x{profile:04x}, cluster=0x{cluster:04x}, "
-                     f"src_ep={src_ep}, dst_ep={dst_ep}, len={len(message)}")
+            # Log for debugging (debug level to avoid spam)
+            logger.debug(f"[{ieee}] Raw message: profile=0x{profile:04x}, cluster=0x{cluster:04x}, "
+                         f"src_ep={src_ep}, dst_ep={dst_ep}, len={len(message)}")
+        except Exception:
+            pass
+
+        # ---------------------------------------------------------------------
+        # 3. FAST PATH (Time-critical)
+        # ---------------------------------------------------------------------
+        try:
+            fast_pathed = self.fast_path.process_frame(
+                ieee, profile, cluster, src_ep, dst_ep, message
+            )
+            if fast_pathed:
+                logger.debug(f"[{ieee}] Fast-pathed: cluster=0x{cluster:04x}")
+        except Exception as e:
+            logger.debug(f"[{ieee}] Fast path error: {e}")
+
+        # ---------------------------------------------------------------------
+        # 4. ZONE MANAGER (Presence Detection)
+        # ---------------------------------------------------------------------
+        try:
+            if hasattr(self, 'zone_manager') and self.zone_manager:
+                # Get RSSI/LQI safely
+                rssi = getattr(sender, 'rssi', None)
+                lqi = getattr(sender, 'lqi', None)
+
+                # Fallback: Zigpy stores last LQI on device object sometimes
+                if lqi is None and hasattr(sender, 'last_seen'):
+                    if hasattr(sender, '_application') and hasattr(sender._application, '_device'):
+                        radio_dev = sender._application._device
+                        lqi = getattr(radio_dev, 'lqi', None)
+
+                if rssi is not None or lqi is not None:
+                    # Ultra-robust Coordinator IEEE retrieval
+                    coordinator_ieee = None
+
+                    # Strategy 1: Check app.state (Modern Zigpy)
+                    if hasattr(self.app, 'state'):
+                        if hasattr(self.app.state, 'ieee') and self.app.state.ieee:
+                            coordinator_ieee = str(self.app.state.ieee)
+                        elif hasattr(self.app.state, 'node_info') and hasattr(self.app.state.node_info, 'ieee'):
+                            coordinator_ieee = str(self.app.state.node_info.ieee)
+
+                    # Strategy 2: Legacy/Fallback
+                    if not coordinator_ieee and hasattr(self.app, 'ieee'):
+                        coordinator_ieee = str(self.app.ieee)
+
+                    # Only proceed if we successfully found the coordinator IEEE
+                    if coordinator_ieee:
+                        # Normalization
+                        if rssi is None and lqi is not None:
+                            rssi = int(-100 + (lqi / 255) * 70)
+                        if lqi is None and rssi is not None:
+                            lqi = int((rssi + 100) * 255 / 70)
+                            lqi = max(0, min(255, lqi))
+
+                        self.zone_manager.record_link_quality(
+                            source_ieee=coordinator_ieee,
+                            target_ieee=ieee,
+                            rssi=rssi,
+                            lqi=lqi
+                        )
+        except Exception as e:
+            logger.error(f"[{ieee}] Zone manager error in handle_message: {e}")
+
+        # ---------------------------------------------------------------------
+        # 5. VENDOR SPECIFIC (Tuya, etc.)
+        # ---------------------------------------------------------------------
+        try:
+            if cluster == 0xEF00 and ieee in self.devices:
+                self.devices[ieee].handle_raw_message(cluster, message)
+        except Exception as e:
+            logger.error(f"[{ieee}] Vendor handler error: {e}")
 
     # =========================================================================
     # INTERNAL DEVICE MANAGEMENT
