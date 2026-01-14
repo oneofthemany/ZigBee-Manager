@@ -267,7 +267,6 @@ async def lifespan(app: FastAPI):
     if debugger:
         debugger.add_callback(debug_callback)
         logger.info("Registered debug callback for live streaming")
-    # ----------------------------------------
 
     # Broadcast startup message
     await manager.broadcast({
