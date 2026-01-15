@@ -217,9 +217,22 @@ export function renderOverviewTab(device) {
                 <button type="button" class="btn btn-outline-secondary" onclick="window.doAction('poll', '${device.ieee}')">
                     <i class="fas fa-sync"></i> Poll
                 </button>
-                <button type="button" class="btn btn-outline-info" onclick="window.doAction('reconfigure', '${device.ieee}')" title="Force Bindings & Reporting Config">
-                    <i class="fas fa-wrench"></i> Reconfigure
-                </button>
+                <div class="btn-group btn-group-sm" role="group">
+                    <button type="button" class="btn btn-outline-info" onclick="window.doAction('reconfigure', '${device.ieee}')" title="Standard Bindings & Reporting">
+                        <i class="fas fa-wrench"></i> Reconfigure
+                    </button>
+                    <button type="button" class="btn btn-outline-info dropdown-toggle dropdown-toggle-split" data-bs-toggle="dropdown" aria-expanded="false">
+                        <span class="visually-hidden">Toggle Dropdown</span>
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end">
+                        <li><a class="dropdown-item" href="#" onclick="window.doAction('reconfigure_aggressive', '${device.ieee}'); return false;">
+                            <i class="fas fa-bolt text-warning"></i> Apply Aggressive LQI
+                        </a></li>
+                        <li><a class="dropdown-item" href="#" onclick="window.doAction('reconfigure_baseline', '${device.ieee}'); return false;">
+                            <i class="fas fa-undo text-secondary"></i> Restore Baseline
+                        </a></li>
+                    </ul>
+                </div>
                 <button type="button" class="btn btn-outline-primary" onclick="window.doAction('interview', '${device.ieee}')">
                     <i class="fas fa-fingerprint"></i> Re-Interview
                 </button>

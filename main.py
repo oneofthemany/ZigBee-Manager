@@ -29,7 +29,7 @@ from modules.groups import GroupManager
 from modules.mqtt_explorer import MQTTExplorer
 from modules.zones_api import register_zone_routes
 from modules.zones import ZoneConfig
-from modules.zone_device_config import configure_zone_device_reporting
+from modules.zone_device_config import configure_zone_device_reporting, remove_aggressive_reporting
 
 
 # ============================================================================
@@ -110,6 +110,7 @@ class DeviceRequest(BaseModel):
     ieee: str
     force: Optional[bool] = False
     ban: bool = False
+    aggressive: Optional[bool] = None  # Only used by reconfigure
 
 
 class RenameRequest(BaseModel):
@@ -462,28 +463,36 @@ async def remove_device(request: DeviceRequest):
 
 @app.post("/api/device/reconfigure")
 async def reconfigure_device_endpoint(request: DeviceRequest):
-    """Force reconfiguration with Aggressive LQI Reporting."""
-    logger.info(f"[{request.ieee}] Starting manual reconfiguration...")
+    """Reconfigure device with optional aggressive LQI reporting."""
+    logger.info(f"[{request.ieee}] Starting reconfiguration...")
 
     try:
-        # Check device exists and is a router
         if request.ieee not in zigbee_service.devices:
             return {"success": False, "error": "Device not found"}
 
         device = zigbee_service.devices[request.ieee]
         role = device.get_role()
 
-        if role not in ("Router", "Coordinator"):
-            return {"success": False, "error": f"Device is {role}, not a Router. Only routers support aggressive reporting."}
-
-        # 1. Run Standard Config
+        # 1. Always run standard config
         await zigbee_service.configure_device(request.ieee)
 
-        # 2. OVERRIDE with Aggressive Zone Config
-        logger.info(f"[{request.ieee}] Applying aggressive zone reporting...")
-        result = await configure_zone_device_reporting(zigbee_service, [request.ieee])
+        # 2. Handle aggressive mode if specified
+        if request.aggressive is True:
+            if role not in ("Router", "Coordinator"):
+                return {"success": False, "error": f"Device is {role}, not a Router. Only routers support aggressive reporting."}
+            logger.info(f"[{request.ieee}] Applying aggressive zone reporting...")
+            result = await configure_zone_device_reporting(zigbee_service, [request.ieee])
+            return {"success": True, "mode": "aggressive", **result}
 
-        return {"success": True, **result}
+        elif request.aggressive is False:
+            if role not in ("Router", "Coordinator"):
+                return {"success": False, "error": f"Device is {role}, not a Router."}
+            logger.info(f"[{request.ieee}] Restoring baseline reporting...")
+            result = await remove_aggressive_reporting(zigbee_service, [request.ieee])
+            return {"success": True, "mode": "baseline", **result}
+
+        # aggressive=None: standard config only
+        return {"success": True, "mode": "standard"}
 
     except Exception as e:
         logger.error(f"[{request.ieee}] Reconfiguration failed: {e}", exc_info=True)
