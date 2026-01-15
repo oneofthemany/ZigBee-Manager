@@ -56,6 +56,21 @@ class ZigManDevice:
 
         self.state: Dict[str, Any] = {}
 
+        # Initialize basic info from Zigpy device
+        self.manufacturer = zigpy_dev.manufacturer
+        self.model = zigpy_dev.model
+
+        # --- FORCE INFO INTO STATE IMMEDIATELY ---
+        if self.manufacturer:
+            self.state["manufacturer"] = str(self.manufacturer)
+        else:
+            self.state["manufacturer"] = "Unknown"
+
+        if self.model:
+            self.state["model"] = str(self.model)
+        else:
+            self.state["model"] = "Unknown"
+
         # Initialize to 0 so devices appear Offline until they communicate
         self.last_seen = 0
 
@@ -80,21 +95,6 @@ class ZigManDevice:
 
         # Initialize Capabilities Logic
         self.capabilities = DeviceCapabilities(self)
-
-        # Initialize basic info from Zigpy device
-        self.manufacturer = zigpy_dev.manufacturer
-        self.model = zigpy_dev.model
-
-        # --- FORCE INFO INTO STATE IMMEDIATELY ---
-        if self.manufacturer:
-            self.state["manufacturer"] = str(self.manufacturer)
-        else:
-            self.state["manufacturer"] = "Unknown"
-
-        if self.model:
-            self.state["model"] = str(self.model)
-        else:
-            self.state["model"] = "Unknown"
 
         # Initialize command wrapper
         try:
@@ -303,6 +303,9 @@ class ZigManDevice:
 
             for cluster in ep.in_clusters.values(): attach_handler(cluster, is_server=True)
             for cluster in ep.out_clusters.values(): attach_handler(cluster, is_server=False)
+
+        # FORCE POWER SOURCE UPDATE
+        self._is_battery_powered()
 
         if hasattr(self, 'capabilities'):
             self.capabilities._detect_capabilities()
@@ -653,35 +656,45 @@ class ZigManDevice:
         # If it has passive sensors but no active reporting, it's passive-only
         return bool(has_passive) and not has_active
 
+    @property
+    def is_battery(self) -> bool:
+        """Public property to check battery status."""
+        return self._is_battery_powered()
+
     def _is_battery_powered(self) -> bool:
-        """Check if device is battery powered."""
-        # 1. Check strict Power Source attribute if available
-        power_source = str(self.state.get('power_source', '')).lower()
-        if 'mains' in power_source or 'dc' in power_source:
-            return False
-        if 'battery' in power_source:
-            return True
+        """Check if device is battery powered and update state."""
+        # Default to existing state if available, else assume Battery for EndDevices
+        is_battery = True
 
-        # 2. Check Logical Type (Router vs End Device)
+        # 1. Logical Type (Definitive)
         role = self.get_role()
-        if role == "Router" or role == "Coordinator":
-            return False
+        if role in ["Router", "Coordinator"]:
+            is_battery = False
 
-        # 3. Check for Green Power Proxy (0x0021) - Indicates Mains
-        # Skip ZDO (EP0) to avoid 'No such in_clusters ZDO command' error
+        # 2. Green Power Cluster (Strong Indicator of Mains)
         try:
             for ep_id, ep in self.zigpy_dev.endpoints.items():
-                if ep_id == 0: continue # SKIP ZDO
+                if ep_id == 0: continue
                 if 0x0021 in ep.in_clusters or 0x0021 in ep.out_clusters:
-                    return False
+                    is_battery = False
+                    break
         except Exception:
-            pass # Safety catch for iteration issues
-
-        # 4. Fallback for End Devices (Assume Battery unless proven otherwise)
-        if "lumi.switch" in str(self.model).lower() and "neutral" in str(self.model).lower():
             pass
 
-        return True
+        # 3. Model Name Heuristics
+        model = str(self.model).lower() if self.model else ""
+        if any(x in model for x in ['plug', 'socket', 'outlet', 'switch', 'light', 'bulb']):
+            is_battery = False
+
+        # 4. Sync result to self.state so Frontend sees it
+        current = self.state.get('power_source', 'Unknown')
+
+        if not is_battery:
+            self.state['power_source'] = 'Mains'
+        elif is_battery and current == 'Unknown':
+            self.state['power_source'] = 'Battery'
+
+        return is_battery
 
 
     async def configure(self, config: Optional[Dict] = None):
@@ -973,10 +986,18 @@ class ZigManDevice:
 
     def get_role(self) -> str:
         d = self.zigpy_dev
-        if self.service.app.state.node_info.ieee == d.ieee: return "Coordinator"
-        if "_TZE" in str(d.manufacturer): return "Router"
+        if self.service.app.state.node_info.ieee == d.ieee:
+            return "Coordinator"
+        if "_TZE" in str(d.manufacturer):
+            return "Router"
+
+        # For Aqara/LUMI devices - check node_desc
         if hasattr(d, 'node_desc') and d.node_desc:
-            return "Router" if d.node_desc.logical_type == 1 else "EndDevice"
+            role = "Router" if d.node_desc.logical_type == 1 else "EndDevice"
+            logger.debug(f"[{d.ieee}] LUMI device: logical_type={d.node_desc.logical_type} -> {role}")
+            return role
+
+        logger.debug(f"[{d.ieee}] No node_desc found")
         return "EndDevice"
 
     def get_binding_preferences(self) -> Dict[str, Dict[int, int]]:
