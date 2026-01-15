@@ -896,11 +896,12 @@ class ZigManDevice:
                     h = get_handler(0x0300)
                     if h:
                         await h.set_color_temp_kelvin(int(value))
-                        # Convert Kelvin to mireds for state
                         mireds = int(1000000 / value) if value > 0 else 250
                         optimistic_state['color_temp'] = mireds
                         optimistic_state['color_temp_mireds'] = mireds
                         success = True
+                    else:
+                        logger.error(f"[{self.ieee}] No ColorClusterHandler (0x0300) found - handlers: {list(self.handlers.keys())}")
 
             # AQARA MANUFACTURER CLUSTER COMMANDS (0xFCC0)
             if not success and command in ['window_detection', 'valve_detection', 'motor_calibration', 'child_lock']:
