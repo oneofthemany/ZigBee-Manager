@@ -105,7 +105,7 @@ class ZigManDevice:
         # Load preferred endpoints from settings if available
         if self.ieee in self.service.device_settings:
             settings = self.service.device_settings[self.ieee]
-            if 'preferred_endpoints' in settings:
+            if isinstance(settings, dict) and 'preferred_endpoints' in settings:
                 self._preferred_endpoints = settings['preferred_endpoints']
 
         # Schedule query only if absolutely nothing is known
@@ -213,40 +213,37 @@ class ZigManDevice:
             self.handlers.clear()
 
         # 2. NUCLEAR OPTION: Scan for zombies from previous runs
-        # This fixes the issue where recreating the device wrapper leaves old handlers attached
-        # because the zigpy_dev object persists in memory.
         cleaned_count = 0
 
         try:
-            for ep in self.zigpy_dev.endpoints.values():
-                if ep.endpoint_id == 0: continue
+            for ep_id, ep in self.zigpy_dev.endpoints.items():
+                if ep_id == 0:  # Skip ZDO endpoint
+                    continue
 
                 # Check all clusters (In and Out)
-                all_clusters = list(ep.in_clusters.values()) + list(ep.out_clusters.values())
+                all_clusters = []
+                if hasattr(ep, 'in_clusters'):
+                    all_clusters.extend(ep.in_clusters.values())
+                if hasattr(ep, 'out_clusters'):
+                    all_clusters.extend(ep.out_clusters.values())
 
                 for cluster in all_clusters:
-                    if not hasattr(cluster, '_listeners'): continue
+                    if not hasattr(cluster, '_listeners'):
+                        continue
 
-                    # Create a copy to iterate safely while modifying
-                    # zigpy listeners are usually a list
                     current_listeners = list(cluster._listeners)
 
                     for listener in current_listeners:
                         is_zombie = False
 
-                        # Check if it's one of OUR handlers
-                        # Method A: Instance of ClusterHandler class
                         if isinstance(listener, ClusterHandler):
                             is_zombie = True
-
-                        # Method B: Check module name (handles reloads/different class refs)
                         elif hasattr(listener, '__module__') and 'handlers' in listener.__module__:
                             is_zombie = True
 
-                        if is_zombie:
-                            if listener in cluster._listeners:
-                                cluster._listeners.remove(listener)
-                                cleaned_count += 1
+                        if is_zombie and listener in cluster._listeners:
+                            cluster._listeners.remove(listener)
+                            cleaned_count += 1
 
         except Exception as e:
             logger.error(f"[{self.ieee}] Error during zombie cleanup: {e}")
@@ -254,6 +251,12 @@ class ZigManDevice:
         if cleaned_count > 0:
             logger.warning(f"[{self.ieee}] 🧟 Removed {cleaned_count} zombie handlers from zigpy clusters")
 
+
+    def get_handlers_info(self) -> Dict:
+        return {
+            "count": len(self.handlers),
+            "clusters": [f"0x{k[1] if isinstance(k, tuple) else k:04x}" for k in self.handlers.keys()]
+        }
 
     def _identify_handlers(self):
         """Scan device endpoints and attach appropriate cluster handlers."""
