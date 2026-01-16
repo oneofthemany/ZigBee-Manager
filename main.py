@@ -164,6 +164,11 @@ class UnbanRequest(BaseModel):
     ieee: str
 
 
+class TouchlinkRequest(BaseModel):
+    ieee: Optional[str] = None
+    channel: Optional[int] = None
+
+
 # ============================================================================
 # WEBSOCKET CONNECTION MANAGER
 # ============================================================================
@@ -443,9 +448,26 @@ async def get_permit_join_status():
 
 
 @app.post("/api/touchlink/scan")
-async def touchlink_scan():
-    """Initiate Touchlink scan for Light Link devices (Ikea, Philips bulbs)."""
-    return await zigbee_service.touchlink_scan()
+async def touchlink_scan(request: Optional[TouchlinkRequest] = None):
+    """Scan for Touchlink devices."""
+    channel = request.channel if request else None
+    return await zigbee_service.touchlink_scan(channel)
+
+
+@app.post("/api/touchlink/identify")
+async def touchlink_identify(request: Optional[TouchlinkRequest] = None):
+    """Identify Touchlink device(s) - make them blink."""
+    channel = request.channel if request else None
+    ieee = request.ieee if request else None
+    return await zigbee_service.touchlink_identify(channel=channel, target_ieee=ieee)
+
+
+@app.post("/api/touchlink/reset")
+async def touchlink_reset(request: Optional[TouchlinkRequest] = None):
+    """Factory reset Touchlink device(s)."""
+    channel = request.channel if request else None
+    ieee = request.ieee if request else None
+    return await zigbee_service.touchlink_factory_reset(channel=channel, target_ieee=ieee)
 
 
 @app.post("/api/device/remove")

@@ -25,7 +25,6 @@ logger = logging.getLogger(__name__)
 # Try to import zigpy_znp - may not be available on EZSP systems
 try:
     from zigpy_znp.api import ZNP
-    from zigpy_znp.commands.af import InterPanCtl
     import zigpy_znp.commands as c
     import zigpy_znp.types as znp_t
     ZIGPY_ZNP_AVAILABLE = True
@@ -365,6 +364,73 @@ class TouchlinkManager:
     # ZNP IMPLEMENTATION (InterPAN mode like zigbee-herdsman)
     # =========================================================================
 
+    async def _znp_interpan_ctl(self, cmd: int, data: bytes = b'') -> None:
+        """
+        Send AF.InterPanCtl command using zigpy-znp's request mechanism.
+
+        Since zigpy-znp doesn't define InterPanCtl, we use request_callback
+        with raw bytes. Command 0x10 in AF subsystem.
+
+        AF.InterPanCtl (cmd_id=0x10):
+        - cmd=0: Clear/restore normal mode
+        - cmd=1: Set InterPAN channel (data=[channel])
+        - cmd=2: Register InterPAN endpoint (data=[endpoint])
+
+        Reference: Z-Stack Monitor and Test API, section 3.7
+        """
+        try:
+            # Build the command payload: [cmd, ...data]
+            payload = bytes([cmd]) + data
+
+            # Frame: 0xFE, len, cmd0(0x24=SREQ|AF), cmd1(0x10), payload, fcs
+            cmd0 = 0x24  # SREQ (0x20) | AF subsystem (0x04)
+            cmd1 = 0x10  # InterPanCtl command ID
+
+            frame_payload = bytes([cmd0, cmd1]) + payload
+            frame_len = len(frame_payload)
+
+            # Calculate FCS (XOR of length + all payload bytes)
+            fcs = frame_len
+            for b in frame_payload:
+                fcs ^= b
+
+            raw_frame = bytes([0xFE, frame_len]) + frame_payload + bytes([fcs])
+
+            logger.debug(f"Sending InterPanCtl: cmd={cmd}, data={data.hex()}, frame={raw_frame.hex()}")
+
+            # Try multiple ways to access the transport
+            transport = None
+
+            # Method 1: _uart._transport (common pattern)
+            if hasattr(self._znp, '_uart') and hasattr(self._znp._uart, '_transport'):
+                transport = self._znp._uart._transport
+            # Method 2: _uart.transport
+            elif hasattr(self._znp, '_uart') and hasattr(self._znp._uart, 'transport'):
+                transport = self._znp._uart.transport
+            # Method 3: _transport directly
+            elif hasattr(self._znp, '_transport'):
+                transport = self._znp._transport
+            # Method 4: via protocol
+            elif hasattr(self._znp, '_uart') and hasattr(self._znp._uart, '_protocol'):
+                if hasattr(self._znp._uart._protocol, 'transport'):
+                    transport = self._znp._uart._protocol.transport
+
+            if transport:
+                transport.write(raw_frame)
+                await asyncio.sleep(0.15)  # Wait for SRSP
+            else:
+                # Debug: log available attributes
+                znp_attrs = [a for a in dir(self._znp) if not a.startswith('__')]
+                logger.error(f"Cannot find ZNP transport. ZNP attrs: {znp_attrs[:20]}")
+                if hasattr(self._znp, '_uart'):
+                    uart_attrs = [a for a in dir(self._znp._uart) if not a.startswith('__')]
+                    logger.error(f"UART attrs: {uart_attrs[:20]}")
+                raise RuntimeError("ZNP transport not available")
+
+        except Exception as e:
+            logger.error(f"InterPanCtl failed: {e}")
+            raise
+
     async def _znp_set_channel_interpan(self, channel: int) -> None:
         """
         Set InterPAN channel.
@@ -374,25 +440,15 @@ class TouchlinkManager:
         """
         self._interpan_lock = True
 
-        # AF.interPanCtl cmd=1 sets the channel
-        await self._znp.request(
-            c.AF.InterPanCtl.Req(
-                Cmd=c.af.InterPanCtl.InterPanSet,
-                Data=t.Bytes([channel])
-            )
-        )
-
-        # Register endpoint 12 for InterPAN
-        if not self._interpan_registered:
-            await self._znp.request(
-                c.AF.InterPanCtl.Req(
-                    Cmd=c.af.InterPanCtl.InterPanReg,
-                    Data=t.Bytes([INTERPAN_ENDPOINT])
-                )
-            )
-            self._interpan_registered = True
-
+        # cmd=1: Set InterPAN channel
+        await self._znp_interpan_ctl(1, bytes([channel]))
         logger.debug(f"InterPAN channel set to {channel}")
+
+        # cmd=2: Register endpoint 12 for InterPAN
+        if not self._interpan_registered:
+            await self._znp_interpan_ctl(2, bytes([INTERPAN_ENDPOINT]))
+            self._interpan_registered = True
+            logger.debug(f"Registered InterPAN endpoint {INTERPAN_ENDPOINT}")
 
     async def _znp_restore_channel_interpan(self) -> None:
         """
@@ -402,17 +458,13 @@ class TouchlinkManager:
             await this.znp.request(Subsystem.AF, "interPanCtl", {cmd: 0, data: []});
         """
         try:
-            await self._znp.request(
-                c.AF.InterPanCtl.Req(
-                    Cmd=c.af.InterPanCtl.InterPanClr,
-                    Data=t.Bytes([])
-                )
-            )
+            # cmd=0: Clear InterPAN mode
+            await self._znp_interpan_ctl(0)
+            logger.debug("InterPAN mode cleared")
         except Exception as e:
             logger.error(f"Error restoring InterPAN mode: {e}")
         finally:
             self._interpan_lock = False
-            logger.debug("InterPAN mode cleared")
 
     def _build_scan_request(self, transaction_id: int) -> bytes:
         """Build touchlink scan request payload"""
@@ -459,7 +511,24 @@ class TouchlinkManager:
             payload: bytes,
             timeout: float = 3.0
     ) -> List[bytes]:
-        """Send InterPAN broadcast and collect responses"""
+        """
+        Send InterPAN broadcast using raw AF.DataRequestExt frame.
+
+        Since zigpy-znp types vary by version, we build the raw frame ourselves.
+
+        AF.DataRequestExt (cmd_id=0x02):
+        - DstAddrMode: 1 byte (0x0F = broadcast)
+        - DstAddr: 8 bytes (0xFFFF for broadcast, padded)
+        - DstEndpoint: 1 byte (0xFE for InterPAN)
+        - DstPanId: 2 bytes (0xFFFF)
+        - SrcEndpoint: 1 byte (12 for InterPAN)
+        - ClusterId: 2 bytes (0x1000 for touchlink)
+        - TransId: 1 byte
+        - Options: 1 byte (0x00 = none)
+        - Radius: 1 byte (0x1E = 30)
+        - Len: 2 bytes
+        - Data: variable
+        """
         responses = []
 
         # Build ZCL frame
@@ -468,31 +537,74 @@ class TouchlinkManager:
         zcl_frame = bytes([frame_control, sequence_number, command_id]) + payload
 
         try:
-            # Broadcast destination
-            dst_addr = c.af.AddrModeAddress(
-                mode=t.AddrMode.Broadcast,
-                address=t.EUI64.convert("ff:ff:ff:ff:ff:ff:ff:ff")
+            # Build AF.DataRequestExt payload
+            # DstAddrMode = 0x0F (AddrBroadcast)
+            dst_addr_mode = 0x0F
+            # DstAddr = 0xFFFF broadcast, as 8-byte little-endian
+            dst_addr = struct.pack('<Q', 0xFFFF)
+            # DstEndpoint = 0xFE (InterPAN)
+            dst_endpoint = 0xFE
+            # DstPanId = 0xFFFF
+            dst_pan_id = struct.pack('<H', 0xFFFF)
+            # SrcEndpoint = 12
+            src_endpoint = INTERPAN_ENDPOINT
+            # ClusterId = 0x1000 (ZLL/Touchlink)
+            cluster_id = struct.pack('<H', ZLL_CLUSTER_ID)
+            # TransId (sequence)
+            trans_id = sequence_number
+            # Options = 0x00
+            options = 0x00
+            # Radius = 0x1E (30)
+            radius = 0x1E
+            # Data length
+            data_len = struct.pack('<H', len(zcl_frame))
+
+            # Assemble payload
+            af_payload = (
+                    bytes([dst_addr_mode]) +
+                    dst_addr +
+                    bytes([dst_endpoint]) +
+                    dst_pan_id +
+                    bytes([src_endpoint]) +
+                    cluster_id +
+                    bytes([trans_id, options, radius]) +
+                    data_len +
+                    zcl_frame
             )
 
-            await self._znp.request(
-                c.AF.DataRequestExt.Req(
-                    DstAddrModeAddress=dst_addr,
-                    DstEndpoint=0xFE,
-                    DstPanId=0xFFFF,
-                    SrcEndpoint=INTERPAN_ENDPOINT,
-                    ClusterId=ZLL_CLUSTER_ID,
-                    TSN=sequence_number,
-                    Options=c.af.TransmitOptions.NONE,
-                    Radius=0x1E,
-                    Data=znp_t.SerializableBytes(zcl_frame)
-                )
-            )
+            # Build raw frame: 0xFE, len, cmd0(0x24=SREQ|AF), cmd1(0x02=DataRequestExt), payload, fcs
+            cmd0 = 0x24  # SREQ | AF
+            cmd1 = 0x02  # DataRequestExt
 
-            logger.debug(f"Sent InterPAN broadcast, waiting {timeout}s...")
-            await asyncio.sleep(timeout)
+            frame_payload = bytes([cmd0, cmd1]) + af_payload
+            frame_len = len(frame_payload)
+
+            # Calculate FCS
+            fcs = frame_len
+            for b in frame_payload:
+                fcs ^= b
+
+            raw_frame = bytes([0xFE, frame_len]) + frame_payload + bytes([fcs])
+
+            logger.debug(f"Sending InterPAN broadcast: cmd={command_id}, frame_len={len(raw_frame)}")
+
+            # Find and use transport
+            transport = None
+            if hasattr(self._znp, '_uart') and hasattr(self._znp._uart, '_transport'):
+                transport = self._znp._uart._transport
+            elif hasattr(self._znp, '_uart') and hasattr(self._znp._uart, 'transport'):
+                transport = self._znp._uart.transport
+
+            if transport:
+                transport.write(raw_frame)
+                await asyncio.sleep(timeout)
+            else:
+                logger.error("Cannot find ZNP transport for InterPAN broadcast")
 
         except Exception as e:
             logger.error(f"InterPAN broadcast failed: {e}")
+            import traceback
+            traceback.print_exc()
 
         return responses
 
