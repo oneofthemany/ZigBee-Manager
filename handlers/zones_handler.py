@@ -235,16 +235,16 @@ def setup_rssi_listener(app_controller, zone_manager: 'ZoneManager') -> None:
         logger.info("Setup RSSI listener on packet_received")
 
     # Also hook device_initialized for initial neighbor scans
-    if hasattr(app_controller, 'device_initialized'):
-        original_device_initialized = app_controller.device_initialized
+    #if hasattr(app_controller, 'device_initialized'):
+    #    original_device_initialized = app_controller.device_initialized
 
-        async def wrapped_device_initialized(device):
-            result = await original_device_initialized(device)
+    #    async def wrapped_device_initialized(device):
+    #        result = await original_device_initialized(device)
 
-            # If device is a router, scan its neighbors
-            if device.node_desc and device.node_desc.is_router:
-                logger.debug(f"Router initialized, will scan neighbors: {device.ieee}")
+    #        # If device is a router, scan its neighbors
+    #        if device.node_desc and device.node_desc.is_router:
+    #            logger.debug(f"Router initialized, will scan neighbors: {device.ieee}")
 
-            return result
+    #        return result
 
-        app_controller.device_initialized = wrapped_device_initialized
+    #    app_controller.device_initialized = wrapped_device_initialized
