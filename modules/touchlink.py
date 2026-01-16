@@ -3,7 +3,7 @@ Unified Touchlink Module
 
 Handles touchlink scan/identify/reset for both:
 - EZSP (Silicon Labs) - uses native zigpy touchlink API
-- ZNP (Texas Instruments) - uses InterPAN mode like zigbee-herdsman
+- ZNP (Texas Instruments) - uses InterPAN mode
 
 Reference: zigbee-herdsman/src/adapter/z-stack/adapter/zStackAdapter.ts
 """
