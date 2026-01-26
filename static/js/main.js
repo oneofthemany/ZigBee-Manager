@@ -13,6 +13,17 @@ import { initGroups } from './groups.js';
 import { initMQTTExplorer, handleMQTTMessage } from './mqtt-explorer.js';
 
 import {
+    loadTabs,
+    filterByTab,
+    openTabManager,
+    createNewTab,
+    deleteTab,
+    manageTabDevices,
+    toggleDeviceInTab
+} from './tabs.js';
+
+
+import {
     initZones,
     recalibrateZone,
     deleteZone,
@@ -119,6 +130,15 @@ window.recalibrateZone = recalibrateZone;
 window.deleteZone = deleteZone;
 window.viewZoneDetails = viewZoneDetails;
 
+// Tabs Management
+window.loadTabs = loadTabs;
+window.filterByTab = filterByTab;
+window.openTabManager = openTabManager;
+window.createNewTab = createNewTab;
+window.deleteTab = deleteTab;
+window.manageTabDevices = manageTabDevices;
+window.toggleDeviceInTab = toggleDeviceInTab;
+
 // ============================================================================
 // APPLICATION INITIALIZATION
 // ============================================================================
@@ -129,6 +149,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Start update interval for "last seen" times
     setInterval(updateLastSeenTimes, 1000);
+
+
+    // Initialise Tabs
+    loadTabs();
 
     // Initialise Mesh Tab listener
     initMesh();

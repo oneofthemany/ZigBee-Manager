@@ -69,58 +69,75 @@
         <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#debug"><i class="fas fa-terminal"></i> Debug Log</button></li>
     </ul>
 
-    <div class="tab-content">
-        <!-- DEVICES TAB -->
-        <div class="tab-pane fade show active" id="devices">
+    <div class="tab-pane fade show active" id="devices">
 
-            <!-- COORDINATOR INFO CARD (New) -->
-            <div class="card shadow-sm mb-3 coordinator-card">
-                <div class="card-body py-2">
-                    <div class="row align-items-center" id="coordinator-info">
-                        <div class="col-md-12 text-center text-muted">
-                            <i class="fas fa-spinner fa-spin"></i> Loading Coordinator Info...
-                        </div>
+        <!-- COORDINATOR INFO CARD -->
+        <div class="card shadow-sm mb-3 coordinator-card">
+            <div class="card-body py-2">
+                <div class="row align-items-center" id="coordinator-info">
+                    <div class="col-md-12 text-center text-muted">
+                        <i class="fas fa-spinner fa-spin"></i> Loading Coordinator Info...
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Device List -->
+        <div class="card shadow-sm">
+            <div class="card-header bg-light py-2">
+                <div class="row g-2 align-items-center">
+                    <div class="col-auto">
+                        <span class="fw-bold">Devices</span>
+                        <span class="badge bg-secondary ms-2" id="deviceCount">0</span>
+                    </div>
+                    <div class="col-auto">
+                        <select id="tabFilter" class="form-select form-select-sm" onchange="filterByTab()" style="min-width: 150px;">
+                            <option value="">All Devices</option>
+                            <!-- Populated dynamically -->
+                        </select>
+                    </div>
+                    <div class="col-auto ms-auto">
+                        <button class="btn btn-sm btn-primary" onclick="openTabManager()">
+                            <i class="fas fa-folder-plus"></i> Manage Tabs
+                        </button>
                     </div>
                 </div>
             </div>
 
-            <!-- Main Device List -->
-            <div class="card shadow-sm">
-                <div class="card-body p-0">
-                    <div class="table-responsive">
-                        <table class="table table-hover align-middle mb-0 sortable">
-                            <thead class="table-light">
-                            <tr>
-                                <th class="sortable-header" data-column="type" data-type="string">
-                                    Type <i class="fas fa-sort sort-icon text-muted"></i>
-                                </th>
-                                <th class="sortable-header" data-column="friendly_name" data-type="string">
-                                    Friendly Name <i class="fas fa-sort sort-icon text-muted"></i>
-                                </th>
-                                <th class="sortable-header" data-column="ieee" data-type="string">
-                                    IEEE Address <i class="fas fa-sort sort-icon text-muted"></i>
-                                </th>
-                                <th class="sortable-header" data-column="manufacturer" data-type="string">
-                                    Vendor <i class="fas fa-sort sort-icon text-muted"></i>
-                                </th>
-                                <th class="sortable-header" data-column="model" data-type="string">
-                                    Model <i class="fas fa-sort sort-icon text-muted"></i>
-                                </th>
-                                <th class="sortable-header" data-column="lqi" data-type="number">
-                                    LQI <i class="fas fa-sort sort-icon text-muted"></i>
-                                </th>
-                                <th class="sortable-header" data-column="last_seen_ts" data-type="number">
-                                    Last Seen <i class="fas fa-sort sort-icon text-muted"></i>
-                                </th>
-                                <th class="sortable-header" data-column="available" data-type="boolean">
-                                    Status <i class="fas fa-sort sort-icon text-muted"></i>
-                                </th>
-                                <th>Action</th>
-                            </tr>
-                            </thead>
-                            <tbody id="deviceTableBody"></tbody>
-                        </table>
-                    </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0 sortable">
+                        <thead class="table-light">
+                        <tr>
+                            <th class="sortable-header" data-column="type" data-type="string">
+                                Type <i class="fas fa-sort sort-icon text-muted"></i>
+                            </th>
+                            <th class="sortable-header" data-column="friendly_name" data-type="string">
+                                Friendly Name <i class="fas fa-sort sort-icon text-muted"></i>
+                            </th>
+                            <th class="sortable-header" data-column="ieee" data-type="string">
+                                IEEE Address <i class="fas fa-sort sort-icon text-muted"></i>
+                            </th>
+                            <th class="sortable-header" data-column="manufacturer" data-type="string">
+                                Vendor <i class="fas fa-sort sort-icon text-muted"></i>
+                            </th>
+                            <th class="sortable-header" data-column="model" data-type="string">
+                                Model <i class="fas fa-sort sort-icon text-muted"></i>
+                            </th>
+                            <th class="sortable-header" data-column="lqi" data-type="number">
+                                LQI <i class="fas fa-sort sort-icon text-muted"></i>
+                            </th>
+                            <th class="sortable-header" data-column="last_seen_ts" data-type="number">
+                                Last Seen <i class="fas fa-sort sort-icon text-muted"></i>
+                            </th>
+                            <th class="sortable-header" data-column="available" data-type="boolean">
+                                Status <i class="fas fa-sort sort-icon text-muted"></i>
+                            </th>
+                            <th>Action</th>
+                        </tr>
+                        </thead>
+                        <tbody id="deviceTableBody"></tbody>
+                    </table>
                 </div>
             </div>
         </div>

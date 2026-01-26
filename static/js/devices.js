@@ -58,8 +58,19 @@ export function renderDeviceTable() {
     const coordinator = state.devices.find(d => d.type === 'Coordinator');
     let otherDevices = state.devices.filter(d => d.type !== 'Coordinator');
 
+    // Apply tab filter if set
+    if (state.deviceFilter) {
+        otherDevices = otherDevices.filter(state.deviceFilter);
+    }
+
     // Apply current sort state to devices
     otherDevices = applySortState(otherDevices);
+
+    // Update device count badge
+    const countBadge = document.getElementById('deviceCount');
+    if (countBadge) {
+        countBadge.textContent = otherDevices.length;
+    }
 
     // 1. Render Coordinator Card
     if (coordinator && coordContainer) {

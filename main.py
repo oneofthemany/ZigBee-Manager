@@ -614,6 +614,26 @@ async def check_banned(ieee: str):
         "banned": zigbee_service.is_device_banned(ieee)
     }
 
+@app.get("/api/tabs")
+async def get_tabs():
+    return zigbee_service.get_device_tabs()
+
+@app.post("/api/tabs")
+async def create_tab(data: dict):
+    return zigbee_service.create_device_tab(data['name'])
+
+@app.delete("/api/tabs/{tab_name}")
+async def delete_tab(tab_name: str):
+    return zigbee_service.delete_device_tab(tab_name)
+
+@app.post("/api/tabs/{tab_name}/devices")
+async def add_device_to_tab(tab_name: str, data: dict):
+    return zigbee_service.add_device_to_tab(tab_name, data['ieee'])
+
+@app.delete("/api/tabs/{tab_name}/devices/{ieee}")
+async def remove_device_from_tab(tab_name: str, ieee: str):
+    return zigbee_service.remove_device_from_tab(tab_name, ieee)
+
 # ============================================================================
 # ROUTES - NETWORK INFORMATION
 # ============================================================================
