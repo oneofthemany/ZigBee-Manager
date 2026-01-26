@@ -205,10 +205,13 @@ class ThermostatHandler(ClusterHandler):
 
         if attrid == self.ATTR_LOCAL_TEMP:
             if self.is_receiver:
+                # Receiver gets temperature via binding from thermostat
                 updates["internal_temperature"] = parsed_value
+                updates["current_temperature"] = parsed_value  # HA climate needs this
+                updates["temperature"] = parsed_value
             else:
                 updates["local_temperature"] = parsed_value
-                updates["current_temperature"] = parsed_value  # HA climate key
+                updates["current_temperature"] = parsed_value
                 updates["temperature"] = parsed_value
 
         elif attrid == self.ATTR_OCCUPIED_HEATING_SETPOINT:
@@ -449,22 +452,25 @@ class ThermostatHandler(ClusterHandler):
     # --- COMMANDS ---
     async def set_heating_setpoint(self, temperature: float):
         """Set heating setpoint in degrees Celsius."""
-        # 1. Clamp to System Capabilities
         temperature = max(self._min_heat, min(self._max_heat, float(temperature)))
-
-        logger.info(f"[{self.device.ieee}] Setting setpoint to {temperature}°C (Limits: {self._min_heat}-{self._max_heat})")
-
-        # 2. Convert to Zigbee Centidegrees (REQUIRED)
         value = int(temperature * 100)
 
-        await self.cluster.write_attributes({"occupied_heating_setpoint": value})
+        logger.info(f"[{self.device.ieee}] Writing occupied_heating_setpoint: {temperature}°C ({value} centidegrees)")
 
-        # Optimistic update
-        self.device.update_state({
-            "heating_setpoint": temperature,
-            "occupied_heating_setpoint": temperature,
-            "target_temp": temperature,  # Scheduler compatibility
-        })
+        try:
+            result = await self.cluster.write_attributes({"occupied_heating_setpoint": value})
+            logger.error(f"[{self.device.ieee}] Write result: {result}")  # Changed to ERROR to see it
+
+            # Optimistic update
+            self.device.update_state({
+                "heating_setpoint": temperature,
+                "occupied_heating_setpoint": temperature,
+                "target_temp": temperature,
+            })
+        except Exception as e:
+            logger.error(f"[{self.device.ieee}] Write failed: {e}")
+            import traceback
+            traceback.print_exc()
 
     async def set_system_mode(self, mode: str):
         """Set system mode (off, auto, heat)."""
