@@ -130,7 +130,3 @@ This matches the official ZHA implementation:
 Source: https://github.com/zigpy/zha
 
 ---
-
-**The fix is simple**: Don't announce devices as they're restored. 
-Instead, wait for startup to complete, then announce all devices 
-sequentially with proper pacing and logging.
