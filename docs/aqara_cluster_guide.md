@@ -68,45 +68,45 @@ class AqaraManufacturerCluster(ClusterHandler):
 ## Supported Attributes
 
 ### Common Attributes (Most Devices)
-| Attribute ID | Name | Type | Values | Description |
-|--------------|------|------|--------|-------------|
-| 0x0009 | mode | uint8 | - | Device mode |
-| 0x0201 | power_outage_memory | Bool | 0/1 | Remember state after power loss |
+| Attribute ID  | Name                | Type   | Values | Description                     |
+|---------------|---------------------|--------|--------|---------------------------------|
+| 0x0009        | mode                | uint8  | -      | Device mode                     |
+| 0x0201        | power_outage_memory | Bool   | 0/1    | Remember state after power loss |
 
 ### Thermostat/TRV Attributes
-| Attribute ID | Name | Type | Values | Description |
-|--------------|------|------|--------|-------------|
-| 0x0271 | system_mode | uint8 | - | System operating mode |
-| 0x0272 | window_detection | uint8 | 0=Off, 1=On | Auto-off when window opens |
-| 0x0273 | valve_detection | uint8 | 0=Off, 1=On | Detect valve errors |
-| 0x0274 | child_lock | uint8 | 0=Unlock, 1=Lock | Lock physical controls |
-| 0x0276 | battery_replace | uint8 | 0/1 | Battery low indicator |
-| 0x0277 | window_open | uint8 | 0=Closed, 1=Open | Current window status |
-| 0x0278 | valve_alarm | uint8 | 0/1 | Valve error alarm |
-| 0x0279 | motor_calibration | uint8 | 0=Idle, 1=Start | Calibrate valve motor |
-| 0x027C | sensor_type | uint8 | 0=Internal, 1=External | Temperature sensor source |
-| 0x027D | external_temp_input | int16 | temp×100 | External sensor temperature |
+| Attribute ID | Name                | Type    | Values                 | Description                 |
+|--------------|---------------------|---------|------------------------|-----------------------------|
+| 0x0271       | system_mode         | uint8   | -                      | System operating mode       |
+| 0x0272       | window_detection    | uint8   | 0=Off, 1=On            | Auto-off when window opens  |
+| 0x0273       | valve_detection     | uint8   | 0=Off, 1=On            | Detect valve errors         |
+| 0x0274       | child_lock          | uint8   | 0=Unlock, 1=Lock       | Lock physical controls      |
+| 0x0276       | battery_replace     | uint8   | 0/1                    | Battery low indicator       |
+| 0x0277       | window_open         | uint8   | 0=Closed, 1=Open       | Current window status       |
+| 0x0278       | valve_alarm         | uint8   | 0/1                    | Valve error alarm           |
+| 0x0279       | motor_calibration   | uint8   | 0=Idle, 1=Start        | Calibrate valve motor       |
+| 0x027C       | sensor_type         | uint8   | 0=Internal, 1=External | Temperature sensor source   |
+| 0x027D       | external_temp_input | int16   | temp×100               | External sensor temperature |
 
 ### Motion Sensor Attributes
-| Attribute ID | Name | Type | Values | Description |
-|--------------|------|------|--------|-------------|
-| 0x0102 | detection_interval | uint8 | 5-300 | Seconds between detections |
-| 0x010C | motion_sensitivity | uint8 | 1=Low, 2=Med, 3=High | Detection sensitivity |
-| 0x0152 | trigger_indicator | uint8 | 0=Off, 1=On | Flash LED on detection |
+| Attribute ID | Name                 | Type    | Values               | Description                  |
+|--------------|----------------------|---------|----------------------|------------------------------|
+| 0x0102       | detection_interval   | uint8   | 5-300                | Seconds between detections   |
+| 0x010C       | motion_sensitivity   | uint8   | 1=Low, 2=Med, 3=High | Detection sensitivity        |
+| 0x0152       | trigger_indicator    | uint8   | 0=Off, 1=On          | Flash LED on detection       |
 
 ### Switch/Relay Attributes
-| Attribute ID | Name | Type | Values | Description |
-|--------------|------|------|--------|-------------|
-| 0x0200 | operation_mode | uint8 | 0=Decoupled, 1=Coupled | Switch/relay linkage |
-| 0x0004 | switch_mode | uint8 | 1=Fast, 2=Multi | Response speed vs multi-click |
-| 0x000A | switch_type | uint8 | 1=Toggle, 2=Momentary | Switch behavior |
-| 0x00F0 | indicator_light | uint8 | 0=Normal, 1=Reverse | LED indicator behavior |
+| Attribute ID | Name             | Type    | Values                  | Description                   |
+|--------------|------------------|---------|-------------------------|-------------------------------|
+| 0x0200       | operation_mode   | uint8   | 0=Decoupled, 1=Coupled  | Switch/relay linkage          |
+| 0x0004       | switch_mode      | uint8   | 1=Fast, 2=Multi         | Response speed vs multi-click |
+| 0x000A       | switch_type      | uint8   | 1=Toggle, 2=Momentary   | Switch behavior               |
+| 0x00F0       | indicator_light  | uint8   | 0=Normal, 1=Reverse     | LED indicator behavior        |
 
 ### Temperature/Humidity Sensor Attributes
-| Attribute ID | Name | Type | Values | Description |
-|--------------|------|------|--------|-------------|
-| 0xFF01 | temp_display_unit | uint8 | 0=°C, 1=°F | Display unit |
-| 0x00EF | measurement_interval | uint16 | seconds | Measurement frequency |
+| Attribute ID | Name                 | Type    | Values      | Description           |
+|--------------|----------------------|---------|-------------|-----------------------|
+| 0xFF01       | temp_display_unit    | uint8   | 0=°C, 1=°F  | Display unit          |
+| 0x00EF       | measurement_interval | uint16  | seconds     | Measurement frequency |
 
 ## Usage Examples
 
