@@ -153,7 +153,7 @@ sudo logrotate -d /etc/logrotate.d/zigbee-gateway
 sudo logrotate -f /etc/logrotate.d/zigbee-gateway
 ```
 
-### Customizing Rotation
+### Customising Rotation
 
 Edit `/etc/logrotate.d/zigbee-gateway` to customize:
 
