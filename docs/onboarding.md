@@ -1,4 +1,4 @@
-# Zigbee Device Debugging & Onboarding Guide (ZHA Backend)
+# Zigbee Device Debugging & Onboarding Guide
 
 This guide explains how to debug and onboard new Zigbee devices (especially ones not in your current portfolio) using:
 
@@ -619,8 +619,3 @@ TUYA_RADAR_DPS[123] = TuyaDP(123, "new_metric", scale=1, unit="", type=TuyaClust
   1. **Observing:** using the debugger to see which clusters / commands / attributes it uses.
   2. **Mapping:** creating or extending handlers so those messages become clean, named fields on the device state.
   3. **Verifying:** ensuring the UI responds as expected, and the debugger shows healthy stats and minimal errors.
-
-You can use this file as both:
-
-- Your **device onboarding manual**, and
-- The **canonical `debugging.md` documentation** by pulling out / re-using the Zigbee Debugger sections (2.x).

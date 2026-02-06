@@ -340,4 +340,3 @@ The Aqara manufacturer cluster (0xFCC0) is **essential** for full device functio
 5. Follows ZHA's battle-tested patterns
 6. Gracefully handles missing attributes
 
-**You absolutely need this cluster** for any Aqara device that supports configuration beyond basic on/off or temperature control.

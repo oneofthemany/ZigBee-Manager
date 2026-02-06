@@ -1,8 +1,8 @@
-# Zigbee Gateway Debugging Guide
+# Zigbee Manager Debugging Guide
 
 ## Overview
 
-The Zigbee Gateway includes comprehensive debugging capabilities to help troubleshoot device communication issues, especially for motion sensors and other battery-powered devices.
+The Zigbee Manager includes comprehensive debugging capabilities to help troubleshoot device communication issues, especially for motion sensors and other battery-powered devices.
 
 ## Features
 
