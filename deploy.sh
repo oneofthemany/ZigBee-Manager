@@ -131,7 +131,7 @@ echo "Deployment Complete!"
 echo "=========================================="
 echo
 echo "Next steps:"
-echo "1. Edit configuration: sudo nano $INSTALL_DIR/config.yaml"
+echo "1. Edit configuration: sudo nano $INSTALL_DIR/config/config.yaml"
 echo "2. Update MQTT settings, Zigbee USB port, etc."
 echo "3. Start the service: sudo systemctl start zigbee-manager"
 echo "4. Check status: sudo systemctl status zigbee-manager"
