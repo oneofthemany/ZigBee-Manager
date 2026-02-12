@@ -41,6 +41,7 @@ from modules.zigbee_debug import get_debugger
 from handlers.fast_path import FastPathProcessor
 from modules.device_ban import get_ban_manager
 from modules.touchlink import create_touchlink_manager, TouchlinkManager
+from modules.automation import AutomationEngine
 #from handlers.sensors import configure_illuminance_reporting, configure_temperature_reporting
 
 # Try Loading Quirks
@@ -282,9 +283,15 @@ class ZigbeeService:
         self._touchlink: Optional[TouchlinkManager] = None
 
         # tabs
-
         self.device_tabs = self._load_json("./data/device_tabs.json") or {}
         # Format: {"Heating": ["ieee1", "ieee2"], "Lighting": ["ieee3"]}
+
+        # Automation engine for device automation
+        self.automation = AutomationEngine(
+            device_registry_getter=lambda: self.devices,
+            friendly_names_getter=lambda: self.friendly_names,
+            event_emitter=self.callback
+        )
 
         os.makedirs("logs", exist_ok=True)
 
@@ -1832,12 +1839,18 @@ class ZigbeeService:
                 del self.device_settings[ieee]
                 self._save_json("./data/device_settings.json", self.device_settings)
 
-            # 6. Poll device
+            # 6. Remove automation rules where this device is source or target
+            if hasattr(self, 'automation'):
+                for rule in list(self.automation.rules):
+                    if rule["source_ieee"] == ieee or rule["target_ieee"] == ieee:
+                        self.automation.delete_rule(rule["id"])
+
+            # 7. Poll device
             if ieee in self.polling_config:
                 del self.polling_config[ieee]
                 self._save_json("./data/polling_config.json", self.polling_config)
 
-            # 7. Remove from state cache
+            # 8. Remove from state cache
             if ieee in self.state_cache:
                 del self.state_cache[ieee]
                 self._save_state_cache()
@@ -1845,11 +1858,11 @@ class ZigbeeService:
             self.polling_scheduler.disable_for_device(ieee)
             self._rebuild_name_maps()
 
-            # 8. Notify Frontend
+            # 9. Notify Frontend
             self._emit_sync("device_left", {"ieee": ieee})
             self._emit_sync("log", {"level": "WARNING", "message": f"Device Removed: {ieee}", "ieee": ieee})
 
-            # 9. Remove from HA discovery
+            # 10. Remove from HA discovery
             if self.mqtt and ieee in self.devices:
                 configs = self.devices[ieee].get_device_discovery_configs()
                 await self.mqtt.remove_discovery(ieee, configs)
@@ -2491,6 +2504,10 @@ class ZigbeeService:
 
         # Emit to WebSocket (only changed data)
         self._emit_sync("device_updated", {"ieee": ieee, "data": safe_mqtt_payload})
+
+        # Evaluate automation rules (direct zigbee, bypasses MQTT)
+        if hasattr(self, 'automation'):
+            await self.automation.evaluate(ieee, changed_data)
 
         # PUBLISH TO MQTT (only changed attributes)
         if self.mqtt:

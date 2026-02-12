@@ -30,6 +30,7 @@ from modules.mqtt_explorer import MQTTExplorer
 from modules.zones_api import register_zone_routes
 from modules.zones import ZoneConfig
 from modules.zone_device_config import configure_zone_device_reporting, remove_aggressive_reporting
+from modules.automation_api import register_automation_routes
 
 
 # ============================================================================
@@ -322,6 +323,13 @@ async def lifespan(app: FastAPI):
         lambda: zigbee_service.devices
     )
     logger.info("Zone API routes registered")
+
+    # Initialize Automation API
+    register_automation_routes(
+        app,
+        lambda: zigbee_service.automation
+    )
+    logger.info("Automation API routes registered")
 
     yield  # Application runs here
 

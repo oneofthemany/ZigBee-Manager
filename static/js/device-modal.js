@@ -8,9 +8,10 @@ import { renderOverviewTab, saveConfig } from './modal/overview.js';
 import { renderControlTab, updateControlValues } from './modal/control.js';
 import { renderBindingTab } from './modal/binding.js';
 import { renderCapsTab } from './modal/clusters.js';
+import { renderAutomationTab, initAutomationTab } from './modal/automation.js';
 
 // Re-export these functions so main.js (and others) can still import them from here
-export { renderOverviewTab, renderControlTab, renderBindingTab, renderCapsTab, saveConfig };
+export { renderOverviewTab, renderControlTab, renderBindingTab, renderCapsTab, renderAutomationTab, saveConfig };
 
 export function openDeviceModal(d) {
     const cachedDev = (d && d.ieee && state.deviceCache[d.ieee]) ? state.deviceCache[d.ieee] : d;
@@ -36,6 +37,7 @@ export function openDeviceModal(d) {
             <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-control">Control</button></li>
             <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-binding">Binding</button></li>
             <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-caps">Clusters</button></li>
+            <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-automation">Automation</button></li>
         </ul>
 
         <div class="tab-content">
@@ -51,10 +53,20 @@ export function openDeviceModal(d) {
             <div class="tab-pane fade" id="tab-caps">
                 ${renderCapsTab(cachedDev)}
             </div>
+            <div class="tab-pane fade" id="tab-automation">
+                ${renderAutomationTab(cachedDev)}
+            </div>
         </div>
     `;
 
     modalBody.innerHTML = html;
+    // Hydrate automation tab when clicked (lazy load API data)
+    const autoTab = modalBody.querySelector('[data-bs-target="#tab-automation"]');
+    if (autoTab) {
+        autoTab.addEventListener('shown.bs.tab', () => {
+            initAutomationTab(cachedDev.ieee);
+        });
+    }
     const modalEl = document.getElementById('capModal');
     if (modalEl) new bootstrap.Modal(modalEl).show();
 }
