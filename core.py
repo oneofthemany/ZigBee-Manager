@@ -1563,14 +1563,12 @@ class ZigbeeService:
         """Find devices that exist in database but not in active network."""
         import sqlite3
 
-        # Use the database path from config or default
-        db_path = "zigbee.db"  # Same path used in config
+        db_path = "zigbee.db"
 
         try:
             conn = sqlite3.connect(db_path)
             cursor = conn.cursor()
 
-            # Get table version
             cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'devices_v%'")
             devices_table = cursor.fetchone()
             if not devices_table:
@@ -1579,24 +1577,31 @@ class ZigbeeService:
 
             version = devices_table[0].split('_')[-1]
 
-            # Get all devices from database
             cursor.execute(f"SELECT ieee FROM devices_{version}")
             db_devices = [row[0] for row in cursor.fetchall()]
             conn.close()
 
-            # Get active devices from zigpy
-            active_devices = [str(ieee).lower() for ieee in self.app.devices.keys()]
+            # Compare against BOTH zigpy and our wrapper dict
+            zigpy_devices = [str(ieee).lower() for ieee in self.app.devices.keys()]
+            managed_devices = [ieee.lower() for ieee in self.devices.keys()]
 
-            # Normalize IEEE addresses for comparison
             db_devices_normalized = [ieee.lower() for ieee in db_devices]
 
-            # Find orphaned devices (in DB but not active)
-            orphaned = [ieee for ieee in db_devices_normalized if ieee not in active_devices]
+            # Orphaned = in DB but not in zigpy (true DB orphans)
+            db_orphaned = [ieee for ieee in db_devices_normalized if ieee not in zigpy_devices]
+
+            # Stale = in DB/zigpy but missing from our wrapper dict (lost via device_left)
+            stale = [ieee for ieee in db_devices_normalized if ieee in zigpy_devices and ieee not in managed_devices]
+
+            orphaned = list(set(db_orphaned + stale))
 
             return {
                 "total_in_db": len(db_devices),
-                "active": len(active_devices),
+                "active_zigpy": len(zigpy_devices),
+                "active_managed": len(managed_devices),
                 "orphaned": orphaned,
+                "db_orphaned": db_orphaned,
+                "stale": stale,
                 "count": len(orphaned)
             }
         except Exception as e:
@@ -1606,17 +1611,18 @@ class ZigbeeService:
             return {"error": str(e)}
 
     async def cleanup_orphaned_devices(self) -> dict:
-        """Remove all orphaned devices from database."""
+        """Remove orphaned devices and recover stale ones."""
         result = await self.find_duplicate_devices()
 
         if "error" in result:
             return result
 
-        orphaned = result["orphaned"]
         removed = []
+        recovered = []
         failed = []
 
-        for ieee in orphaned:
+        # 1. True DB orphans - remove from database
+        for ieee in result.get("db_orphaned", []):
             try:
                 await self._force_cleanup_device_db(ieee)
                 removed.append(ieee)
@@ -1625,10 +1631,31 @@ class ZigbeeService:
                 failed.append({"ieee": ieee, "error": str(e)})
                 logger.error(f"Failed to remove {ieee}: {e}")
 
+        # 2. Stale devices - recover by re-wrapping from zigpy
+        for ieee in result.get("stale", []):
+            try:
+                z_ieee = zigpy.types.EUI64.convert(ieee)
+                if z_ieee in self.app.devices:
+                    self.devices[ieee] = ZigManDevice(self, self.app.devices[z_ieee])
+                    self.devices[ieee]._available = False
+                    if ieee in self.state_cache:
+                        self.devices[ieee].restore_state(self.state_cache[ieee])
+                    recovered.append(ieee)
+                    logger.info(f"Recovered stale device: {ieee}")
+            except Exception as e:
+                failed.append({"ieee": ieee, "error": str(e)})
+                logger.error(f"Failed to recover {ieee}: {e}")
+
+        # Refresh frontend if anything changed
+        if removed or recovered:
+            self._rebuild_name_maps()
+
         return {
             "removed": removed,
+            "recovered": recovered,
             "failed": failed,
             "count_removed": len(removed),
+            "count_recovered": len(recovered),
             "count_failed": len(failed)
         }
 
