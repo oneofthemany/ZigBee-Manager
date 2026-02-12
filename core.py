@@ -1179,8 +1179,8 @@ class ZigbeeService:
         self._rebuild_name_maps()
         self._emit_sync("device_initialized", {"ieee": ieee})
 
+
     def device_left(self, device: zigpy.device.Device):
-        """Called when a device leaves the network."""
         ieee = str(device.ieee)
 
         import traceback
@@ -1189,17 +1189,17 @@ class ZigbeeService:
         logger.info(f"Device left: {ieee}")
 
         if ieee in self.devices:
-            self.devices[ieee].cleanup()
-            del self.devices[ieee]
+            # Mark offline
+            self.devices[ieee].last_seen = self.devices[ieee].last_seen  # preserve last_seen
+            self.devices[ieee]._available = False
+            self.handle_device_update(self.devices[ieee], {"available": False})
 
         self.polling_scheduler.disable_for_device(ieee)
-        self._rebuild_name_maps()
 
-        # Enhanced Logging
         name = self.friendly_names.get(ieee, "Unknown")
-        msg = f"[{ieee}] ({name}) Device Left"
-        self._emit_sync("log", {"level": "INFO", "message": msg, "ieee": ieee, "device_name": name, "category": "connection"})
-        self._emit_sync("device_left", {"ieee": ieee})
+        msg = f"[{ieee}] ({name}) Device Left - marked offline"
+        self._emit_sync("log", {"level": "WARNING", "message": msg, "ieee": ieee, "device_name": name, "category": "connection"})
+
 
     def device_removed(self, device: zigpy.device.Device):
         """Called when a device is removed from the network."""
