@@ -21,9 +21,16 @@
 │    ├── groups.json
 │    └── names.json
 ├── docs
+│    ├── announcement.md
+│    ├── aqare_cluster_guide.md
+│    ├── automations.md
 │    ├── debugging.md
+│    ├── mqtt-explorer.md
 │    └── onboarding.md
 │
+├── ha_utils
+│    └── zombie_killer.py
+│   
 ├── handlers
 │    ├── __init__.py
 │    ├── aqara.py
@@ -49,6 +56,8 @@
 │
 ├── modules
 │    ├── __init__.py
+│    ├── automation.py
+│    ├── automation_api.py
 │    ├── config_enhanced.py
 │    ├── device_ban.py
 │    ├── device_capabilities.py
@@ -59,6 +68,9 @@
 │    ├── mqtt_queue.py
 │    ├── packets_stats.py
 │    ├── reslience.py
+│    ├── touchlink.py
+│    ├── zigbee_debug.py
+│    ├── zone_device_config.py
 │    ├── zones_api.py
 │    └── zones.log
 │
@@ -86,6 +98,7 @@
 │        ├── websocket.js
 │        ├── zones.js
 │        └── modal
+│              ├── automation.js
 │              ├── binding.js
 │              ├── clusters.js
 │              ├── config.js
