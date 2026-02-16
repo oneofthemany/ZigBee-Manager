@@ -787,6 +787,9 @@ class GroupManager:
         if "color_temp" in state:
             payload["color_temp"] = int(state["color_temp"])
 
+        if "color_mode" in state:
+            payload["color_mode"] = state["color_mode"]
+
         if "color" in state:
             payload["color"] = state["color"]
 
@@ -846,6 +849,19 @@ class GroupManager:
                         result = await color_cluster.read_attributes([0x0007])  # ColorTemperatureMireds
                         if 0 in result[0]:
                             state['color_temp'] = result[0][0]
+
+                    # Read color mode
+                    if 0x0300 in endpoint.in_clusters:
+                        color_cluster = endpoint.in_clusters[0x0300]
+                        result = await color_cluster.read_attributes([0x0007, 0x0008])  # ColorTemp + ColorMode
+                        if 7 in result[0]:
+                            state['color_temp'] = result[0][7]
+                        if 8 in result[0]:
+                            mode_val = result[0][8]
+                            if hasattr(mode_val, 'value'):
+                                mode_val = mode_val.value
+                            mode_map = {0: 'hs', 1: 'xy', 2: 'color_temp'}
+                            state['color_mode'] = mode_map.get(mode_val, 'color_temp')
 
                     # If we got some state, return it
                     if state:
@@ -958,6 +974,17 @@ class GroupManager:
                         await cover_ctrl.go_to_lift_percentage(pos)
                         result["success"] = True
 
+                # 5. HS COLOR (from frontend color picker via HS values)
+                if 'hs_color' in command:
+                    color_ctrl = get_cluster(0x0300)
+                    if color_ctrl:
+                        hs = command['hs_color']
+                        hue, sat = hs if isinstance(hs, (list, tuple)) else (0, 100)
+                        zcl_hue = int((hue / 360) * 254)
+                        zcl_sat = int((sat / 100) * 254)
+                        await color_ctrl.move_to_hue_and_saturation(zcl_hue, zcl_sat, transition_time=10)
+                        result["success"] = True
+
                 results.append(result)
 
             except Exception as e:
@@ -1011,21 +1038,25 @@ class GroupManager:
         }
 
         # Add capability-specific config
+        color_modes = []
+
         if DeviceCapability.BRIGHTNESS in group['capabilities']:
             config['brightness'] = True
             config['brightness_scale'] = 254
-            config['supported_color_modes'] = ['brightness']
+            color_modes.append('brightness')
 
         if DeviceCapability.COLOR_TEMP in group['capabilities']:
-            config['color_temp'] = True
-            if 'supported_color_modes' not in config:
-                config['supported_color_modes'] = []
-            config['supported_color_modes'].append('color_temp')
+            color_modes.append('color_temp')
 
         if DeviceCapability.COLOR_XY in group['capabilities']:
-            if 'supported_color_modes' not in config:
-                config['supported_color_modes'] = []
-            config['supported_color_modes'].append('xy')
+            color_modes.append('xy')
+
+        if DeviceCapability.COLOR_HS in group['capabilities']:
+            color_modes.append('hs')
+
+        if color_modes:
+            config['supported_color_modes'] = color_modes
+            config['color_mode'] = True
 
         # Publish discovery
         topic = f"homeassistant/{component}/{node_id}/{component}/config"
