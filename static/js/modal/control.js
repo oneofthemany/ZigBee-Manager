@@ -431,9 +431,9 @@ export function renderControlTab(device) {
                     html += `<div class="mt-3 pt-3 border-top">`;
 
                     if (hasElectrical) {
-                        const power = s[`power_${epId}`] || s.power || 0;
-                        const voltage = s[`voltage_${epId}`] || s.voltage || 0;
-                        const current = s[`current_${epId}`] || s.current || 0;
+                        const power   = s[`power_${epId}`] ?? 0;
+                        const voltage = s[`voltage_${epId}`] ?? 0;
+                        const current = s[`current_${epId}`] ?? 0;
                         html += `
                         <div class="small text-muted mb-2"><i class="fas fa-bolt"></i> Power Monitoring</div>
                         <div class="d-flex justify-content-between">
