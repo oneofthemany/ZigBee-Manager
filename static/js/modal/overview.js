@@ -104,11 +104,18 @@ export function renderOverviewTab(device) {
         return hasCluster(0x0500);
     };
 
+
+    const isMultiEndpoint = device.capabilities && Array.isArray(device.capabilities) &&
+        device.capabilities.filter(ep => ep.id !== 0).length > 1;
+    const multiEpPowerKeys = isMultiEndpoint ? ['power', 'voltage', 'current', 'energy'] : [];
+
+
     const groups = { 'Global': {} };
 
     Object.keys(s).forEach(key => {
         if (configKeys.includes(key) || ignoredKeys.includes(key) || key.startsWith('dp_') || key.endsWith('_raw')) return;
         if (key.startsWith('startup_behavior_')) return;
+        if (multiEpPowerKeys.includes(key)) return;
 
         // Filter out occupancy sensor keys if device doesn't have occupancy sensing
         if (occupancySensorKeys.includes(key) && !hasOccupancySensing()) return;
