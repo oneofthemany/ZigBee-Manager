@@ -842,7 +842,15 @@ async function _loadTr() {
                 h+=`<div class="${cc}">#${c.index} ${c.attribute} ${c.operator||''} ${c.threshold_raw||c.threshold||'?'} → ${c.actual_raw||'?'} (${c.actual_type||''}) [${c.result}]`;
                 if(c.sustain_elapsed!=null)h+=` ⏱${c.sustain_elapsed}s`;if(c.value_source)h+=` ${c.value_source}`;if(c.reason)h+=` — ${c.reason}`;h+='</div>';});h+='</div>';}
             if(e.prerequisites?.length){h+='<div class="ms-3">';e.prerequisites.forEach(p=>{const pc=p.result==='PASS'?'text-success':'text-danger';
-                h+=`<div class="${pc}">CHECK${p.negate?' NOT':''} ${p.device_name||p.ieee} ${p.attribute} ${p.operator||''} ${p.threshold_raw||'?'} → ${p.actual_raw||'?'} [${p.result}]`;
+                const DAY_NAMES=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+                let pLine;
+                if(p.type==='time_window'){
+                    const dayStr=(!p.days||p.days.length===7)?'Every day':p.days.map(d=>DAY_NAMES[d]).join(',');
+                    pLine=`CHECK${p.negate?' NOT':''} Time ${p.time_from}→${p.time_to} [${dayStr}] now=${p.now_time} weekday=${p.now_weekday}`;
+                }else{
+                    pLine=`CHECK${p.negate?' NOT':''} ${p.device_name||p.ieee} ${p.attribute} ${p.operator||''} ${p.threshold_raw||'?'} → ${p.actual_raw||'?'}`;
+                }
+                h+=`<div class="${pc}">${pLine} [${p.result}]`;
                 if(p.reason)h+=` — ${p.reason}`;h+='</div>';});h+='</div>';}
             if(e.inline_conditions?.length){h+='<div class="ms-3">';e.inline_conditions.forEach(ic=>{const cc=ic.result==='PASS'?'text-success':'text-danger';
                 h+=`<div class="${cc}">  ${ic.negate?'NOT ':''}${ic.device_name||''} ${ic.attribute} ${ic.operator||''} ${ic.threshold||''} → ${ic.actual||'?'} [${ic.result}]</div>`;});h+='</div>';}
