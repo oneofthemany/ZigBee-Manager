@@ -195,25 +195,34 @@ class AutomationEngine:
     # =========================================================================
 
     def _validate_conditions(self, conds: List[Dict]) -> Optional[str]:
+        import re
         if not isinstance(conds, list) or not conds:
             return "conditions must be a non-empty list"
         if len(conds) > MAX_CONDITIONS_PER_RULE:
             return f"Max {MAX_CONDITIONS_PER_RULE} conditions"
         for i, c in enumerate(conds):
-            for f in ("attribute", "operator", "value"):
-                if f not in c:
-                    return f"Condition {i+1} missing '{f}'"
-            if c["operator"] not in OPERATORS:
-                return f"Condition {i+1} invalid operator"
-            s = c.get("sustain")
-            if s:
-                try:
-                    s = int(s)
-                    c["sustain"] = s if s > 0 else None
-                except (ValueError, TypeError):
-                    c["sustain"] = None
-            if not c.get("sustain"):
-                c.pop("sustain", None)
+            ctype = c.get("type", "attribute")
+            if ctype == "time_window":
+                for f in ("time_from", "time_to"):
+                    if f not in c:
+                        return f"Condition {i+1} (time_window) missing '{f}'"
+                    if not re.match(r"^\d{2}:\d{2}$", str(c[f])):
+                        return f"Condition {i+1} '{f}' must be HH:MM"
+            else:
+                for f in ("attribute", "operator", "value"):
+                    if f not in c:
+                        return f"Condition {i+1} missing '{f}'"
+                if c["operator"] not in OPERATORS:
+                    return f"Condition {i+1} invalid operator"
+                s = c.get("sustain")
+                if s:
+                    try:
+                        s = int(s)
+                        c["sustain"] = s if s > 0 else None
+                    except (ValueError, TypeError):
+                        c["sustain"] = None
+                if not c.get("sustain"):
+                    c.pop("sustain", None)
         return None
 
     def _validate_prerequisites(self, prereqs: List[Dict]) -> Optional[str]:
@@ -472,8 +481,8 @@ class AutomationEngine:
             rule_name = rule.get("name") or rule_id
 
             # Relevance
-            watched = {c["attribute"] for c in conditions}
-            if not watched.intersection(changed_data.keys()):
+            watched = {c["attribute"] for c in conditions if c.get("type", "attribute") != "time_window"}
+            if watched and not watched.intersection(changed_data.keys()):
                 continue
 
             # --- CONDITIONS ---
@@ -567,6 +576,35 @@ class AutomationEngine:
         has_sustain = False
 
         for i, cond in enumerate(conditions):
+            ctype = cond.get("type", "attribute")
+            if ctype == "time_window":
+                import datetime
+                negate = cond.get("negate", False)
+                now_dt = datetime.datetime.now()
+                now_time = now_dt.time()
+                weekday = now_dt.weekday()
+                t_from = datetime.time(*map(int, cond["time_from"].split(":")))
+                t_to   = datetime.time(*map(int, cond["time_to"].split(":")))
+                days   = cond.get("days", list(range(7)))
+                day_ok = (not days) or (weekday in days)
+                if t_from <= t_to:
+                    time_ok = t_from <= now_time <= t_to
+                else:
+                    time_ok = now_time >= t_from or now_time <= t_to
+                matched = day_ok and time_ok
+                if negate:
+                    matched = not matched
+                results.append({
+                    "index": i + 1, "type": "time_window",
+                    "time_from": cond["time_from"], "time_to": cond["time_to"],
+                    "days": days, "negate": negate,
+                    "now_time": now_dt.strftime("%H:%M"), "now_weekday": weekday,
+                    "result": "PASS" if matched else "FAIL",
+                })
+                if not matched:
+                    all_ok = False; break
+                continue
+
             attr = cond["attribute"]
             op = cond["operator"]
             threshold = cond["value"]
