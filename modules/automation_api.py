@@ -14,10 +14,15 @@ logger = logging.getLogger(__name__)
 
 
 class ConditionItem(BaseModel):
-    attribute: str
-    operator: str
-    value: Any
+    type: str = "attribute"
+    attribute: Optional[str] = None
+    operator: Optional[str] = None
+    value: Optional[Any] = None
     sustain: Optional[int] = None
+    negate: bool = False
+    time_from: Optional[str] = None
+    time_to: Optional[str] = None
+    days: Optional[List[int]] = None
 
 class PrerequisiteItem(BaseModel):
     type: str = "device"
@@ -59,9 +64,13 @@ def _conds_to_dicts(items):
     if not items: return []
     r = []
     for c in items:
-        d = {"attribute":c.attribute,"operator":c.operator,"value":c.value}
-        if c.sustain and c.sustain > 0: d["sustain"] = c.sustain
-        r.append(d)
+        if c.type == "time_window":
+            r.append({"type": "time_window", "time_from": c.time_from, "time_to": c.time_to,
+                      "days": c.days if c.days is not None else list(range(7)), "negate": c.negate})
+        else:
+            d = {"type": "attribute", "attribute": c.attribute, "operator": c.operator, "value": c.value}
+            if c.sustain and c.sustain > 0: d["sustain"] = c.sustain
+            r.append(d)
     return r
 
 def _prereqs_to_dicts(items):

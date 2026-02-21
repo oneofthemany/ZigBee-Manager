@@ -107,9 +107,18 @@ function _renderRules(rules) {
         let cH = '';
         (rule.conditions||[]).forEach((c,i) => {
             const p = i===0?'<strong class="text-primary">IF</strong>':'<strong class="text-warning">AND</strong>';
-            const sus = c.sustain?`<span class="badge bg-info text-dark ms-1">⏱${c.sustain}s</span>`:'';
-            const dispVal = Array.isArray(c.value) ? c.value.join(', ') : c.value;
-            cH += `<div class="small">${p} <code>${c.attribute}</code> ${OP[c.operator]||c.operator} <code>${dispVal}</code>${sus}</div>`;
+            let cDesc;
+            if (c.type === 'time_window') {
+                const DAY_NAMES = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+                const dayStr = (!c.days || c.days.length === 7) ? 'Every day' : c.days.map(d => DAY_NAMES[d]).join(', ');
+                const neg = c.negate ? '<span class="badge bg-danger ms-1">NOT</span>' : '';
+                cDesc = `${neg} Time <code>${c.time_from} → ${c.time_to}</code> <span class="text-muted">${dayStr}</span>`;
+            } else {
+                const sus = c.sustain?`<span class="badge bg-info text-dark ms-1">⏱${c.sustain}s</span>`:'';
+                const dispVal = Array.isArray(c.value) ? c.value.join(', ') : c.value;
+                cDesc = `<code>${c.attribute}</code> ${OP[c.operator]||c.operator} <code>${dispVal}</code>${sus}`;
+            }
+            cH += `<div class="small">${p} ${cDesc}</div>`;
         });
         (rule.prerequisites||[]).forEach(p => {
             const neg = p.negate?'<span class="badge bg-danger ms-1">NOT</span>':'';
@@ -249,23 +258,52 @@ function _vI(cls, id, opts, cur, idAttr = 'data-id') {
 // CONDITIONS + PREREQUISITES (same pattern as before)
 // ============================================================================
 
-function _renderCond(id) {
+function _renderCond(id, ctype) {
+    ctype = ctype || 'attribute';
     const opts=cachedAttributes.map(a=>`<option value="${a.attribute}" data-type="${a.type}" data-operators='${JSON.stringify(a.operators)}' data-current="${a.current_value}" data-vo='${JSON.stringify(a.value_options||[])}'>${a.attribute} (${a.current_value})</option>`).join('');
     const idx=condRows.indexOf(id);
-    return `<div class="row g-1 mb-1 align-items-center" id="c-${id}"><div class="col-auto"><span class="badge ${idx===0?'bg-primary':'bg-warning text-dark'} small">${idx===0?'IF':'AND'}</span></div>
+    const badge = `<span class="badge ${idx===0?'bg-primary':'bg-warning text-dark'} small">${idx===0?'IF':'AND'}</span>`;
+    const rmBtn = idx>0 ? `<button class="btn btn-sm btn-outline-danger" onclick="window._aRmC(${id})"><i class="fas fa-times"></i></button>` : '<div style="width:31px"></div>';
+    const DAYS = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+    const dayBoxes = DAYS.map((d,i) => `<label class="me-1 small"><input type="checkbox" class="ctd" data-id="${id}" data-day="${i}" checked> ${d}</label>`).join('');
+    const attrRow = `
         <div class="col"><select class="form-select form-select-sm ca" data-id="${id}" onchange="window._aCa(${id},this)"><option value="">Attr...</option>${opts}</select></div>
         <div class="col-auto"><select class="form-select form-select-sm co" data-id="${id}" style="width:120px"><option value="">Op...</option></select></div>
         <div class="col" id="cv-${id}"><input type="text" class="form-control form-control-sm cv" data-id="${id}" placeholder="Value"></div>
-        <div class="col-auto" style="width:65px"><input type="number" class="form-control form-control-sm cs" data-id="${id}" placeholder="⏱s" min="0"></div>
-        <div class="col-auto">${idx>0?`<button class="btn btn-sm btn-outline-danger" onclick="window._aRmC(${id})"><i class="fas fa-times"></i></button>`:'<div style="width:31px"></div>'}</div></div>`;
+        <div class="col-auto" style="width:65px"><input type="number" class="form-control form-control-sm cs" data-id="${id}" placeholder="⏱s" min="0"></div>`;
+    const timeRow = `
+        <div class="col-auto"><div class="form-check form-check-inline mb-0"><input class="form-check-input cn" type="checkbox" data-id="${id}" title="NOT (negate)"><label class="form-check-label small text-danger">NOT</label></div></div>
+        <div class="col-auto"><label class="small text-muted mb-0 me-1">From</label><input type="time" class="form-control form-control-sm ct-from" data-id="${id}" style="width:110px" value="00:00"></div>
+        <div class="col-auto"><label class="small text-muted mb-0 me-1">To</label><input type="time" class="form-control form-control-sm ct-to" data-id="${id}" style="width:110px" value="23:59"></div>
+        <div class="col"><div class="d-flex flex-wrap gap-1 align-items-center pt-1">${dayBoxes}</div></div>`;
+    return `<div class="row g-1 mb-1 align-items-center flex-wrap" id="c-${id}">
+        <div class="col-auto">${badge}</div>
+        <div class="col-auto"><select class="form-select form-select-sm ctype" data-id="${id}" style="width:90px" onchange="window._aCType(${id},this)"><option value="attribute" ${ctype==='attribute'?'selected':''}>Attr</option><option value="time_window" ${ctype==='time_window'?'selected':''}>Time/Day</option></select></div>
+        <div style="display:contents">${ctype==='time_window'?timeRow:attrRow}</div>
+        <div class="col-auto">${rmBtn}</div>
+    </div>`;
 }
 function _refConds(){const el=document.getElementById('cb');if(el)el.innerHTML=condRows.map(id=>_renderCond(id)).join('');}
 function _setC(id,c){
-    const s=document.querySelector(`#c-${id} .ca`);if(!s)return;s.value=c.attribute;window._aCa(id,s);
-    setTimeout(()=>{const o=document.querySelector(`#c-${id} .co`);if(o){o.value=c.operator;if(o.onchange)o.onchange();}
-        const v=document.querySelector(`#cv-${id} .cv`);
-        if(v){const dv=Array.isArray(c.value)?c.value.join(', '):String(c.value);v.value=dv;}
-        const ss=document.querySelector(`#c-${id} .cs`);if(ss&&c.sustain)ss.value=c.sustain;},20);
+    const ctype = c.type || 'attribute';
+    const row = document.getElementById(`c-${id}`);
+    if (!row) return;
+    row.outerHTML = _renderCond(id, ctype);
+    const r2 = document.getElementById(`c-${id}`);
+    if (!r2) return;
+    if (ctype === 'time_window') {
+        const neg = r2.querySelector('.cn'); if (neg) neg.checked = !!c.negate;
+        const tf = r2.querySelector('.ct-from'); if (tf) tf.value = c.time_from || '00:00';
+        const tt = r2.querySelector('.ct-to');   if (tt) tt.value = c.time_to   || '23:59';
+        const days = c.days ?? [0,1,2,3,4,5,6];
+        r2.querySelectorAll('.ctd').forEach(cb => { cb.checked = days.includes(parseInt(cb.dataset.day)); });
+    } else {
+        const s=r2.querySelector('.ca');if(!s)return;s.value=c.attribute;window._aCa(id,s);
+        setTimeout(()=>{const o=r2.querySelector('.co');if(o){o.value=c.operator;if(o.onchange)o.onchange();}
+            const v=r2.querySelector(`#cv-${id} .cv`);
+            if(v){const dv=Array.isArray(c.value)?c.value.join(', '):String(c.value);v.value=dv;}
+            const ss=r2.querySelector('.cs');if(ss&&c.sustain)ss.value=c.sustain;},20);
+    }
 }
 
 function _renderPrereq(id, ptype) {
@@ -575,7 +613,16 @@ window._aAddCond=()=>{if(condRows.length>=5)return;const nid=condIdC++;condRows.
 window._aRmC=id=>{condRows=condRows.filter(r=>r!==id);const row=document.getElementById(`c-${id}`);if(row)row.remove();
     if(condRows.length>0){const first=document.getElementById(`c-${condRows[0]}`);if(first){const b=first.querySelector('.badge');if(b){b.className='badge bg-primary small';b.textContent='IF';}
         const rm=first.querySelector('.btn-outline-danger');if(rm)rm.closest('.col-auto').innerHTML='<div style="width:31px"></div>';}};};
-
+window._aCType = (id, sel) => {
+    const ctype = sel.value;
+    const row = document.getElementById(`c-${id}`);
+    if (!row) return;
+    const neg = row.querySelector('.cn')?.checked || false;
+    row.outerHTML = _renderCond(id, ctype);
+    const newRow = document.getElementById(`c-${id}`);
+    if (newRow && ctype !== 'time_window') { /* attr row needs no restore */ }
+    if (newRow && ctype === 'time_window') { const n = newRow.querySelector('.cn'); if (n) n.checked = neg; }
+};
 // Prerequisites
 window._aPd=async(id,sel)=>{const ieee=sel.value;const aS=document.querySelector(`#p-${id} .pa`);if(!aS||!ieee)return;
     aS.innerHTML='<option>Loading...</option>';
@@ -686,18 +733,28 @@ window._aDel=async id=>{if(!confirm('Delete?'))return;try{await fetch(`/api/auto
 
 window._aSave=async()=>{
     const conditions=[]; let valid=true;
-    condRows.forEach(id=>{const a=document.querySelector(`#c-${id} .ca`)?.value,o=document.querySelector(`#c-${id} .co`)?.value;
-        const vE=document.querySelector(`#cv-${id} .cv`),r=vE?.value,s=document.querySelector(`#c-${id} .cs`)?.value;
-        if(!a||!o||r===undefined||r===''){valid=false;return;}
-        const ai=cachedAttributes.find(x=>x.attribute===a);
-        let value;
-        if(o==='in'||o==='nin') {
-            // Store as list
-            value = String(r).split(',').map(v=>_ct(v.trim(),ai?.type));
+    condRows.forEach(id=>{
+        const row=document.getElementById(`c-${id}`);
+        if(!row)return;
+        const ctype=row.querySelector('.ctype')?.value||'attribute';
+        if(ctype==='time_window'){
+            const tf=row.querySelector('.ct-from')?.value;
+            const tt=row.querySelector('.ct-to')?.value;
+            if(!tf||!tt){valid=false;return;}
+            const neg=row.querySelector('.cn')?.checked||false;
+            const days=[];row.querySelectorAll('.ctd').forEach(cb=>{if(cb.checked)days.push(parseInt(cb.dataset.day));});
+            conditions.push({type:'time_window',time_from:tf,time_to:tt,days,negate:neg});
         } else {
-            value = _ct(r,ai?.type);
+            const a=row.querySelector('.ca')?.value,o=row.querySelector('.co')?.value;
+            const vE=row.querySelector(`#cv-${id} .cv`),r=vE?.value,s=row.querySelector('.cs')?.value;
+            if(!a||!o||r===undefined||r===''){valid=false;return;}
+            const ai=cachedAttributes.find(x=>x.attribute===a);
+            let value;
+            if(o==='in'||o==='nin'){value=String(r).split(',').map(v=>_ct(v.trim(),ai?.type));}
+            else{value=_ct(r,ai?.type);}
+            const c={type:'attribute',attribute:a,operator:o,value};if(s&&parseInt(s)>0)c.sustain=parseInt(s);conditions.push(c);
         }
-        const c={attribute:a,operator:o,value};if(s&&parseInt(s)>0)c.sustain=parseInt(s);conditions.push(c);});
+    });
     if(!valid||!conditions.length)return alert('Fill all conditions.');
 
     const prerequisites = [];
@@ -839,8 +896,16 @@ async function _loadTr() {
             if(e.rule_id&&e.rule_id!=='-')h+=`<code>${e.rule_id}</code> `;
             h+=e.message||'';
             if(e.conditions?.length){h+='<div class="ms-3">';e.conditions.forEach(c=>{const cc=c.result==='PASS'?'text-success':c.result==='SUSTAIN_WAIT'?'text-warning':'text-danger';
-                h+=`<div class="${cc}">#${c.index} ${c.attribute} ${c.operator||''} ${c.threshold_raw||c.threshold||'?'} → ${c.actual_raw||'?'} (${c.actual_type||''}) [${c.result}]`;
-                if(c.sustain_elapsed!=null)h+=` ⏱${c.sustain_elapsed}s`;if(c.value_source)h+=` ${c.value_source}`;if(c.reason)h+=` — ${c.reason}`;h+='</div>';});h+='</div>';}
+                let cLine;
+                if(c.type==='time_window'){
+                    const DAY_NAMES=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+                    const dayStr=(!c.days||c.days.length===7)?'Every day':c.days.map(d=>DAY_NAMES[d]).join(',');
+                    cLine=`#${c.index} Time${c.negate?' NOT':''} ${c.time_from}→${c.time_to} [${dayStr}] now=${c.now_time} weekday=${c.now_weekday}`;
+                }else{
+                    cLine=`#${c.index} ${c.attribute} ${c.operator||''} ${c.threshold_raw||c.threshold||'?'} → ${c.actual_raw||'?'} (${c.actual_type||''})`;
+                    if(c.sustain_elapsed!=null)cLine+=` ⏱${c.sustain_elapsed}s`;if(c.value_source)cLine+=` ${c.value_source}`;
+                }
+                h+=`<div class="${cc}">${cLine} [${c.result}]`;if(c.reason)h+=` — ${c.reason}`;h+='</div>';});h+='</div>';}
             if(e.prerequisites?.length){h+='<div class="ms-3">';e.prerequisites.forEach(p=>{const pc=p.result==='PASS'?'text-success':'text-danger';
                 const DAY_NAMES=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
                 let pLine;
