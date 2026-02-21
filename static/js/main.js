@@ -48,7 +48,9 @@ import {
 import {
     loadConfigYaml,
     saveConfigYaml,
-    restartSystem
+    restartSystem,
+    loadSSLStatus,
+    toggleSSL
 } from './system.js';
 import {
     sendCommand,
@@ -111,6 +113,8 @@ window.downloadDebugLog = downloadDebugLog;
 window.loadConfigYaml = loadConfigYaml;
 window.saveConfigYaml = saveConfigYaml;
 window.restartSystem = restartSystem;
+window.loadSSLStatus = loadSSLStatus;
+window.toggleSSL = toggleSSL;
 
 // Mesh Topology
 window.loadMeshTopology = loadMeshTopology;
@@ -176,7 +180,10 @@ document.addEventListener('DOMContentLoaded', () => {
     // Initialise Settings Tab listener
     const settingsTab = document.querySelector('button[data-bs-target="#settings"]');
     if(settingsTab) {
-        settingsTab.addEventListener('click', loadConfigYaml);
+        settingsTab.addEventListener('click', () => {
+            loadConfigYaml();
+            loadSSLStatus();  // ADD
+        });
     }
 
     const topologyTab = document.querySelector('button[data-bs-target="#topology"]');

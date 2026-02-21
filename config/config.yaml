@@ -19,6 +19,10 @@ web:
   port: 8000
   debug: false
   secret_key: ssshItsASecret
+  ssl:
+    enabled: false
+    cert_file: certs/cert.pem
+    key_file: certs/key.pem
 
 
 zigbee:

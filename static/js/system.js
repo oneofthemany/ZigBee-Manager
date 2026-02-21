@@ -46,3 +46,29 @@ export async function restartSystem() {
     await fetch('/api/system/restart', { method: 'POST' });
     setTimeout(() => location.reload(), 15000);
 }
+
+/**
+ * SSL Status
+ */
+
+export async function loadSSLStatus() {
+    const r = await fetch('/api/ssl/status');
+    const d = await r.json();
+    document.getElementById('sslToggle').checked = d.enabled;
+}
+
+export async function toggleSSL(enabled) {
+    const r = await fetch('/api/ssl/toggle', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ enabled })
+    });
+    const d = await r.json();
+    if (!d.success) {
+        alert('SSL toggle failed: ' + d.error);
+        // Revert toggle
+        document.getElementById('sslToggle').checked = !enabled;
+    } else {
+        alert(`HTTPS ${enabled ? 'enabled' : 'disabled'}. Restart the service to apply.`);
+    }
+}

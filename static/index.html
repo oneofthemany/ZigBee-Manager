@@ -185,6 +185,18 @@
                 <div class="card-footer text-muted small">
                     <i class="fas fa-info-circle"></i> Changes will take effect after restarting the service. Ensure YAML syntax is correct.
                 </div>
+                <div class="card mt-3 shadow-sm">
+                    <div class="card-header bg-light py-2">
+                        <span class="fw-bold"><i class="fas fa-lock"></i> HTTPS / SSL</span>
+                    </div>
+                    <div class="card-body d-flex align-items-center gap-3">
+                        <div class="form-check form-switch fs-5 mb-0">
+                            <input class="form-check-input" type="checkbox" id="sslToggle" onchange="toggleSSL(this.checked)">
+                            <label class="form-check-label" for="sslToggle">Enable HTTPS (self-signed cert)</label>
+                        </div>
+                        <small class="text-muted">Requires service restart to take effect</small>
+                    </div>
+                </div>
             </div>
         </div>
 

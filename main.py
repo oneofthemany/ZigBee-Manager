@@ -3,6 +3,7 @@ ZigBee Manager - Main Application
 FastAPI-based web server for ZigBee device management.
 """
 import uvicorn
+import subprocess
 import json
 import yaml
 import os
@@ -1255,14 +1256,67 @@ async def get_compatible_devices(ieee: str):
         logger.error(f"Failed to get compatible devices: {e}")
         return {"error": str(e)}
 
+### ssl
+
+@app.post("/api/ssl/toggle")
+async def toggle_ssl(data: dict):
+    """Enable or disable HTTPS. Generates cert if needed."""
+    enable = data.get('enabled', False)
+    try:
+        with open('./config/config.yaml', 'r') as f:
+            cfg = yaml.safe_load(f)
+
+        cfg.setdefault('web', {}).setdefault('ssl', {})
+        cfg['web']['ssl']['enabled'] = enable
+
+        cert = cfg['web']['ssl'].get('cert_file', 'certs/cert.pem')
+        key  = cfg['web']['ssl'].get('key_file',  'certs/key.pem')
+
+        if enable:
+            os.makedirs('certs', exist_ok=True)
+            if not (os.path.exists(cert) and os.path.exists(key)):
+                result = subprocess.run([
+                    'openssl', 'req', '-x509', '-newkey', 'rsa:2048',
+                    '-keyout', key, '-out', cert,
+                    '-days', '3650', '-nodes',
+                    '-subj', '/CN=zigbee-manager'
+                ], capture_output=True, text=True)
+                if result.returncode != 0:
+                    return {"success": False, "error": result.stderr}
+                logger.info("Self-signed certificate generated")
+
+        with open('./config/config.yaml', 'w') as f:
+            yaml.dump(cfg, f, default_flow_style=False)
+
+        return {"success": True, "enabled": enable}
+    except Exception as e:
+        logger.error(f"SSL toggle failed: {e}")
+        return {"success": False, "error": str(e)}
+
+
+@app.get("/api/ssl/status")
+async def ssl_status():
+    """Return current SSL enabled state."""
+    ssl_cfg = CONFIG.get('web', {}).get('ssl', {})
+    return {"enabled": ssl_cfg.get('enabled', False)}
+
 # ============================================================================
 # MAIN ENTRY POINT
 # ============================================================================
 
 if __name__ == "__main__":
-    uvicorn.run(
-        app,
+    ssl_cfg = CONFIG.get('web', {}).get('ssl', {})
+    ssl_enabled = ssl_cfg.get('enabled', False)
+
+    kwargs = dict(
         host=get_conf('web', 'host', '0.0.0.0'),
         port=get_conf('web', 'port', 8000),
         log_level="info"
     )
+
+    if ssl_enabled:
+        kwargs['ssl_certfile'] = ssl_cfg.get('cert_file', 'certs/cert.pem')
+        kwargs['ssl_keyfile'] = ssl_cfg.get('key_file', 'certs/key.pem')
+        logger.info("HTTPS enabled")
+
+    uvicorn.run(app, **kwargs)
