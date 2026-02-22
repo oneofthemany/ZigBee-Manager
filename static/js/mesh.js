@@ -649,8 +649,33 @@ function escapeHtml(text) {
 }
 
 // Exported control functions
-export function dashboardMeshRefresh() {
-    loadMeshTopology();
+export async function dashboardMeshRefresh() {
+    const meshContainer = document.querySelector('.mesh-topology-container');
+    if (!meshContainer) return;
+
+    // Show scanning state
+    meshContainer.innerHTML = `
+        <div class="text-center py-4">
+            <div class="spinner-border text-warning" role="status">
+                <span class="visually-hidden">Scanning...</span>
+            </div>
+            <p class="text-muted mt-2">Scanning mesh topology (LQI)... this may take 15-30s</p>
+        </div>
+    `;
+
+    try {
+        // Trigger the actual zigpy topology scan first
+        const scanRes = await fetch('/api/network/scan', { method: 'POST' });
+        const scanData = await scanRes.json();
+        if (!scanData.success) {
+            console.warn('Topology scan warning:', scanData.error);
+        }
+    } catch (e) {
+        console.error('Scan failed:', e);
+    }
+
+    // Now reload the fresh data
+    await loadMeshTopology();
 }
 
 export function dashboardMeshReset() {
