@@ -33,12 +33,13 @@ from modules.zones_api import register_zone_routes
 from modules.zones import ZoneConfig
 from modules.zone_device_config import configure_zone_device_reporting, remove_aggressive_reporting
 from modules.automation_api import register_automation_routes
-
 from modules.network_init import (
     ensure_network_credentials, generate_pan_id,
     generate_extended_pan_id, generate_network_key,
     select_best_channel, ZIGBEE_CHANNELS
 )
+from modules.spectrum_monitor import SpectrumMonitor, get_history, get_channel_averages, save_scan
+
 
 
 # ============================================================================
@@ -321,6 +322,24 @@ async def lifespan(app: FastAPI):
     network_key = get_conf('zigbee', 'network_key', None)
     asyncio.create_task(zigbee_service.start(network_key=network_key))
 
+    # Start Spectrum Monitor
+    async def _start_spectrum_monitor(svc):
+        for _ in range(30):
+            if svc.app:
+                svc.spectrum_monitor.start()
+                return
+            await asyncio.sleep(5)
+        logger.warning("Spectrum monitor: radio never ready, skipping")
+
+    # Start background spectrum monitor
+    spectrum_interval = get_conf('zigbee', 'spectrum_scan_interval', 3600)
+    if spectrum_interval > 0:
+        zigbee_service.spectrum_monitor = SpectrumMonitor(
+            app_getter=lambda: zigbee_service.app,
+            interval=spectrum_interval
+        )
+        asyncio.create_task(_start_spectrum_monitor(zigbee_service))
+
     # Initialize group manager
     zigbee_service.group_manager = GroupManager(zigbee_service)
     logger.info("Group manager initialized")
@@ -352,6 +371,8 @@ async def lifespan(app: FastAPI):
     logger.info("Shutting down Zigbee Gateway...")
     await zigbee_service.stop()
     await mqtt_service.stop()
+    if hasattr(zigbee_service, 'spectrum_monitor'):
+        zigbee_service.spectrum_monitor.stop()
 
     # Stop log listener
     log_listener.stop()
@@ -502,26 +523,20 @@ async def get_spectrum():
         if not zigbee_service.app:
             return {"success": False, "error": "Zigbee network not started"}
 
-        # zigpy energy_scan: returns {channel: energy} dict
-        # Scan all channels with 50ms dwell per channel
-        channel_mask = 0  # Build bitmask for channels 11-26
-        for ch in range(11, 27):
-            channel_mask |= (1 << ch)
-
         logger.info("Starting spectrum energy scan...")
         results = await zigbee_service.app.energy_scan(
             channels=range(11, 27),
             count=3,
-            duration_exp=4   # 2^4 = ~250ms dwell per channel
+            duration_exp=4
         )
 
-        # Convert to plain dict (channel -> energy 0-255)
         spectrum = {int(ch): int(energy) for ch, energy in results.items()}
 
-        # Determine best channel
+        # Persist to database alongside background scans
+        save_scan(spectrum)
+
         best = select_best_channel(spectrum)
 
-        # Mark current channel
         current = None
         if zigbee_service.app and hasattr(zigbee_service.app.state, 'network_info'):
             current = getattr(zigbee_service.app.state.network_info, 'channel', None)
@@ -566,6 +581,47 @@ async def auto_select_channel():
     except Exception as e:
         return {"success": False, "error": str(e)}
 
+
+@app.get("/api/zigbee/spectrum/history")
+async def get_spectrum_history(hours: int = 24):
+    """
+    Return raw spectrum scan records for the past N hours.
+    Used to draw the historical trend chart in the UI.
+    Max 168 hours (7 days).
+    """
+    hours = min(hours, 168)
+    try:
+        records = get_history(hours=hours)
+        return {"success": True, "hours": hours, "records": records}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@app.get("/api/zigbee/spectrum/averages")
+async def get_spectrum_averages(hours: int = 24):
+    """
+    Return average energy per channel for the past N hours.
+    Used for the 'average interference' overlay in the spectrum tab.
+    """
+    hours = min(hours, 168)
+    try:
+        averages = get_channel_averages(hours=hours)
+        return {"success": True, "hours": hours, "averages": averages}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@app.post("/api/zigbee/spectrum/scan-now")
+async def trigger_background_scan():
+    """Trigger an immediate background scan and store results."""
+    try:
+        monitor = getattr(zigbee_service, 'spectrum_monitor', None)
+        if not monitor:
+            return {"success": False, "error": "Spectrum monitor not running"}
+        results = await monitor.run_scan_now()
+        return {"success": True, "spectrum": results}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
 
 # ============================================================================
 # ROUTES - CREDENTIAL REGENERATION

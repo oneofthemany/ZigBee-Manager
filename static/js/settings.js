@@ -455,6 +455,125 @@ window.autoSelectChannel = async function() {
     }
 };
 
+
+// ============================================================================
+// HISTORY CHART
+// ============================================================================
+
+export async function loadSpectrumHistory() {
+    const hours = parseInt(document.getElementById('historyHours')?.value || 24);
+    const container = document.getElementById('spectrumHistory');
+    const meta = document.getElementById('spectrumHistoryMeta');
+    if (!container) return;
+
+    container.innerHTML = '<div class="text-center text-muted py-3 small"><i class="fas fa-spinner fa-spin"></i> Loading...</div>';
+
+    try {
+        const [histRes, avgRes] = await Promise.all([
+            fetch(`/api/zigbee/spectrum/history?hours=${hours}`).then(r => r.json()),
+            fetch(`/api/zigbee/spectrum/averages?hours=${hours}`).then(r => r.json())
+        ]);
+
+        if (!histRes.success || !histRes.records.length) {
+            container.innerHTML = '<div class="text-center text-muted py-4 small">No history yet — background scans run hourly.</div>';
+            return;
+        }
+
+        renderHistoryChart(histRes.records, avgRes.averages || {}, hours, container);
+
+        if (meta) {
+            const count = histRes.records.length / 16; // 16 channels per scan
+            meta.textContent = `${Math.round(count)} scans over the last ${hours}h`;
+        }
+
+    } catch (e) {
+        container.innerHTML = `<div class="text-center text-danger py-3 small">Error: ${e.message}</div>`;
+    }
+}
+
+function renderHistoryChart(records, averages, hours, container) {
+    // Group records by channel, build time series per channel
+    const byChannel = {};
+    for (const r of records) {
+        if (!byChannel[r.channel]) byChannel[r.channel] = [];
+        byChannel[r.channel].push({ ts: r.timestamp, energy: r.energy });
+    }
+
+    const channels = Object.keys(byChannel).map(Number).sort((a, b) => a - b);
+    if (!channels.length) return;
+
+    // Average energy per channel across the period
+    const avgPerChannel = channels.map(ch => {
+        const vals = byChannel[ch].map(p => p.energy);
+        return { ch, avg: Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) };
+    });
+
+    // Find best (lowest avg) and worst (highest avg) channels
+    const best = avgPerChannel.reduce((a, b) => a.avg < b.avg ? a : b);
+    const worst = avgPerChannel.reduce((a, b) => a.avg > b.avg ? a : b);
+
+    // Build SVG bar chart of averages with min/max range indicators
+    const W = container.clientWidth || 680;
+    const H = 200;
+    const padL = 40, padR = 20, padT = 16, padB = 50;
+    const plotW = W - padL - padR;
+    const plotH = H - padT - padB;
+    const barW = Math.floor(plotW / channels.length) - 4;
+
+    const bars = avgPerChannel.map(({ ch, avg }, i) => {
+        const x = padL + i * (plotW / channels.length) + 2;
+        const barH = Math.round((avg / 255) * plotH);
+        const y = padT + plotH - barH;
+
+        // Range: min/max as thin overlay
+        const vals = byChannel[ch].map(p => p.energy);
+        const minE = Math.min(...vals);
+        const maxE = Math.max(...vals);
+        const rangeTop = padT + plotH - Math.round((maxE / 255) * plotH);
+        const rangeH = Math.round(((maxE - minE) / 255) * plotH);
+
+        const color = ch === best.ch ? '#0d6efd'
+                    : avg < 80 ? '#198754'
+                    : avg < 150 ? '#ffc107'
+                    : '#dc3545';
+
+        return `
+          <!-- range indicator -->
+          <rect x="${x + barW/2 - 1}" y="${rangeTop}" width="2" height="${Math.max(rangeH, 2)}"
+                fill="${color}" opacity="0.3"/>
+          <!-- avg bar -->
+          <rect x="${x}" y="${y}" width="${barW}" height="${barH}" fill="${color}" rx="2" opacity="0.85"/>
+          <!-- channel label -->
+          <text x="${x + barW/2}" y="${padT + plotH + 14}" text-anchor="middle" font-size="10"
+                fill="${ch === best.ch ? '#0d6efd' : '#555'}"
+                font-weight="${ch === best.ch ? 'bold' : 'normal'}">${ch}${ch === best.ch ? '★' : ''}</text>
+          <!-- avg value -->
+          ${avg > 20 ? `<text x="${x + barW/2}" y="${y - 3}" text-anchor="middle" font-size="8" fill="${color}">${avg}</text>` : ''}
+        `;
+    }).join('');
+
+    // Y ticks
+    const yTicks = [0, 64, 128, 192, 255].map(v => {
+        const y = padT + plotH - Math.round((v / 255) * plotH);
+        return `<line x1="${padL - 4}" y1="${y}" x2="${padL + plotW}" y2="${y}" stroke="#e8e8e8" stroke-width="1"/>
+                <text x="${padL - 6}" y="${y + 4}" text-anchor="end" font-size="9" fill="#aaa">${v}</text>`;
+    }).join('');
+
+    container.innerHTML = `
+      <svg width="100%" height="${H}" viewBox="0 0 ${W} ${H}">
+        ${yTicks}
+        ${bars}
+        <line x1="${padL}" y1="${padT}" x2="${padL}" y2="${padT + plotH}" stroke="#ccc" stroke-width="1"/>
+        <line x1="${padL}" y1="${padT + plotH}" x2="${padL + plotW}" y2="${padT + plotH}" stroke="#ccc" stroke-width="1"/>
+        <text x="${padL + plotW/2}" y="${H - 4}" text-anchor="middle" font-size="10" fill="#888">Channel (avg energy, bars show min/max range)</text>
+      </svg>
+      <div class="d-flex gap-3 mt-1 flex-wrap small">
+        <span class="text-success"><i class="fas fa-check-circle me-1"></i>Best avg: ch ${best.ch} (${best.avg})</span>
+        <span class="text-danger"><i class="fas fa-exclamation-circle me-1"></i>Most noisy: ch ${worst.ch} (${worst.avg})</span>
+      </div>
+    `;
+}
+
 // ============================================================================
 // FORM VALUE COLLECTION
 // ============================================================================
@@ -500,6 +619,7 @@ export async function saveSettingsConfig() {
 
 window.runSpectrumScan = runSpectrumScan;
 window.saveSettingsConfig = saveSettingsConfig;
+window.loadSpectrumHistory = loadSpectrumHistory;
 
 // ============================================================================
 // UTILITIES
