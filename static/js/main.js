@@ -12,6 +12,9 @@ import { fetchAllDevices } from './devices.js';
 import { initGroups } from './groups.js';
 import { initMQTTExplorer, handleMQTTMessage } from './mqtt-explorer.js';
 
+import { initSettings } from './settings.js';
+initSettings();
+
 import {
     loadTabs,
     filterByTab,
@@ -115,6 +118,14 @@ window.saveConfigYaml = saveConfigYaml;
 window.restartSystem = restartSystem;
 window.loadSSLStatus = loadSSLStatus;
 window.toggleSSL = toggleSSL;
+
+window.applyManualChannel = function() {
+    const ch = parseInt(document.getElementById('manualChannelSelect').value);
+    const sel = document.getElementById('cfg_channel');
+    if (sel) sel.value = ch;
+    document.getElementById('spectrumStatus').innerHTML =
+        `<span class="text-primary">Channel ${ch} set in config. Click Save on the Configuration tab.</span>`;
+};
 
 // Mesh Topology
 window.loadMeshTopology = loadMeshTopology;

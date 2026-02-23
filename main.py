@@ -19,6 +19,7 @@ import time
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
+import random
 
 
 # Import services
@@ -32,6 +33,12 @@ from modules.zones_api import register_zone_routes
 from modules.zones import ZoneConfig
 from modules.zone_device_config import configure_zone_device_reporting, remove_aggressive_reporting
 from modules.automation_api import register_automation_routes
+
+from modules.network_init import (
+    ensure_network_credentials, generate_pan_id,
+    generate_extended_pan_id, generate_network_key,
+    select_best_channel, ZIGBEE_CHANNELS
+)
 
 
 # ============================================================================
@@ -107,6 +114,12 @@ value.
 # ============================================================================
 # PYDANTIC MODELS FOR API
 # ============================================================================
+
+class StructuredConfigRequest(BaseModel):
+    zigbee: dict
+    mqtt: dict
+    web: dict
+    logging: dict
 
 class DeviceRequest(BaseModel):
     ieee: str
@@ -303,7 +316,8 @@ async def lifespan(app: FastAPI):
         })
     mqtt_service.mqtt_explorer.add_callback(mqtt_explorer_callback)
 
-    # Start Zigbee service (existing code)
+    # Start Zigbee service
+    ensure_network_credentials("./config/config.yaml")
     network_key = get_conf('zigbee', 'network_key', None)
     asyncio.create_task(zigbee_service.start(network_key=network_key))
 
@@ -367,6 +381,235 @@ async def read_index():
     """Serve the main UI."""
     return FileResponse('static/index.html')
 
+
+# ============================================================================
+# ROUTES - STRUCTURED CONFIGURATION
+# ============================================================================
+
+@app.get("/api/config/structured")
+async def get_structured_config():
+    """Return config as structured JSON for the rich settings UI."""
+    try:
+        with open("./config/config.yaml", "r") as f:
+            cfg = yaml.safe_load(f) or {}
+
+        zigbee = cfg.get("zigbee", {})
+
+        # Normalise network_key and extended_pan_id for display
+        def key_to_hex(k):
+            if isinstance(k, list):
+                return "".join(f"{b:02X}" for b in k)
+            return str(k) if k else ""
+
+        def epan_to_hex(v):
+            if isinstance(v, list):
+                return "".join(f"{b:02X}" for b in v)
+            return str(v) if v else ""
+
+        return {
+            "success": True,
+            "config": {
+                "zigbee": {
+                    "port": zigbee.get("port", ""),
+                    "radio_type": zigbee.get("radio_type", "auto"),
+                    "channel": zigbee.get("channel", 15),
+                    "pan_id": zigbee.get("pan_id", ""),
+                    "extended_pan_id_hex": epan_to_hex(zigbee.get("extended_pan_id")),
+                    "network_key_hex": key_to_hex(zigbee.get("network_key")),
+                    "topology_scan_interval": zigbee.get("topology_scan_interval", 120),
+                    "coordinator_type": zigbee.get("coordinator_type", ""),
+                },
+                "mqtt": cfg.get("mqtt", {}),
+                "web": {k: v for k, v in cfg.get("web", {}).items() if k != "ssl"},
+                "web_ssl": cfg.get("web", {}).get("ssl", {}),
+                "logging": cfg.get("logging", {}),
+            }
+        }
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@app.post("/api/config/structured")
+async def save_structured_config(data: dict):
+    """
+    Save structured config back to YAML.
+    Accepts the same shape returned by GET /api/config/structured.
+    Preserves all advanced keys (ezsp, znp, stability settings, etc.)
+    """
+    try:
+        with open("./config/config.yaml", "r") as f:
+            cfg = yaml.safe_load(f) or {}
+
+        incoming = data.get("config", data)
+
+        # --- MQTT ---
+        if "mqtt" in incoming:
+            cfg.setdefault("mqtt", {}).update(incoming["mqtt"])
+
+        # --- Web ---
+        if "web" in incoming:
+            cfg.setdefault("web", {}).update(incoming["web"])
+        if "web_ssl" in incoming:
+            cfg.setdefault("web", {}).setdefault("ssl", {}).update(incoming["web_ssl"])
+
+        # --- Logging ---
+        if "logging" in incoming:
+            cfg.setdefault("logging", {}).update(incoming["logging"])
+
+        # --- Zigbee (merge carefully to preserve advanced keys) ---
+        if "zigbee" in incoming:
+            z = incoming["zigbee"]
+            zigbee_cfg = cfg.setdefault("zigbee", {})
+
+            for simple_key in ("port", "radio_type", "channel", "topology_scan_interval", "coordinator_type"):
+                if simple_key in z and z[simple_key] != "" and z[simple_key] is not None:
+                    zigbee_cfg[simple_key] = z[simple_key]
+
+            if z.get("pan_id"):
+                zigbee_cfg["pan_id"] = z["pan_id"]
+
+            # Convert hex strings back to byte arrays
+            if z.get("extended_pan_id_hex"):
+                h = z["extended_pan_id_hex"].replace(" ", "").replace(":", "")
+                zigbee_cfg["extended_pan_id"] = [int(h[i:i+2], 16) for i in range(0, len(h), 2)]
+
+            if z.get("network_key_hex"):
+                h = z["network_key_hex"].replace(" ", "").replace(":", "")
+                zigbee_cfg["network_key"] = [int(h[i:i+2], 16) for i in range(0, len(h), 2)]
+
+        with open("./config/config.yaml", "w") as f:
+            yaml.dump(cfg, f, default_flow_style=False, sort_keys=False)
+
+        logger.info("Structured config saved via API")
+        return {"success": True}
+    except Exception as e:
+        logger.error(f"Failed to save structured config: {e}")
+        return {"success": False, "error": str(e)}
+
+
+# ============================================================================
+# ROUTES - SPECTRUM ANALYSIS & CHANNEL MANAGEMENT
+# ============================================================================
+
+@app.get("/api/zigbee/spectrum")
+async def get_spectrum():
+    """
+    Perform a ZigBee energy scan across all 2.4GHz channels (11-26).
+    Requires the Zigbee network to be running.
+    Returns energy levels 0-255 per channel (higher = more interference).
+    """
+    try:
+        if not zigbee_service.app:
+            return {"success": False, "error": "Zigbee network not started"}
+
+        # zigpy energy_scan: returns {channel: energy} dict
+        # Scan all channels with 50ms dwell per channel
+        channel_mask = 0  # Build bitmask for channels 11-26
+        for ch in range(11, 27):
+            channel_mask |= (1 << ch)
+
+        logger.info("Starting spectrum energy scan...")
+        results = await zigbee_service.app.energy_scan(
+            channels=range(11, 27),
+            count=3,
+            duration_exp=4   # 2^4 = ~250ms dwell per channel
+        )
+
+        # Convert to plain dict (channel -> energy 0-255)
+        spectrum = {int(ch): int(energy) for ch, energy in results.items()}
+
+        # Determine best channel
+        best = select_best_channel(spectrum)
+
+        # Mark current channel
+        current = None
+        if zigbee_service.app and hasattr(zigbee_service.app.state, 'network_info'):
+            current = getattr(zigbee_service.app.state.network_info, 'channel', None)
+
+        return {
+            "success": True,
+            "spectrum": spectrum,
+            "best_channel": best,
+            "current_channel": current,
+            "channels": list(range(11, 27))
+        }
+    except Exception as e:
+        logger.error(f"Spectrum scan failed: {e}")
+        return {"success": False, "error": str(e)}
+
+
+@app.post("/api/zigbee/channel/auto")
+async def auto_select_channel():
+    """Run energy scan, pick the best channel, write to config. Requires restart to apply."""
+    try:
+        scan_result = await get_spectrum()
+        if not scan_result.get("success"):
+            return scan_result
+
+        best = scan_result["best_channel"]
+        spectrum = scan_result["spectrum"]
+
+        # Write to config
+        with open("./config/config.yaml", "r") as f:
+            cfg = yaml.safe_load(f) or {}
+        cfg.setdefault("zigbee", {})["channel"] = best
+        with open("./config/config.yaml", "w") as f:
+            yaml.dump(cfg, f, default_flow_style=False, sort_keys=False)
+
+        logger.info(f"Auto channel selection: channel {best} written to config")
+        return {
+            "success": True,
+            "selected_channel": best,
+            "spectrum": spectrum,
+            "message": f"Channel {best} selected and saved. Restart service to apply."
+        }
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+# ============================================================================
+# ROUTES - CREDENTIAL REGENERATION
+# ============================================================================
+
+@app.post("/api/zigbee/credentials/regenerate")
+async def regenerate_credentials(data: dict):
+    """
+    Regenerate one or more network credentials and write to config.
+    Body: {"pan_id": true, "extended_pan_id": true, "network_key": true}
+    WARNING: Regenerating network_key will require re-pairing all devices.
+    """
+    try:
+        regen = data  # {"pan_id": bool, "extended_pan_id": bool, "network_key": bool}
+
+        with open("./config/config.yaml", "r") as f:
+            cfg = yaml.safe_load(f) or {}
+
+        z = cfg.setdefault("zigbee", {})
+        regenerated = {}
+
+        if regen.get("pan_id"):
+            z["pan_id"] = generate_pan_id()
+            regenerated["pan_id"] = z["pan_id"]
+
+        if regen.get("extended_pan_id"):
+            z["extended_pan_id"] = generate_extended_pan_id()
+            regenerated["extended_pan_id_hex"] = "".join(f"{b:02X}" for b in z["extended_pan_id"])
+
+        if regen.get("network_key"):
+            z["network_key"] = generate_network_key()
+            regenerated["network_key_hex"] = "".join(f"{b:02X}" for b in z["network_key"])
+
+        with open("./config/config.yaml", "w") as f:
+            yaml.dump(cfg, f, default_flow_style=False, sort_keys=False)
+
+        logger.warning(f"Credentials regenerated: {list(regenerated.keys())}")
+        return {
+            "success": True,
+            "regenerated": regenerated,
+            "message": "Credentials saved. Restart service to apply."
+        }
+    except Exception as e:
+        return {"success": False, "error": str(e)}
 
 # ============================================================================
 # ROUTES - CONFIGURATION MANAGEMENT
@@ -1089,7 +1332,6 @@ async def mqtt_explorer_publish(request: dict):
 
 # ============================================================================
 # MQTT EXPLORER WEBSOCKET NOTIFICATIONS
-# Add this handler to the websocket endpoint to broadcast MQTT messages
 # ============================================================================
 
 async def mqtt_explorer_callback(message_record):

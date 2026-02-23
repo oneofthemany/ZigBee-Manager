@@ -42,9 +42,11 @@
                     <li><a class="dropdown-item" href="#" onclick="togglePairing()">Enable Pairing (All)</a></li>
                     <li><hr class="dropdown-divider"></li>
                     <li><h6 class="dropdown-header">Advanced Pairing:</h6></li>
-                    <li><a class="dropdown-item" href="#" onclick="startTouchlinkScan()">
-                        <i class="fas fa-bolt text-warning"></i> Touchlink Scan (Bulbs)
-                    </a></li>
+                    <li>
+                        <a class="dropdown-item" href="#" onclick="startTouchlinkScan()">
+                            <i class="fas fa-bolt text-warning"></i> Touchlink Scan (Bulbs)
+                        </a>
+                    </li>
                     <li><hr class="dropdown-divider"></li>
                     <li><h6 class="dropdown-header">Pair via specific device:</h6></li>
                     <!-- Router list populated by JS -->
@@ -59,7 +61,6 @@
                     <i class="fas fa-broom"></i> Clean DB
                 </button>
             </div>
-
         </div>
     </div>
 </nav>
@@ -112,44 +113,44 @@
                 </div>
             </div>
 
-            <div class="card-body p-0">
-                <div class="table-responsive">
-                    <table class="table table-hover align-middle mb-0 sortable">
-                        <thead class="table-light">
-                        <tr>
-                            <th class="sortable-header" data-column="type" data-type="string">
-                                Type <i class="fas fa-sort sort-icon text-muted"></i>
-                            </th>
-                            <th class="sortable-header" data-column="friendly_name" data-type="string">
-                                Friendly Name <i class="fas fa-sort sort-icon text-muted"></i>
-                            </th>
-                            <th class="sortable-header" data-column="ieee" data-type="string">
-                                IEEE Address <i class="fas fa-sort sort-icon text-muted"></i>
-                            </th>
-                            <th class="sortable-header" data-column="manufacturer" data-type="string">
-                                Vendor <i class="fas fa-sort sort-icon text-muted"></i>
-                            </th>
-                            <th class="sortable-header" data-column="model" data-type="string">
-                                Model <i class="fas fa-sort sort-icon text-muted"></i>
-                            </th>
-                            <th class="sortable-header" data-column="lqi" data-type="number">
-                                LQI <i class="fas fa-sort sort-icon text-muted"></i>
-                            </th>
-                            <th class="sortable-header" data-column="last_seen_ts" data-type="number">
-                                Last Seen <i class="fas fa-sort sort-icon text-muted"></i>
-                            </th>
-                            <th class="sortable-header" data-column="available" data-type="boolean">
-                                Status <i class="fas fa-sort sort-icon text-muted"></i>
-                            </th>
-                            <th>Action</th>
-                        </tr>
-                        </thead>
-                        <tbody id="deviceTableBody"></tbody>
-                    </table>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle mb-0 sortable">
+                            <thead class="table-light">
+                            <tr>
+                                <th class="sortable-header" data-column="type" data-type="string">
+                                    Type <i class="fas fa-sort sort-icon text-muted"></i>
+                                </th>
+                                <th class="sortable-header" data-column="friendly_name" data-type="string">
+                                    Friendly Name <i class="fas fa-sort sort-icon text-muted"></i>
+                                </th>
+                                <th class="sortable-header" data-column="ieee" data-type="string">
+                                    IEEE Address <i class="fas fa-sort sort-icon text-muted"></i>
+                                </th>
+                                <th class="sortable-header" data-column="manufacturer" data-type="string">
+                                    Vendor <i class="fas fa-sort sort-icon text-muted"></i>
+                                </th>
+                                <th class="sortable-header" data-column="model" data-type="string">
+                                    Model <i class="fas fa-sort sort-icon text-muted"></i>
+                                </th>
+                                <th class="sortable-header" data-column="lqi" data-type="number">
+                                    LQI <i class="fas fa-sort sort-icon text-muted"></i>
+                                </th>
+                                <th class="sortable-header" data-column="last_seen_ts" data-type="number">
+                                    Last Seen <i class="fas fa-sort sort-icon text-muted"></i>
+                                </th>
+                                <th class="sortable-header" data-column="available" data-type="boolean">
+                                    Status <i class="fas fa-sort sort-icon text-muted"></i>
+                                </th>
+                                <th>Action</th>
+                            </tr>
+                            </thead>
+                            <tbody id="deviceTableBody"></tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
         </div>
-    </div>
 
         <!-- TOPOLOGY TAB -->
         <div class="tab-pane fade" id="topology">
@@ -162,32 +163,66 @@
 
         <!-- SETTINGS TAB -->
         <div class="tab-pane fade" id="settings">
-            <div class="card shadow-sm h-100">
-                <div class="card-header bg-light d-flex justify-content-between align-items-center py-2">
-                    <span class="fw-bold"><i class="fas fa-file-code"></i> config.yaml</span>
-                    <div class="btn-group">
-                        <button class="btn btn-success btn-sm" onclick="saveConfigYaml()">
-                            <i class="fas fa-save"></i> Save Configuration
-                        </button>
-                        <button class="btn btn-danger btn-sm ms-2" onclick="restartSystem()">
-                            <i class="fas fa-power-off"></i> Restart Service
-                        </button>
-                        <button class="btn btn-warning btn-sm ms-2" onclick="openBannedModal()">
-                            <i class="fas fa-ban"></i> Banned Devices
-                        </button>
+            <div id="settingsAlert" class="alert small mt-2 mx-3" style="display:none;"></div>
+
+            <!-- Settings Sub-Nav -->
+            <ul class="nav nav-tabs px-3 pt-2 bg-white border-bottom" id="settingsSubNav">
+                <li class="nav-item">
+                    <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#settingsConfig">
+                        <i class="fas fa-sliders-h me-1"></i> Configuration
+                    </button>
+                </li>
+                <li class="nav-item">
+                    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#settingsSecurity">
+                        <i class="fas fa-shield-alt me-1"></i> Security
+                    </button>
+                </li>
+                <li class="nav-item">
+                    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#settingsSpectrum">
+                        <i class="fas fa-wave-square me-1"></i> Spectrum Analysis
+                    </button>
+                </li>
+                <li class="nav-item">
+                    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#settingsAdvanced">
+                        <i class="fas fa-file-code me-1"></i> Advanced (YAML)
+                    </button>
+                </li>
+            </ul>
+
+            <div class="tab-content">
+
+                <!-- ------------------------------------------------------------------ -->
+                <!-- CONFIG TAB                                                           -->
+                <!-- ------------------------------------------------------------------ -->
+                <div class="tab-pane fade show active p-3" id="settingsConfig">
+                    <div class="card shadow-sm">
+                        <div class="card-header bg-light d-flex justify-content-between align-items-center py-2">
+                            <span class="fw-bold"><i class="fas fa-sliders-h me-1"></i> Configuration</span>
+                            <div>
+                                <button class="btn btn-success btn-sm" onclick="saveSettingsConfig()">
+                                    <i class="fas fa-save me-1"></i> Save
+                                </button>
+                                <button class="btn btn-danger btn-sm ms-2" onclick="restartSystem()">
+                                    <i class="fas fa-power-off me-1"></i> Restart Service
+                                </button>
+                            </div>
+                        </div>
+                        <div class="card-body" id="configFormBody">
+                            <div class="text-center text-muted py-4">
+                                <i class="fas fa-spinner fa-spin"></i> Loading configuration...
+                            </div>
+                        </div>
+                        <div class="card-footer text-muted small">
+                            <i class="fas fa-info-circle me-1"></i>
+                            Changes are written to config.yaml and take effect after a service restart.
+                        </div>
                     </div>
                 </div>
-                <div class="card-body p-0">
-                        <textarea id="configEditor" class="form-control border-0 p-3"
-                                  style="height: 70vh; font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace; font-size: 14px; background-color: #2d2d2d; color: #f8f8f2; resize: none;"
-                                  spellcheck="false"></textarea>
-                </div>
-                <div class="card-footer text-muted small">
-                    <i class="fas fa-info-circle"></i> Changes will take effect after restarting the service. Ensure YAML syntax is correct.
-                </div>
-                <div class="card mt-3 shadow-sm">
+
+                <!-- SSL -->
+                <div class="card mt-3 border-secondary">
                     <div class="card-header bg-light py-2">
-                        <span class="fw-bold"><i class="fas fa-lock"></i> HTTPS / SSL</span>
+                        <span class="fw-bold"><i class="fas fa-lock me-1"></i> HTTPS / SSL</span>
                     </div>
                     <div class="card-body d-flex align-items-center gap-3">
                         <div class="form-check form-switch fs-5 mb-0">
@@ -197,9 +232,137 @@
                         <small class="text-muted">Requires service restart to take effect</small>
                     </div>
                 </div>
+
+                <!-- ------------------------------------------------------------------ -->
+                <!-- SECURITY TAB                                                         -->
+                <!-- ------------------------------------------------------------------ -->
+                <div class="tab-pane fade p-3" id="settingsSecurity">
+                    <div class="card shadow-sm">
+                        <div class="card-header bg-light d-flex justify-content-between align-items-center py-2">
+                            <span class="fw-bold"><i class="fas fa-shield-alt me-1"></i> Network Security</span>
+                            <div>
+                                <button class="btn btn-success btn-sm" onclick="saveSettingsConfig()">
+                                    <i class="fas fa-save me-1"></i> Save
+                                </button>
+                                <button class="btn btn-warning btn-sm ms-2" onclick="openBannedModal()">
+                                    <i class="fas fa-ban me-1"></i> Banned Devices
+                                </button>
+                            </div>
+                        </div>
+                        <div class="card-body" id="securityFormBody">
+                            <div class="text-center text-muted py-4">
+                                <i class="fas fa-spinner fa-spin"></i> Loading...
+                            </div>
+                        </div>
+                        <div class="card-footer text-muted small">
+                            <i class="fas fa-exclamation-triangle me-1 text-warning"></i>
+                            Network key changes require re-pairing all devices. Always keep a backup.
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ------------------------------------------------------------------ -->
+                <!-- SPECTRUM ANALYSIS TAB                                                -->
+                <!-- ------------------------------------------------------------------ -->
+                <div class="tab-pane fade p-3" id="settingsSpectrum">
+                    <div class="card shadow-sm">
+                        <div class="card-header bg-light d-flex justify-content-between align-items-center py-2">
+                            <span class="fw-bold"><i class="fas fa-wave-square me-1"></i> 2.4 GHz Spectrum Analysis</span>
+                            <div class="d-flex gap-2">
+                                <button class="btn btn-primary btn-sm" id="spectrumScanBtn"
+                                        onclick="runSpectrumScan()">
+                                    <i class="fas fa-satellite-dish me-1"></i> Scan Spectrum
+                                </button>
+                                <button class="btn btn-outline-success btn-sm" id="autoChannelBtn"
+                                        onclick="autoSelectChannel()" disabled>
+                                    <i class="fas fa-magic me-1"></i> Auto Select Best Channel
+                                </button>
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            <p class="text-muted small mb-3">
+                                Scans all ZigBee channels (11–26) for RF energy. Higher bars indicate more interference.
+                                Wi-Fi channels 1, 6, and 11 overlap with ZigBee — avoid those ranges where possible.
+                                Scan takes ~5–10 seconds; the network will remain operational during the scan.
+                            </p>
+
+                            <!-- Manual channel select -->
+                            <div class="row g-3 align-items-end mb-4">
+                                <div class="col-auto">
+                                    <label class="form-label small fw-semibold mb-1">Manual Channel Select</label>
+                                    <div class="d-flex gap-2 align-items-center">
+                                        <select class="form-select form-select-sm" id="manualChannelSelect" style="width:100px">
+                                            <!-- Mirrors cfg_channel populated by renderConfigTab -->
+                                            <option value="11">11</option><option value="12">12</option><option value="13">13</option>
+                                            <option value="14">14</option><option value="15" selected>15</option><option value="16">16</option>
+                                            <option value="17">17</option><option value="18">18</option><option value="19">19</option>
+                                            <option value="20">20</option><option value="21">21</option><option value="22">22</option>
+                                            <option value="23">23</option><option value="24">24</option><option value="25">25</option>
+                                            <option value="26">26</option>
+                                        </select>
+                                        <button class="btn btn-outline-primary btn-sm" onclick="applyManualChannel()">
+                                            <i class="fas fa-check me-1"></i> Apply to Config
+                                        </button>
+                                    </div>
+                                </div>
+                                <div class="col">
+                                    <div id="spectrumStatus" class="text-muted small pt-3">
+                                        Run a scan to see channel interference levels.
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- WiFi overlap info -->
+                            <div class="mb-3">
+                                <small class="text-muted">
+                                    <strong>Wi-Fi overlap guide:</strong>
+                                    ZB 11–13 ↔ WiFi ch1 &nbsp;|&nbsp;
+                                    ZB 16–17 ↔ WiFi ch6 &nbsp;|&nbsp;
+                                    ZB 21–22 ↔ WiFi ch11 &nbsp;|&nbsp;
+                                    <span class="text-success">Recommended: 15, 20, 25, 26</span>
+                                </small>
+                            </div>
+
+                            <!-- Chart area -->
+                            <div id="spectrumChart" class="border rounded p-2 bg-white" style="min-height:200px;">
+                                <div class="text-center text-muted py-5">
+                                    <i class="fas fa-wave-square fa-2x mb-2 d-block opacity-25"></i>
+                                    Click <strong>Scan Spectrum</strong> to visualise the 2.4GHz environment
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- --------------------->
+                <!-- ADVANCED YAML TAB  -->
+                <!-- --------------------->
+                <div class="tab-pane fade" id="settingsAdvanced">
+                    <div class="card shadow-sm h-100">
+                        <div class="card-header bg-light d-flex justify-content-between align-items-center py-2">
+                            <span class="fw-bold"><i class="fas fa-file-code me-1"></i> config.yaml (Advanced)</span>
+                            <div class="btn-group">
+                                <button class="btn btn-success btn-sm" onclick="saveConfigYaml()">
+                                    <i class="fas fa-save me-1"></i> Save YAML
+                                </button>
+                                <button class="btn btn-danger btn-sm ms-2" onclick="restartSystem()">
+                                    <i class="fas fa-power-off me-1"></i> Restart Service
+                                </button>
+                            </div>
+                        </div>
+                        <div class="card-body p-0">
+              <textarea id="configEditor" class="form-control border-0 p-3"
+                        style="height: 65vh; font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+                               font-size: 14px; background-color: #2d2d2d; color: #f8f8f2; resize: none;"
+                        spellcheck="false"></textarea>
+                        </div>
+                        <div class="card-footer text-muted small">
+                            <i class="fas fa-info-circle me-1"></i> Raw YAML editor. Ensure correct syntax before saving.
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
-
 
         <!-- GROUPS TAB -->
         <div class="tab-pane fade" id="groups">
