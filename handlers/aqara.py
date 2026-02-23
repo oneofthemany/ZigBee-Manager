@@ -107,6 +107,8 @@ XIAOMI_ATTR_MAP = {
     0x08: ("power_factor", lambda v: v),
     0x09: ("frequency", lambda v: v / 10.0),  # 0.1 Hz
     0x64: ("switch_state", lambda v: bool(v)),
+    0x65: ("switch_state_ep2", lambda v: bool(v)),  # dual-gang if present
+    0x6E: ("switch_state_ep3", lambda v: bool(v)),  # triple-gang if present
     0x95: ("power_consumption", lambda v: v),
     0x96: ("voltage_96", lambda v: v),
     0x97: ("current_97", lambda v: v),
@@ -114,6 +116,7 @@ XIAOMI_ATTR_MAP = {
     0x9A: ("energy", lambda v: v),
     0x9B: ("indicator_mode", lambda v: v),
     0x0152: ("trigger_indicator", lambda v: bool(v)),
+    0x6F: ("startup_on_off", lambda v: v),  # power-on behaviour
 }
 
 
@@ -398,15 +401,11 @@ class AqaraManufacturerCluster(ClusterHandler):
             logger.info(f"[{self.device.ieee}] Measurement interval: {value}s")
 
         # === Xiaomi Structured Attributes (0x00DF and 0x00F7) ===
-        elif attrid in (0x00DF, 0x00F7):
-            # These are packed structs with multiple sub-attributes
-            # 0x00DF: Common device telemetry (power, voltage, current)
-            # 0x00F7: Device-specific settings and status
-            if isinstance(value, bytes):
+        elif attrid in (0x00DC, 0x00DF, 0x00E5, 0x00F7):
+            if isinstance(value, (bytes, bytearray)):
                 try:
                     parsed = parse_xiaomi_struct(value)
 
-                    # Convert to human-readable attributes
                     for sub_id, sub_value in parsed.items():
                         if sub_id in XIAOMI_ATTR_MAP:
                             attr_name, converter = XIAOMI_ATTR_MAP[sub_id]
@@ -417,14 +416,18 @@ class AqaraManufacturerCluster(ClusterHandler):
                             except Exception as e:
                                 logger.error(f"[{self.device.ieee}] Error converting {attr_name}: {e}")
                         else:
-                            # Unknown sub-attribute, log for debugging
                             logger.debug(f"[{self.device.ieee}] Unknown Xiaomi sub-attr 0x{sub_id:02X} = {sub_value}")
-                            # Don't store as raw attribute to keep device state clean
+
+                    # Clean up raw key if it exists in state from previous runs
+                    raw_key = f"opple_0x{attrid:04x}"
+                    if raw_key in self.device.state:
+                        del self.device.state[raw_key]
+                        logger.debug(f"[{self.device.ieee}] Cleaned up stale {raw_key}")
+
                 except Exception as e:
                     logger.error(f"[{self.device.ieee}] Error parsing Xiaomi struct 0x{attrid:04X}: {e}")
             else:
-                # Not binary data, just store it
-                logger.debug(f"[{self.device.ieee}] Aqara 0x{attrid:04X} non-bytes value: {value}")
+                logger.debug(f"[{self.device.ieee}] Aqara 0x{attrid:04X} non-bytes value: {type(value).__name__}")
                 updates[f"opple_0x{attrid:04x}"] = value
 
         else:

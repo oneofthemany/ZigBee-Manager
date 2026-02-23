@@ -6,6 +6,7 @@ import logging
 from typing import Any, Dict
 
 from .base import ClusterHandler, register_handler
+from .aqara import parse_xiaomi_struct, XIAOMI_ATTR_MAP
 
 logger = logging.getLogger("handlers.basic")
 
@@ -28,6 +29,28 @@ class BasicHandler(ClusterHandler):
     }
 
     def attribute_updated(self, attrid: int, value: Any, timestamp=None):
+        # === Xiaomi special report on Basic cluster ===
+        if attrid in (0xFF01, 0xFF02):
+            if isinstance(value, (bytes, bytearray)):
+                try:
+                    parsed = parse_xiaomi_struct(value)
+                    updates = {}
+                    for sub_id, sub_value in parsed.items():
+                        if sub_id in XIAOMI_ATTR_MAP:
+                            attr_name, converter = XIAOMI_ATTR_MAP[sub_id]
+                            try:
+                                updates[attr_name] = converter(sub_value)
+                                logger.info(f"[{self.device.ieee}] Xiaomi Basic {attr_name}={updates[attr_name]}")
+                            except Exception as e:
+                                logger.error(f"[{self.device.ieee}] Error converting {attr_name}: {e}")
+                        else:
+                            logger.debug(f"[{self.device.ieee}] Unknown Xiaomi Basic sub-attr 0x{sub_id:02X} = {sub_value}")
+                    if updates:
+                        self.device.update_state(updates)
+                except Exception as e:
+                    logger.error(f"[{self.device.ieee}] Error parsing Xiaomi Basic 0x{attrid:04X}: {e}")
+            return
+
         if attrid == self.ATTR_POWER_SOURCE:
             source_name = self.POWER_SOURCES.get(value, f"Unknown({value})")
             self.device.update_state({"power_source": source_name})
