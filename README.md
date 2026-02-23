@@ -228,6 +228,12 @@ The settings tab is a four-sub-tab panel replacing the old single YAML textarea:
   <br><em>Settings panel — structured form UI, security credential management, and spectrum analysis</em>
 </p>
 
+<!-- SCREENSHOT: Spectrum Analysis -->
+<p align="center">
+  <img src="docs/images/screenshot-spectrum.png" alt="Spectrum Analysis tabs" width="70%">
+  <br><em>Settings panel —  spectrum analysis</em>
+</p>
+
 ### Device Modal
 
 Each device opens a tabbed modal with:
