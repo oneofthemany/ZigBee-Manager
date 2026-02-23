@@ -119,6 +119,8 @@ function buildMeshUI() {
                     <span class="me-2"><i class="fas fa-square text-primary"></i> Coordinator</span>
                     <span class="me-2"><i class="fas fa-circle text-success"></i> Router</span>
                     <span class="me-2"><i class="fas fa-circle text-secondary"></i> End Device</span>
+                    <span class="me-2 text-muted">|</span>
+                    <span class="me-2"><i class="fas fa-circle" style="color:#dc3545"></i> Offline</span>
                     <span class="text-muted">|</span>
                     <span class="ms-2 signal-excellent">● &gt;200</span>
                     <span class="signal-good">● 150-200</span>
@@ -206,6 +208,8 @@ function buildMeshUI() {
 
 /**
  * Initialize D3 visualization
+ * Online devices participate in force simulation with real links.
+ * Offline devices are grouped in a separate area with no links.
  */
 function initializeD3Visualization(data) {
     const svg = d3.select('#dashboard-mesh-svg');
@@ -240,11 +244,72 @@ function initializeD3Visualization(data) {
         .attr('d', 'M 0,-5 L 10,0 L 0,5')
         .attr('fill', '#999');
 
-    // Process nodes and links
-    const nodes = data.nodes || [];
-    const links = data.links || [];
+    // =========================================================================
+    // SEPARATE ONLINE vs OFFLINE
+    // =========================================================================
+    const allNodes = data.nodes || [];
+    const allLinks = data.links || [];
 
-    // Color scale for LQI
+    const onlineIds = new Set(allNodes.filter(n => n.online).map(n => n.id));
+    const onlineNodes = allNodes.filter(n => n.online);
+    const offlineNodes = allNodes.filter(n => !n.online);
+
+    // Only keep links where BOTH source and target are online
+    const onlineLinks = allLinks.filter(l => {
+        const srcId = typeof l.source === 'object' ? l.source.id : l.source;
+        const tgtId = typeof l.target === 'object' ? l.target.id : l.target;
+        return onlineIds.has(srcId) && onlineIds.has(tgtId);
+    });
+
+    // =========================================================================
+    // OFFLINE ZONE - fixed positions, bottom-right area
+    // =========================================================================
+    const offlineAreaX = width - 250;
+    const offlineAreaY = 80;
+    const offlineSpacing = 35;
+    const offlineCols = 3;
+
+    offlineNodes.forEach((node, i) => {
+        const col = i % offlineCols;
+        const row = Math.floor(i / offlineCols);
+        node.fx = offlineAreaX + (col * offlineSpacing * 2);
+        node.fy = offlineAreaY + (row * offlineSpacing);
+    });
+
+    // =========================================================================
+    // DRAW OFFLINE ZONE BACKGROUND
+    // =========================================================================
+    if (offlineNodes.length > 0) {
+        const offlineRows = Math.ceil(offlineNodes.length / offlineCols);
+        const bgPadding = 20;
+        const bgWidth = (offlineCols * offlineSpacing * 2) + bgPadding * 2;
+        const bgHeight = (offlineRows * offlineSpacing) + bgPadding * 2 + 25;
+
+        dashboardG.append('rect')
+            .attr('x', offlineAreaX - bgPadding)
+            .attr('y', offlineAreaY - bgPadding - 25)
+            .attr('width', bgWidth)
+            .attr('height', bgHeight)
+            .attr('rx', 8)
+            .attr('fill', '#fff5f5')
+            .attr('stroke', '#dc3545')
+            .attr('stroke-width', 1)
+            .attr('stroke-dasharray', '5,5')
+            .attr('opacity', 0.8);
+
+        dashboardG.append('text')
+            .attr('x', offlineAreaX - bgPadding + bgWidth / 2)
+            .attr('y', offlineAreaY - bgPadding - 8)
+            .attr('text-anchor', 'middle')
+            .attr('font-size', '12px')
+            .attr('font-weight', 'bold')
+            .attr('fill', '#dc3545')
+            .text(`Offline (${offlineNodes.length})`);
+    }
+
+    // =========================================================================
+    // COLOUR HELPERS
+    // =========================================================================
     const getLinkColor = (lqi) => {
         if (lqi >= 200) return '#00b894';
         if (lqi >= 150) return '#fdcb6e';
@@ -252,34 +317,42 @@ function initializeD3Visualization(data) {
         return '#d63031';
     };
 
-    // Create simulation
-    dashboardSimulation = d3.forceSimulation(nodes)
-        .force('link', d3.forceLink(links).id(d => d.id).distance(100))
-        .force('charge', d3.forceManyBody().strength(-300))
-        .force('center', d3.forceCenter(width / 2, height / 2))
-        .force('collision', d3.forceCollide().radius(40));
+    // =========================================================================
+    // FORCE SIMULATION — online nodes only participate in forces
+    // =========================================================================
+    const combinedNodes = [...onlineNodes, ...offlineNodes];
 
-    // Draw links
+    dashboardSimulation = d3.forceSimulation(combinedNodes)
+        .force('link', d3.forceLink(onlineLinks).id(d => d.id).distance(100))
+        .force('charge', d3.forceManyBody().strength(d => d.online ? -300 : 0))
+        .force('center', d3.forceCenter(width / 2 - 100, height / 2))
+        .force('collision', d3.forceCollide().radius(d => d.online ? 40 : 15));
+
+    // =========================================================================
+    // DRAW LINKS (online only)
+    // =========================================================================
     const link = dashboardG.append('g')
         .selectAll('line')
-        .data(links)
+        .data(onlineLinks)
         .join('line')
         .attr('stroke', d => getLinkColor(d.lqi))
         .attr('stroke-opacity', 0.6)
         .attr('stroke-width', d => Math.max(1, d.lqi / 50))
         .attr('marker-end', 'url(#arrowhead)');
 
-    // Draw nodes
+    // =========================================================================
+    // DRAW NODES (all — online + offline)
+    // =========================================================================
     const node = dashboardG.append('g')
         .selectAll('g')
-        .data(nodes)
+        .data(combinedNodes)
         .join('g')
         .call(d3.drag()
             .on('start', dragstarted)
             .on('drag', dragged)
             .on('end', dragended));
 
-    // Node shapes based on role
+    // Node shapes based on role and online status
     node.each(function(d) {
         const el = d3.select(this);
         if (d.role === 'Coordinator') {
@@ -290,11 +363,20 @@ function initializeD3Visualization(data) {
                 .attr('y', -12)
                 .attr('fill', '#0d6efd')
                 .attr('rx', 4);
+        } else if (!d.online) {
+            // Offline — dimmed with red outline
+            el.append('circle')
+                .attr('r', 8)
+                .attr('fill', '#f8d7da')
+                .attr('stroke', '#dc3545')
+                .attr('stroke-width', 2)
+                .attr('opacity', 0.7);
         } else {
+            // Online
             el.append('circle')
                 .attr('r', 10)
                 .attr('fill', d.role === 'Router' ? '#198754' : '#6c757d')
-                .attr('stroke', d.online ? '#fff' : '#dc3545')
+                .attr('stroke', '#fff')
                 .attr('stroke-width', 2);
         }
     });
@@ -304,8 +386,8 @@ function initializeD3Visualization(data) {
         .attr('class', 'mesh-label')
         .attr('dx', 15)
         .attr('dy', 4)
-        .attr('font-size', '11px')
-        .attr('fill', '#333')
+        .attr('font-size', d => d.online ? '11px' : '9px')
+        .attr('fill', d => d.online ? '#333' : '#999')
         .text(d => d.friendly_name || d.id.slice(-8));
 
     // Tooltips
@@ -321,7 +403,9 @@ RX: ${stats.rx_packets || 0} | TX: ${stats.tx_packets || 0}
 Rate: ${stats.rx_rate || 0}/min`;
         });
 
-    // Simulation tick
+    // =========================================================================
+    // SIMULATION TICK
+    // =========================================================================
     dashboardSimulation.on('tick', () => {
         link
             .attr('x1', d => d.source.x)
@@ -346,8 +430,11 @@ Rate: ${stats.rx_rate || 0}/min`;
 
     function dragended(event, d) {
         if (!event.active) dashboardSimulation.alphaTarget(0);
-        d.fx = null;
-        d.fy = null;
+        // Only release online nodes — offline stay pinned
+        if (d.online) {
+            d.fx = null;
+            d.fy = null;
+        }
     }
 
     meshInitialized = true;
@@ -648,34 +735,44 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
-// Exported control functions
 export async function dashboardMeshRefresh() {
-    const meshContainer = document.querySelector('.mesh-topology-container');
-    if (!meshContainer) return;
-
-    // Show scanning state
-    meshContainer.innerHTML = `
-        <div class="text-center py-4">
-            <div class="spinner-border text-warning" role="status">
-                <span class="visually-hidden">Scanning...</span>
-            </div>
-            <p class="text-muted mt-2">Scanning mesh topology (LQI)... this may take 15-30s</p>
-        </div>
-    `;
-
-    try {
-        // Trigger the actual zigpy topology scan first
-        const scanRes = await fetch('/api/network/scan', { method: 'POST' });
-        const scanData = await scanRes.json();
-        if (!scanData.success) {
-            console.warn('Topology scan warning:', scanData.error);
-        }
-    } catch (e) {
-        console.error('Scan failed:', e);
+    const scanBtn = document.querySelector('.mesh-controls .btn-outline-primary');
+    if (scanBtn) {
+        scanBtn.disabled = true;
+        scanBtn.innerHTML = '<i class="fas fa-sync-alt fa-spin"></i> Scanning...';
     }
 
-    // Now reload the fresh data
-    await loadMeshTopology();
+    try {
+        // 1. Trigger the actual topology scan
+        const scanRes = await fetch('/api/network/scan', { method: 'POST' });
+        const scanData = await scanRes.json();
+
+        if (!scanData.success) {
+            console.error('Scan failed:', scanData.error);
+            return;
+        }
+
+        // 2. Poll scan status until complete (max 60s)
+        let attempts = 0;
+        while (attempts < 30) {
+            await new Promise(r => setTimeout(r, 2000));
+            const statusRes = await fetch('/api/network/scan/status');
+            const status = await statusRes.json();
+            if (!status.in_progress) break;
+            attempts++;
+        }
+
+        // 3. Reload the visualization with fresh data
+        await loadMeshTopology();
+
+    } catch (error) {
+        console.error('Mesh refresh failed:', error);
+    } finally {
+        if (scanBtn) {
+            scanBtn.disabled = false;
+            scanBtn.innerHTML = '<i class="fas fa-sync-alt"></i> Scan';
+        }
+    }
 }
 
 export function dashboardMeshReset() {
