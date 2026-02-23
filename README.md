@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/images/logo-trimmed.png" alt="ZigBee Manager" width="120">
+  <img src="docs/images/zigbee-manager-logo.png" alt="ZigBee Manager" width="120">
 </p>
 
 <h1 align="center">ZigBee Manager</h1>
