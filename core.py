@@ -259,6 +259,11 @@ class ZigbeeService:
         # Background tasks
         self._save_task = None
         self._watchdog_task = None
+        self._announce_task = None
+        self._zones_init_task = None
+        self._scan_task = None
+        self._scan_in_progress = False
+        self._scan_last_completed = None
 
         # IEEE lookup by name (for MQTT command routing)
         self._name_to_ieee: Dict[str, str] = {}
@@ -729,10 +734,10 @@ class ZigbeeService:
                 logger.info(f"Zigbee network started successfully on {self.port} ({radio_type})")
 
                 # CRITICAL: Announce all devices to Home Assistant after startup
-                asyncio.create_task(self.announce_all_devices())
+                self._announce_task = asyncio.create_task(self.announce_all_devices())
 
                 # Initialise zones
-                asyncio.create_task(self._init_zones_internal())
+                self._zones_init_task = asyncio.create_task(self._init_zones_internal())
 
                 return
 
@@ -797,14 +802,14 @@ class ZigbeeService:
 
     async def stop(self):
         """Shutdown the Zigbee network."""
-        self.polling_scheduler.stop()
+        from contextlib import suppress
 
+        self.polling_scheduler.stop()
 
         if self.zone_manager:
             await self.zone_manager.stop_zone()
             try:
                 import yaml
-                # Save to data directory
                 configs = self.zone_manager.save_config()
                 with open("./data/zones.yaml", "w") as f:
                     yaml.dump({'zones': configs}, f)
@@ -812,10 +817,19 @@ class ZigbeeService:
             except Exception as e:
                 logger.error(f"Failed to save zones config: {e}")
 
-        if self._save_task: self._save_task.cancel()
-        if self._watchdog_task: self._watchdog_task.cancel()
+        # Cancel and await all background tasks
+        for task in [
+            self._save_task,
+            self._watchdog_task,
+            self._announce_task,
+            self._zones_init_task,
+            self._scan_task
+        ]:
+            if task and not task.done():
+                task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await task
 
-        # Force one last save
         if self._cache_dirty:
             self._save_state_cache()
 
@@ -2385,13 +2399,51 @@ class ZigbeeService:
         return table
 
     async def scan_network_topology(self):
-        """Force a topology scan to populate neighbor tables."""
-        if hasattr(self.app, 'topology'):
-            logger.info("Starting manual topology scan...")
+        """Scan network topology via Mgmt_Lqi_req to coordinator + routers."""
+        if not hasattr(self.app, 'topology'):
+            return {"success": False, "error": "Topology not supported"}
+
+        self._scan_in_progress = True
+        self._scan_task = asyncio.create_task(self._run_topology_scan())
+        return {"success": True, "message": "Topology scan started"}
+
+    async def _run_topology_scan(self):
+        """Active LQI scan - queries coordinator and routers for neighbor tables."""
+        try:
+            logger.info("Starting active topology scan (Mgmt_Lqi_req)...")
+
+            # 1. Use zigpy's built-in scan - sends Mgmt_Lqi_req to coord + routers
             await self.app.topology.scan()
-            logger.info("Topology scan complete.")
-            return {"success": True, "message": "Scan complete"}
-        return {"success": False, "error": "Topology scanning not supported"}
+
+            # 2. Clean stale entries for devices no longer in registry
+            if self.app.topology.neighbors:
+                stale_keys = [
+                    ieee for ieee in list(self.app.topology.neighbors.keys())
+                    if str(ieee) not in self.devices
+                ]
+                for ieee in stale_keys:
+                    del self.app.topology.neighbors[ieee]
+                    logger.debug(f"Removed stale topology entry: {ieee}")
+
+            neighbor_count = len(self.app.topology.neighbors) if self.app.topology.neighbors else 0
+            link_count = sum(len(n) for n in self.app.topology.neighbors.values()) if self.app.topology.neighbors else 0
+
+            logger.info(f"Topology scan complete. {neighbor_count} devices, {link_count} links.")
+
+            # 3. Push updated mesh to frontend
+            self._scan_last_completed = time.time()
+            self._emit_sync("mesh_updated", self.get_simple_mesh())
+
+        except Exception as e:
+            logger.error(f"Topology scan failed: {e}")
+        finally:
+            self._scan_in_progress = False
+
+    def get_scan_status(self):
+        return {
+            "in_progress": getattr(self, '_scan_in_progress', False),
+            "last_completed": getattr(self, '_scan_last_completed', None)
+        }
 
     def get_join_history(self):
         """Get device join history."""

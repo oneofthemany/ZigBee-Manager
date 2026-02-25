@@ -1061,6 +1061,10 @@ async def scan_network():
     """Trigger a manual topology scan (LQI)."""
     return await zigbee_service.scan_network_topology()
 
+@app.get("/api/network/scan/status")
+async def scan_status():
+    return zigbee_service.get_scan_status()
+
 @app.get("/api/join_history")
 async def get_join_history():
     """Get device join history."""

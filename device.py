@@ -37,8 +37,9 @@ from handlers.generic import *
 logger = logging.getLogger("device")
 
 # How long before a device is considered unavailable
-CONSIDER_UNAVAILABLE_BATTERY = 60 * 60 * 25  # 25 hours for battery devices
-CONSIDER_UNAVAILABLE_MAINS = 60 * 60 * 25    # 25 hours for mains-powered devices
+CONSIDER_UNAVAILABLE_BATTERY = 60 * 60 * 25   # 25 hours for battery devices
+CONSIDER_UNAVAILABLE_MAINS = 60 * 60 * 25     # 25 hours for mains-powered devices
+CONSIDER_UNAVAILABLE_PASSIVE = 60 * 60 * 72   # 72 hours for passive-only sensors
 
 SKIP_GENERIC_CLUSTERS = {
     0x0019,  # OTA Upgrade
@@ -673,16 +674,18 @@ class ZigManDevice:
         if role == "Coordinator":
             return True
 
-        # Passive event-driven devices are always "available"
-        # They only report on events, not periodic check-ins
-        if self._is_passive_device():
-            return True
-
         if self.last_seen == 0:
             return False
 
         elapsed = (time.time() * 1000) - self.last_seen
-        threshold = CONSIDER_UNAVAILABLE_BATTERY if self._is_battery_powered() else CONSIDER_UNAVAILABLE_MAINS
+
+        if self._is_passive_device():
+            threshold = CONSIDER_UNAVAILABLE_PASSIVE
+        elif self._is_battery_powered():
+            threshold = CONSIDER_UNAVAILABLE_BATTERY
+        else:
+            threshold = CONSIDER_UNAVAILABLE_MAINS
+
         return elapsed < (threshold * 1000)
 
     def _is_passive_device(self) -> bool:
