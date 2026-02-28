@@ -34,7 +34,7 @@ export async function fetchAllDevices() {
     } catch (e) {
         console.error("Failed to fetch devices:", e);
         const tbody = document.getElementById('deviceTableBody');
-        if (tbody) tbody.innerHTML = `<tr><td colspan="9" class="text-center text-danger">Error loading devices: ${e.message}</td></tr>`;
+        if (tbody) tbody.innerHTML = `<tr><td colspan="10" class="text-center text-danger">Error loading devices: ${e.message}</td></tr>`;
     }
 }
 
@@ -102,7 +102,7 @@ export function renderDeviceTable() {
 
     // 2. Render Other Devices
     if (otherDevices.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted">No devices paired.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="10" class="text-center text-muted">No devices paired.</td></tr>';
         return;
     }
 
@@ -129,6 +129,11 @@ export function renderDeviceTable() {
             ? '<span class="badge bg-success me-1">Online</span>'
             : '<span class="badge bg-secondary me-1">Offline</span>';
 
+        // Protocol badge
+        if (d.protocol === 'matter') {
+            statusHtml += '<span class="badge bg-info me-1">Matter</span>';
+        }
+
         tr.innerHTML = `
             <td class="text-center align-middle" style="font-size: 1.2rem;">${getTypeIcon(d.type)}</td>
             <td class="align-middle">
@@ -148,10 +153,13 @@ export function renderDeviceTable() {
             </td>
             <td class="device-lqi align-middle">${getLqiBadge(d.lqi)}</td>
             <td class="last-seen align-middle" data-ts="${d.last_seen_ts}">${timeAgo(d.last_seen_ts)}</td>
-            <td class="align-middle device-status-badges">
-                ${statusHtml}
-            </td>
-            <td class="align-middle text-end">
+             <td class="align-middle device-status-badges">
+                 ${statusHtml}
+             </td>
+             <td class="align-middle">
+                 <span class="badge ${d.protocol === 'matter' ? 'bg-info' : 'bg-primary'}">${d.protocol === 'matter' ? 'Matter' : 'Zigbee'}</span>
+             </td>
+             <td class="align-middle text-end">
                 <div class="btn-group btn-group-sm">
                     <button class="btn btn-outline-primary manage-btn" title="Details & Control">
                         <i class="fas fa-sliders-h"></i> Manage

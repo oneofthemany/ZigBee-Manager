@@ -22,62 +22,76 @@
         <div class="d-flex align-items-center gap-3">
             <!-- Home Assistant Status Badge -->
             <span class="badge rounded-pill bg-secondary" id="ha-status-badge" title="Home Assistant Connection">
-                    <i class="fas fa-home"></i> HA: Unknown
-                </span>
+                <i class="fas fa-home"></i> HA: Unknown
+            </span>
+
+            <!-- Matter status badge -->
+           <span class="badge rounded-pill bg-secondary" id="matterStatusBadge" title="Matter Bridge Status">
+               <i class="fas fa-atom"></i> Matter: N/A
+           </span>
 
             <!-- Zigbee Status -->
-            <span class="navbar-text" id="connection-status">
-                    <i class="fas fa-circle text-danger"></i> Disconnected
-                </span>
+           <span class="navbar-text" id="connection-status">
+               <i class="fas fa-circle text-danger"></i> Disconnected
+           </span>
 
             <!-- Pairing Dropdown Group -->
-            <div class="btn-group">
-                <button id="pairBtn" class="btn btn-success btn-sm" onclick="togglePairing()">
-                    <i class="fas fa-plus-circle"></i> Enable Pairing (All)
-                </button>
-                <button type="button" class="btn btn-success btn-sm dropdown-toggle dropdown-toggle-split" data-bs-toggle="dropdown" aria-expanded="false">
-                    <span class="visually-hidden">Toggle Dropdown</span>
-                </button>
-                <ul class="dropdown-menu dropdown-menu-end">
-                    <li><a class="dropdown-item" href="#" onclick="togglePairing()">Enable Pairing (All)</a></li>
-                    <li><hr class="dropdown-divider"></li>
-                    <li><h6 class="dropdown-header">Advanced Pairing:</h6></li>
-                    <li>
-                        <a class="dropdown-item" href="#" onclick="startTouchlinkScan()">
-                            <i class="fas fa-bolt text-warning"></i> Touchlink Scan (Bulbs)
-                        </a>
-                    </li>
-                    <li><hr class="dropdown-divider"></li>
-                    <li><h6 class="dropdown-header">Pair via specific device:</h6></li>
-                    <!-- Router list populated by JS -->
-                    <div id="routerList">
-                        <li><span class="dropdown-item-text text-muted small">Loading routers...</span></li>
-                    </div>
-                </ul>
-            </div>
+           <div class="btn-group">
+               <button id="pairBtn" class="btn btn-success btn-sm" onclick="togglePairing()">
+                   <i class="fas fa-plus-circle"></i> Enable Pairing (All)
+               </button>
+               <button type="button" class="btn btn-success btn-sm dropdown-toggle dropdown-toggle-split" data-bs-toggle="dropdown" aria-expanded="false">
+                   <span class="visually-hidden">Toggle Dropdown</span>
+               </button>
+               <ul class="dropdown-menu dropdown-menu-end">
+                   <li><a class="dropdown-item" href="#" onclick="togglePairing()">Enable Pairing (All)</a></li>
+                   <li><hr class="dropdown-divider"></li>
+                   <li><h6 class="dropdown-header">Advanced Pairing:</h6></li>
+                   <li>
+                       <a class="dropdown-item" href="#" onclick="startTouchlinkScan()">
+                           <i class="fas fa-bolt text-warning"></i> Touchlink Scan (Bulbs)
+                       </a>
+                   </li>
 
-            <div class="col-auto ms-auto">
-                <button class="btn btn-sm btn-warning me-2" onclick="cleanupOrphans()">
-                    <i class="fas fa-broom"></i> Clean DB
-                </button>
-            </div>
-        </div>
-    </div>
+                   <li><hr class="dropdown-divider"></li>
+                   <li><h6 class="dropdown-header">Matter:</h6></li>
+                   <li>
+                       <a class="dropdown-item" href="#" id="matterPairBtn" onclick="matterCommission(); return false;">
+                           <i class="fas fa-atom text-info"></i> Commission Matter Device
+                       </a>
+                   </li>
+
+                   <li><hr class="dropdown-divider"></li>
+                   <li><h6 class="dropdown-header">Pair via specific device:</h6></li>
+                   <!-- Router list populated by JS -->
+                   <div id="routerList">
+                       <li><span class="dropdown-item-text text-muted small">Loading routers...</span></li>
+                   </div>
+               </ul>
+           </div>
+
+           <div class="col-auto ms-auto">
+               <button class="btn btn-sm btn-warning me-2" onclick="cleanupOrphans()">
+                   <i class="fas fa-broom"></i> Clean DB
+               </button>
+           </div>
+       </div>
+   </div>
 </nav>
 
 <div class="container-fluid">
-    <ul class="nav nav-tabs mb-3" id="mainTabs" role="tablist">
-        <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#devices"><i class="fas fa-list"></i> Devices</button></li>
-        <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#topology"><i class="fas fa-network-wired"></i> Topology</button></li>
-        <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#settings"><i class="fas fa-cog"></i> Settings</button></li>
-        <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#groups"><i class="fas fa-layer-group"></i> Groups</button></li>
-        <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#zones"><i class="fas fa-bullseye"></i> Zones</button></li>
-        <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#mqtt-explorer"><i class="fas fa-broadcast-tower"></i> MQTT Explorer</button></li>
-        <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#debug"><i class="fas fa-terminal"></i> Debug Log</button></li>
-    </ul>
+   <ul class="nav nav-tabs mb-3" id="mainTabs" role="tablist">
+       <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#devices"><i class="fas fa-list"></i> Devices</button></li>
+       <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#topology"><i class="fas fa-network-wired"></i> Topology</button></li>
+       <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#settings"><i class="fas fa-cog"></i> Settings</button></li>
+       <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#groups"><i class="fas fa-layer-group"></i> Groups</button></li>
+       <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#zones"><i class="fas fa-bullseye"></i> Zones</button></li>
+       <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#mqtt-explorer"><i class="fas fa-broadcast-tower"></i> MQTT Explorer</button></li>
+       <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#debug"><i class="fas fa-terminal"></i> Debug Log</button></li>
+   </ul>
 
 <div class="tab-content">
-    <!-- DEVICES TAB -->
+   <!-- DEVICES TAB -->
     <div class="tab-pane fade show active" id="devices">
 
         <!-- COORDINATOR INFO CARD -->
@@ -142,6 +156,7 @@
                                 <th class="sortable-header" data-column="available" data-type="boolean">
                                     Status <i class="fas fa-sort sort-icon text-muted"></i>
                                 </th>
+                                <th>Protocol</th>
                                 <th>Action</th>
                             </tr>
                             </thead>

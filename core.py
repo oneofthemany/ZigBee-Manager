@@ -306,6 +306,10 @@ class ZigbeeService:
 
         os.makedirs("logs", exist_ok=True)
 
+    def _is_socket_path(self) -> bool:
+        """Check if port is a TCP socket URI (MultiPAN zigbeed mode)."""
+        return self.port.startswith("socket://") or self.port.startswith("tcp://")
+
 
     async def _probe_radio_type(self) -> str:
         """Get radio type from config or probe"""
@@ -315,6 +319,11 @@ class ZigbeeService:
         if radio_type != 'auto':
             logger.info(f"Using manually configured radio type: {radio_type.upper()}")
             return radio_type.upper()
+
+        # Socket paths (MultiPAN zigbeed) are always EZSP — skip serial probing
+        if self._is_socket_path():
+            logger.info(f"Socket path detected ({self.port}) — assuming EZSP (MultiPAN/zigbeed mode)")
+            return "EZSP"
 
         detected_type = None
 
@@ -393,12 +402,19 @@ class ZigbeeService:
         """Build EZSP config from zigbee.ezsp section"""
         ezsp_settings = self._config.get('ezsp', {})
 
-        return {
-            "device": {
+        # Socket paths (MultiPAN zigbeed) don't use baudrate/flow_control
+        if self._is_socket_path():
+            device_conf = {"path": self.port}
+            logger.info(f"Using socket connection: {self.port}")
+        else:
+            device_conf = {
                 "path": self.port,
                 "baudrate": ezsp_settings.get('baudrate', 460800),
                 "flow_control": ezsp_settings.get('flow_control', 'hardware')
-            },
+            }
+
+        return {
+            "device": device_conf,
             "database_path": "zigbee.db",
             "ezsp_config": ezsp_conf,  # From enhanced + user overrides
             "network": {

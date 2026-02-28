@@ -24,9 +24,23 @@ web:
     cert_file: certs/cert.pem
     key_file: certs/key.pem
 
+# Matter integration (optional — requires python-matter-server)
+matter:
+   enabled: true                    # Start embedded server
+   port: 5580                       # WS port (default 5580)
+   storage_path: ./data/matter      # Fabric/node persistence
+   vendor_id: 0xFFF1                # Matter vendor ID (default)
+   fabric_id: 1                     # Fabric ID (default)
+   bluetooth_adapter: 0             # BLE adapter index (optional, for commissioning)
+
+  # --- OR use an external server instead ---
+  # enabled: false
+  # server_url: ws://localhost:5580/ws
 
 zigbee:
-  port: /dev/ttyUSB0 # Serial port for Zigbee radio - usually ACMO for ezsp and USB0 for ZSP etc.
+  port: /dev/ttyUSB0 # Serial port for Zigbee radio
+  # Serial: /dev/ttyACM0 (EZSP), /dev/ttyUSB0 (ZNP)
+  # MultiPAN (zigbeed): socket://127.0.0.1:9999
 
   # Radio type: auto (default), ezsp, znp, deconz
   # Set to 'auto' to detect automatically, or specify explicitly
