@@ -63,7 +63,44 @@ echo "Step 6: Installing Python dependencies..."
 echo "✓ Python dependencies installed"
 
 echo
-echo "Step 7: Copying application files..."
+echo "Step 7: Installing Matter server (optional)..."
+echo "  Matter enables WiFi-based Matter device support."
+read -p "  Install Matter server support? [y/N] " -n 1 -r
+echo
+if [[ $REPLY =~ ^[Yy]$ ]]; then
+    echo "  Installing python-matter-server..."
+    "$VENV_DIR/bin/pip" install "python-matter-server[server]"
+    echo "  ✓ python-matter-server installed"
+
+    # CHIP SDK requires /data for its config files
+    echo "  Creating /data directory for CHIP SDK..."
+    mkdir -p /data
+    # Get the UID/GID of the service user
+    SUSER_UID=$(id -u "$SERVICE_USER" 2>/dev/null || echo "1000")
+    SUSER_GID=$(id -g "$SERVICE_USER" 2>/dev/null || echo "1000")
+    chown "$SUSER_UID:$SUSER_GID" /data
+    echo "  ✓ /data directory created (owner: $SERVICE_USER)"
+
+    # Create Matter data directory
+    mkdir -p "$INSTALL_DIR/data/matter"
+    chown -R "$SERVICE_USER:$SERVICE_USER" "$INSTALL_DIR/data/matter"
+    echo "  ✓ Matter storage directory created"
+
+    echo "  ✓ Matter server support installed"
+    echo
+    echo "  To enable Matter, add to config.yaml:"
+    echo "    matter:"
+    echo "      enabled: true"
+    echo "      port: 5580"
+    echo "      storage_path: ./data/matter"
+else
+    echo "  Skipped. You can install later with:"
+    echo "    $VENV_DIR/bin/pip install 'python-matter-server[server]'"
+    echo "    sudo mkdir -p /data && sudo chown $SERVICE_USER:$SERVICE_USER /data"
+fi
+
+echo
+echo "Step 8: Copying application files..."
 # Assumes script is run from the project directory
 cp -r *.py "$INSTALL_DIR/"
 cp -r handlers "$INSTALL_DIR/"
@@ -72,7 +109,7 @@ cp config.yaml "$INSTALL_DIR/"
 echo "✓ Application files copied"
 
 echo
-echo "Step 8: Setting permissions..."
+echo "Step 9: Setting permissions..."
 chown -R "$SERVICE_USER:$SERVICE_USER" "$INSTALL_DIR"
 chmod -R 755 "$INSTALL_DIR"
 chmod 644 "$INSTALL_DIR/config.yaml"
@@ -80,12 +117,12 @@ chmod 755 "$LOG_DIR"
 echo "✓ Permissions set"
 
 echo
-echo "Step 9: Installing systemd service..."
+echo "Step 10: Installing systemd service..."
 if [ -f "zigbee-manager.service" ]; then
     # Update paths in service file
     sed -i "s|WorkingDirectory=.*|WorkingDirectory=$INSTALL_DIR|g" zigbee-manager.service
     sed -i "s|ExecStart=.*|ExecStart=$VENV_DIR/bin/python main.py|g" zigbee-manager.service
-    sed -i "s|ReadWritePaths=.*|ReadWritePaths=$LOG_DIR $INSTALL_DIR|g" zigbee-manager.service
+    sed -i "s|ReadWritePaths=.*|ReadWritePaths=$LOG_DIR $INSTALL_DIR /data|g" zigbee-manager.service
 
     cp zigbee-manager.service /etc/systemd/system/
     systemctl daemon-reload
@@ -96,7 +133,7 @@ else
 fi
 
 echo
-echo "Step 10: Installing logrotate configuration..."
+echo "Step 11: Installing logrotate configuration..."
 if [ -f "zigbee-logrotate.conf" ]; then
     # Update paths in logrotate config
     sed -i "s|/path/to/your/project/logs|$LOG_DIR|g" zigbee-logrotate.conf
@@ -117,10 +154,11 @@ else
 fi
 
 echo
-echo "Step 11: Configuring firewall (if UFW is active)..."
+echo "Step 12: Configuring firewall (if UFW is active)..."
 if command -v ufw &> /dev/null && ufw status | grep -q "Status: active"; then
     ufw allow 8000/tcp comment "Zigbee Manager Web Interface"
-    echo "✓ Firewall rule added for port 8000"
+    ufw allow 5580/tcp comment "Matter Server WebSocket"
+    echo "✓ Firewall rules added for ports 8000 and 5580"
 else
     echo "  UFW not active, skipping firewall configuration"
 fi
