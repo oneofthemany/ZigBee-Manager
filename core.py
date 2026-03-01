@@ -617,15 +617,17 @@ class ZigbeeService:
                 # STEP 6: Wrap with resilience system (EZSP only for now)
                 # ================================================================
                 if radio_type == "EZSP":
+                    # Stop any orphaned monitor from a previous attempt
+                    if hasattr(self, 'resilience') and self.resilience:
+                        if hasattr(self.app, '_watchdog_monitor'):
+                            self.app._watchdog_monitor.stop()
+
                     from modules.resilience import wrap_with_resilience
                     self.resilience = wrap_with_resilience(
                         self.app,
                         event_callback=self.event_callback
                     )
                     logger.info("✅ Resilience system enabled")
-
-                # Register as listener for application-level events
-                self.app.add_listener(self)
 
                 # ================================================================
                 # STEP 7: HOOK RADIO LAYER FOR LIVE RSSI/LQI CAPTURE
@@ -2590,8 +2592,8 @@ class ZigbeeService:
         self._emit_sync("device_updated", {"ieee": ieee, "data": safe_mqtt_payload})
 
         # Evaluate automation rules (direct zigbee, bypasses MQTT)
-        #if hasattr(self, 'automation'):
-        #    await self.automation.evaluate(ieee, changed_data)
+        if hasattr(self, 'automation'):
+            await self.automation.evaluate(ieee, changed_data)
 
         # PUBLISH TO MQTT (only changed attributes)
         if self.mqtt:
