@@ -24,7 +24,7 @@ LOGGER = logging.getLogger(__name__)
 class DeviceCapabilities:
     """
     Production-grade capability detection and state filtering.
-    Analyzes Zigbee clusters and applies manufacturer quirks contextually to determine
+    analyses Zigbee clusters and applies manufacturer quirks contextually to determine
     supported features, ensuring 'generic' quirks don't override specific hardware clusters.
     """
 

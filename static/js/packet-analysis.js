@@ -255,7 +255,7 @@ function parseTuyaPayload(hexPayload) {
 }
 
 /**
- * Analyze a single Tuya DP
+ * analyse a single Tuya DP
  */
 function analyseTuyaDP(dp) {
     const interpretation = {
