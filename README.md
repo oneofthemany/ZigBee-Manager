@@ -36,7 +36,7 @@
 
 ## 📖 Overview
 
-**ZigBee Manager** is a self-hosted gateway application that manages a Zigbee mesh network and bridges devices to **Home Assistant** via MQTT Discovery. It also supports **Matter** devices over WiFi (and Thread via OTBR), presenting a unified device list across both protocols. It has a modular Python backend built on [zigpy](https://github.com/zigpy/zigpy)/[bellows](https://github.com/zigpy/bellows) and [python-matter-server](https://github.com/home-assistant-libs/python-matter-server), with a real-time single-page web interface.
+**ZigBee Matter Manager** is a self-hosted gateway application that manages a Zigbee and Matter mesh networks and bridges devices to **Home Assistant** via MQTT Discovery. It also supports **Matter** devices over WiFi (and Thread via OTBR), presenting a unified device list across both protocols. It has a modular Python backend built on [zigpy](https://github.com/zigpy/zigpy)/[bellows](https://github.com/zigpy/bellows) and [python-matter-server](https://github.com/home-assistant-libs/python-matter-server), with a real-time single-page web interface.
 
 The system is designed for production-grade home automation — running 40+ devices on a Rock 5B with 30+ day uptime, featuring automatic NCP failure recovery, exponential backoff retries, and a fast-path pipeline for latency-critical sensor events.
 
