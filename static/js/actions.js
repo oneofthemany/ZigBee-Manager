@@ -771,3 +771,78 @@ export async function cleanupOrphans() {
     // Refresh device list
     await fetchAllDevices();
 }
+
+// =============================================================================
+// MATTER INTEGRATION
+// =============================================================================
+
+/**
+ * Commission a Matter device via setup code
+ */
+export async function matterCommission() {
+    const code = prompt(
+        "Enter Matter setup code:\n\n" +
+        "This can be:\n" +
+        "• Manual pairing code (e.g. 3476-610-1411)\n" +
+        "• QR code string (e.g. MT:Y3.13OTB00KA0648G00)"
+    );
+    if (!code || !code.trim()) return;
+
+    try {
+        const res = await fetch("/api/matter/commission", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ code: code.trim() })
+        });
+        const data = await res.json();
+
+        if (data.success) {
+            addLogEntry({
+                timestamp: getTimestamp(),
+                level: "INFO",
+                message: "Matter device commissioning started"
+            });
+            alert("Matter commissioning started. The device should appear shortly.");
+        } else {
+            alert("Commission failed: " + data.error);
+        }
+    } catch (e) {
+        console.error("Matter commission error:", e);
+        alert("Commission error: " + e.message);
+    }
+}
+
+
+/**
+ * Check Matter bridge status and update UI indicator
+ */
+export async function checkMatterStatus() {
+    const badge = document.getElementById('matterStatusBadge');
+    const btn = document.getElementById('matterPairBtn');
+
+    try {
+        const res = await fetch("/api/matter/status");
+        const data = await res.json();
+
+        if (badge) {
+            if (!data.enabled) {
+                badge.className = 'badge bg-secondary ms-1';
+                badge.textContent = 'Not configured';
+                if (btn) btn.disabled = true;
+            } else if (data.connected) {
+                badge.className = 'badge bg-success ms-1';
+                badge.textContent = `Matter: ${data.device_count} devices`;
+                if (btn) btn.disabled = false;
+            } else {
+                badge.className = 'badge bg-warning ms-1';
+                badge.textContent = 'Matter: Disconnected';
+                if (btn) btn.disabled = true;
+            }
+        }
+    } catch (e) {
+        if (badge) {
+            badge.className = 'badge bg-secondary ms-1';
+            badge.textContent = 'Matter: N/A';
+        }
+    }
+}

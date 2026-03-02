@@ -95,7 +95,7 @@ function renderConfigTab(config) {
       <div class="col-md-5">
         <label class="form-label small fw-semibold">Serial Port</label>
         <input type="text" class="form-control" id="cfg_port" value="${z.port || ''}" placeholder="/dev/ttyACM0">
-        <div class="form-text">Path to your coordinator USB device</div>
+        <div class="form-text">Serial path or socket URI (e.g. <code>socket://127.0.0.1:9999</code> for MultiPAN)</div>
       </div>
       <div class="col-md-3">
         <label class="form-label small fw-semibold">Radio Type</label>

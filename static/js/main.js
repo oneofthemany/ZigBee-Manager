@@ -67,7 +67,9 @@ import {
     startTouchlinkScan,
     openBannedModal,
     handleUnbanClick,
-    cleanupOrphans
+    cleanupOrphans,
+    matterCommission,
+    checkMatterStatus
 } from './actions.js';
 import {
     initMesh,
@@ -101,6 +103,10 @@ window.permitJoinVia = permitJoinVia;
 window.checkPairingStatus = checkPairingStatus;
 window.startTouchlinkScan = startTouchlinkScan;
 window.bindDevices = bindDevices;
+
+// Matter
+window.matterCommission = matterCommission;
+window.checkMatterStatus = checkMatterStatus;
 
 // Logging & Debug
 window.filterLogs = filterLogs;
@@ -187,6 +193,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Check if pairing is currently active (Persistence)
     if(typeof checkPairingStatus === 'function') checkPairingStatus();
+
+    // Initial matter
+    checkMatterStatus();
 
     // Initialise Settings Tab listener
     const settingsTab = document.querySelector('button[data-bs-target="#settings"]');

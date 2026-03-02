@@ -207,42 +207,55 @@ export function renderOverviewTab(device) {
         statusBadges = `<span class="badge ${color} me-1">${text}</span>`;
     }
 
-    const canPair = device.type === 'Router' || device.type === 'Coordinator';
+    const isZigbee = !device.protocol || device.protocol === 'zigbee';
+
+    const canPair = isZigbee && (device.type === 'Router' || device.type === 'Coordinator');
     const pairBtn = canPair ?
         `<button type="button" class="btn btn-outline-success" onclick="window.permitJoinVia('${device.ieee}')" title="Permit Join via this device">
             <i class="fas fa-user-plus"></i> Pair
          </button>` : '';
 
+    // Zigbee-only maintenance actions
+    const zigbeeActions = isZigbee ? `
+        <button type="button" class="btn btn-outline-secondary" onclick="window.doAction('poll', '${device.ieee}')">
+            <i class="fas fa-sync"></i> Poll
+        </button>
+        <div class="btn-group btn-group-sm" role="group">
+            <button type="button" class="btn btn-outline-info" onclick="window.doAction('reconfigure', '${device.ieee}')" title="Standard Bindings & Reporting">
+                <i class="fas fa-wrench"></i> Reconfigure
+            </button>
+            <button type="button" class="btn btn-outline-info dropdown-toggle dropdown-toggle-split" data-bs-toggle="dropdown" aria-expanded="false">
+                <span class="visually-hidden">Toggle Dropdown</span>
+            </button>
+            <ul class="dropdown-menu dropdown-menu-end">
+                <li><a class="dropdown-item" href="#" onclick="window.doAction('reconfigure_aggressive', '${device.ieee}'); return false;">
+                    <i class="fas fa-bolt text-warning"></i> Apply Aggressive LQI
+                </a></li>
+                <li><a class="dropdown-item" href="#" onclick="window.doAction('reconfigure_baseline', '${device.ieee}'); return false;">
+                    <i class="fas fa-undo text-secondary"></i> Restore Baseline
+                </a></li>
+            </ul>
+        </div>
+        <button type="button" class="btn btn-outline-primary" onclick="window.doAction('interview', '${device.ieee}')">
+            <i class="fas fa-fingerprint"></i> Re-Interview
+        </button>
+    ` : '';
+
+    // Protocol badge
+    const protocolBadge = isZigbee
+        ? ''
+        : '<span class="badge bg-info me-2"><i class="fas fa-atom"></i> Matter</span>';
+
     const maintenanceHtml = `
         <div class="d-flex justify-content-between align-items-center mb-3 p-2 bg-light border rounded">
             <div>
                 <span class="fw-bold text-secondary me-2"><i class="fas fa-tools"></i> Maintenance</span>
+                ${protocolBadge}
                 ${statusBadges}
             </div>
             <div class="btn-group btn-group-sm">
                 ${pairBtn}
-                <button type="button" class="btn btn-outline-secondary" onclick="window.doAction('poll', '${device.ieee}')">
-                    <i class="fas fa-sync"></i> Poll
-                </button>
-                <div class="btn-group btn-group-sm" role="group">
-                    <button type="button" class="btn btn-outline-info" onclick="window.doAction('reconfigure', '${device.ieee}')" title="Standard Bindings & Reporting">
-                        <i class="fas fa-wrench"></i> Reconfigure
-                    </button>
-                    <button type="button" class="btn btn-outline-info dropdown-toggle dropdown-toggle-split" data-bs-toggle="dropdown" aria-expanded="false">
-                        <span class="visually-hidden">Toggle Dropdown</span>
-                    </button>
-                    <ul class="dropdown-menu dropdown-menu-end">
-                        <li><a class="dropdown-item" href="#" onclick="window.doAction('reconfigure_aggressive', '${device.ieee}'); return false;">
-                            <i class="fas fa-bolt text-warning"></i> Apply Aggressive LQI
-                        </a></li>
-                        <li><a class="dropdown-item" href="#" onclick="window.doAction('reconfigure_baseline', '${device.ieee}'); return false;">
-                            <i class="fas fa-undo text-secondary"></i> Restore Baseline
-                        </a></li>
-                    </ul>
-                </div>
-                <button type="button" class="btn btn-outline-primary" onclick="window.doAction('interview', '${device.ieee}')">
-                    <i class="fas fa-fingerprint"></i> Re-Interview
-                </button>
+                ${zigbeeActions}
                 <button type="button" class="btn btn-outline-danger" onclick="window.doAction('remove', '${device.ieee}')">
                     <i class="fas fa-trash"></i> Remove
                 </button>

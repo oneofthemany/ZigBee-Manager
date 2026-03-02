@@ -143,7 +143,11 @@ class ZigManDevice:
                 del self.state[k]
 
         # 2. Remove stale opple raw struct keys (these should be parsed into named attributes)
-        OPPLE_PARSED_ATTRS = ('opple_0x00dc', 'opple_0x00df', 'opple_0x00e5', 'opple_0x00f7')
+        OPPLE_PARSED_ATTRS = (
+            'opple_0x00dc', 'opple_0x00df', 'opple_0x00e5', 'opple_0x00f7',
+            'opple_0x00ee', 'opple_0x0271', 'opple_0x0275', 'opple_0x027b',
+            'opple_0x027e', 'opple_0x0280', 'opple_0x040a',
+        )
         opple_stale = [k for k in self.state if k in OPPLE_PARSED_ATTRS]
         if opple_stale:
             logger.info(f"[{self.ieee}] 🧹 Purging stale opple struct keys: {opple_stale}")

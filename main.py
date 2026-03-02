@@ -184,6 +184,11 @@ class TouchlinkRequest(BaseModel):
     ieee: Optional[str] = None
     channel: Optional[int] = None
 
+class MatterCommissionRequest(BaseModel):
+    code: str  # Setup code from QR or manual pairing code
+
+class MatterRemoveRequest(BaseModel):
+    node_id: int
 
 # ============================================================================
 # WEBSOCKET CONNECTION MANAGER
@@ -264,6 +269,57 @@ zigbee_service = ZigbeeService(
     event_callback=broadcast_event
 )
 
+# ============================================================================
+# MATTER — Embedded server + bridge (optional)
+# ============================================================================
+matter_server = None
+matter_bridge = None
+
+matter_config = CONFIG.get('matter', {})
+if matter_config.get('enabled', False):
+    # --- Start embedded server ---
+    try:
+        from modules.matter_server import EmbeddedMatterServer
+        matter_server = EmbeddedMatterServer(
+            storage_path=matter_config.get('storage_path', './data/matter'),
+            port=matter_config.get('port', 5580),
+            vendor_id=matter_config.get('vendor_id', 0xFFF1),
+            fabric_id=matter_config.get('fabric_id', 1),
+            bluetooth_adapter=matter_config.get('bluetooth_adapter', None),
+        )
+        if not matter_server.is_available:
+            logger.warning("Matter enabled but python-matter-server not installed")
+            matter_server = None
+    except Exception as e:
+        logger.error(f"Failed to create Matter server: {e}")
+        matter_server = None
+
+    # --- Create bridge (connects to the embedded server's WS endpoint) ---
+    if matter_server:
+        try:
+            from modules.matter_bridge import MatterBridge
+            matter_bridge = MatterBridge(
+                server_url=matter_server.ws_url,
+                event_callback=broadcast_event,
+                mqtt_service=mqtt_service,
+                base_topic=get_conf('mqtt', 'base_topic', 'zigbee_manager')
+            )
+            logger.info(f"Matter bridge configured → {matter_server.ws_url}")
+        except ImportError:
+            logger.warning("aiohttp not installed — Matter bridge disabled")
+    elif matter_config.get('server_url'):
+        # Fallback: external server URL (docker/standalone)
+        try:
+            from modules.matter_bridge import MatterBridge
+            matter_bridge = MatterBridge(
+                server_url=matter_config['server_url'],
+                event_callback=broadcast_event,
+                mqtt_service=mqtt_service,
+                base_topic=get_conf('mqtt', 'base_topic', 'zigbee_manager')
+            )
+            logger.info(f"Matter bridge configured → {matter_config['server_url']} (external)")
+        except ImportError:
+            logger.warning("aiohttp not installed — Matter bridge disabled")
 
 # ============================================================================
 # APPLICATION LIFECYCLE
@@ -322,6 +378,39 @@ async def lifespan(app: FastAPI):
     network_key = get_conf('zigbee', 'network_key', None)
     asyncio.create_task(zigbee_service.start(network_key=network_key))
 
+    logger.info(f"DEBUG: matter_server={matter_server}, type={type(matter_server)}")
+
+    # Start embedded Matter server FIRST, then bridge connects to it
+    if matter_server:
+        try:
+            started = await matter_server.start()
+            if started:
+                logger.info("✅ Embedded Matter server started")
+                # Give the WS endpoint a moment to be ready
+                await asyncio.sleep(1)
+            else:
+                logger.warning("Embedded Matter server failed to start — bridge will retry")
+        except Exception as e:
+            logger.error(f"Embedded Matter server error: {e}")
+
+    # Start Matter bridge (connects to server WS)
+    if matter_bridge:
+        try:
+            await matter_bridge.start()
+            logger.info("✅ Matter bridge started")
+
+            # Extend automation engine to see Matter devices
+            original_getter = zigbee_service.automation._get_devices
+            def combined_device_getter():
+                devices = original_getter()
+                for dev in matter_bridge.devices.values():
+                    devices[dev.ieee] = dev
+                return devices
+            zigbee_service.automation._get_devices = combined_device_getter
+            logger.info("Automation engine extended with Matter devices")
+        except Exception as e:
+            logger.error(f"Matter bridge failed to start: {e}")
+
     # Start Spectrum Monitor
     async def _start_spectrum_monitor(svc):
         for _ in range(30):
@@ -373,6 +462,13 @@ async def lifespan(app: FastAPI):
     await mqtt_service.stop()
     if hasattr(zigbee_service, 'spectrum_monitor'):
         zigbee_service.spectrum_monitor.stop()
+    # Stop bridge first, then server
+    if matter_bridge:
+        await matter_bridge.stop()
+
+    if matter_server:
+        await matter_server.stop()
+
 
     # Stop log listener
     log_listener.stop()
@@ -731,7 +827,10 @@ async def restart_system():
 @app.get("/api/devices")
 async def get_devices():
     """Get list of all devices with their current state."""
-    return zigbee_service.get_device_list()
+    devices = zigbee_service.get_device_list()
+    if matter_bridge and matter_bridge.is_connected:
+        devices.extend(matter_bridge.get_device_list())
+    return devices
 
 
 @app.post("/api/permit_join")
@@ -781,6 +880,11 @@ async def touchlink_reset(request: Optional[TouchlinkRequest] = None):
 @app.post("/api/device/remove")
 async def remove_device(request: DeviceRequest):
     """Remove a device from the network, optionally banning it."""
+
+    # Route Matter device removal to matter bridge
+    if request.ieee.startswith("matter_") and matter_bridge and matter_bridge.is_connected:
+        node_id = int(request.ieee.replace("matter_", ""))
+        return await matter_bridge.remove_node(node_id)
 
     if request.ban:
         zigbee_service.ban_device(request.ieee, reason="Banned on removal")
@@ -868,13 +972,17 @@ async def poll_device(request: DeviceRequest):
 @app.post("/api/device/command")
 async def send_command(request: CommandRequest):
     """Send a command to a device (on / off / brightness / etc)."""
+    # Route Matter commands to matter bridge
+    if request.ieee.startswith("matter_") and matter_bridge and matter_bridge.is_connected:
+        node_id = int(request.ieee.replace("matter_", ""))
+        return await matter_bridge.send_command(node_id, request.command, request.value)
+
     return await zigbee_service.send_command(
         request.ieee,
         request.command,
         request.value,
         endpoint_id=request.endpoint  # Pass it through
     )
-
 
 @app.post("/api/device/read_attribute")
 async def read_attribute(request: AttributeReadRequest):
@@ -1286,6 +1394,58 @@ async def get_error_stats():
     from modules.error_handler import get_error_stats
     return get_error_stats()
 
+# ============================================================================
+# ROUTES - MATTER INTEGRATION
+# ============================================================================
+
+@app.post("/api/matter/commission")
+async def matter_commission(request: MatterCommissionRequest):
+    """Commission a Matter device using setup code."""
+    if not matter_bridge or not matter_bridge.is_connected:
+        return {"success": False, "error": "Matter server not connected"}
+    return await matter_bridge.commission(request.code)
+
+
+@app.post("/api/matter/remove")
+async def matter_remove(request: MatterRemoveRequest):
+    """Remove a Matter device."""
+    if not matter_bridge or not matter_bridge.is_connected:
+        return {"success": False, "error": "Matter server not connected"}
+    return await matter_bridge.remove_node(request.node_id)
+
+
+@app.get("/api/matter/status")
+async def matter_status():
+    """Get Matter server + bridge status."""
+    result = {"enabled": False}
+
+    if matter_server:
+        result["enabled"] = True
+        result["server"] = matter_server.get_status()
+        result["mode"] = "embedded"
+    elif matter_bridge:
+        result["enabled"] = True
+        result["mode"] = "external"
+
+    if matter_bridge:
+        result.update(matter_bridge.get_status())
+
+    return result
+
+
+@app.post("/api/matter/rename")
+async def matter_rename(request: RenameRequest):
+    """Rename a Matter device."""
+    if not matter_bridge:
+        return {"success": False, "error": "Matter bridge not configured"}
+
+    matter_bridge.rename_device(request.ieee, request.name)
+
+    # Also store in the shared friendly_names for consistency
+    zigbee_service.friendly_names[request.ieee] = request.name
+    zigbee_service._save_json("./data/names.json", zigbee_service.friendly_names)
+
+    return {"success": True, "ieee": request.ieee, "name": request.name}
 
 # ============================================================================
 # WEBSOCKET ENDPOINT

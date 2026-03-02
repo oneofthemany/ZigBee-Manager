@@ -1,5 +1,4 @@
 """
-ZHA-Inspired Resilience Module
 ===============================
 Implements robust error handling, watchdog recovery, and network stability
 based on patterns from Home Assistant's ZHA integration.
@@ -36,7 +35,6 @@ class ResilienceManager:
     """
     Manages network resilience and automatic recovery.
 
-    Based on ZHA's approach to handling coordinator failures:
     1. Detect failures early via watchdog
     2. Attempt graceful recovery
     3. Track failure patterns
@@ -116,7 +114,6 @@ class ResilienceManager:
         """
         Handle NCP failure with automatic recovery.
 
-        Based on ZHA's NCP failure handling:
         - Log the failure
         - Track error patterns
         - Attempt automatic recovery
@@ -352,36 +349,36 @@ class WatchdogMonitor:
         if self._task:
             self._task.cancel()
 
+
     async def _monitor_loop(self):
         """Main monitoring loop."""
+        _stale_count = 0
+
         while self._running:
             try:
                 await asyncio.sleep(self.check_interval)
-
-                # Check watchdog age
                 age = time.time() - self.resilience.last_watchdog_feed
 
                 if age > self.resilience.watchdog_timeout:
+                    _stale_count += 1
                     logger.warning(
-                        f"Watchdog stale: {age:.1f}s since last feed (timeout: {self.resilience.watchdog_timeout}s)")
+                        f"Watchdog stale: {age:.1f}s since last feed "
+                        f"(timeout: {self.resilience.watchdog_timeout}s, count: {_stale_count})")
 
-                    # Notify but don't trigger recovery yet - let the main watchdog handle it
-                    if self.resilience.event_callback:
-                        await self.resilience.event_callback('watchdog_warning', {
-                            'age': age,
-                            'timeout': self.resilience.watchdog_timeout,
-                            'timestamp': time.time()
-                        })
-                elif age > self.resilience.watchdog_timeout * 0.75:
-                    # Warning at 75% of timeout
-                    logger.debug(f"Watchdog approaching timeout: {age:.1f}s")
+                    # After 3 consecutive stale checks, trigger recovery
+                    if _stale_count >= 3 and not self.resilience.recovery_in_progress:
+                        logger.error(f"Watchdog stale for {_stale_count} checks — triggering recovery")
+                        await self.resilience.handle_watchdog_failure(
+                            Exception(f"Watchdog stale for {age:.0f}s")
+                        )
+                else:
+                    _stale_count = 0
 
             except asyncio.CancelledError:
                 break
             except Exception as e:
                 logger.error(f"Error in watchdog monitor: {e}", exc_info=True)
                 await asyncio.sleep(5)
-
 
 def wrap_with_resilience(app, event_callback: Optional[Callable] = None):
     """

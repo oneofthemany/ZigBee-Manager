@@ -8,6 +8,7 @@
  */
 export function getTypeIcon(type) {
     if (type === 'Coordinator') return '<i class="fas fa-network-wired text-primary" title="Coordinator"></i>';
+    if (type === 'Matter') return '<i class="fas fa-atom text-info"></i>';
     // Changed fa-wifi to fa-plug to better represent mains-powered devices
     if (type === 'Router') return '<i class="fas fa-plug text-success" title="Router (Mains)"></i>';
     return '<i class="fas fa-battery-three-quarters text-warning" title="End Device (Battery)"></i>';

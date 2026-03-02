@@ -259,6 +259,9 @@ class AqaraManufacturerCluster(ClusterHandler):
     ATTR_CALIBRATED = 0x027B            # uint8 - Calibration status (READ-ONLY: 0=not_ready, 1=ready, 2=error, 3=in_progress)
     ATTR_SCHEDULE = 0x027D              # uint8 - Schedule enable/disable
     ATTR_SENSOR_TYPE = 0x027E           # uint8 - Internal/External sensor
+    ATTR_EXTERNAL_TEMP = 0x0280         # uint16 - External temp in centidegrees
+    ATTR_BATTERY_PCT = 0x040A           # uint8 - Battery percentage
+    ATTR_REPORTING_INTERVAL = 0x00EE    # uint16 - Reporting interval seconds
 
     # ===== Temperature/Humidity Sensor Attributes =====
     ATTR_TEMP_DISPLAY_UNIT = 0xFF01     # uint8 - 0=Celsius, 1=Fahrenheit
@@ -307,6 +310,46 @@ class AqaraManufacturerCluster(ClusterHandler):
         elif attrid == self.ATTR_VALVE_DETECTION:
             updates["valve_detection"] = bool(value)
             logger.info(f"[{self.device.ieee}] Valve detection: {'enabled' if value else 'disabled'}")
+
+        # === TRV System Mode ===
+        elif attrid == self.ATTR_SYSTEM_MODE:  # 0x0271
+            SYSTEM_MODES = {0: "off", 1: "heat", 2: "cool", 3: "auto"}
+            mode_name = SYSTEM_MODES.get(value, f"unknown({value})")
+            updates["aqara_system_mode"] = mode_name
+            logger.info(f"[{self.device.ieee}] Aqara system mode: {mode_name}")
+
+        # === Valve Alarm ===
+        elif attrid == self.ATTR_VALVE_ALARM:  # 0x0275
+            updates["valve_alarm"] = bool(value)
+            logger.info(f"[{self.device.ieee}] Valve alarm: {bool(value)}")
+
+        # === Calibration Status ===
+        elif attrid == self.ATTR_CALIBRATED:  # 0x027B
+            CAL_STATUS = {0: "not_ready", 1: "ready", 2: "error", 3: "in_progress"}
+            cal_name = CAL_STATUS.get(value, f"unknown({value})")
+            updates["calibration_status"] = cal_name
+            logger.info(f"[{self.device.ieee}] Calibration: {cal_name}")
+
+        # === Sensor Type ===
+        elif attrid == self.ATTR_SENSOR_TYPE:  # 0x027E
+            sensor_name = "external" if value == 1 else "internal"
+            updates["sensor_type"] = sensor_name
+            logger.info(f"[{self.device.ieee}] Sensor type: {sensor_name}")
+
+        # === External Temperature Input ===
+        elif attrid == 0x0280:
+            updates["external_temperature"] = round(value / 100, 2) if value else 0
+            logger.info(f"[{self.device.ieee}] External temperature: {updates['external_temperature']}°C")
+
+        # === Battery Percentage ===
+        elif attrid == 0x040A:
+            updates["battery"] = min(value, 100)
+            logger.info(f"[{self.device.ieee}] Battery: {value}%")
+
+        # === Reporting Interval ===
+        elif attrid == 0x00EE:
+            updates["reporting_interval"] = value
+            logger.info(f"[{self.device.ieee}] Reporting interval: {value}s")
 
         elif attrid == self.ATTR_CHILD_LOCK:
             updates["child_lock"] = bool(value)

@@ -2,10 +2,10 @@
   <img src="docs/images/zigbee-manager-logo.png" alt="ZigBee Manager" width="120">
 </p>
 
-<h1 align="center">ZigBee Manager</h1>
+<h1 align="center">ZigBee & Matter Manager</h1>
 
 <p align="center">
-  <strong>A Python-powered ZigBee Manager with real-time web UI and Home Assistant integration</strong>
+  <strong>A Python-powered ZigBee & Matter gateway with real-time web UI and Home Assistant integration</strong>
 </p>
 
 <p align="center">
@@ -13,6 +13,7 @@
   <img src="https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white" alt="FastAPI">
   <img src="https://img.shields.io/badge/zigpy-bellows-orange" alt="zigpy">
   <img src="https://img.shields.io/badge/Home_Assistant-MQTT-41BDF5?logo=homeassistant&logoColor=white" alt="Home Assistant">
+  <img src="https://img.shields.io/badge/Matter-WiFi%20%7C%20Thread-7B61FF" alt="Matter">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="License">
 </p>
 
@@ -35,7 +36,7 @@
 
 ## 📖 Overview
 
-**ZigBee Manager** is a self-hosted gateway application that manages a Zigbee mesh network and bridges devices to **Home Assistant** via MQTT Discovery. It has a modular Python backend built on [zigpy](https://github.com/zigpy/zigpy)/[bellows](https://github.com/zigpy/bellows) and a real-time single-page web interface.
+**ZigBee Matter Manager** is a self-hosted gateway application that manages a Zigbee and Matter mesh networks and bridges devices to **Home Assistant** via MQTT Discovery. It also supports **Matter** devices over WiFi (and Thread via OTBR), presenting a unified device list across both protocols. It has a modular Python backend built on [zigpy](https://github.com/zigpy/zigpy)/[bellows](https://github.com/zigpy/bellows) and [python-matter-server](https://github.com/home-assistant-libs/python-matter-server), with a real-time single-page web interface.
 
 The system is designed for production-grade home automation — running 40+ devices on a Rock 5B with 30+ day uptime, featuring automatic NCP failure recovery, exponential backoff retries, and a fast-path pipeline for latency-critical sensor events.
 
@@ -45,14 +46,14 @@ The system is designed for production-grade home automation — running 40+ devi
 
 ```bash
 # Clone the repository
-git clone https://github.com/oneofthemany/ZigBee-Manager.git
-cd ZigBee-Manager
+git clone https://github.com/oneofthemany/ZigBee-Matter-Manager.git
+cd ZigBee-Matter-Manager
 
 # Run the automated deployment (sets up venv, systemd service, user)
 sudo bash deploy.sh
 
 # Start the service
-sudo systemctl start zigbee-manager
+sudo systemctl start zigbee-matter-manager
 ```
 
 Open **http://YOUR_IP:8000** in your browser.
@@ -65,6 +66,7 @@ On first boot, if `channel`, `pan_id`, `extended_pan_id`, or `network_key` are a
 - Python 3.8+
 - An MQTT broker (e.g. Mosquitto)
 - A supported Zigbee coordinator (EZSP or ZNP USB stick)
+- **Optional for Matter:** `python-matter-server[server]` pip package, IPv6-enabled network
 
 ---
 
@@ -97,6 +99,19 @@ On first boot, if `channel`, `pan_id`, `extended_pan_id`, or `network_key` are a
   <img src="docs/images/screenshot-groups.png" alt="Groups tab with create form and group control modal" width="70%">
   <br><em>Groups — compatible device detection, group creation, and unified control panel</em>
 </p>
+
+### Matter Integration (Optional)
+
+Support for **Matter** devices alongside Zigbee — presented as a unified device list with protocol-aware routing.
+
+- **Embedded Server** — Runs [python-matter-server](https://github.com/home-assistant-libs/python-matter-server) as a managed subprocess, no Docker required
+- **WiFi Matter Devices** — Commission and control Matter-over-WiFi devices (Eve, Nanoleaf, etc.)
+- **Unified Device List** — Matter and Zigbee devices appear in the same table with protocol badges
+- **Cross-Protocol Automation** — Automation engine triggers and actions work across both protocols
+- **MQTT Discovery** — Matter devices published to Home Assistant using the same discovery patterns
+- **Zero Overhead** — Completely optional; disabled by default with no impact on Zigbee performance
+
+For full documentation see [docs/matter.md](https://github.com/oneofthemany/ZigBee-Manager/blob/main/docs/matter.md).
 
 ### Automation Engine
 
@@ -192,6 +207,7 @@ Tested with 40+ devices across multiple manufacturers:
 | **Hive**           | Smart Heating (SLR, TRV)           | Thermostat cluster with scheduling                 |
 | **Aurora**         | Smart Sockets                      | Power monitoring                                   |
 | **Sonoff**         | Contact Sensors, Switches          | With quirk handling                                |
+| **Matter (WiFi)**  | Any Matter-certified WiFi device   | Via python-matter-server                           |
 
 **Cluster Handlers:** Basic (0x0000), Power (0x0001), On/Off (0x0006), Level (0x0008), Thermostat (0x0201), Color (0x0300), Window Covering (0x0102), Temperature, Humidity, Illuminance, Occupancy, IAS Zone (0x0500), Metering (0x0702), Electrical Measurement (0x0B04), Aqara (0xFCC0), Tuya (0xEF00).
 
@@ -250,15 +266,17 @@ Each device opens a tabbed modal with:
 
 ## 🏗️ Architecture
 
-| Component             | Technology                      | Role                                                               |
-|:----------------------|:--------------------------------|:-------------------------------------------------------------------|
-| **Core**              | Python (FastAPI, zigpy/bellows) | Zigbee radio, device lifecycle, resilience, state management       |
-| **MQTT Service**      | aiomqtt                         | Broker connection, reconnection, HA MQTT Discovery                 |
-| **Cluster Handlers**  | handlers/ package               | ZCL message decoding, normalised state, device-specific logic      |
-| **Automation Engine** | modules/automation.py           | State-machine rules, recursive sequences, direct zigpy execution   |
-| **Group Manager**     | modules/groups.py               | Native Zigbee groups with input/output cluster awareness           |
-| **Network Init**      | modules/network_init.py         | Auto-generation of credentials and channel selection on first boot |
-| **Frontend**          | HTML, Bootstrap 5, D3.js        | SPA connected via WebSocket for real-time updates                  |
+| Component               | Technology                                  | Role                                                               |
+|:------------------------|:--------------------------------------------|:-------------------------------------------------------------------|
+| **Core**                | Python (FastAPI, zigpy/bellows)              | Zigbee radio, device lifecycle, resilience, state management       |
+| **Matter Server**       | python-matter-server (managed subprocess)    | CHIP SDK controller for Matter devices (optional)                  |
+| **Matter Bridge**       | aiohttp WebSocket client                     | Translates Matter nodes into unified device format                 |
+| **MQTT Service**        | aiomqtt                                      | Broker connection, reconnection, HA MQTT Discovery                 |
+| **Cluster Handlers**    | handlers/ package                            | ZCL message decoding, normalised state, device-specific logic      |
+| **Automation Engine**   | modules/automation.py                        | State-machine rules, recursive sequences, direct zigpy execution   |
+| **Group Manager**       | modules/groups.py                            | Native Zigbee groups with input/output cluster awareness           |
+| **Network Init**        | modules/network_init.py                      | Auto-generation of credentials and channel selection on first boot |
+| **Frontend**            | HTML, Bootstrap 5, D3.js                     | SPA connected via WebSocket for real-time updates                  |
 
 For the full file structure see [docs/structure.md](https://github.com/oneofthemany/ZigBee-Manager/blob/main/docs/structure.md).
 
@@ -269,7 +287,7 @@ For the full file structure see [docs/structure.md](https://github.com/oneofthem
 Configuration is managed through the **Settings tab** in the web UI, which provides a structured form interface backed by `config.yaml`. Direct file editing is also available via the Advanced sub-tab or on disk.
 
 ```bash
-sudo vi /opt/zigbee-manager/config/config.yaml
+sudo vi /opt/zigbee_matter_manager/config/config.yaml
 ```
 
 ### First Boot — Auto-Generated Credentials
@@ -293,6 +311,19 @@ On startup, if any of the following values are absent or contain placeholder tex
 | `zigbee.pan_id`      | Network PAN ID — auto-generated on first boot                      |
 | `zigbee.network_key` | 128-bit network encryption key — auto-generated on first boot      |
 | `zigbee.ezsp_config` | Advanced coordinator tuning — pre-configured for large networks    |
+| `matter`             | Optional Matter integration — see [docs/matter.md](https://github.com/oneofthemany/ZigBee-Manager/blob/main/docs/matter.md) |
+
+### Matter Configuration
+
+```yaml
+# Optional — disabled by default, zero overhead when disabled
+matter:
+  enabled: true                    # Start embedded server
+  port: 5580                       # WebSocket port
+  storage_path: ./data/matter      # Fabric/node persistence
+```
+
+See [docs/matter.md](https://github.com/oneofthemany/ZigBee-Manager/blob/main/docs/matter.md) for full setup instructions including prerequisites, commissioning, and troubleshooting.
 
 ### Spectrum Analysis & Channel Selection
 
@@ -310,6 +341,7 @@ The **Spectrum Analysis** tab performs a live energy scan via the coordinator ac
 |:--------------------------------------------------------------------------------------------------------------------|:---------------------------------------------------------------------------------|
 | [docs/automations.md](https://github.com/oneofthemany/ZigBee-Manager/blob/main/docs/automations.md)                 | Automation engine — rule builder, step types, state machine, trace log, examples |
 | [docs/mqtt-explorer.md](https://github.com/oneofthemany/ZigBee-Manager/blob/main/docs/mqtt-explorer.md)             | MQTT Explorer — usage guide, wildcard patterns, debugging workflows              |
+| [docs/matter.md](https://github.com/oneofthemany/ZigBee-Manager/blob/main/docs/matter.md)                           | Matter integration — setup, commissioning, architecture, troubleshooting         |
 | [docs/onboarding.md](https://github.com/oneofthemany/ZigBee-Manager/blob/main/docs/onboarding.md)                   | Adding support for new/unsupported devices                                       |
 | [docs/debugging.md](https://github.com/oneofthemany/ZigBee-Manager/blob/main/docs/debugging.md)                     | Built-in debugger, packet capture, filters, log files                            |
 | [docs/aqara_cluster_guide.md](https://github.com/oneofthemany/ZigBee-Manager/blob/main/docs/aqara_cluster_guide.md) | Aqara manufacturer cluster (0xFCC0) implementation                               |
@@ -338,10 +370,11 @@ The **Spectrum Analysis** tab performs a live energy scan via the coordinator ac
 ### Service Commands
 
 ```bash
-sudo systemctl status zigbee-manager        # Check service status
-sudo systemctl restart zigbee-manager        # Restart the service
-sudo journalctl -u zigbee-manager -f         # Follow system logs
-sudo tail -f /opt/zigbee-manager/logs/zigbee.log  # Follow app logs
+sudo systemctl status zigbee-matter-manager             # Check service status
+sudo systemctl kill -s SIGKILL zigbee-matter-manager    # Kill the service
+sudo systemctl start zigbee-matter-manager              # Start the service
+sudo journalctl -u zigbee-matter-manager -f             # Follow system logs
+sudo tail -f /opt/zigbee_matter_manager/logs/zigbee.log        # Follow app logs
 ```
 
 ---

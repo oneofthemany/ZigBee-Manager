@@ -1,16 +1,16 @@
 #!/bin/bash
-# Zigbee Manager Deployment Script
-# This script sets up the Zigbee Manager for production use
+# Zigbee Matter Manager Deployment Script
+# This script sets up the Zigbee Matter Manager for production use
 
 set -e
 
 echo "=========================================="
-echo "Zigbee Manager Deployment Script"
+echo "Zigbee Matter Manager Deployment Script"
 echo "=========================================="
 echo
 
 # Configuration
-INSTALL_DIR="/opt/zigbee-manager"
+INSTALL_DIR="/opt/zigbee_matter_manager"
 SERVICE_USER="zigbee"
 VENV_DIR="$INSTALL_DIR/venv"
 LOG_DIR="$INSTALL_DIR/logs"
@@ -63,7 +63,44 @@ echo "Step 6: Installing Python dependencies..."
 echo "✓ Python dependencies installed"
 
 echo
-echo "Step 7: Copying application files..."
+echo "Step 7: Installing Matter server (optional)..."
+echo "  Matter enables WiFi-based Matter device support."
+read -p "  Install Matter server support? [y/N] " -n 1 -r
+echo
+if [[ $REPLY =~ ^[Yy]$ ]]; then
+    echo "  Installing python-matter-server..."
+    "$VENV_DIR/bin/pip" install "python-matter-server[server]"
+    echo "  ✓ python-matter-server installed"
+
+    # CHIP SDK requires /data for its config files
+    echo "  Creating /data directory for CHIP SDK..."
+    mkdir -p /data
+    # Get the UID/GID of the service user
+    SUSER_UID=$(id -u "$SERVICE_USER" 2>/dev/null || echo "1000")
+    SUSER_GID=$(id -g "$SERVICE_USER" 2>/dev/null || echo "1000")
+    chown "$SUSER_UID:$SUSER_GID" /data
+    echo "  ✓ /data directory created (owner: $SERVICE_USER)"
+
+    # Create Matter data directory
+    mkdir -p "$INSTALL_DIR/data/matter"
+    chown -R "$SERVICE_USER:$SERVICE_USER" "$INSTALL_DIR/data/matter"
+    echo "  ✓ Matter storage directory created"
+
+    echo "  ✓ Matter server support installed"
+    echo
+    echo "  To enable Matter, add to config.yaml:"
+    echo "    matter:"
+    echo "      enabled: true"
+    echo "      port: 5580"
+    echo "      storage_path: ./data/matter"
+else
+    echo "  Skipped. You can install later with:"
+    echo "    $VENV_DIR/bin/pip install 'python-matter-server[server]'"
+    echo "    sudo mkdir -p /data && sudo chown $SERVICE_USER:$SERVICE_USER /data"
+fi
+
+echo
+echo "Step 8: Copying application files..."
 # Assumes script is run from the project directory
 cp -r *.py "$INSTALL_DIR/"
 cp -r handlers "$INSTALL_DIR/"
@@ -72,7 +109,7 @@ cp config.yaml "$INSTALL_DIR/"
 echo "✓ Application files copied"
 
 echo
-echo "Step 8: Setting permissions..."
+echo "Step 9: Setting permissions..."
 chown -R "$SERVICE_USER:$SERVICE_USER" "$INSTALL_DIR"
 chmod -R 755 "$INSTALL_DIR"
 chmod 644 "$INSTALL_DIR/config.yaml"
@@ -80,34 +117,34 @@ chmod 755 "$LOG_DIR"
 echo "✓ Permissions set"
 
 echo
-echo "Step 9: Installing systemd service..."
-if [ -f "zigbee-manager.service" ]; then
+echo "Step 10: Installing systemd service..."
+if [ -f "zigbee-matter-manager.service" ]; then
     # Update paths in service file
-    sed -i "s|WorkingDirectory=.*|WorkingDirectory=$INSTALL_DIR|g" zigbee-manager.service
-    sed -i "s|ExecStart=.*|ExecStart=$VENV_DIR/bin/python main.py|g" zigbee-manager.service
-    sed -i "s|ReadWritePaths=.*|ReadWritePaths=$LOG_DIR $INSTALL_DIR|g" zigbee-manager.service
+    sed -i "s|WorkingDirectory=.*|WorkingDirectory=$INSTALL_DIR|g" zigbee-matter-manager.service
+    sed -i "s|ExecStart=.*|ExecStart=$VENV_DIR/bin/python main.py|g" zigbee-matter-manager.service
+    sed -i "s|ReadWritePaths=.*|ReadWritePaths=$LOG_DIR $INSTALL_DIR /data|g" zigbee-matter-manager.service
 
-    cp zigbee-manager.service /etc/systemd/system/
+    cp zigbee-matter-manager.service /etc/systemd/system/
     systemctl daemon-reload
-    systemctl enable zigbee-manager
+    systemctl enable zigbee-matter-manager
     echo "✓ Systemd service installed and enabled"
 else
-    echo "⚠ Warning: zigbee-manager.service file not found"
+    echo "⚠ Warning: zigbee-matter-manager.service file not found"
 fi
 
 echo
-echo "Step 10: Installing logrotate configuration..."
+echo "Step 11: Installing logrotate configuration..."
 if [ -f "zigbee-logrotate.conf" ]; then
     # Update paths in logrotate config
     sed -i "s|/path/to/your/project/logs|$LOG_DIR|g" zigbee-logrotate.conf
 
-    cp zigbee-logrotate.conf /etc/logrotate.d/zigbee-manager
-    chmod 644 /etc/logrotate.d/zigbee-manager
+    cp zigbee-logrotate.conf /etc/logrotate.d/zigbee-matter-manager
+    chmod 644 /etc/logrotate.d/zigbee-matter-manager
     echo "✓ Logrotate configuration installed"
 
     # Test logrotate config
     echo "  Testing logrotate configuration..."
-    if logrotate -d /etc/logrotate.d/zigbee-manager >/dev/null 2>&1; then
+    if logrotate -d /etc/logrotate.d/zigbee-matter-manager >/dev/null 2>&1; then
         echo "  ✓ Logrotate configuration is valid"
     else
         echo "  ⚠ Warning: Logrotate configuration test failed"
@@ -117,10 +154,11 @@ else
 fi
 
 echo
-echo "Step 11: Configuring firewall (if UFW is active)..."
+echo "Step 12: Configuring firewall (if UFW is active)..."
 if command -v ufw &> /dev/null && ufw status | grep -q "Status: active"; then
-    ufw allow 8000/tcp comment "Zigbee Manager Web Interface"
-    echo "✓ Firewall rule added for port 8000"
+    ufw allow 8000/tcp comment "Zigbee Matter Manager Web Interface"
+    ufw allow 5580/tcp comment "Matter Server WebSocket"
+    echo "✓ Firewall rules added for ports 8000 and 5580"
 else
     echo "  UFW not active, skipping firewall configuration"
 fi
@@ -133,17 +171,17 @@ echo
 echo "Next steps:"
 echo "1. Edit configuration: sudo nano $INSTALL_DIR/config/config.yaml"
 echo "2. Update MQTT settings, Zigbee USB port, etc."
-echo "3. Start the service: sudo systemctl start zigbee-manager"
-echo "4. Check status: sudo systemctl status zigbee-manager"
-echo "5. View logs: sudo journalctl -u zigbee-manager -f"
+echo "3. Start the service: sudo systemctl start zigbee-matter-manager"
+echo "4. Check status: sudo systemctl status zigbee-matter-manager"
+echo "5. View logs: sudo journalctl -u zigbee-matter-matter-manager -f"
 echo "6. Access web interface: http://YOUR_IP:8000"
 echo
 echo "Useful commands:"
-echo "- Restart service: sudo systemctl restart zigbee-manager"
-echo "- Stop service: sudo systemctl stop zigbee-manager"
+echo "- Restart service: sudo systemctl restart zigbee-matter-manager"
+echo "- Stop service: sudo systemctl stop zigbee-matter-manager"
 echo "- View application logs: sudo tail -f $LOG_DIR/zigbee.log"
 echo "- View debug logs: sudo tail -f $LOG_DIR/zigbee_debug.log"
-echo "- Test logrotate: sudo logrotate -f /etc/logrotate.d/zigbee-manager"
+echo "- Test logrotate: sudo logrotate -f /etc/logrotate.d/zigbee-matter-manager"
 echo
 echo "For debugging guide, see: DEBUGGING_GUIDE.md"
 echo
