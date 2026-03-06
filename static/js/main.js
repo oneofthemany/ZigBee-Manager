@@ -25,6 +25,10 @@ import {
     toggleDeviceInTab
 } from './tabs.js';
 
+import {
+    initAutomationsPage,
+    loadAutomationsPage
+} from './automations-page.js';
 
 import {
     initZones,
@@ -147,6 +151,8 @@ window.bindDevices = bindDevices;
 window.openBannedModal = openBannedModal;
 window.handleUnbanClick = handleUnbanClick;
 
+// Automations Page
+window.loadAutomationsPage = loadAutomationsPage;
 
 // Zones Management
 window.recalibrateZone = recalibrateZone;
@@ -184,6 +190,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Initialise Explorer
     initMQTTExplorer();
+
+    // Initialise Automations Page
+    initAutomationsPage();
 
     // Initialise Zones
     initZones();
