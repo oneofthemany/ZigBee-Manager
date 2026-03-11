@@ -165,9 +165,9 @@ class GroupManager:
     # Cluster Analysis with Input/Output Awareness
     # =========================================================================
 
-    def _analyze_device_clusters(self, device) -> Dict[int, ClusterPresence]:
+    def _analyse_device_clusters(self, device) -> Dict[int, ClusterPresence]:
         """
-        Analyze all clusters on a device, tracking input vs output presence.
+        analyse all clusters on a device, tracking input vs output presence.
 
         Returns dict of cluster_id -> ClusterPresence
         """
@@ -208,7 +208,7 @@ class GroupManager:
         An actuator has relevant control clusters as INPUT clusters.
         A sensor/remote has them only as OUTPUT clusters.
         """
-        clusters = self._analyze_device_clusters(device)
+        clusters = self._analyse_device_clusters(device)
 
         # Control clusters that matter for groups
         control_cluster_ids = {
@@ -227,12 +227,12 @@ class GroupManager:
 
     def _get_controllable_clusters(self, device) -> Set[int]:
         """Get only the clusters that are INPUT (controllable via groups)"""
-        clusters = self._analyze_device_clusters(device)
+        clusters = self._analyse_device_clusters(device)
         return {cid for cid, presence in clusters.items() if presence.is_controllable}
 
     def _get_sensor_only_clusters(self, device) -> Set[int]:
         """Get clusters that are OUTPUT only (sensor/reporting)"""
-        clusters = self._analyze_device_clusters(device)
+        clusters = self._analyse_device_clusters(device)
         return {cid for cid, presence in clusters.items() if presence.is_sensor_only}
 
     def get_device_type(self, device) -> Optional[str]:
@@ -364,7 +364,7 @@ class GroupManager:
         Get detailed grouping info for a device including actuator status.
         """
         ieee = str(device.ieee) if hasattr(device, 'ieee') else str(device)
-        clusters = self._analyze_device_clusters(device)
+        clusters = self._analyse_device_clusters(device)
 
         # Find sensor-only clusters (potential confusion sources)
         sensor_only = []

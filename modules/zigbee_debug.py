@@ -149,7 +149,7 @@ class ZigbeePacket:
 class ZigbeeDebugger:
     """
     Comprehensive Zigbee packet debugger.
-    Captures and analyzes all Zigbee traffic for troubleshooting.
+    Captures and analyses all Zigbee traffic for troubleshooting.
     """
 
     def __init__(self, max_packets: int = 1000):
@@ -204,7 +204,7 @@ class ZigbeeDebugger:
             message: bytes,
             direction: str = "RX"
     ) -> Optional[ZigbeePacket]:
-        """Capture and analyze a raw Zigbee message."""
+        """Capture and analyse a raw Zigbee message."""
         if not self.enabled:
             return None
 
