@@ -5,6 +5,7 @@
 
 import { state } from '../state.js';
 import { hasCluster } from './config.js';
+import { renderScheduleSection, bindScheduleEvents } from './schedule.js';
 
 // Interaction debounce timer
 let interactionTimeout = null;
@@ -316,7 +317,8 @@ export function renderControlTab(device) {
                     </div>
                 </div>
             </div>
-        </div>`;
+        </div>
+        ${renderScheduleSection(device.ieee)}`;
     }
 
     // --- On/Off, Level, Color Clusters ---
@@ -542,37 +544,6 @@ export function renderControlTab(device) {
     html += '</div>';
     return html;
 }
-
-window.uploadSimpleSchedule = async function(ieee) {
-    if (!confirm("This will overwrite the device's internal schedule for ALL days. Continue?")) return;
-
-    // Define a standard "Work Day" schedule
-    // Time is minutes from midnight (e.g., 6:00 = 6*60 = 360)
-    const payload = {
-        command: "set_schedule",
-        value: {
-            day_of_week: 255, // 255 = Apply to All Days (check device specific bitmask)
-            transitions: [
-                { time: 360, heat: 20.0 }, // 06:00 AM
-                { time: 540, heat: 18.0 }, // 09:00 AM (Leave for work)
-                { time: 1020, heat: 21.0 }, // 17:00 PM (Return home)
-                { time: 1320, heat: 16.0 }  // 22:00 PM (Sleep)
-            ]
-        }
-    };
-
-    try {
-        await fetch(`/api/device/${ieee}/command`, {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify(payload)
-        });
-        alert('Schedule command sent!');
-    } catch (error) {
-        console.error('Error:', error);
-        alert('Failed: ' + error.message);
-    }
-};
 
 window.adjustThermostat = function(ieee, delta) {
     const input = document.getElementById(`thermostat-setpoint-${ieee}`);

@@ -4,12 +4,14 @@
  */
 
 import { state } from './state.js';
+import { hasCluster } from './modal/config.js';
 import { renderOverviewTab, saveConfig } from './modal/overview.js';
 import { renderControlTab, updateControlValues } from './modal/control.js';
 import { renderBindingTab } from './modal/binding.js';
 import { renderCapsTab } from './modal/clusters.js';
 import { renderAutomationTab, initAutomationTab } from './modal/automation.js';
 import { renderMappingsTab, initMappingsTab, hasGenericContent } from './modal/mappings.js';
+import { bindScheduleEvents } from './modal/schedule.js';
 
 // Re-export these functions so main.js (and others) can still import them from here
 export { renderOverviewTab, renderControlTab, renderBindingTab, renderCapsTab, renderAutomationTab, renderMappingsTab, saveConfig };
@@ -72,6 +74,11 @@ export function openDeviceModal(d) {
 
     modalBody.innerHTML = html;
 
+    // Bind schedule calendar events for thermostat devices
+    if (hasCluster(cachedDev, 0x0201)) {
+        bindScheduleEvents(cachedDev.ieee);
+    }
+
     // Hydrate automation tab when clicked (lazy load API data)
     const autoTab = modalBody.querySelector('[data-bs-target="#tab-automation"]');
     if (autoTab) {
@@ -112,6 +119,10 @@ export function refreshModalState(device) {
         } else {
             // Full re-render if no active interaction
             controlTab.innerHTML = renderControlTab(device);
+            // Re-bind schedule events after re-render
+            if (hasCluster(device, 0x0201)) {
+                bindScheduleEvents(device.ieee);
+            }
         }
     }
 
