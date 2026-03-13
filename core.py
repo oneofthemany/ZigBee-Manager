@@ -609,6 +609,8 @@ class ZigbeeService:
                     start_radio=True
                 )
 
+                self.app.add_listener(self)
+
                 self._touchlink = await create_touchlink_manager(self.app)
                 if self._touchlink:
                     logger.info(f"✅ Touchlink support enabled ({self._touchlink.coordinator_type})")
