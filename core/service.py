@@ -359,7 +359,7 @@ class ZigbeeService(
 
                 # OTA manager
                 if self.app:
-                    self.ota_manager = OTAManager(self.app, self)
+                    self.ota_manager = OTAManager(self, self._emit)
                     logger.info("OTA Manager initialised")
 
                 # Start polling
