@@ -354,9 +354,22 @@ function renderSpectrumChart(data) {
 
     // Wi-Fi overlap annotations (typical)
     const wifiOverlap = {
-        11: 'WiFi-1', 12: 'WiFi-1', 13: 'WiFi-1',
-        16: 'WiFi-6', 17: 'WiFi-6',
-        21: 'WiFi-11', 22: 'WiFi-11'
+        11: '1,2',
+        12: '1,2,3',
+        13: '1,2,3,4',
+        14: '1,2,3,4,5',
+        15: '2,3,4,5,6',
+        16: '3,4,5,6,7',
+        17: '4,5,6,7,8',
+        18: '5,6,7,8,9',
+        19: '6,7,8,9,10',
+        20: '7,8,9,10,11',
+        21: '8,9,10,11,12',
+        22: '9,10,11,12,13',
+        23: '10,11,12,13',
+        24: '11,12,13,14',
+        25: '12,13,14',
+        26: '13,14'
     };
 
     // Simple SVG chart (no external deps beyond what's available)
@@ -534,8 +547,8 @@ function renderHistoryChart(stats, hours, container) {
     }
 
     const W = container.clientWidth || 700;
-    const H = 300;
-    const padL = 44, padR = 20, padT = 20, padB = 70;
+    const H = 320;
+    const padL = 44, padR = 20, padT = 20, padB = 90;
     const plotW = W - padL - padR;
     const plotH = H - padT - padB;
     const colW = plotW / channels.length;
@@ -550,20 +563,24 @@ function renderHistoryChart(stats, hours, container) {
                 <text x="${padL - 6}" y="${y + 3}" text-anchor="end" font-size="9" fill="#aaa">${v}</text>`;
     }).join('');
 
-    // Wi-Fi overlap zones (background bands)
-    const wifiBands = [
-        { start: 11, end: 13, label: 'WiFi Ch1', color: 'rgba(220,53,69,0.06)' },
-        { start: 16, end: 17, label: 'WiFi Ch6', color: 'rgba(255,193,7,0.06)' },
-        { start: 21, end: 22, label: 'WiFi Ch11', color: 'rgba(220,53,69,0.06)' },
-    ];
-    const wifiRects = wifiBands.map(b => {
-        const si = channels.indexOf(b.start);
-        const ei = channels.indexOf(b.end);
-        if (si < 0 || ei < 0) return '';
-        const x1 = padL + si * colW;
-        const w = (ei - si + 1) * colW;
-        return `<rect x="${x1}" y="${padT}" width="${w}" height="${plotH}" fill="${b.color}"/>
-                <text x="${x1 + w/2}" y="${padT + 10}" text-anchor="middle" font-size="8" fill="#ccc">${b.label}</text>`;
+    // WiFi ↔ Zigbee overlap mapping (all 14 channels, 22MHz bandwidth each)
+    const zbToWifi = {
+        11: [1,2],       12: [1,2,3],     13: [1,2,3,4],   14: [1,2,3,4,5],
+        15: [2,3,4,5,6], 16: [3,4,5,6,7], 17: [4,5,6,7,8], 18: [5,6,7,8,9],
+        19: [6,7,8,9,10],20: [7,8,9,10,11],21: [8,9,10,11,12],22: [9,10,11,12,13],
+        23: [10,11,12,13],24: [11,12,13,14],25: [12,13,14],  26: [13,14]
+    };
+    const commonWifi = new Set([1, 6, 11]); // Non-overlapping config
+
+    // Build WiFi density heatmap (how many WiFi channels overlap each ZB channel)
+    const maxOverlap = 5;
+    const wifiHeatmap = channels.map((ch, i) => {
+        const cx = padL + i * colW;
+        const count = (zbToWifi[ch] || []).length;
+        const intensity = count / maxOverlap;
+        const alpha = (0.03 + intensity * 0.06).toFixed(3);
+        return `<rect x="${cx}" y="${padT}" width="${colW}" height="${plotH}"
+                      fill="rgba(220,53,69,${alpha})"/>`;
     }).join('');
 
     // Box plots
@@ -633,6 +650,11 @@ function renderHistoryChart(stats, hours, container) {
             σ${s.stddev}
           </text>
 
+          <!-- WiFi overlap row -->
+          <text x="${cx}" y="${padT + plotH + 48}" text-anchor="middle" font-size="6.5" fill="#ccc">
+            ${(zbToWifi[ch] || []).map(w => commonWifi.has(w) ? w + '*' : w).join(',')}
+          </text>
+
           <!-- Tooltip area (invisible rect for hover) -->
           <rect x="${bx - 2}" y="${padT}" width="${boxW + 4}" height="${plotH}"
                 fill="transparent" class="spectrum-hover"
@@ -648,8 +670,8 @@ function renderHistoryChart(stats, hours, container) {
 
     container.innerHTML = `
       <svg width="100%" height="${H}" viewBox="0 0 ${W} ${H}" style="font-family: system-ui, sans-serif;">
-        <!-- Background -->
-        ${wifiRects}
+        <!-- WiFi density heatmap background -->
+        ${wifiHeatmap}
         ${yTicks}
 
         <!-- Axes -->
@@ -662,6 +684,9 @@ function renderHistoryChart(stats, hours, container) {
 
         <!-- Box plots -->
         ${boxes}
+
+        <!-- WiFi row label -->
+        <text x="${padL - 6}" y="${padT + plotH + 48}" text-anchor="end" font-size="7" fill="#bbb">WiFi</text>
       </svg>
 
       <!-- Legend -->
@@ -686,6 +711,10 @@ function renderHistoryChart(stats, hours, container) {
           <svg width="14" height="14"><line x1="7" y1="1" x2="7" y2="13" stroke="rgba(0,0,0,0.2)" stroke-width="1"/><line x1="4" y1="1" x2="10" y2="1" stroke="rgba(0,0,0,0.2)" stroke-width="1.5"/><line x1="4" y1="13" x2="10" y2="13" stroke="rgba(0,0,0,0.2)" stroke-width="1.5"/></svg>
           Min–Max
         </span>
+        <span class="d-flex align-items-center gap-1">
+          <svg width="14" height="14"><rect x="1" y="2" width="12" height="10" fill="rgba(220,53,69,0.08)" rx="1"/></svg>
+          WiFi density
+        </span>
       </div>
 
       <!-- Summary -->
@@ -693,6 +722,10 @@ function renderHistoryChart(stats, hours, container) {
         <span class="text-primary"><i class="fas fa-trophy me-1"></i>Best: ch ${bestCh} (μ=${stats[bestCh].mean}, σ=${stats[bestCh].stddev})</span>
         <span class="text-danger"><i class="fas fa-exclamation-triangle me-1"></i>Noisiest: ch ${worstCh} (μ=${stats[worstCh].mean}, σ=${stats[worstCh].stddev})</span>
         <span class="text-muted">${stats[channels[0]].count} samples/ch over ${hours}h</span>
+      </div>
+      <div class="mt-1 small text-muted">
+        <strong>WiFi row:</strong> Numbers = overlapping WiFi channels. <strong>*</strong> = common non-overlapping config (1, 6, 11).
+        Background tint = WiFi density (more overlap = darker).
       </div>
 
       <!-- Hover tooltip -->
