@@ -184,7 +184,7 @@ A three-layer system for onboarding devices that don't have dedicated cluster ha
 
 <!-- SCREENSHOT: Mappings tab -->
 <p align="center">
-  <img src="docs/images/screenshot-mappings.png" alt="Device mappings tab showing unmapped attributes and active mappings" width="70%">
+  <img src="docs/images/screenshot-mapping.png" alt="Device mappings tab showing unmapped attributes and active mappings" width="70%">
   <br><em>Mappings tab — visual attribute mapping for unsupported devices, with model-level promotion</em>
 </p>
 
