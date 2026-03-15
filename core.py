@@ -1,5 +1,5 @@
 """
-Zigbee Service Core - ZHA-inspired architecture
+Zigbee Matter Service Core - ZHA-inspired architecture
 Properly handles device events using zigpy's listener system.
 """
 import asyncio
@@ -42,6 +42,7 @@ from handlers.fast_path import FastPathProcessor
 from modules.device_ban import get_ban_manager
 from modules.touchlink import create_touchlink_manager, TouchlinkManager
 from modules.automation import AutomationEngine
+from modules.ota import OTAManager, build_ota_config
 #from handlers.sensors import configure_illuminance_reporting, configure_temperature_reporting
 
 # Try Loading Quirks
@@ -303,6 +304,8 @@ class ZigbeeService:
             event_emitter=self.callback,
             group_manager_getter=lambda: getattr(self, 'group_manager', None)
         )
+        # OTA firmware update manager
+        self.ota_manager = None
 
         os.makedirs("logs", exist_ok=True)
 
@@ -412,11 +415,13 @@ class ZigbeeService:
                 "baudrate": ezsp_settings.get('baudrate', 460800),
                 "flow_control": ezsp_settings.get('flow_control', 'hardware')
             }
+        # Build OTA configuration
+        ota_config = build_ota_config(self._config)
 
-        return {
+        conf = {
             "device": device_conf,
             "database_path": "zigbee.db",
-            "ezsp_config": ezsp_conf,  # From enhanced + user overrides
+            "ezsp_config": ezsp_conf,
             "network": {
                 "channel": self._config.get('channel', 25),
                 "key": network_key,
@@ -425,11 +430,18 @@ class ZigbeeService:
             "topology_scan_period": self._config.get('topology_scan_interval', 0)
         }
 
+        if ota_config:
+            conf["ota"] = ota_config
+
+        return conf
+
     def _build_znp_config(self, network_key) -> dict:
         """Build ZNP config from zigbee.znp section"""
         znp_settings = self._config.get('znp', {})
 
-        return {
+        ota_config = build_ota_config(self._config)
+
+        conf = {
             "device": {
                 "path": self.port,
                 "baudrate": znp_settings.get('baudrate', 115200)
@@ -442,6 +454,11 @@ class ZigbeeService:
             },
             "topology_scan_period": self._config.get('topology_scan_interval', 0)
         }
+
+        if ota_config:
+            conf["ota"] = ota_config
+
+        return conf
 
     async def _default_event_callback(self, event_type: str, data: dict):
         """Default event callback that does nothing."""
@@ -631,6 +648,10 @@ class ZigbeeService:
 
                 # Register as listener for application-level events
                 self.app.add_listener(self)
+
+                # Initialise OTA Manager
+                self.ota_manager = OTAManager(self, event_emitter=self.callback)
+                logger.info("✅ OTA Manager initialised")
 
                 # ================================================================
                 # STEP 7: HOOK RADIO LAYER FOR LIVE RSSI/LQI CAPTURE

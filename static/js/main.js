@@ -84,6 +84,8 @@ import {
     toggleMeshLabels
 } from './mesh.js';
 
+import { renderOTATab, handleOTAProgress } from './modal/ota.js';
+
 // ============================================================================
 // EXPOSE FUNCTIONS GLOBALLY
 // ============================================================================
@@ -153,6 +155,9 @@ window.handleUnbanClick = handleUnbanClick;
 
 // Automations Page
 window.loadAutomationsPage = loadAutomationsPage;
+
+// OTA
+window.renderOTATab = renderOTATab;
 
 // Zones Management
 window.recalibrateZone = recalibrateZone;

@@ -13,9 +13,9 @@ import { renderAutomationTab, initAutomationTab } from './modal/automation.js';
 import { renderMappingsTab, initMappingsTab, hasGenericContent } from './modal/mappings.js';
 import { bindScheduleEvents } from './modal/schedule.js';
 
-// Re-export these functions so main.js (and others) can still import them from here
-export { renderOverviewTab, renderControlTab, renderBindingTab, renderCapsTab, renderAutomationTab, renderMappingsTab, saveConfig };
 
+// Re-export these functions so main.js (and others) can still import them from here
+export { renderOverviewTab, renderControlTab, renderBindingTab, renderCapsTab, renderAutomationTab, renderMappingsTab, saveConfig, handleOTAProgress };
 export function openDeviceModal(d) {
     const cachedDev = (d && d.ieee && state.deviceCache[d.ieee]) ? state.deviceCache[d.ieee] : d;
     const isZigbee = !cachedDev.protocol || cachedDev.protocol === 'zigbee';
@@ -40,6 +40,7 @@ export function openDeviceModal(d) {
         <ul class="nav nav-tabs mb-3" id="devTabs">
             <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-overview">Overview</button></li>
             <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-control">Control</button></li>
+            <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-ota"></i>OTA</button></li>
             ${isZigbee ? '<li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-binding">Binding</button></li>' : ''}
             ${isZigbee ? '<li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-caps">Clusters</button></li>' : ''}
             <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-automation">Automation</button></li>
@@ -52,6 +53,9 @@ export function openDeviceModal(d) {
             </div>
             <div class="tab-pane fade" id="tab-control">
                 ${renderControlTab(cachedDev)}
+            </div>
+            <div class="tab-pane fade" id="tab-ota">
+                ${renderOTATab(cachedDev)}
             </div>
             ${isZigbee ? `
             <div class="tab-pane fade" id="tab-binding">
