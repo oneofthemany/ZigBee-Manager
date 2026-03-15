@@ -1,0 +1,1077 @@
+/* ============================================================
+   ZigBee Matter Manager — Dark Mode Theme
+   ============================================================ */
+
+
+/* ----------------------------------------------------------
+   CSS CUSTOM PROPERTIES — Light Theme (defaults)
+   ---------------------------------------------------------- */
+:root {
+    --bg-body: #f0f2f5;
+    --bg-surface: #ffffff;
+    --bg-surface-raised: #ffffff;
+    --bg-surface-sunken: #f8f9fa;
+    --bg-nav: #212529;
+    --bg-card-header: #f8f9fa;
+    --bg-input: #ffffff;
+    --bg-code: #2d2d2d;
+
+    --text-primary: #212529;
+    --text-secondary: #6c757d;
+    --text-muted: #868e96;
+    --text-on-surface: #212529;
+    --text-link: #0d6efd;
+
+    --border-color: #dee2e6;
+    --border-light: #e9ecef;
+
+    --table-stripe: rgba(0, 0, 0, 0.02);
+    --table-hover: rgba(0, 0, 0, 0.04);
+
+    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.08);
+    --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.1);
+
+    --modal-backdrop: rgba(0, 0, 0, 0.5);
+    --scrollbar-thumb: #c1c1c1;
+    --scrollbar-track: #f1f1f1;
+
+    --badge-light-bg: #f8f9fa;
+    --badge-light-text: #212529;
+
+    --alert-info-bg: #cff4fc;
+    --alert-info-border: #b6effb;
+    --alert-info-text: #055160;
+
+    --success-subtle: rgba(25, 135, 84, 0.1);
+    --danger-subtle: rgba(220, 53, 69, 0.1);
+    --warning-subtle: rgba(255, 193, 7, 0.1);
+    --info-subtle: rgba(13, 202, 240, 0.1);
+}
+
+
+/* ----------------------------------------------------------
+   CSS CUSTOM PROPERTIES — Dark Theme
+   ---------------------------------------------------------- */
+[data-theme="dark"] {
+    --bg-body: #0f1117;
+    --bg-surface: #1a1d27;
+    --bg-surface-raised: #222636;
+    --bg-surface-sunken: #141620;
+    --bg-nav: #0d0f16;
+    --bg-card-header: #1e2233;
+    --bg-input: #1e2233;
+    --bg-code: #0d0f16;
+
+    --text-primary: #e1e4eb;
+    --text-secondary: #9ca3af;
+    --text-muted: #6b7280;
+    --text-on-surface: #e1e4eb;
+    --text-link: #60a5fa;
+
+    --border-color: #2d3348;
+    --border-light: #252a3a;
+
+    --table-stripe: rgba(255, 255, 255, 0.02);
+    --table-hover: rgba(255, 255, 255, 0.05);
+
+    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3);
+    --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.4);
+
+    --modal-backdrop: rgba(0, 0, 0, 0.7);
+    --scrollbar-thumb: #3b4252;
+    --scrollbar-track: #1a1d27;
+
+    --badge-light-bg: #252a3a;
+    --badge-light-text: #d1d5db;
+
+    --alert-info-bg: #0c2d3f;
+    --alert-info-border: #0e3a52;
+    --alert-info-text: #7dd3fc;
+
+    --success-subtle: rgba(34, 197, 94, 0.12);
+    --danger-subtle: rgba(239, 68, 68, 0.12);
+    --warning-subtle: rgba(234, 179, 8, 0.12);
+    --info-subtle: rgba(56, 189, 248, 0.12);
+}
+
+
+/* ----------------------------------------------------------
+   DARK MODE — Global Application
+   ---------------------------------------------------------- */
+
+[data-theme="dark"] body {
+    background-color: var(--bg-body) !important;
+    color: var(--text-primary) !important;
+}
+
+
+/* ----------------------------------------------------------
+   NAVBAR
+   ---------------------------------------------------------- */
+
+[data-theme="dark"] .navbar.navbar-dark.bg-dark {
+    background-color: var(--bg-nav) !important;
+    border-bottom: 1px solid var(--border-color);
+}
+
+
+/* ----------------------------------------------------------
+   CARDS
+   ---------------------------------------------------------- */
+
+[data-theme="dark"] .card {
+    background-color: var(--bg-surface) !important;
+    border-color: var(--border-color) !important;
+    box-shadow: var(--shadow-sm);
+}
+
+[data-theme="dark"] .card-header,
+[data-theme="dark"] .card-header.bg-light {
+    background-color: var(--bg-card-header) !important;
+    border-bottom-color: var(--border-color) !important;
+    color: var(--text-primary) !important;
+}
+
+[data-theme="dark"] .card-footer {
+    background-color: var(--bg-card-header) !important;
+    border-top-color: var(--border-color) !important;
+    color: var(--text-muted) !important;
+}
+
+[data-theme="dark"] .card-body {
+    color: var(--text-primary);
+}
+
+[data-theme="dark"] .shadow-sm {
+    box-shadow: var(--shadow-sm) !important;
+}
+
+
+/* ----------------------------------------------------------
+   TABLES
+   ---------------------------------------------------------- */
+
+[data-theme="dark"] .table {
+    --bs-table-bg: var(--bg-surface);
+    --bs-table-color: var(--text-primary);
+    --bs-table-border-color: var(--border-color);
+    --bs-table-striped-bg: var(--table-stripe);
+    --bs-table-striped-color: var(--text-primary);
+    --bs-table-hover-bg: var(--table-hover);
+    --bs-table-hover-color: var(--text-primary);
+    --bs-table-active-bg: var(--table-hover);
+    --bs-table-active-color: var(--text-primary);
+    color: var(--text-primary) !important;
+    border-color: var(--border-color) !important;
+}
+
+/* Force background on every cell (Bootstrap applies --bs-table-bg per <td>) */
+[data-theme="dark"] .table > :not(caption) > * > * {
+    background-color: var(--bg-surface) !important;
+    color: var(--text-primary) !important;
+    border-bottom-color: var(--border-color) !important;
+    box-shadow: none !important;
+}
+
+/* Table header */
+[data-theme="dark"] .table-light,
+[data-theme="dark"] .table thead.table-light,
+[data-theme="dark"] .table-light > * {
+    --bs-table-bg: var(--bg-card-header);
+    --bs-table-color: var(--text-primary);
+    background-color: var(--bg-card-header) !important;
+    color: var(--text-primary) !important;
+    border-color: var(--border-color) !important;
+}
+
+[data-theme="dark"] .table thead.table-light th {
+    background-color: var(--bg-card-header) !important;
+    color: var(--text-primary) !important;
+    border-bottom-color: var(--border-color) !important;
+}
+
+/* Hover state — must override the per-cell background */
+[data-theme="dark"] .table-hover > tbody > tr:hover > * {
+    background-color: var(--table-hover) !important;
+    color: var(--text-primary) !important;
+}
+
+/* Striped rows */
+[data-theme="dark"] .table-striped > tbody > tr:nth-of-type(odd) > * {
+    background-color: var(--table-stripe) !important;
+    color: var(--text-primary) !important;
+}
+
+/* All cell borders */
+[data-theme="dark"] .table td,
+[data-theme="dark"] .table th {
+    border-color: var(--border-color) !important;
+}
+
+[data-theme="dark"] .table-sm td,
+[data-theme="dark"] .table-sm th {
+    border-color: var(--border-color) !important;
+}
+
+/* Device table specific — the text elements inside cells */
+[data-theme="dark"] #deviceTableBody .fw-bold.text-primary {
+    color: var(--text-link) !important;
+}
+
+[data-theme="dark"] #deviceTableBody .font-monospace.small.text-muted {
+    color: var(--text-muted) !important;
+}
+
+[data-theme="dark"] #deviceTableBody td.small {
+    color: var(--text-secondary) !important;
+}
+
+/* Sortable header icons */
+[data-theme="dark"] .sortable-header {
+    color: var(--text-primary) !important;
+}
+
+[data-theme="dark"] .sort-icon {
+    color: var(--text-muted) !important;
+}
+
+/* Table-responsive wrapper */
+[data-theme="dark"] .table-responsive {
+    border-color: var(--border-color) !important;
+}
+
+
+/* ----------------------------------------------------------
+   FORMS & INPUTS
+   ---------------------------------------------------------- */
+
+[data-theme="dark"] .form-control,
+[data-theme="dark"] .form-select {
+    background-color: var(--bg-input) !important;
+    border-color: var(--border-color) !important;
+    color: var(--text-primary) !important;
+}
+
+[data-theme="dark"] .form-control:focus,
+[data-theme="dark"] .form-select:focus {
+    background-color: var(--bg-input) !important;
+    border-color: #4d8fea !important;
+    color: var(--text-primary) !important;
+    box-shadow: 0 0 0 0.2rem rgba(77, 143, 234, 0.25) !important;
+}
+
+[data-theme="dark"] .form-control::placeholder {
+    color: var(--text-muted) !important;
+}
+
+[data-theme="dark"] .form-label,
+[data-theme="dark"] label {
+    color: var(--text-primary) !important;
+}
+
+[data-theme="dark"] .form-text {
+    color: var(--text-muted) !important;
+}
+
+[data-theme="dark"] .form-check-input {
+    background-color: var(--bg-input);
+    border-color: var(--border-color);
+}
+
+[data-theme="dark"] .form-check-label {
+    color: var(--text-primary);
+}
+
+[data-theme="dark"] .input-group-text {
+    background-color: var(--bg-surface-raised) !important;
+    border-color: var(--border-color) !important;
+    color: var(--text-secondary) !important;
+}
+
+
+/* ----------------------------------------------------------
+   BUTTONS
+   ---------------------------------------------------------- */
+
+[data-theme="dark"] .btn-outline-secondary {
+    color: var(--text-secondary) !important;
+    border-color: var(--border-color) !important;
+}
+
+[data-theme="dark"] .btn-outline-secondary:hover {
+    background-color: var(--bg-surface-raised) !important;
+    color: var(--text-primary) !important;
+}
+
+[data-theme="dark"] .btn-outline-primary {
+    color: var(--text-link) !important;
+    border-color: var(--text-link) !important;
+}
+
+[data-theme="dark"] .btn-outline-info {
+    color: #67e8f9 !important;
+    border-color: #67e8f9 !important;
+}
+
+
+/* ----------------------------------------------------------
+   BADGES
+   ---------------------------------------------------------- */
+
+[data-theme="dark"] .badge.bg-light {
+    background-color: var(--badge-light-bg) !important;
+    color: var(--badge-light-text) !important;
+}
+
+[data-theme="dark"] .badge.bg-light.text-dark {
+    color: var(--badge-light-text) !important;
+}
+
+[data-theme="dark"] .badge.bg-secondary {
+    background-color: #374151 !important;
+}
+
+[data-theme="dark"] .badge.bg-info.text-dark {
+    color: #0e1117 !important;
+}
+
+
+/* ----------------------------------------------------------
+   MODALS
+   ---------------------------------------------------------- */
+
+[data-theme="dark"] .modal-content {
+    background-color: var(--bg-surface) !important;
+    border-color: var(--border-color) !important;
+    color: var(--text-primary) !important;
+}
+
+[data-theme="dark"] .modal-header {
+    border-bottom-color: var(--border-color) !important;
+    color: var(--text-primary);
+}
+
+[data-theme="dark"] .modal-footer {
+    border-top-color: var(--border-color) !important;
+}
+
+[data-theme="dark"] .modal-title {
+    color: var(--text-primary) !important;
+}
+
+[data-theme="dark"] .btn-close {
+    filter: invert(1) grayscale(100%) brightness(200%);
+}
+
+
+/* ----------------------------------------------------------
+   NAV TABS
+   ---------------------------------------------------------- */
+
+[data-theme="dark"] .nav-tabs {
+    border-bottom-color: var(--border-color) !important;
+}
+
+[data-theme="dark"] .nav-tabs .nav-link {
+    color: var(--text-secondary) !important;
+}
+
+[data-theme="dark"] .nav-tabs .nav-link:hover {
+    border-color: var(--border-color) !important;
+    color: var(--text-primary) !important;
+}
+
+[data-theme="dark"] .nav-tabs .nav-link.active {
+    background-color: var(--bg-surface) !important;
+    border-color: var(--border-color) var(--border-color) var(--bg-surface) !important;
+    color: var(--text-link) !important;
+}
+
+[data-theme="dark"] .nav-pills .nav-link.active {
+    background-color: #2563eb !important;
+}
+
+/* Settings sub-nav */
+[data-theme="dark"] #settingsSubNav {
+    background-color: var(--bg-surface) !important;
+    border-bottom-color: var(--border-color) !important;
+}
+
+
+/* ----------------------------------------------------------
+   ALERTS
+   ---------------------------------------------------------- */
+
+[data-theme="dark"] .alert-info {
+    background-color: var(--alert-info-bg) !important;
+    border-color: var(--alert-info-border) !important;
+    color: var(--alert-info-text) !important;
+}
+
+[data-theme="dark"] .alert-warning {
+    background-color: rgba(234, 179, 8, 0.12) !important;
+    border-color: rgba(234, 179, 8, 0.2) !important;
+    color: #fbbf24 !important;
+}
+
+[data-theme="dark"] .alert-success {
+    background-color: rgba(34, 197, 94, 0.12) !important;
+    border-color: rgba(34, 197, 94, 0.2) !important;
+    color: #4ade80 !important;
+}
+
+[data-theme="dark"] .alert-danger {
+    background-color: rgba(239, 68, 68, 0.12) !important;
+    border-color: rgba(239, 68, 68, 0.2) !important;
+    color: #f87171 !important;
+}
+
+[data-theme="dark"] .alert-light {
+    background-color: var(--bg-surface-raised) !important;
+    border-color: var(--border-color) !important;
+    color: var(--text-secondary) !important;
+}
+
+
+/* ----------------------------------------------------------
+   BACKGROUNDS & UTILITIES
+   ---------------------------------------------------------- */
+
+[data-theme="dark"] .bg-light {
+    background-color: var(--bg-card-header) !important;
+}
+
+[data-theme="dark"] .bg-white {
+    background-color: var(--bg-surface) !important;
+}
+
+[data-theme="dark"] .bg-dark {
+    background-color: var(--bg-nav) !important;
+}
+
+[data-theme="dark"] .border {
+    border-color: var(--border-color) !important;
+}
+
+[data-theme="dark"] .border-bottom {
+    border-bottom-color: var(--border-color) !important;
+}
+
+[data-theme="dark"] .border-top {
+    border-top-color: var(--border-color) !important;
+}
+
+[data-theme="dark"] .text-muted {
+    color: var(--text-muted) !important;
+}
+
+[data-theme="dark"] .text-dark {
+    color: var(--text-primary) !important;
+}
+
+[data-theme="dark"] .text-secondary {
+    color: var(--text-secondary) !important;
+}
+
+[data-theme="dark"] .text-primary {
+    color: var(--text-link) !important;
+}
+
+[data-theme="dark"] .fw-bold,
+[data-theme="dark"] .fw-semibold {
+    color: inherit;
+}
+
+
+/* ----------------------------------------------------------
+   SPECIFIC COMPONENTS
+   ---------------------------------------------------------- */
+
+/* Coordinator card */
+[data-theme="dark"] .coordinator-card {
+    background-color: var(--bg-surface) !important;
+}
+
+/* Thermostat — current temp display */
+[data-theme="dark"] #tab-control .bg-light {
+    background-color: var(--bg-surface-sunken) !important;
+}
+
+[data-theme="dark"] #tab-control .bg-primary.bg-opacity-10 {
+    background-color: rgba(37, 99, 235, 0.15) !important;
+}
+
+/* Debug log — already dark, ensure consistency */
+[data-theme="dark"] #logs {
+    background-color: var(--bg-code) !important;
+}
+
+/* Config YAML editor — already dark */
+[data-theme="dark"] #configEditor {
+    background-color: var(--bg-code) !important;
+}
+
+/* MQTT Explorer message container */
+[data-theme="dark"] #mqttMessagesContainer {
+    background-color: var(--bg-surface) !important;
+}
+
+/* Sticky table headers in dark */
+[data-theme="dark"] .sticky-top.table-light {
+    background-color: var(--bg-card-header) !important;
+}
+
+/* Progress bars */
+[data-theme="dark"] .progress {
+    background-color: var(--bg-surface-sunken) !important;
+}
+
+/* List groups */
+[data-theme="dark"] .list-group-item {
+    background-color: var(--bg-surface) !important;
+    border-color: var(--border-color) !important;
+    color: var(--text-primary) !important;
+}
+
+/* Accordion */
+[data-theme="dark"] .accordion-item {
+    background-color: var(--bg-surface) !important;
+    border-color: var(--border-color) !important;
+}
+
+[data-theme="dark"] .accordion-button {
+    background-color: var(--bg-surface) !important;
+    color: var(--text-primary) !important;
+}
+
+[data-theme="dark"] .accordion-button:not(.collapsed) {
+    background-color: var(--bg-surface-raised) !important;
+    color: var(--text-link) !important;
+}
+
+[data-theme="dark"] .accordion-body {
+    background-color: var(--bg-surface) !important;
+}
+
+/* Dropdown menus */
+[data-theme="dark"] .dropdown-menu {
+    background-color: var(--bg-surface-raised) !important;
+    border-color: var(--border-color) !important;
+}
+
+[data-theme="dark"] .dropdown-item {
+    color: var(--text-primary) !important;
+}
+
+[data-theme="dark"] .dropdown-item:hover,
+[data-theme="dark"] .dropdown-item:focus {
+    background-color: var(--bg-surface-sunken) !important;
+    color: var(--text-link) !important;
+}
+
+[data-theme="dark"] .dropdown-divider {
+    border-color: var(--border-color) !important;
+}
+
+[data-theme="dark"] .dropdown-header {
+    color: var(--text-muted) !important;
+}
+
+/* Spectrum chart */
+[data-theme="dark"] #spectrumChart,
+[data-theme="dark"] #spectrumHistory {
+    background-color: var(--bg-surface-sunken) !important;
+}
+
+/* Schedule */
+[data-theme="dark"] .sched-day-row {
+    border-bottom-color: var(--border-color) !important;
+}
+
+[data-theme="dark"] .sched-day-row:hover {
+    background-color: var(--bg-surface-raised) !important;
+}
+
+[data-theme="dark"] .sched-today {
+    background-color: rgba(37, 99, 235, 0.08) !important;
+}
+
+[data-theme="dark"] .sched-timeline {
+    background-color: var(--bg-surface-sunken) !important;
+}
+
+[data-theme="dark"] .sched-pill {
+    background-color: var(--bg-surface-raised) !important;
+    border-color: var(--border-color) !important;
+}
+
+[data-theme="dark"] .sched-pill-time {
+    color: var(--text-primary) !important;
+}
+
+[data-theme="dark"] .sched-pill-temp {
+    color: var(--text-secondary) !important;
+}
+
+[data-theme="dark"] .sched-add-popover {
+    background-color: var(--bg-surface-raised) !important;
+    border-color: var(--border-color) !important;
+    box-shadow: var(--shadow-md) !important;
+}
+
+
+/* ----------------------------------------------------------
+   GROUPS TAB — member-device pills, device checkboxes,
+   group cards, modal member list
+   ---------------------------------------------------------- */
+
+/* Member device pills (hardcoded #e7f3ff in groups.css) */
+[data-theme="dark"] .member-device {
+    background: rgba(96, 165, 250, 0.15) !important;
+    color: var(--text-primary) !important;
+}
+
+/* Group cards (border-left: 4px solid #0d6efd already fine) */
+[data-theme="dark"] .group-card {
+    background-color: var(--bg-surface) !important;
+    border-color: var(--border-color) !important;
+    border-left-color: #3b82f6 !important;
+}
+
+[data-theme="dark"] .group-card:hover {
+    box-shadow: var(--shadow-md) !important;
+}
+
+[data-theme="dark"] .group-card .card-body {
+    background-color: var(--bg-surface) !important;
+    color: var(--text-primary) !important;
+}
+
+/* Device checkbox items in group creation (hardcoded #e0e0e0 border, #f8f9fa hover) */
+[data-theme="dark"] .device-checkbox-item {
+    border-bottom-color: var(--border-color) !important;
+}
+
+[data-theme="dark"] .device-checkbox-item:hover {
+    background-color: var(--bg-surface-raised) !important;
+}
+
+/* Compatible devices list container */
+[data-theme="dark"] #compatibleDevicesList {
+    background-color: var(--bg-surface-sunken) !important;
+    border-color: var(--border-color) !important;
+}
+
+/* Group control modal — member list items (border rounded divs) */
+[data-theme="dark"] #groupMembersList .border.rounded,
+[data-theme="dark"] #groupMembersList .d-flex.border {
+    background-color: var(--bg-surface-raised) !important;
+    border-color: var(--border-color) !important;
+    color: var(--text-primary) !important;
+}
+
+[data-theme="dark"] #groupMembersList .text-muted {
+    color: var(--text-muted) !important;
+}
+
+/* Group control panel cards */
+[data-theme="dark"] #groupControlPanel .card {
+    background-color: var(--bg-surface-raised) !important;
+    border-color: var(--border-color) !important;
+}
+
+[data-theme="dark"] #groupControlPanel .card-body {
+    background-color: var(--bg-surface-raised) !important;
+}
+
+/* Group info display */
+[data-theme="dark"] #groupInfoDisplay {
+    color: var(--text-primary) !important;
+}
+
+/* Capability badges (bg-success, bg-info, bg-warning, bg-primary already have colour) */
+/* Just ensure text contrast in dark mode */
+[data-theme="dark"] .capability-badge.bg-warning {
+    color: #1a1d27 !important;
+}
+
+/* Base device info alert */
+[data-theme="dark"] #baseDeviceInfo.alert-info {
+    background-color: var(--alert-info-bg) !important;
+    border-color: var(--alert-info-border) !important;
+    color: var(--alert-info-text) !important;
+}
+
+/* Common capabilities alert */
+[data-theme="dark"] #commonCapabilitiesSection.alert-success {
+    background-color: rgba(34, 197, 94, 0.12) !important;
+    border-color: rgba(34, 197, 94, 0.2) !important;
+    color: #4ade80 !important;
+}
+
+/* Add device select in modal */
+[data-theme="dark"] #addDeviceSelect {
+    background-color: var(--bg-input) !important;
+    border-color: var(--border-color) !important;
+    color: var(--text-primary) !important;
+}
+
+/* font-monospace text */
+[data-theme="dark"] .font-monospace {
+    color: var(--text-secondary);
+}
+
+[data-theme="dark"] code {
+    color: #f0abfc;
+}
+
+
+/* ----------------------------------------------------------
+   MESH TOPOLOGY — dark mode for D3 viz, tables, controls
+   ---------------------------------------------------------- */
+
+/* Controls bar */
+[data-theme="dark"] .mesh-controls,
+[data-theme="dark"] .mesh-controls.bg-light {
+    background-color: var(--bg-card-header) !important;
+    border-bottom-color: var(--border-color) !important;
+}
+
+/* Legend text */
+[data-theme="dark"] .mesh-legend {
+    color: var(--text-secondary);
+}
+
+/* Mesh wrapper tabs */
+[data-theme="dark"] .mesh-wrapper .nav-tabs {
+    border-bottom-color: var(--border-color) !important;
+    background: var(--bg-card-header) !important;
+}
+
+[data-theme="dark"] .mesh-wrapper .nav-tabs .nav-link {
+    color: var(--text-secondary) !important;
+}
+
+[data-theme="dark"] .mesh-wrapper .nav-tabs .nav-link.active {
+    color: var(--text-link) !important;
+    border-bottom-color: var(--text-link) !important;
+}
+
+/* Mesh wrapper + tab-content — prevent white flash on tab switch */
+[data-theme="dark"] .mesh-wrapper {
+    background-color: var(--bg-surface) !important;
+}
+
+[data-theme="dark"] .mesh-wrapper .tab-content {
+    background-color: var(--bg-surface) !important;
+}
+
+[data-theme="dark"] .mesh-wrapper .tab-pane {
+    background-color: var(--bg-surface) !important;
+}
+
+/* Each mesh sub-tab pane explicitly */
+[data-theme="dark"] #meshVisualisation {
+    background-color: var(--bg-surface-sunken) !important;
+}
+
+[data-theme="dark"] #meshConnectionTable {
+    background-color: var(--bg-surface) !important;
+}
+
+[data-theme="dark"] #meshConnectionTable > .p-3 {
+    background-color: var(--bg-surface) !important;
+}
+
+/* Kill the Bootstrap fade transition white flash —
+   the .fade class fades opacity 0→1, revealing whatever
+   is behind (white body). Force bg on the fading element. */
+[data-theme="dark"] .mesh-wrapper .tab-pane.fade {
+    background-color: var(--bg-surface) !important;
+}
+
+/* Also fix the main topology tab container */
+[data-theme="dark"] #topology {
+    background-color: var(--bg-surface) !important;
+}
+
+[data-theme="dark"] #topology .card {
+    background-color: var(--bg-surface) !important;
+}
+
+[data-theme="dark"] #topology .card-body {
+    background-color: var(--bg-surface) !important;
+}
+
+/* Global fix: all tab-panes should have dark bg during fade transition */
+[data-theme="dark"] .tab-pane {
+    background-color: var(--bg-surface);
+}
+
+[data-theme="dark"] .tab-content {
+    background-color: var(--bg-body);
+}
+
+/* SVG visualisation background */
+[data-theme="dark"] .mesh-visualisation-wrapper {
+    background-color: var(--bg-surface-sunken) !important;
+    border-color: var(--border-color) !important;
+}
+
+/* D3 SVG — node labels */
+[data-theme="dark"] .mesh-label {
+    fill: var(--text-secondary) !important;
+}
+
+/* D3 SVG — offline zone background rect (set via JS, but we can override stroke) */
+[data-theme="dark"] #dashboard-mesh-svg rect[fill="#fff5f5"] {
+    fill: rgba(220, 53, 69, 0.08) !important;
+}
+
+/* D3 SVG — offline zone label text */
+[data-theme="dark"] #dashboard-mesh-svg text[fill="#dc3545"] {
+    fill: #f87171 !important;
+}
+
+/* D3 SVG — general text */
+[data-theme="dark"] #dashboard-mesh-svg text[fill="#333"] {
+    fill: var(--text-secondary) !important;
+}
+
+[data-theme="dark"] #dashboard-mesh-svg text[fill="#999"] {
+    fill: var(--text-muted) !important;
+}
+
+/* Connection table — table-dark header stays dark, but nested tables need fixing */
+[data-theme="dark"] #connectionTable {
+    --bs-table-bg: var(--bg-surface);
+    --bs-table-color: var(--text-primary);
+    --bs-table-border-color: var(--border-color);
+    --bs-table-striped-bg: var(--table-stripe);
+    --bs-table-striped-color: var(--text-primary);
+    --bs-table-hover-bg: var(--table-hover);
+    --bs-table-hover-color: var(--text-primary);
+    border-color: var(--border-color) !important;
+}
+
+[data-theme="dark"] #connectionTable > :not(caption) > * > * {
+    background-color: var(--bg-surface) !important;
+    color: var(--text-primary) !important;
+    border-bottom-color: var(--border-color) !important;
+}
+
+[data-theme="dark"] #connectionTable thead.table-dark th,
+[data-theme="dark"] #connectionTable thead.sticky-top th {
+    background-color: #111827 !important;
+    color: #e5e7eb !important;
+    border-color: #1f2937 !important;
+}
+
+/* Table-responsive wrapper inside connection table */
+[data-theme="dark"] #meshConnectionTable .table-responsive {
+    background-color: var(--bg-surface) !important;
+    border-color: var(--border-color) !important;
+}
+
+/* Connection table hover — only on actual data rows, not collapse child rows */
+[data-theme="dark"] #connectionTable > tbody > tr:hover > td {
+    background-color: var(--table-hover) !important;
+    color: var(--text-primary) !important;
+}
+
+/* The child row that contains the collapse panel — no hover effect */
+[data-theme="dark"] #connectionTable > tbody > tr > td.child-row-cell {
+    background-color: transparent !important;
+    padding: 0 !important;
+}
+
+/* Nested connection table inside collapse — borders */
+[data-theme="dark"] .nested-connection-table {
+    background-color: var(--bg-surface-sunken) !important;
+    border-color: var(--border-color) !important;
+}
+
+[data-theme="dark"] .nested-connection-table th {
+    background-color: var(--bg-surface-raised) !important;
+    color: var(--text-secondary) !important;
+    border-color: var(--border-color) !important;
+}
+
+[data-theme="dark"] .nested-connection-table td {
+    background-color: var(--bg-surface-sunken) !important;
+    color: var(--text-primary) !important;
+    border-color: var(--border-color) !important;
+}
+
+/* table-bordered inside nested tables */
+[data-theme="dark"] .nested-connection-table.table-bordered,
+[data-theme="dark"] .nested-connection-table.table-bordered > :not(caption) > * {
+    border-color: var(--border-color) !important;
+}
+
+[data-theme="dark"] .nested-connection-table.table-bordered > :not(caption) > * > * {
+    border-color: var(--border-color) !important;
+}
+
+/* Nested table hover */
+[data-theme="dark"] .nested-connection-table > tbody > tr:hover > td {
+    background-color: var(--table-hover) !important;
+}
+
+/* Collapse bg-light panel (the expanded content wrapper) */
+[data-theme="dark"] .collapse .bg-light,
+[data-theme="dark"] .collapse .p-3.bg-light,
+[data-theme="dark"] .collapse .p-3.bg-light.border-bottom {
+    background-color: var(--bg-surface-sunken) !important;
+    border-color: var(--border-color) !important;
+}
+
+/* Shadow-inset class used in collapse panels */
+[data-theme="dark"] .shadow-inset {
+    box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.3) !important;
+}
+
+/* ----------------------------------------------------------
+   #meshPacketStats — tab pane + summary cards + table
+   ---------------------------------------------------------- */
+
+/* Tab pane container */
+[data-theme="dark"] #meshPacketStats {
+    background-color: var(--bg-surface) !important;
+    color: var(--text-primary) !important;
+}
+
+[data-theme="dark"] #meshPacketStats > .p-3 {
+    background-color: var(--bg-surface) !important;
+}
+
+/* Summary cards */
+[data-theme="dark"] #packetStatsSummary .card {
+    background-color: var(--bg-surface-raised) !important;
+    border-color: var(--border-color) !important;
+}
+
+[data-theme="dark"] #packetStatsSummary .card-body {
+    background-color: var(--bg-surface-raised) !important;
+    color: var(--text-primary) !important;
+}
+
+[data-theme="dark"] #packetStatsSummary .small.text-muted {
+    color: var(--text-muted) !important;
+}
+
+[data-theme="dark"] #packetStatsSummary .h5 {
+    color: var(--text-primary) !important;
+}
+
+[data-theme="dark"] #packetStatsSummary .text-success {
+    color: #4ade80 !important;
+}
+
+[data-theme="dark"] #packetStatsSummary .text-danger {
+    color: #f87171 !important;
+}
+
+/* Stats table */
+[data-theme="dark"] #packetStatsTable {
+    --bs-table-bg: var(--bg-surface);
+    --bs-table-color: var(--text-primary);
+    --bs-table-border-color: var(--border-color);
+    --bs-table-striped-bg: var(--table-stripe);
+    --bs-table-striped-color: var(--text-primary);
+    --bs-table-hover-bg: var(--table-hover);
+    --bs-table-hover-color: var(--text-primary);
+}
+
+[data-theme="dark"] #packetStatsTable > :not(caption) > * > * {
+    background-color: var(--bg-surface) !important;
+    color: var(--text-primary) !important;
+    border-bottom-color: var(--border-color) !important;
+}
+
+[data-theme="dark"] #packetStatsTable thead.table-dark th,
+[data-theme="dark"] #packetStatsTable thead.sticky-top th {
+    background-color: #111827 !important;
+    color: #e5e7eb !important;
+    border-color: #1f2937 !important;
+}
+
+/* Table-responsive wrapper */
+[data-theme="dark"] #meshPacketStats .table-responsive {
+    background-color: var(--bg-surface) !important;
+}
+
+/* Hover on packet stats table rows */
+[data-theme="dark"] #packetStatsTable > tbody > tr:hover > * {
+    background-color: var(--table-hover) !important;
+}
+
+/* fw-medium and fw-bold text inside stats rows */
+[data-theme="dark"] #packetStatsTable .fw-medium,
+[data-theme="dark"] #packetStatsTable .fw-bold {
+    color: var(--text-primary) !important;
+}
+
+/* Error text */
+[data-theme="dark"] #packetStatsTable .text-danger {
+    color: #f87171 !important;
+}
+
+/* Status badges inside table */
+[data-theme="dark"] #packetStatsTable .badge.bg-success {
+    background-color: #166534 !important;
+    color: #bbf7d0 !important;
+}
+
+[data-theme="dark"] #packetStatsTable .badge.bg-danger {
+    background-color: #7f1d1d !important;
+    color: #fecaca !important;
+}
+
+/* Progress bars (load indicator) */
+[data-theme="dark"] #packetStatsTable .progress {
+    background-color: var(--bg-surface-sunken) !important;
+}
+
+
+/* ----------------------------------------------------------
+   SCROLLBAR STYLING (Webkit)
+   ---------------------------------------------------------- */
+
+[data-theme="dark"] ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+[data-theme="dark"] ::-webkit-scrollbar-track {
+    background: var(--scrollbar-track);
+}
+
+[data-theme="dark"] ::-webkit-scrollbar-thumb {
+    background: var(--scrollbar-thumb);
+    border-radius: 4px;
+}
+
+[data-theme="dark"] ::-webkit-scrollbar-thumb:hover {
+    background: #4b5563;
+}
+
+
+/* ----------------------------------------------------------
+   TRANSITION for smooth theme switching
+   ---------------------------------------------------------- */
+
+body,
+.card,
+.modal-content,
+.table,
+.form-control,
+.form-select,
+.btn,
+.badge,
+.alert,
+.nav-tabs .nav-link,
+.dropdown-menu,
+.list-group-item {
+    transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+}

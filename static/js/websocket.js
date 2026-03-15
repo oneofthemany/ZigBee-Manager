@@ -8,6 +8,7 @@ import { fetchAllDevices, handleDeviceUpdate, removeDeviceRow, renderDeviceTable
 import { addLogEntry, updateDebugStatus, handleLivePacket, checkDebugStatus } from './logging.js';
 import { updatePairingUI, checkPairingStatus } from './actions.js';
 import { handleMQTTMessage } from './mqtt-explorer.js';
+import { handleOTAProgress } from './modal/ota.js';
 
 /**
  * Initialize WebSocket connection
@@ -48,6 +49,13 @@ export function initWS() {
                 return;
             }
 
+            if (msg.type === 'zone_update' || msg.type === 'zone_state' || msg.type === 'zone_calibration') {
+                // Dispatch a custom event that zones.js can listen to
+                const customEvent = new CustomEvent('zone-update', { detail: msg });
+                window.dispatchEvent(customEvent);
+                return;
+            }
+
             switch (msg.type) {
                 case "log":
                     addLogEntry(msg.payload || msg.data);
@@ -58,10 +66,15 @@ export function initWS() {
                     handleDeviceUpdate(msg.payload);
                     break;
 
+                case 'ota_progress':
+                    handleOTAProgress(msg.data);
+                    break;
+
                 case "device_list": // New handler for full list updates
                     state.devices = msg.data;
                     renderDeviceTable();
-                    if(typeof updateMesh === 'function') updateMesh();
+                    // Check if updateMesh is available globally or imported
+                    if (window.updateMesh) window.updateMesh();
                     break;
 
                 case "device_joined":

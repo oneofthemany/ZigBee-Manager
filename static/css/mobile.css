@@ -1,0 +1,854 @@
+/* ============================================================
+   ZigBee Matter Manager — Mobile Responsive Overrides
+   ============================================================ */
+
+
+/* ----------------------------------------------------------
+   0. GLOBAL — prevent horizontal overflow
+   ---------------------------------------------------------- */
+html, body {
+    overflow-x: hidden;
+}
+
+/* ----------------------------------------------------------
+   1. NAVBAR — Status badges + pairing dropdown overflow
+   ---------------------------------------------------------- */
+
+@media (max-width: 991.98px) {
+    /* Let the navbar content wrap */
+    .navbar .container-fluid {
+        flex-wrap: wrap;
+        gap: 0.5rem;
+    }
+
+    /* Status badges group — wrap and shrink */
+    .navbar .d-flex.align-items-center.gap-3 {
+        flex-wrap: wrap;
+        gap: 0.25rem !important;
+        width: 100%;
+        justify-content: flex-start;
+    }
+
+    /* Shrink status badges */
+    .navbar .badge.rounded-pill {
+        font-size: 0.65rem;
+        padding: 0.25em 0.5em;
+    }
+
+    /* Connection status text */
+    .navbar .navbar-text {
+        font-size: 0.75rem;
+    }
+
+    /* Pairing dropdown — don't let it stretch */
+    .navbar .btn-group {
+        flex-shrink: 1;
+        min-width: 0;
+    }
+
+    .navbar .btn-group .btn {
+        font-size: 0.75rem;
+        padding: 0.25rem 0.5rem;
+        white-space: nowrap;
+    }
+
+    /* Clean DB button */
+    .navbar .col-auto.ms-auto {
+        margin-left: 0 !important;
+    }
+
+    .navbar .col-auto.ms-auto .btn {
+        font-size: 0.7rem;
+        padding: 0.2rem 0.5rem;
+    }
+}
+
+@media (max-width: 575.98px) {
+    /* Stack the brand and controls vertically on phones */
+    .navbar-brand {
+        font-size: 0.9rem;
+        width: 100%;
+        margin-bottom: 0.25rem;
+    }
+
+    /* Hide button text, show just icons on very small screens */
+    #pairBtn .fas { margin-right: 0 !important; }
+
+    .navbar .col-auto.ms-auto .btn .fas {
+        margin-right: 0 !important;
+    }
+}
+
+
+/* ----------------------------------------------------------
+   2. MAIN TABS (#mainTabs) — 8 tabs won't fit on mobile
+   ---------------------------------------------------------- */
+
+@media (max-width: 991.98px) {
+    #mainTabs {
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+        padding-bottom: 2px;
+    }
+
+    #mainTabs::-webkit-scrollbar {
+        display: none;
+    }
+
+    #mainTabs .nav-item {
+        flex-shrink: 0;
+    }
+
+    #mainTabs .nav-link {
+        white-space: nowrap;
+        padding: 0.5rem 0.6rem;
+        font-size: 0.8rem;
+    }
+
+    /* On small phones, hide tab text and show only icons */
+    @media (max-width: 480px) {
+        #mainTabs .nav-link {
+            padding: 0.5rem 0.75rem;
+            font-size: 0.9rem;
+        }
+        #mainTabs .nav-link .fas {
+            margin-right: 0 !important;
+        }
+    }
+}
+
+
+/* ----------------------------------------------------------
+   3. DEVICES TAB
+   ---------------------------------------------------------- */
+
+@media (max-width: 767.98px) {
+    /* Card header row — stack filter and button */
+    #devices .card-header .row {
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+
+    #devices .card-header .col-auto.ms-auto {
+        margin-left: 0 !important;
+    }
+
+    /* Table — smaller text, horizontal scroll */
+    #devices .table th,
+    #devices .table td {
+        font-size: 0.75rem;
+        padding: 0.3rem 0.4rem;
+        white-space: nowrap;
+    }
+
+    /* Hide less critical columns: IEEE, Vendor, Model */
+    #devices .table th:nth-child(3),
+    #devices .table td:nth-child(3),
+    #devices .table th:nth-child(4),
+    #devices .table td:nth-child(4),
+    #devices .table th:nth-child(5),
+    #devices .table td:nth-child(5) {
+        display: none;
+    }
+
+    /* Coordinator info card */
+    .coordinator-card .row {
+        flex-direction: column;
+        text-align: center;
+    }
+}
+
+
+/* ----------------------------------------------------------
+   4. SETTINGS TAB — Sub-nav + Config Form
+   ---------------------------------------------------------- */
+
+@media (max-width: 767.98px) {
+    /* Settings sub-nav tabs — scroll horizontally */
+    #settingsSubNav {
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+    }
+
+    #settingsSubNav::-webkit-scrollbar {
+        display: none;
+    }
+
+    #settingsSubNav .nav-link {
+        white-space: nowrap;
+        font-size: 0.8rem;
+        padding: 0.4rem 0.6rem;
+    }
+
+    /* Config card header buttons — wrap the Save + Restart buttons */
+    #settingsConfig .card-header,
+    #settingsSecurity .card-header,
+    #settingsAdvanced .card-header {
+        flex-direction: column;
+        gap: 0.5rem;
+        align-items: flex-start !important;
+    }
+
+    #settingsConfig .card-header > div,
+    #settingsSecurity .card-header > div,
+    #settingsAdvanced .card-header > div {
+        width: 100%;
+        display: flex;
+        gap: 0.5rem;
+    }
+
+    #settingsConfig .card-header .btn,
+    #settingsSecurity .card-header .btn,
+    #settingsAdvanced .card-header .btn {
+        flex: 1;
+        font-size: 0.8rem;
+    }
+
+    /* Config form — the col-md-* grid from settings.js renderConfigTab
+       Bootstrap col-md-* naturally stacks at <768px, but ensure
+       proper spacing */
+    #configFormBody .row.g-3 > [class*="col-md-"] {
+        margin-bottom: 0.5rem;
+    }
+
+    #configFormBody .form-control,
+    #configFormBody .form-select {
+        font-size: 16px; /* Prevents iOS zoom on focus */
+    }
+
+    /* SSL card — stack the toggle and text */
+    #settingsConfig .card.border-secondary .card-body {
+        flex-direction: column !important;
+        align-items: flex-start !important;
+        gap: 0.5rem !important;
+    }
+}
+
+
+/* ----------------------------------------------------------
+   5. SECURITY TAB — input-group buttons overflow
+   ---------------------------------------------------------- */
+
+@media (max-width: 767.98px) {
+    #securityFormBody .input-group {
+        flex-wrap: wrap;
+    }
+
+    #securityFormBody .input-group .form-control {
+        flex: 1 1 100%;
+        min-width: 0;
+        margin-bottom: 0.25rem;
+        border-radius: 0.375rem !important;
+    }
+
+    #securityFormBody .input-group .btn {
+        flex: 1 1 auto;
+        border-radius: 0.375rem !important;
+        margin: 0 0.125rem;
+        font-size: 0.8rem;
+    }
+
+    #securityFormBody .input-group .input-group-text {
+        flex: 0 0 auto;
+        border-radius: 0.375rem !important;
+        margin-bottom: 0.25rem;
+    }
+}
+
+
+/* ----------------------------------------------------------
+   6. SPECTRUM ANALYSIS — chart + controls
+   ---------------------------------------------------------- */
+
+@media (max-width: 767.98px) {
+    /* Scan/Auto buttons — stack */
+    #settingsSpectrum .card-header {
+        flex-direction: column !important;
+        align-items: flex-start !important;
+        gap: 0.5rem;
+    }
+
+    #settingsSpectrum .card-header .d-flex.gap-2 {
+        width: 100%;
+    }
+
+    #settingsSpectrum .card-header .btn {
+        flex: 1;
+        font-size: 0.8rem;
+    }
+
+    /* Manual channel select row — stack */
+    #settingsSpectrum .row.g-3.align-items-end {
+        flex-direction: column;
+    }
+
+    /* History controls */
+    #settingsSpectrum .d-flex.gap-2.align-items-center {
+        flex-wrap: wrap;
+    }
+
+    /* SVG chart — ensure it scales */
+    #spectrumChart svg,
+    #spectrumHistory svg {
+        max-width: 100%;
+        height: auto;
+    }
+}
+
+
+/* ----------------------------------------------------------
+   7. DEVICE MODAL (#capModal) — full width + tab scroll
+   ---------------------------------------------------------- */
+
+@media (max-width: 767.98px) {
+    #capModal .modal-dialog {
+        margin: 0.25rem;
+        max-width: calc(100vw - 0.5rem) !important;
+    }
+
+    #capModal .modal-body {
+        padding: 0.5rem;
+        max-height: 80vh;
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+        overscroll-behavior: contain;
+    }
+
+    /* Device name + badges header — stack */
+    #capModal .modal-body > .mb-3.d-flex {
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+
+    /* Device tabs (#devTabs) — scroll horizontally */
+    #devTabs {
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+    }
+
+    #devTabs::-webkit-scrollbar {
+        display: none;
+    }
+
+    #devTabs .nav-item {
+        flex-shrink: 0;
+    }
+
+    #devTabs .nav-link {
+        white-space: nowrap;
+        font-size: 0.8rem;
+        padding: 0.4rem 0.6rem;
+    }
+}
+
+
+/* ----------------------------------------------------------
+   8a. OVERVIEW TAB — Maintenance btn-group overflow
+   ---------------------------------------------------------- */
+
+@media (max-width: 767.98px) {
+    /* The maintenance bar: d-flex justify-content-between */
+    #tab-overview .d-flex.justify-content-between {
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+
+    /* The maintenance btn-group btn-group-sm — WRAP it */
+    #tab-overview .btn-group.btn-group-sm {
+        flex-wrap: wrap !important;
+        gap: 3px;
+        width: 100%;
+    }
+
+    /* Each button in the maintenance bar — proper sizing */
+    #tab-overview .btn-group.btn-group-sm > .btn {
+        border-radius: 0.375rem !important;
+        min-height: 40px;
+        font-size: 0.78rem;
+        flex: 1 1 auto;
+        min-width: 0;
+    }
+
+    /* The Reconfigure split dropdown — keep together */
+    #tab-overview .btn-group.btn-group-sm > .btn-group {
+        flex: 1 1 auto;
+        display: flex;
+    }
+
+    #tab-overview .btn-group.btn-group-sm > .btn-group > .btn {
+        min-height: 40px;
+        font-size: 0.78rem;
+    }
+
+    /* configForm layout: col-md-5 (sensor) / col-md-7 (config) — stack */
+    #configForm > .row > .col-md-5,
+    #configForm > .row > .col-md-7 {
+        flex: 0 0 100%;
+        max-width: 100%;
+    }
+
+    /* Config form internal col-md-4 grid (QoS/Polling/Reporting) — stack */
+    #configForm .row.g-2 > .col-md-4 {
+        flex: 0 0 100%;
+        max-width: 100%;
+    }
+
+    /* Config form col-md-6 pairs (Device Settings) — stack */
+    #configForm .row.g-2 > .col-md-6 {
+        flex: 0 0 100%;
+        max-width: 100%;
+    }
+}
+
+
+/* ----------------------------------------------------------
+   8b. THERMOSTAT / HEATING CONTROLS — touch friendly
+   ---------------------------------------------------------- */
+
+/* Prevent pull-to-refresh on ALL range inputs and modals */
+input[type="range"] {
+    touch-action: none;
+}
+
+.modal {
+    overscroll-behavior: contain;
+}
+
+.modal-content {
+    overscroll-behavior: contain;
+}
+
+/* Class added by mobile-helpers.js during slider interaction */
+body.controlling {
+    overscroll-behavior-y: contain;
+}
+
+@media (max-width: 767.98px) {
+
+    /* --- btn-group wrapping in Control tab --- */
+
+    /* Cover: Open/Stop/Close btn-group */
+    /* Light: On/Off/Toggle btn-group */
+    #tab-control .btn-group.w-100 {
+        flex-wrap: wrap !important;
+        gap: 3px;
+    }
+
+    #tab-control .btn-group.w-100 > .btn {
+        border-radius: 0.375rem !important;
+        min-height: 44px;
+        flex: 1 1 30%;
+    }
+
+    /* Color mode radio btn-group (Temp/Color) */
+    #tab-control .btn-group[role="group"] {
+        flex-wrap: wrap !important;
+        gap: 3px;
+    }
+
+    #tab-control .btn-group[role="group"] > .btn,
+    #tab-control .btn-group[role="group"] > label.btn {
+        border-radius: 0.375rem !important;
+        min-height: 40px;
+        flex: 1 1 auto;
+    }
+
+    /* --- Thermostat Current/Target temp — side by side on mobile too --- */
+    #tab-control .col-md-6 {
+        flex: 0 0 50%;
+        max-width: 50%;
+    }
+
+    /* --- Thermostat setpoint input-group (−/number/+/Set) --- */
+    #tab-control .input-group {
+        flex-wrap: nowrap; /* Keep −/input/+/Set on one line */
+    }
+
+    #tab-control .input-group .btn {
+        min-width: 48px;
+        min-height: 48px;
+        font-size: 1.2rem;
+        padding: 0.25rem 0.5rem;
+    }
+
+    #tab-control .input-group input[type="number"] {
+        font-size: 1.2rem !important;
+        min-height: 48px;
+        text-align: center;
+        flex: 1 1 auto;
+        min-width: 70px;
+    }
+
+    /* --- Range sliders — larger thumb for touch --- */
+    #tab-control input[type="range"],
+    .form-range {
+        width: 100% !important;
+        height: 40px;
+        margin: 8px 0;
+    }
+
+    #tab-control input[type="range"]::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        width: 28px;
+        height: 28px;
+        border-radius: 50%;
+        background: #0d6efd;
+        border: 2px solid #fff;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+    }
+
+    #tab-control input[type="range"]::-moz-range-thumb {
+        width: 28px;
+        height: 28px;
+        border-radius: 50%;
+        background: #0d6efd;
+        border: 2px solid #fff;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+    }
+
+    /* --- Light endpoint cards (col-12 col-md-6) — full width --- */
+    #tab-control > .row > .col-md-6 {
+        flex: 0 0 100%;
+        max-width: 100%;
+    }
+
+    /* --- Color picker row (picker + saturation slider) --- */
+    #tab-control .d-flex.gap-2.align-items-center {
+        flex-direction: column;
+        align-items: stretch !important;
+    }
+
+    #tab-control .form-control-color {
+        width: 100% !important;
+        height: 48px;
+    }
+
+    /* --- Power monitoring stats — wrap on small screens --- */
+    #tab-control .d-flex.justify-content-between {
+        flex-wrap: wrap;
+        gap: 0.25rem;
+    }
+}
+
+
+/* ----------------------------------------------------------
+   8c. SCHEDULE SECTION — Weekly thermostat calendar
+   ---------------------------------------------------------- */
+
+@media (max-width: 767.98px) {
+    /* Schedule actions bar — stack buttons */
+    [id^="schedule-card-"] .d-flex.justify-content-between {
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+
+    [id^="schedule-card-"] .btn-group.btn-group-sm {
+        flex-wrap: wrap !important;
+        gap: 3px;
+        width: 100%;
+    }
+
+    [id^="schedule-card-"] .btn-group.btn-group-sm > .btn {
+        border-radius: 0.375rem !important;
+        flex: 1 1 auto;
+        min-height: 40px;
+    }
+
+    [id^="schedule-card-"] .btn-primary.btn-sm {
+        width: 100%;
+        min-height: 44px;
+    }
+
+    /* Schedule day rows — allow timeline to compress */
+    .sched-day-label {
+        width: 32px !important;
+        font-size: 9px !important;
+    }
+
+    .sched-pills {
+        font-size: 9px;
+    }
+
+    .sched-pill {
+        padding: 1px 4px !important;
+        font-size: 9px !important;
+    }
+
+    /* Schedule add-transition popover — ensure visible on mobile */
+    .sched-add-popover {
+        left: 50% !important;
+        transform: translateX(-50%);
+        width: calc(100vw - 2rem) !important;
+        max-width: 280px;
+    }
+}
+
+
+/* ----------------------------------------------------------
+   9. DEBUG LOG TAB — controls bar overflow
+   ---------------------------------------------------------- */
+
+@media (max-width: 991.98px) {
+    #debug .card-header .row {
+        flex-wrap: wrap;
+        gap: 0.25rem;
+    }
+
+    #debug .card-header .col-auto {
+        flex: 0 0 auto;
+    }
+
+    #debug .card-header .col-auto.ms-auto {
+        margin-left: 0 !important;
+    }
+
+    #debug .card-header .btn-group-sm .btn {
+        font-size: 0.75rem;
+        padding: 0.2rem 0.5rem;
+    }
+
+    #debug .card-header .form-select-sm,
+    #debug .card-header .form-control-sm {
+        font-size: 0.75rem;
+        min-width: 80px;
+    }
+}
+
+@media (max-width: 575.98px) {
+    /* Stack all debug controls into 2 rows */
+    #debug .card-header .row {
+        row-gap: 0.5rem;
+    }
+
+    #debug .card-header .col-auto {
+        flex: 0 0 auto;
+    }
+
+    /* Log area — reduce height */
+    #debug .card-body #logs {
+        height: 50vh !important;
+    }
+}
+
+
+/* ----------------------------------------------------------
+   10. MQTT EXPLORER — responsive layout
+   ---------------------------------------------------------- */
+
+@media (max-width: 991.98px) {
+    /* Stack main column and publish sidebar */
+    #mqtt-explorer > .row > .col-lg-8,
+    #mqtt-explorer > .row > .col-lg-4 {
+        flex: 0 0 100%;
+        max-width: 100%;
+    }
+
+    /* Publish card below message list */
+    #mqtt-explorer > .row > .col-lg-4 {
+        margin-top: 1rem;
+    }
+
+    /* MQTT btn-group (Start/Stop/Refresh/Clear) — allow wrap */
+    #mqtt-explorer .btn-group.btn-group-sm {
+        flex-wrap: wrap;
+        gap: 2px;
+    }
+
+    #mqtt-explorer .btn-group.btn-group-sm .btn {
+        border-radius: 0.25rem !important;
+        font-size: 0.75rem;
+    }
+
+    /* Stats row — 2x2 grid instead of 4 cols on mobile */
+    #mqtt-explorer .row.g-0 > .col-3 {
+        flex: 0 0 50%;
+        max-width: 50%;
+    }
+
+    /* Filter row — stack */
+    #mqtt-explorer .row.g-2 > .col-md-5 {
+        flex: 0 0 100%;
+        max-width: 100%;
+    }
+
+    #mqtt-explorer .row.g-2 > .col-md-2 {
+        flex: 0 0 100%;
+        max-width: 100%;
+    }
+
+    /* Messages container — shorter */
+    #mqttMessagesContainer {
+        max-height: 400px !important;
+    }
+
+    /* Table cells — smaller */
+    #mqttMessagesContainer .table th,
+    #mqttMessagesContainer .table td {
+        font-size: 0.7rem;
+        padding: 0.25rem 0.35rem;
+    }
+
+    /* Hide QoS/Retain and Size columns on mobile */
+    #mqttMessagesContainer .table th:nth-child(4),
+    #mqttMessagesContainer .table td:nth-child(4),
+    #mqttMessagesContainer .table th:nth-child(5),
+    #mqttMessagesContainer .table td:nth-child(5) {
+        display: none;
+    }
+}
+
+
+/* ----------------------------------------------------------
+   11. GROUPS TAB
+   ---------------------------------------------------------- */
+
+@media (max-width: 767.98px) {
+    /* Group control modal — full width */
+    #groupControlModal .modal-dialog {
+        margin: 0.25rem;
+        max-width: calc(100vw - 0.5rem) !important;
+    }
+}
+
+
+/* ----------------------------------------------------------
+   12. ZONES TAB
+   ---------------------------------------------------------- */
+
+@media (max-width: 767.98px) {
+    /* Stack the header */
+    #zones .d-flex.justify-content-between {
+        flex-direction: column;
+        gap: 0.75rem;
+    }
+
+    #zones .d-flex.justify-content-between .btn-group {
+        width: 100%;
+    }
+
+    #zones .d-flex.justify-content-between .btn-group .btn {
+        flex: 1;
+    }
+
+    /* Info card row — stack */
+    #zones .card.border-info .row {
+        flex-direction: column;
+        text-align: center;
+    }
+
+    /* Zone create modal — full width */
+    #createZoneModal .modal-dialog {
+        margin: 0.25rem;
+        max-width: calc(100vw - 0.5rem) !important;
+    }
+
+    /* Zone advanced settings — stack col-md-6 pairs */
+    #zoneAdvancedSettings .col-md-6 {
+        flex: 0 0 100%;
+        max-width: 100%;
+    }
+}
+
+
+/* ----------------------------------------------------------
+   13. AUTOMATIONS TAB
+   ---------------------------------------------------------- */
+
+@media (max-width: 767.98px) {
+    #automations .container-fluid {
+        padding: 0.5rem !important;
+    }
+}
+
+
+/* ----------------------------------------------------------
+   14. ALL MODALS — ensure full width on small screens
+   ---------------------------------------------------------- */
+
+@media (max-width: 767.98px) {
+    .modal-dialog.modal-lg,
+    .modal-dialog.modal-xl {
+        margin: 0.25rem;
+        max-width: calc(100vw - 0.5rem) !important;
+    }
+
+    .modal-body {
+        padding: 0.75rem;
+    }
+
+    .modal-footer {
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        padding: 0.5rem 0.75rem;
+    }
+
+    .modal-footer .btn {
+        flex: 1 1 auto;
+        min-height: 44px;
+    }
+}
+
+
+/* ----------------------------------------------------------
+   15. GENERAL FORM INPUTS — prevent iOS zoom
+   ---------------------------------------------------------- */
+
+@media (max-width: 767.98px) {
+    /* iOS zooms the page when focusing inputs with font-size < 16px */
+    .form-control,
+    .form-select,
+    textarea.form-control {
+        font-size: 16px !important;
+    }
+
+    .form-control-sm,
+    .form-select-sm {
+        font-size: 14px !important;
+    }
+}
+
+
+/* ----------------------------------------------------------
+   16. DEBUG PACKETS MODAL — filters row
+   ---------------------------------------------------------- */
+
+@media (max-width: 767.98px) {
+    #debugPacketsModal .row.mb-3 > [class*="col-md-"] {
+        flex: 0 0 100%;
+        max-width: 100%;
+        margin-bottom: 0.5rem;
+    }
+}
+
+
+/* ----------------------------------------------------------
+   17. TOPOLOGY TAB — touch-friendly SVG
+   ---------------------------------------------------------- */
+
+@media (max-width: 767.98px) {
+    .mesh-topology-container {
+        height: 60vh !important;
+    }
+
+    .mesh-topology-container svg {
+        touch-action: pan-x pan-y pinch-zoom;
+    }
+}
+
+
+/* ----------------------------------------------------------
+   18. ADVANCED YAML EDITOR — reduce height on mobile
+   ---------------------------------------------------------- */
+
+@media (max-width: 767.98px) {
+    #configEditor {
+        height: 45vh !important;
+        font-size: 12px !important;
+    }
+}

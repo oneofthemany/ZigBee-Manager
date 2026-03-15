@@ -12,6 +12,30 @@ import { fetchAllDevices } from './devices.js';
 import { initGroups } from './groups.js';
 import { initMQTTExplorer, handleMQTTMessage } from './mqtt-explorer.js';
 
+import { initSettings } from './settings.js';
+initSettings();
+
+import {
+    loadTabs,
+    filterByTab,
+    openTabManager,
+    createNewTab,
+    deleteTab,
+    manageTabDevices,
+    toggleDeviceInTab
+} from './tabs.js';
+
+import {
+    initAutomationsPage,
+    loadAutomationsPage
+} from './automations-page.js';
+
+import {
+    initZones,
+    recalibrateZone,
+    deleteZone,
+    viewZoneDetails
+} from './zones.js';
 
 import {
     openDeviceModal,
@@ -31,7 +55,9 @@ import {
 import {
     loadConfigYaml,
     saveConfigYaml,
-    restartSystem
+    restartSystem,
+    loadSSLStatus,
+    toggleSSL
 } from './system.js';
 import {
     sendCommand,
@@ -42,7 +68,12 @@ import {
     permitJoinVia,
     checkPairingStatus,
     bindDevices,
-    startTouchlinkScan
+    startTouchlinkScan,
+    openBannedModal,
+    handleUnbanClick,
+    cleanupOrphans,
+    matterCommission,
+    checkMatterStatus
 } from './actions.js';
 import {
     initMesh,
@@ -53,6 +84,8 @@ import {
     toggleMeshLabels
 } from './mesh.js';
 
+import { renderOTATab, handleOTAProgress } from './modal/ota.js';
+
 // ============================================================================
 // EXPOSE FUNCTIONS GLOBALLY
 // ============================================================================
@@ -62,6 +95,7 @@ window.openDeviceModal = openDeviceModal;
 window.renamePrompt = renamePrompt;
 window.fetchAllDevices = fetchAllDevices;
 window.getDeviceStateHtml = getDeviceStateHtml;
+window.cleanupOrphans = cleanupOrphans;
 
 // Device actions
 window.sendCommand = sendCommand;
@@ -75,6 +109,10 @@ window.permitJoinVia = permitJoinVia;
 window.checkPairingStatus = checkPairingStatus;
 window.startTouchlinkScan = startTouchlinkScan;
 window.bindDevices = bindDevices;
+
+// Matter
+window.matterCommission = matterCommission;
+window.checkMatterStatus = checkMatterStatus;
 
 // Logging & Debug
 window.filterLogs = filterLogs;
@@ -90,6 +128,16 @@ window.downloadDebugLog = downloadDebugLog;
 window.loadConfigYaml = loadConfigYaml;
 window.saveConfigYaml = saveConfigYaml;
 window.restartSystem = restartSystem;
+window.loadSSLStatus = loadSSLStatus;
+window.toggleSSL = toggleSSL;
+
+window.applyManualChannel = function() {
+    const ch = parseInt(document.getElementById('manualChannelSelect').value);
+    const sel = document.getElementById('cfg_channel');
+    if (sel) sel.value = ch;
+    document.getElementById('spectrumStatus').innerHTML =
+        `<span class="text-primary">Channel ${ch} set in config. Click Save on the Configuration tab.</span>`;
+};
 
 // Mesh Topology
 window.loadMeshTopology = loadMeshTopology;
@@ -100,29 +148,91 @@ window.toggleMeshLabels = toggleMeshLabels;
 
 window.state = state;
 
+// Device Stuff
 window.bindDevices = bindDevices;
+window.openBannedModal = openBannedModal;
+window.handleUnbanClick = handleUnbanClick;
 
+// Automations Page
+window.loadAutomationsPage = loadAutomationsPage;
+
+// OTA
+window.renderOTATab = renderOTATab;
+
+window.otaCheckAll = async function() {
+    const btn = document.getElementById('otaCheckAllBtn');
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Checking...';
+    }
+    try {
+        const resp = await fetch('/api/ota/check-all');
+        const data = await resp.json();
+        const count = data.devices_with_updates || 0;
+        if (count > 0) {
+            let msg = `${count} device(s) have firmware updates available:\n\n`;
+            for (const [ieee, info] of Object.entries(data.updates || {})) {
+                const dev = state.deviceCache[ieee];
+                const name = dev ? dev.friendly_name : ieee;
+                msg += `• ${name}: ${info.current_version} → ${info.new_version}\n`;
+            }
+            msg += '\nOpen each device\'s OTA tab to install.';
+            alert(msg);
+        } else {
+            alert('All devices are up to date — no firmware updates available.');
+        }
+    } catch (e) {
+        alert('OTA check failed: ' + e.message);
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-microchip"></i> Check OTA';
+        }
+    }
+};
+
+// Zones Management
+window.recalibrateZone = recalibrateZone;
+window.deleteZone = deleteZone;
+window.viewZoneDetails = viewZoneDetails;
+
+// Tabs Management
+window.loadTabs = loadTabs;
+window.filterByTab = filterByTab;
+window.openTabManager = openTabManager;
+window.createNewTab = createNewTab;
+window.deleteTab = deleteTab;
+window.manageTabDevices = manageTabDevices;
+window.toggleDeviceInTab = toggleDeviceInTab;
 
 // ============================================================================
-// APPLICATION INITIALIZATION
+// APPLICATION INITIALISATION
 // ============================================================================
 
 document.addEventListener('DOMContentLoaded', () => {
-    // Initialize WebSocket connection
+    // Initialise WebSocket connection
     initWS();
 
     // Start update interval for "last seen" times
     setInterval(updateLastSeenTimes, 1000);
 
-    // Initialize Mesh Tab listener
+    // Initialise Tabs
+    loadTabs();
+
+    // Initialise Mesh Tab listener
     initMesh();
 
-
-    // Initialize Groups
+    // Initialise Groups
     initGroups();
 
-    // Initialize Explorer
+    // Initialise Explorer
     initMQTTExplorer();
+
+    // Initialise Automations Page
+    initAutomationsPage();
+
+    // Initialise Zones
+    initZones();
 
     // Initial fetch
     fetchAllDevices();
@@ -130,10 +240,27 @@ document.addEventListener('DOMContentLoaded', () => {
     // Check if pairing is currently active (Persistence)
     if(typeof checkPairingStatus === 'function') checkPairingStatus();
 
-    // Initialize Settings Tab listener
+    // Initial matter
+    checkMatterStatus();
+
+    // Initialise Settings Tab listener
     const settingsTab = document.querySelector('button[data-bs-target="#settings"]');
     if(settingsTab) {
-        settingsTab.addEventListener('click', loadConfigYaml);
+        settingsTab.addEventListener('click', () => {
+            loadConfigYaml();
+            loadSSLStatus();  // ADD
+        });
+    }
+
+    const topologyTab = document.querySelector('button[data-bs-target="#topology"]');
+    if (topologyTab) {
+        topologyTab.addEventListener('shown.bs.tab', () => {
+            // This ensures the D3 force simulation or SVG scales
+            // correctly once the container is actually visible.
+            if (typeof loadMeshTopology === 'function') {
+                loadMeshTopology();
+            }
+        });
     }
 
     console.log("Zigbee Gateway Frontend Initialized");

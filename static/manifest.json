@@ -1,0 +1,19 @@
+{
+  "name": "ZigBee & Matter Manager",
+  "short_name": "ZBM Manager",
+  "description": "ZigBee & Matter Manager with real-time device management, automation, and Home Assistant integration",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0f1117",
+  "theme_color": "#0d6efd",
+  "icons": [
+    {
+      "src": "/static/images/zigbee-manager-logo.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["utilities", "productivity"]
+}

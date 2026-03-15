@@ -5,6 +5,213 @@
 
 import { state } from '../state.js';
 import { hasCluster } from './config.js';
+import { renderScheduleSection, bindScheduleEvents } from './schedule.js';
+
+// Interaction debounce timer
+let interactionTimeout = null;
+const INTERACTION_DEBOUNCE_MS = 2000;
+let activeTouchSlider = null;
+
+/**
+ * Mark control interaction as active and set debounced clear
+ */
+function setInteractionActive() {
+    state.controlInteractionActive = true;
+    if (interactionTimeout) clearTimeout(interactionTimeout);
+    interactionTimeout = setTimeout(() => {
+        if (!activeTouchSlider) {
+            state.controlInteractionActive = false;
+        }
+    }, INTERACTION_DEBOUNCE_MS);
+}
+
+// Touch-aware interaction lock
+document.addEventListener('touchstart', function(e) {
+    if (e.target.matches('#tab-control input[type="range"]')) {
+        activeTouchSlider = e.target;
+        setInteractionActive();
+    }
+}, { passive: true });
+
+document.addEventListener('touchend', function() {
+    if (activeTouchSlider) {
+        activeTouchSlider = null;
+        setInteractionActive();
+    }
+}, { passive: true });
+
+document.addEventListener('touchcancel', function() {
+    if (activeTouchSlider) {
+        activeTouchSlider = null;
+        setInteractionActive();
+    }
+}, { passive: true });
+
+/**
+ * Send brightness command with optimistic UI update
+ */
+window.sendBrightnessCommand = function(ieee, value, epId, labelId) {
+    setInteractionActive();
+
+    // Optimistic UI update - update label immediately
+    const label = document.getElementById(labelId);
+    if (label) {
+        label.textContent = `Brightness: ${value}%`;
+    }
+
+    // Send command
+    window.sendCommand(ieee, 'brightness', value, epId);
+};
+
+/**
+ * Handle slider input (during drag) - optimistic label update only
+ */
+window.onBrightnessInput = function(value, labelId) {
+    setInteractionActive();
+    const label = document.getElementById(labelId);
+    if (label) {
+        label.textContent = `Brightness: ${value}%`;
+    }
+};
+
+/**
+ * Send color temp command with optimistic UI update
+ */
+window.sendColorTempCommand = function(ieee, kelvin, epId, labelId) {
+    setInteractionActive();
+
+    const label = document.getElementById(labelId);
+    if (label) {
+        label.textContent = `Color Temp: ${kelvin}K`;
+    }
+
+    window.sendCommand(ieee, 'color_temp', kelvin, epId);
+};
+
+/**
+ * Handle color temp slider input
+ */
+window.onColorTempInput = function(kelvin, labelId) {
+    setInteractionActive();
+    const label = document.getElementById(labelId);
+    if (label) {
+        label.textContent = `Color Temp: ${kelvin}K`;
+    }
+};
+
+/**
+ * Send position command for covers with optimistic update
+ */
+window.sendPositionCommand = function(ieee, value, labelId) {
+    setInteractionActive();
+
+    const label = document.getElementById(labelId);
+    if (label) {
+        label.textContent = `Position: ${value}%`;
+    }
+
+    window.sendCommand(ieee, 'position', value);
+};
+
+/**
+ * Handle position slider input
+ */
+window.onPositionInput = function(value, labelId) {
+    setInteractionActive();
+    const label = document.getElementById(labelId);
+    if (label) {
+        label.textContent = `Position: ${value}%`;
+    }
+};
+
+/**
+ * Update only the values/badges in control tab without full re-render
+ * Called by refreshModalState when user is interacting
+ */
+export function updateControlValues(device) {
+    const s = device.state || {};
+    const ieee = device.ieee;
+    const interacting = state.controlInteractionActive;
+
+    // Update ON/OFF badges and controls for each endpoint
+    if (device.capabilities && Array.isArray(device.capabilities)) {
+        device.capabilities.forEach(ep => {
+            const epId = ep.id;
+            const isOn = s[`on_${epId}`] !== undefined ? s[`on_${epId}`] : (epId === 1 ? s.on : false);
+
+            // Update ON/OFF badge (always safe)
+            const badge = document.querySelector(`[data-ep-badge="${epId}"]`);
+            if (badge) {
+                badge.className = isOn ? 'badge bg-success' : 'badge bg-secondary';
+                badge.textContent = isOn ? 'ON' : 'OFF';
+            }
+
+            // Skip all slider/label updates during active interaction
+            if (interacting) return;
+
+            // Update brightness slider and label
+            const brightness = s[`brightness_${epId}`] !== undefined ? s[`brightness_${epId}`] : (epId === 1 ? s.brightness : null);
+            if (brightness !== null) {
+                const briLabelId = `bri-label-${ieee}-${epId}`;
+                const briLabel = document.getElementById(briLabelId);
+                if (briLabel) {
+                    briLabel.textContent = `Brightness: ${brightness}%`;
+                }
+            }
+
+            // Update color picker and saturation slider from device state
+            const hue = s.hue || s.color_hue || 0;
+            const sat = s.saturation || s.color_saturation || 254;
+
+            // Convert ZCL format (0-254) to CSS format (hue 0-360, sat 0-100)
+            const cssHue = Math.round((hue / 254) * 360);
+            const cssSat = Math.round((sat / 254) * 100);
+
+            // Update color picker
+            const picker = document.getElementById(`colorPicker_${ieee}_${epId}`);
+            if (picker && window.hslToHex) {
+                picker.value = window.hslToHex(cssHue, cssSat, 50);
+            }
+
+            // Update saturation slider
+            const satSlider = document.getElementById(`satSlider_${ieee}_${epId}`);
+            if (satSlider) {
+                satSlider.value = cssSat;
+            }
+
+            // Update color temp slider and label
+            const colorTemp = s[`color_temp_${epId}`] || (epId === 1 ? s.color_temp : null);
+            if (colorTemp) {
+                const kelvin = Math.round(1000000 / colorTemp);
+                const ctLabelId = `ct-label-${ieee}-${epId}`;
+                const ctLabel = document.getElementById(ctLabelId);
+                if (ctLabel) {
+                    ctLabel.textContent = `Color Temp: ${kelvin}K`;
+                }
+            }
+        });
+    }
+
+    // Update thermostat current temp display
+    const currentTempEl = document.querySelector('[data-thermostat-current]');
+    if (currentTempEl) {
+        const tempKeys = ['internal_temperature', 'temperature', 'local_temperature'];
+        for (const key of tempKeys) {
+            if (s[key] !== undefined && s[key] !== null && Number(s[key]) !== 0) {
+                currentTempEl.textContent = `${Number(s[key]).toFixed(1)}°C`;
+                break;
+            }
+        }
+    }
+     // Update thermostat target setpoint display
+    const setpointEl = document.querySelector(`[data-thermostat-setpoint="${ieee}"]`);
+    if (setpointEl) {
+        const rawTarget = s.occupied_heating_setpoint || s.heating_setpoint || s.temperature_setpoint;
+        if (rawTarget !== undefined) {
+            setpointEl.textContent = `${Number(rawTarget).toFixed(1)}°C`;
+        }
+    }
+}
 
 export function renderControlTab(device) {
     const s = device.state || {};
@@ -17,6 +224,7 @@ export function renderControlTab(device) {
         controlsFound = true;
         const position = s.position !== undefined ? s.position : 50;
         const isClosed = s.is_closed;
+        const posLabelId = `pos-label-${device.ieee}`;
 
         html += `
         <div class="col-12">
@@ -36,9 +244,10 @@ export function renderControlTab(device) {
                             </div>
                         </div>
                         <div class="col-12">
-                            <label class="form-label small text-muted">Position: ${position}%</label>
+                            <label id="${posLabelId}" class="form-label small text-muted">Position: ${position}%</label>
                             <input type="range" class="form-range" min="0" max="100" value="${position}"
-                                   onchange="window.sendCommand('${device.ieee}', 'position', this.value)">
+                                   oninput="window.onPositionInput(this.value, '${posLabelId}')"
+                                   onchange="window.sendPositionCommand('${device.ieee}', this.value, '${posLabelId}')">
                             <div class="d-flex justify-content-between small text-muted">
                                 <span>Closed (0%)</span>
                                 <span>Open (100%)</span>
@@ -107,13 +316,13 @@ export function renderControlTab(device) {
                         <div class="col-md-6">
                             <div class="text-center p-3 bg-light rounded">
                                 <small class="text-muted d-block mb-1">Current</small>
-                                <h2 class="mb-0">${currentTemp}°C</h2>
+                                <h2 class="mb-0" data-thermostat-current>${currentTemp}°C</h2>
                             </div>
                         </div>
                         <div class="col-md-6">
                             <div class="text-center p-3 bg-primary bg-opacity-10 rounded">
                                 <small class="text-muted d-block mb-1">Target</small>
-                                <h2 class="mb-0 text-primary">${targetTemp}°C</h2>
+                                <h2 class="mb-0 text-primary" data-thermostat-setpoint="${device.ieee}">${targetTemp}°C</h2>
                             </div>
                         </div>
                         <div class="col-12">
@@ -126,29 +335,27 @@ export function renderControlTab(device) {
                             </select>
                         </div>
                         <div class="col-12">
-                            <label class="form-label fw-bold"><i class="fas fa-temperature-high"></i> Setpoint</label>
+                            <label class="form-label fw-bold"><i class="fas fa-sliders-h"></i> Set Target</label>
                             <div class="input-group">
-                                <button class="btn btn-outline-secondary" type="button" onclick="window.adjustThermostat('${device.ieee}', -0.5)"><i class="fas fa-minus"></i></button>
-                                <input type="number" id="thermostat-setpoint-${device.ieee}" class="form-control text-center fw-bold" value="${targetTemp}" min="5" max="35" step="0.5" style="font-size: 1.1rem;">
-                                <span class="input-group-text">°C</span>
-                                <button class="btn btn-outline-secondary" type="button" onclick="window.adjustThermostat('${device.ieee}', 0.5)"><i class="fas fa-plus"></i></button>
-                                <button class="btn btn-primary" type="button" onclick="window.setThermostatTemp('${device.ieee}')"><i class="fas fa-check"></i> Set</button>
+                                <button class="btn btn-outline-secondary" onclick="window.adjustThermostat('${device.ieee}', -0.5)">−</button>
+                                <input type="number" id="thermostat-setpoint-${device.ieee}" class="form-control text-center"
+                                       value="${targetTemp}" step="0.5" min="5" max="35">
+                                <button class="btn btn-outline-secondary" onclick="window.adjustThermostat('${device.ieee}', 0.5)">+</button>
+                                <button class="btn btn-primary" onclick="window.setThermostatTemp('${device.ieee}')">Set</button>
                             </div>
                         </div>
-                        <div class="col-12 mt-3">
-                            <label class="form-label fw-bold"><i class="fas fa-calendar-alt"></i> Schedule</label>
-                            <div class="d-grid gap-2">
-                                <button class="btn btn-outline-primary" type="button"
-                                    onclick="window.uploadSimpleSchedule('${device.ieee}')">
-                                    <i class="fas fa-upload"></i> Upload Standard Schedule (9-5)
-                                </button>
+                        ${piDemand > 0 ? `
+                        <div class="col-12">
+                            <label class="form-label small text-muted">Heat Demand: ${piDemand}%</label>
+                            <div class="progress" style="height: 8px;">
+                                <div class="progress-bar bg-danger" style="width: ${piDemand}%"></div>
                             </div>
-                            <small class="text-muted">Uploads a default schedule: 20°C at 6AM, 18°C at 9AM, 21°C at 5PM, 16°C at 10PM.</small>
-                        </div>
+                        </div>` : ''}
                     </div>
                 </div>
             </div>
-        </div>`;
+        </div>
+        ${renderScheduleSection(device.ieee)}`;
     }
 
     // --- On/Off, Level, Color Clusters ---
@@ -178,6 +385,10 @@ export function renderControlTab(device) {
                 let colorTemp = s[`color_temp_${epId}`] || (epId === 1 ? s.color_temp : 370);
                 let kelvin = colorTemp ? Math.round(1000000 / colorTemp) : 2700;
 
+                // Unique IDs for this endpoint's controls
+                const briLabelId = `bri-label-${device.ieee}-${epId}`;
+                const ctLabelId = `ct-label-${device.ieee}-${epId}`;
+
                 // Use componentType to determine header/icon
                 const icon = isLight ? '<i class="fas fa-lightbulb text-warning"></i>' : '<i class="fas fa-plug text-info"></i>';
                 const label = isLight ? 'Light' : 'Switch';
@@ -187,7 +398,7 @@ export function renderControlTab(device) {
                     <div class="card h-100">
                         <div class="card-header d-flex justify-content-between align-items-center">
                             <strong>${icon} ${label} (EP${epId})</strong>
-                            ${isOn ? '<span class="badge bg-success">ON</span>' : '<span class="badge bg-secondary">OFF</span>'}
+                            <span data-ep-badge="${epId}" class="${isOn ? 'badge bg-success' : 'badge bg-secondary'}">${isOn ? 'ON' : 'OFF'}</span>
                         </div>
                         <div class="card-body">`;
 
@@ -206,19 +417,51 @@ export function renderControlTab(device) {
                 if (hasLevel) {
                     html += `
                         <div class="mb-3">
-                            <label class="form-label small text-muted">Brightness: ${brightness}%</label>
+                            <label id="${briLabelId}" class="form-label small text-muted">Brightness: ${brightness}%</label>
                             <input type="range" class="form-range" min="0" max="100" value="${brightness}"
-                                   onchange="window.sendCommand('${device.ieee}', 'brightness', this.value, ${epId})">
+                                   oninput="window.onBrightnessInput(this.value, '${briLabelId}')"
+                                   onchange="window.sendBrightnessCommand('${device.ieee}', this.value, ${epId}, '${briLabelId}')">
                         </div>`;
                 }
 
                 if (hasColor) {
+                    const hue = s.hue || s.color_hue || 0;
+                    const sat = s.saturation || s.color_saturation || 254;
+                    const colorMode = s.color_mode || 'color_temp';
+                    const cssHue = Math.round((hue / 254) * 360);
+                    const cssSat = Math.round((sat / 254) * 100);
+
                     html += `
                         <div class="mb-3">
-                            <label class="form-label small text-muted">Color Temp: ${kelvin}K</label>
+                            <label class="form-label small text-muted">Color Mode</label>
+                            <div class="btn-group w-100 mb-2" role="group">
+                                <input type="radio" class="btn-check" name="colorMode_${epId}" id="colorModeTemp_${epId}"
+                                       ${colorMode === 'color_temp' ? 'checked' : ''} onchange="window.showColorMode('${device.ieee}', ${epId}, 'temp')">
+                                <label class="btn btn-outline-secondary btn-sm" for="colorModeTemp_${epId}">Temp</label>
+                                <input type="radio" class="btn-check" name="colorMode_${epId}" id="colorModeColor_${epId}"
+                                       ${colorMode !== 'color_temp' ? 'checked' : ''} onchange="window.showColorMode('${device.ieee}', ${epId}, 'color')">
+                                <label class="btn btn-outline-secondary btn-sm" for="colorModeColor_${epId}">Color</label>
+                            </div>
+                        </div>
+                        <div id="colorTempPanel_${epId}" class="mb-3" style="${colorMode !== 'color_temp' ? 'display:none' : ''}">
+                            <label id="${ctLabelId}" class="form-label small text-muted">Color Temp: ${kelvin}K</label>
                             <input type="range" class="form-range" min="2000" max="6500" value="${kelvin}"
                                    style="background: linear-gradient(to right, #ffae00, #ffead1, #fff, #d1eaff, #99ccff);"
-                                   onchange="window.sendCommand('${device.ieee}', 'color_temp', this.value, ${epId})">
+                                   oninput="window.onColorTempInput(this.value, '${ctLabelId}')"
+                                   onchange="window.sendColorTempCommand('${device.ieee}', this.value, ${epId}, '${ctLabelId}')">
+                        </div>
+                        <div id="colorPickerPanel_${epId}" class="mb-3" style="${colorMode === 'color_temp' ? 'display:none' : ''}">
+                            <label class="form-label small text-muted">Color</label>
+                            <div class="d-flex gap-2 align-items-center">
+                                <input type="color" class="form-control form-control-color" id="colorPicker_${device.ieee}_${epId}"
+                                       value="${window.hslToHex ? window.hslToHex(cssHue, cssSat, 50) : '#ffffff'}"
+                                       onchange="window.sendColorFromPicker('${device.ieee}', this.value, ${epId})">
+                                <div class="flex-grow-1">
+                                    <label class="form-label small text-muted mb-0">Saturation</label>
+                                    <input type="range" class="form-range" min="0" max="100" value="${cssSat}" id="satSlider_${device.ieee}_${epId}"
+                                           onchange="window.sendHSColor('${device.ieee}', null, this.value, ${epId})">
+                                </div>
+                            </div>
                         </div>`;
                 }
 
@@ -227,9 +470,9 @@ export function renderControlTab(device) {
                     html += `<div class="mt-3 pt-3 border-top">`;
 
                     if (hasElectrical) {
-                        const power = s[`power_${epId}`] || s.power || 0;
-                        const voltage = s[`voltage_${epId}`] || s.voltage || 0;
-                        const current = s[`current_${epId}`] || s.current || 0;
+                        const power   = s[`power_${epId}`] ?? 0;
+                        const voltage = s[`voltage_${epId}`] ?? 0;
+                        const current = s[`current_${epId}`] ?? 0;
                         html += `
                         <div class="small text-muted mb-2"><i class="fas fa-bolt"></i> Power Monitoring</div>
                         <div class="d-flex justify-content-between">
@@ -339,38 +582,6 @@ export function renderControlTab(device) {
     return html;
 }
 
-// ... (Rest of your helper functions: uploadSimpleSchedule, adjustThermostat, etc. remain unchanged) ...
-window.uploadSimpleSchedule = async function(ieee) {
-    if (!confirm("This will overwrite the device's internal schedule for ALL days. Continue?")) return;
-
-    // Define a standard "Work Day" schedule
-    // Time is minutes from midnight (e.g., 6:00 = 6*60 = 360)
-    const payload = {
-        command: "set_schedule",
-        value: {
-            day_of_week: 255, // 255 = Apply to All Days (check device specific bitmask)
-            transitions: [
-                { time: 360, heat: 20.0 }, // 06:00 AM
-                { time: 540, heat: 18.0 }, // 09:00 AM (Leave for work)
-                { time: 1020, heat: 21.0 }, // 17:00 PM (Return home)
-                { time: 1320, heat: 16.0 }  // 22:00 PM (Sleep)
-            ]
-        }
-    };
-
-    try {
-        await fetch(`/api/device/${ieee}/command`, {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify(payload)
-        });
-        alert('Schedule command sent!');
-    } catch (error) {
-        console.error('Error:', error);
-        alert('Failed: ' + error.message);
-    }
-};
-
 window.adjustThermostat = function(ieee, delta) {
     const input = document.getElementById(`thermostat-setpoint-${ieee}`);
     if (input) {
@@ -393,6 +604,9 @@ window.setThermostatTemp = async function(ieee) {
     }
     try {
         await window.sendCommand(ieee, 'temperature', temp);
+        // Optimistic update — don't wait for WS round-trip
+        const setpointEl = document.querySelector(`[data-thermostat-setpoint="${ieee}"]`);
+        if (setpointEl) setpointEl.textContent = `${temp.toFixed(1)}°C`;
         console.log(`✓ Temperature set to ${temp}°C`);
     } catch (error) {
         console.error('Failed to set temperature:', error);
@@ -407,5 +621,17 @@ window.setHvacMode = async function(ieee, mode) {
     } catch (error) {
         console.error('Failed to set HVAC mode:', error);
         alert('Failed to set HVAC mode: ' + error.message);
+    }
+};
+
+window.showColorMode = function(ieee, epId, mode) {
+    const tempPanel = document.getElementById(`colorTempPanel_${epId}`);
+    const colorPanel = document.getElementById(`colorPickerPanel_${epId}`);
+    if (mode === 'temp') {
+        if (tempPanel) tempPanel.style.display = '';
+        if (colorPanel) colorPanel.style.display = 'none';
+    } else {
+        if (tempPanel) tempPanel.style.display = 'none';
+        if (colorPanel) colorPanel.style.display = '';
     }
 };

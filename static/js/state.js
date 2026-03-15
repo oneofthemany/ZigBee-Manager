@@ -12,6 +12,12 @@ export const state = {
     debugEnabled: false,
     verboseLogging: false,
     isRestarting: false,
-    pairingInterval: null, // Track the timer ID
-    tableSortInitialised: false // Track table sort initialisation
+    pairingInterval: null,
+    tableSortInitialised: false,
+    deviceFilter: null,
+    controlInteractionActive: false  // Prevents modal refresh during slider/picker interaction
+};
+
+window._getDeviceState = function(ieee) {
+    return state.deviceCache[ieee]?.state || {};
 };

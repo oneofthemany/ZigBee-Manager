@@ -4,16 +4,22 @@
  */
 
 import { state } from './state.js';
+import { hasCluster } from './modal/config.js';
 import { renderOverviewTab, saveConfig } from './modal/overview.js';
-import { renderControlTab } from './modal/control.js';
+import { renderControlTab, updateControlValues } from './modal/control.js';
 import { renderBindingTab } from './modal/binding.js';
 import { renderCapsTab } from './modal/clusters.js';
+import { renderAutomationTab, initAutomationTab } from './modal/automation.js';
+import { renderMappingsTab, initMappingsTab, hasGenericContent } from './modal/mappings.js';
+import { bindScheduleEvents } from './modal/schedule.js';
+import { renderOTATab, handleOTAProgress } from './modal/ota.js';
+
 
 // Re-export these functions so main.js (and others) can still import them from here
-export { renderOverviewTab, renderControlTab, renderBindingTab, renderCapsTab, saveConfig };
-
+export { renderOverviewTab, renderControlTab, renderBindingTab, renderCapsTab, renderAutomationTab, renderMappingsTab, saveConfig, handleOTAProgress };
 export function openDeviceModal(d) {
     const cachedDev = (d && d.ieee && state.deviceCache[d.ieee]) ? state.deviceCache[d.ieee] : d;
+    const isZigbee = !cachedDev.protocol || cachedDev.protocol === 'zigbee';
     state.currentDeviceIeee = cachedDev.ieee;
 
     const modalBody = document.getElementById('capModalBody');
@@ -26,6 +32,7 @@ export function openDeviceModal(d) {
                 <div class="text-muted small font-monospace">${cachedDev.ieee}</div>
             </div>
             <div>
+                ${!isZigbee ? '<span class="badge bg-info me-1">Matter</span>' : ''}
                 <span class="badge bg-secondary">${cachedDev.manufacturer}</span>
                 <span class="badge bg-secondary">${cachedDev.model}</span>
             </div>
@@ -34,8 +41,11 @@ export function openDeviceModal(d) {
         <ul class="nav nav-tabs mb-3" id="devTabs">
             <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-overview">Overview</button></li>
             <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-control">Control</button></li>
-            <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-binding">Binding</button></li>
-            <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-caps">Clusters</button></li>
+            <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-ota"></i>OTA</button></li>
+            ${isZigbee ? '<li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-binding">Binding</button></li>' : ''}
+            ${isZigbee ? '<li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-caps">Clusters</button></li>' : ''}
+            <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-automation">Automation</button></li>
+            ${isZigbee ? '<li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-mappings">Mappings</button></li>' : ''}
         </ul>
 
         <div class="tab-content">
@@ -45,32 +55,80 @@ export function openDeviceModal(d) {
             <div class="tab-pane fade" id="tab-control">
                 ${renderControlTab(cachedDev)}
             </div>
+            <div class="tab-pane fade" id="tab-ota">
+                ${renderOTATab(cachedDev)}
+            </div>
+            ${isZigbee ? `
             <div class="tab-pane fade" id="tab-binding">
                 ${renderBindingTab(cachedDev)}
             </div>
             <div class="tab-pane fade" id="tab-caps">
                 ${renderCapsTab(cachedDev)}
             </div>
+            ` : ''}
+            <div class="tab-pane fade" id="tab-automation">
+                ${renderAutomationTab(cachedDev)}
+            </div>
+            ${isZigbee ? `
+            <div class="tab-pane fade" id="tab-mappings">
+                ${renderMappingsTab(cachedDev)}
+            </div>
+            ` : ''}
         </div>
     `;
 
     modalBody.innerHTML = html;
+
+    // Bind schedule calendar events for thermostat devices
+    if (hasCluster(cachedDev, 0x0201)) {
+        bindScheduleEvents(cachedDev.ieee);
+    }
+
+    // Hydrate automation tab when clicked (lazy load API data)
+    const autoTab = modalBody.querySelector('[data-bs-target="#tab-automation"]');
+    if (autoTab) {
+        autoTab.addEventListener('shown.bs.tab', () => {
+            initAutomationTab(cachedDev.ieee);
+        });
+    }
+
     const modalEl = document.getElementById('capModal');
     if (modalEl) new bootstrap.Modal(modalEl).show();
+
+    if (isZigbee) {
+        const mapTab = modalBody.querySelector('[data-bs-target="#tab-mappings"]');
+        if (mapTab) {
+            mapTab.addEventListener('shown.bs.tab', () => {
+                initMappingsTab(cachedDev.ieee);
+            });
+        }
+    }
 }
 
 export function refreshModalState(device) {
     console.log("4. Refreshing Modal Content for:", device.friendly_name);
+
     // Update Overview Tab if it exists
     const overviewTab = document.getElementById('tab-overview');
     if (overviewTab) {
         overviewTab.innerHTML = renderOverviewTab(device);
     }
 
-    // Update Control Tab if it exists
+    // Update Control Tab - using targeted updates
     const controlTab = document.getElementById('tab-control');
     if (controlTab) {
-        controlTab.innerHTML = renderControlTab(device);
+        // Check if user is currently interacting with controls
+        if (state.controlInteractionActive) {
+            // Only update non-interactive elements (badges, labels)
+            updateControlValues(device);
+        } else {
+            // Full re-render if no active interaction
+            controlTab.innerHTML = renderControlTab(device);
+            // Re-bind schedule events after re-render
+            if (hasCluster(device, 0x0201)) {
+                bindScheduleEvents(device.ieee);
+            }
+        }
     }
 
     // Update Binding Tab if it exists

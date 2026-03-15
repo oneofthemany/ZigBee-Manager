@@ -10,6 +10,18 @@ import { openDeviceModal } from './device-modal.js';
 import { initTableSort, sortDevices, applySortState } from './table-sort.js';
 
 
+
+/**
+ * Check if a device has OTA cluster (0x0019) support
+ */
+function hasOTACluster(d) {
+    if (!d.capabilities || !Array.isArray(d.capabilities)) return false;
+    return d.capabilities.some(ep =>
+        (ep.inputs || []).some(c => c.id === 0x0019) ||
+        (ep.outputs || []).some(c => c.id === 0x0019)
+    );
+}
+
 /**
  * Fetch all devices from API and render table
  */
@@ -34,7 +46,7 @@ export async function fetchAllDevices() {
     } catch (e) {
         console.error("Failed to fetch devices:", e);
         const tbody = document.getElementById('deviceTableBody');
-        if (tbody) tbody.innerHTML = `<tr><td colspan="9" class="text-center text-danger">Error loading devices: ${e.message}</td></tr>`;
+        if (tbody) tbody.innerHTML = `<tr><td colspan="10" class="text-center text-danger">Error loading devices: ${e.message}</td></tr>`;
     }
 }
 
@@ -58,8 +70,19 @@ export function renderDeviceTable() {
     const coordinator = state.devices.find(d => d.type === 'Coordinator');
     let otherDevices = state.devices.filter(d => d.type !== 'Coordinator');
 
+    // Apply tab filter if set
+    if (state.deviceFilter) {
+        otherDevices = otherDevices.filter(state.deviceFilter);
+    }
+
     // Apply current sort state to devices
     otherDevices = applySortState(otherDevices);
+
+    // Update device count badge
+    const countBadge = document.getElementById('deviceCount');
+    if (countBadge) {
+        countBadge.textContent = otherDevices.length;
+    }
 
     // 1. Render Coordinator Card
     if (coordinator && coordContainer) {
@@ -91,7 +114,7 @@ export function renderDeviceTable() {
 
     // 2. Render Other Devices
     if (otherDevices.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted">No devices paired.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="10" class="text-center text-muted">No devices paired.</td></tr>';
         return;
     }
 
@@ -113,10 +136,21 @@ export function renderDeviceTable() {
             quirkHtml = `<span class="badge bg-info text-dark" style="font-size:0.65rem" title="${d.quirk}">${quirkName}</span>`;
         }
 
+        // OTA Badge
+        let otaHtml = '';
+        if (hasOTACluster(d)) {
+            otaHtml = `<span class="badge bg-warning text-dark" style="font-size:0.65rem" title="Firmware updatable (OTA cluster 0x0019)"><i class="fas fa-microchip"></i> OTA</span>`;
+        }
+
         // Status Badge Logic
         let statusHtml = d.available !== false
             ? '<span class="badge bg-success me-1">Online</span>'
             : '<span class="badge bg-secondary me-1">Offline</span>';
+
+        // Protocol badge
+        if (d.protocol === 'matter') {
+            statusHtml += '<span class="badge bg-info me-1">Matter</span>';
+        }
 
         tr.innerHTML = `
             <td class="text-center align-middle" style="font-size: 1.2rem;">${getTypeIcon(d.type)}</td>
@@ -130,17 +164,20 @@ export function renderDeviceTable() {
             </td>
             <td class="align-middle small">
                 <div>${d.manufacturer || '?'}</div>
-                ${quirkHtml}
+                ${quirkHtml} ${otaHtml}
             </td>
             <td class="align-middle small">
                 <div>${d.model || '?'}</div>
             </td>
             <td class="device-lqi align-middle">${getLqiBadge(d.lqi)}</td>
             <td class="last-seen align-middle" data-ts="${d.last_seen_ts}">${timeAgo(d.last_seen_ts)}</td>
-            <td class="align-middle device-status-badges">
-                ${statusHtml}
-            </td>
-            <td class="align-middle text-end">
+             <td class="align-middle device-status-badges">
+                 ${statusHtml}
+             </td>
+             <td class="align-middle">
+                 <span class="badge ${d.protocol === 'matter' ? 'bg-info' : 'bg-primary'}">${d.protocol === 'matter' ? 'Matter' : 'Zigbee'}</span>
+             </td>
+             <td class="align-middle text-end">
                 <div class="btn-group btn-group-sm">
                     <button class="btn btn-outline-primary manage-btn" title="Details & Control">
                         <i class="fas fa-sliders-h"></i> Manage
@@ -162,8 +199,8 @@ export function renderDeviceTable() {
  * Handle incoming WebSocket device update events
  */
 export function handleDeviceUpdate(payload) {
-    // UPDATED LOGGING: Log the payload as JSON
-    console.log("1. WebSocket Update Received:", payload.ieee, "\nPayload:", JSON.stringify(payload, null, 2));
+    // DEBUG LOGGING: Log the payload as JSON
+    //console.log("1. WebSocket Update Received:", payload.ieee, "\nPayload:", JSON.stringify(payload, null, 2));
 
     // 1. Find the device in the array
     const devIndex = state.devices.findIndex(d => d.ieee === payload.ieee);
@@ -172,7 +209,8 @@ export function handleDeviceUpdate(payload) {
         // 2. Update the device state in memory
         // We merge the new data into the existing state object to preserve existing keys
         state.devices[devIndex].state = { ...state.devices[devIndex].state, ...payload.data };
-        console.log("2. Current Open Device:", state.currentDeviceIeee);
+        // DEBUG LOGGING:
+        //console.log("2. Current Open Device:", state.currentDeviceIeee);
 
         // Update metadata if present
         if (payload.data.last_seen) state.devices[devIndex].last_seen_ts = payload.data.last_seen;
@@ -187,8 +225,8 @@ export function handleDeviceUpdate(payload) {
 
         // Update router list if device type changed or availability changed
         populateRouterList();
-
-        console.log("3. MATCH! Attempting to refresh modal...");
+        // DEBUG LOGGING:
+        //console.log("3. MATCH! Attempting to refresh modal...");
 
         // 4. Refresh the modal if it is open for THIS device
         if (state.currentDeviceIeee === payload.ieee) {

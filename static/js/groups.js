@@ -597,18 +597,62 @@ function renderGroupControls(group) {
         `;
     }
 
-    // --- LIGHTS: Color Temp ---
-    if (caps.includes('color_temp')) {
+    // --- LIGHTS: Color Mode (combined Temp + Color) ---
+    if (caps.includes('color_temp') || caps.includes('color_xy')) {
+        const hasBothModes = caps.includes('color_temp') && caps.includes('color_xy');
+
         html += `
             <div class="card mb-3">
-                <div class="card-body p-2">
-                    <label class="form-label small fw-bold">Color Temperature</label>
-                    <div class="d-flex justify-content-between small text-muted">
-                        <span>Cool</span><span>Warm</span>
-                    </div>
-                    <input type="range" class="form-range" min="150" max="500" value="370"
-                           style="background: linear-gradient(to right, #a2d2ff, #fffacd, #ffcea2);"
-                           onchange="controlGroup(${group.id}, {color_temp: this.value})">
+                <div class="card-body p-2">`;
+
+        // Mode toggle only if BOTH modes supported
+        if (hasBothModes) {
+            html += `
+                    <label class="form-label small fw-bold">Color Mode</label>
+                    <div class="btn-group w-100 mb-2" role="group">
+                        <input type="radio" class="btn-check" name="groupColorMode_${group.id}" id="groupColorModeTemp_${group.id}"
+                               checked onchange="showGroupColorMode(${group.id}, 'temp')">
+                        <label class="btn btn-outline-secondary btn-sm" for="groupColorModeTemp_${group.id}">Temperature</label>
+                        <input type="radio" class="btn-check" name="groupColorMode_${group.id}" id="groupColorModeColor_${group.id}"
+                               onchange="showGroupColorMode(${group.id}, 'color')">
+                        <label class="btn btn-outline-secondary btn-sm" for="groupColorModeColor_${group.id}">Color</label>
+                    </div>`;
+        }
+
+        // Color Temperature panel
+        if (caps.includes('color_temp')) {
+            html += `
+                    <div id="groupColorTempPanel_${group.id}">
+                        <label class="form-label small text-muted">Color Temperature</label>
+                        <div class="d-flex justify-content-between small text-muted">
+                            <span>Cool</span><span>Warm</span>
+                        </div>
+                        <input type="range" class="form-range" min="153" max="500" value="250"
+                               style="background: linear-gradient(to right, #99ccff, #fff, #ffae00);"
+                               onchange="controlGroup(${group.id}, {color_temp: this.value})">
+                    </div>`;
+        }
+
+        // Color Picker panel (hidden by default when both modes exist)
+        if (caps.includes('color_xy')) {
+            const hideColor = hasBothModes ? 'style="display:none"' : '';
+            html += `
+                    <div id="groupColorPickerPanel_${group.id}" ${hideColor}>
+                        <label class="form-label small text-muted">Color</label>
+                        <div class="d-flex gap-2 align-items-center">
+                            <input type="color" class="form-control form-control-color" id="groupColorPicker_${group.id}"
+                                   value="#ff6b6b"
+                                   onchange="sendGroupColor(${group.id}, this.value)">
+                            <div class="flex-grow-1">
+                                <label class="form-label small text-muted mb-0">Saturation</label>
+                                <input type="range" class="form-range" min="0" max="100" value="100" id="groupSatSlider_${group.id}"
+                                       onchange="sendGroupColor(${group.id}, null, this.value)">
+                            </div>
+                        </div>
+                    </div>`;
+        }
+
+        html += `
                 </div>
             </div>
         `;
@@ -835,6 +879,73 @@ window.addDeviceToGroup = async function() {
         alert('Failed to add device to group');
     }
 }
+
+window.showGroupColorMode = function(groupId, mode) {
+    const tempPanel = document.getElementById(`groupColorTempPanel_${groupId}`);
+    const colorPanel = document.getElementById(`groupColorPickerPanel_${groupId}`);
+    if (mode === 'temp') {
+        if (tempPanel) tempPanel.style.display = '';
+        if (colorPanel) colorPanel.style.display = 'none';
+    } else {
+        if (tempPanel) tempPanel.style.display = 'none';
+        if (colorPanel) colorPanel.style.display = '';
+    }
+};
+
+
+/**
+ * Send color command to group
+ */
+window.sendGroupColor = async function(groupId, hexColor, saturation) {
+    const command = {};
+
+    // If hexColor is provided, convert it to HS
+    if (hexColor) {
+        // Simple Hex to RGB conversion
+        const r = parseInt(hexColor.slice(1, 3), 16);
+        const g = parseInt(hexColor.slice(3, 5), 16);
+        const b = parseInt(hexColor.slice(5, 7), 16);
+
+        // Convert RGB to HS (Simplified for Zigbee)
+        const hs = rgbToHs(r, g, b);
+        command.hs_color = [hs.h, hs.s];
+    }
+
+    // If saturation is provided from the slider, update it
+    if (saturation !== null && saturation !== undefined) {
+        if (!command.hs_color) {
+            const picker = document.getElementById(`groupColorPicker_${groupId}`);
+            return window.sendGroupColor(groupId, picker.value, saturation);
+        }
+        command.hs_color[1] = parseInt(saturation);
+    }
+
+    await window.controlGroup(groupId, command);
+};
+
+/**
+ * Helper: RGB to HS conversion
+ */
+function rgbToHs(r, g, b) {
+    r /= 255; g /= 255; b /= 255;
+    const max = Math.max(r, g, b), min = Math.min(r, g, b);
+    let h, s, v = max;
+    const d = max - min;
+    s = max === 0 ? 0 : d / max;
+
+    if (max === min) {
+        h = 0;
+    } else {
+        switch (max) {
+            case r: h = (g - b) / d + (g < b ? 6 : 0); break;
+            case g: h = (b - r) / d + 2; break;
+            case b: h = (r - g) / d + 4; break;
+        }
+        h /= 6;
+    }
+    return { h: Math.round(h * 360), s: Math.round(s * 100) };
+}
+
 
 // Export functions
 export {
