@@ -6,7 +6,6 @@ Wraps zigpy's built-in OTA subsystem to provide:
 - Per-device firmware availability checking
 - Manual update triggering with progress tracking via WebSocket
 - Local OTA file upload support
-- HA MQTT discovery for update entities (optional)
 
 zigpy handles the heavy lifting (image matching, block transfer, cluster commands).
 This module provides the management layer and API surface.
@@ -15,9 +14,9 @@ import os
 import asyncio
 import logging
 import time
-import shutil
 from pathlib import Path
 from typing import Dict, Any, Optional, Callable
+from zigpy.zcl.clusters.general import Ota as OtaCluster
 
 logger = logging.getLogger("ota")
 
@@ -91,33 +90,28 @@ class OTAManager:
         zigpy_dev = device.zigpy_dev
 
         try:
-            # zigpy's app.ota.get_ota_image() checks all providers
-            # Returns OtaImageWithMetadata or None
-            image_meta = await self.app.ota.get_ota_image(
-                manufacturer_id=zigpy_dev.manufacturer_id if hasattr(zigpy_dev, 'manufacturer_id') else 0,
-                image_type=self._get_image_type(zigpy_dev),
-                model=zigpy_dev.model or "",
-                hw_version=getattr(zigpy_dev, 'hw_version', None),
-                current_file_version=self._get_current_fw_version(zigpy_dev),
-            )
+            # zigpy's app.ota.get_ota_images() checks all providers
+            # Returns OtaImagesResult with .upgrades and .downgrades
+            query_cmd = self._build_query_cmd(zigpy_dev)
+            result = await self.app.ota.get_ota_images(zigpy_dev, query_cmd)
 
-            if image_meta is None:
+            if not result.upgrades:
+                current_ver = self._get_current_fw_version(zigpy_dev)
                 return {
                     "available": False,
-                    "current_version": self._format_version(self._get_current_fw_version(zigpy_dev)),
+                    "current_version": self._format_version(current_ver),
                     "message": "No update available",
                 }
 
-            new_version = image_meta.firmware.header.file_version if hasattr(image_meta, 'firmware') and image_meta.firmware else None
-            if new_version is None and hasattr(image_meta, 'image'):
-                new_version = image_meta.image.header.file_version
+            image_meta = result.upgrades[0]  # Best match
+            new_version = image_meta.firmware.header.file_version if image_meta.firmware else None
 
             return {
                 "available": True,
                 "current_version": self._format_version(self._get_current_fw_version(zigpy_dev)),
                 "new_version": self._format_version(new_version),
-                "image_size": getattr(image_meta.firmware.header if hasattr(image_meta, 'firmware') and image_meta.firmware else getattr(image_meta, 'image', None) and image_meta.image.header, 'image_size', 0),
-                "manufacturer_id": zigpy_dev.manufacturer_id if hasattr(zigpy_dev, 'manufacturer_id') else 0,
+                "image_size": image_meta.firmware.header.image_size if image_meta.firmware else 0,
+                "manufacturer_id": getattr(zigpy_dev, 'manufacturer_id', 0),
             }
 
         except Exception as e:
@@ -159,18 +153,20 @@ class OTAManager:
 
         # Check an image is actually available
         try:
-            image_meta = await self.app.ota.get_ota_image(
-                manufacturer_id=zigpy_dev.manufacturer_id if hasattr(zigpy_dev, 'manufacturer_id') else 0,
-                image_type=self._get_image_type(zigpy_dev),
-                model=zigpy_dev.model or "",
-                hw_version=getattr(zigpy_dev, 'hw_version', None),
-                current_file_version=self._get_current_fw_version(zigpy_dev) if not force else 0,
-            )
+            query_cmd = self._build_query_cmd(zigpy_dev)
+            result = await self.app.ota.get_ota_images(zigpy_dev, query_cmd)
+
+            if force:
+                all_images = list(result.upgrades) + list(result.downgrades)
+            else:
+                all_images = list(result.upgrades)
         except Exception as e:
             return {"success": False, "error": f"Image lookup failed: {e}"}
 
-        if image_meta is None:
+        if not all_images:
             return {"success": False, "error": "No firmware image available"}
+
+        image_meta = all_images[0]
 
         # Initialise progress tracking
         self._update_progress[ieee] = {
@@ -260,9 +256,6 @@ class OTAManager:
         try:
             dest.write_bytes(content)
             logger.info(f"OTA firmware uploaded: {filename} ({len(content)} bytes)")
-
-            # Notify zigpy to rescan the directory if the provider is active
-            # zigpy's FileStore provider watches the directory
             return {"success": True, "file": filename, "size": len(content)}
         except Exception as e:
             logger.error(f"OTA upload failed: {e}")
@@ -282,13 +275,13 @@ class OTAManager:
             return {"success": False, "error": str(e)}
 
     # =========================================================================
-    # NOTIFY DEVICE (image_notify command)
+    # NOTIFY DEVICE (image_notify via zigpy broadcast)
     # =========================================================================
 
     async def notify_device(self, ieee: str) -> dict:
         """
         Send an OTA Image Notify to a device, prompting it to check for updates.
-        This is the Zigbee OTA cluster command 0x0000 (ImageNotify).
+        Uses zigpy's built-in broadcast_notify method.
         """
         device = self.service.devices.get(ieee)
         if not device:
@@ -297,25 +290,8 @@ class OTAManager:
         zigpy_dev = device.zigpy_dev
 
         try:
-            # Find OTA cluster (0x0019) - usually an output cluster on devices
-            ota_cluster = None
-            for ep_id, ep in zigpy_dev.endpoints.items():
-                if ep_id == 0:
-                    continue
-                if 0x0019 in ep.out_clusters:
-                    ota_cluster = ep.out_clusters[0x0019]
-                    break
-                if 0x0019 in ep.in_clusters:
-                    ota_cluster = ep.in_clusters[0x0019]
-                    break
-
-            if ota_cluster is None:
-                return {"success": False, "error": "Device has no OTA cluster"}
-
-            # Send image_notify command (payload_type=0 = QueryJitter, jitter=100)
-            await ota_cluster.image_notify(0, 100)  # payload_type, query_jitter
+            await self.app.ota.broadcast_notify(zigpy_dev)
             return {"success": True, "message": "Image notify sent"}
-
         except Exception as e:
             logger.warning(f"[{ieee}] OTA notify failed: {e}")
             return {"success": False, "error": str(e)}
@@ -323,6 +299,16 @@ class OTAManager:
     # =========================================================================
     # HELPERS
     # =========================================================================
+
+    def _build_query_cmd(self, zigpy_dev):
+        """Build a QueryNextImageCommand for this device."""
+        return OtaCluster.QueryNextImageCommand(
+            field_control=0,
+            manufacturer_code=getattr(zigpy_dev, 'manufacturer_id', 0) or 0,
+            image_type=self._get_image_type(zigpy_dev),
+            current_file_version=self._get_current_fw_version(zigpy_dev),
+            hardware_version=getattr(zigpy_dev, 'hw_version', 0) or 0,
+        )
 
     def _get_current_fw_version(self, zigpy_dev) -> int:
         """Extract current firmware version from the OTA cluster attributes."""
@@ -336,7 +322,6 @@ class OTAManager:
                 ver = cache.get(0x0002)  # current_file_version
                 if ver is not None:
                     return ver
-        # Also check Basic cluster sw_build_id as fallback
         return 0
 
     def _get_image_type(self, zigpy_dev) -> int:
@@ -350,7 +335,7 @@ class OTAManager:
                 img_type = cache.get(0x0008)  # image_type_id
                 if img_type is not None:
                     return img_type
-        return 0xFFFF  # Wildcard
+        return 0xFFFF
 
     @staticmethod
     def _format_version(version) -> str:
@@ -374,7 +359,7 @@ def build_ota_config(config: dict) -> dict:
 
     result = {}
 
-    # Local file directory
+    # Ensure local OTA directory exists
     os.makedirs(OTA_DIR, exist_ok=True)
 
     # Build providers list
