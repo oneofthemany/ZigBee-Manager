@@ -12,7 +12,7 @@ class TabsMixin:
 
     def get_device_tabs(self) -> dict:
         """Get all device tabs."""
-        return {"success": True, "tabs": self.device_tabs}
+        return self.device_tabs
 
     def create_device_tab(self, name: str) -> dict:
         """Create a new device tab."""
