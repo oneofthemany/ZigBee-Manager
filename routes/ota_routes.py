@@ -92,14 +92,13 @@ def register_ota_routes(app: FastAPI, ota_manager_getter: Callable):
         if not mgr:
             return {"success": False, "error": "OTA manager not initialised"}
 
-        # Validate file extension
         allowed_ext = {'.ota', '.zigbee', '.bin', '.ota1', '.sbl-ota'}
         ext = '.' + file.filename.rsplit('.', 1)[-1].lower() if '.' in file.filename else ''
         if ext not in allowed_ext:
             return {"success": False, "error": f"Invalid file type. Allowed: {', '.join(allowed_ext)}"}
 
         content = await file.read()
-        if len(content) > 10 * 1024 * 1024:  # 10MB limit
+        if len(content) > 10 * 1024 * 1024:
             return {"success": False, "error": "File too large (max 10MB)"}
 
         return await mgr.upload_firmware(file.filename, content)

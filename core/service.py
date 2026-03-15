@@ -1304,7 +1304,7 @@ class ZigbeeService(
         for ieee, zdev in self.devices.items():
             try:
                 d = zdev.zigpy_dev
-                caps = zdev.capabilities.get_info() if hasattr(zdev, 'capabilities') else {}
+                caps = sorted(list(zdev.capabilities.get_capabilities())) if hasattr(zdev, 'capabilities') else []
 
                 # Build endpoint info
                 endpoints = []
@@ -1323,6 +1323,7 @@ class ZigbeeService(
                         "id": ep_id,
                         "device_type": hex(ep.device_type) if ep.device_type else "0x0000",
                         "profile_id": hex(ep.profile_id) if ep.profile_id else "0x0000",
+                        "profile": hex(ep.profile_id) if ep.profile_id else "0x0000",
                         "inputs": [{"id": c.cluster_id, "name": c.name} for c in ep.in_clusters.values()],
                         "outputs": [{"id": c.cluster_id, "name": c.name} for c in ep.out_clusters.values()],
                         "component_type": component_type
@@ -1339,7 +1340,8 @@ class ZigbeeService(
                     "state": zdev.state,
                     "type": zdev.get_role(),
                     "quirk": getattr(d, 'quirk_class', type(None)).__name__,
-                    "capabilities": caps,
+                    "capabilities": endpoints,
+                    "capability_list": caps,
                     "settings": self.device_settings.get(ieee, {}),
                     "available": zdev.is_available(),
                     "config_schema": zdev.get_device_config_schema() if hasattr(zdev, 'get_device_config_schema') else [],
