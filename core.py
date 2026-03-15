@@ -651,6 +651,7 @@ class ZigbeeService:
 
                 # Initialise OTA Manager
                 self.ota_manager = OTAManager(self, event_emitter=self.callback)
+                self.ota_manager.start_background_checks()
                 logger.info("✅ OTA Manager initialised")
 
                 # ================================================================
@@ -871,6 +872,9 @@ class ZigbeeService:
                 task.cancel()
                 with suppress(asyncio.CancelledError):
                     await task
+
+        if self.ota_manager:
+            self.ota_manager.stop_background_checks()
 
         if self._cache_dirty:
             self._save_state_cache()

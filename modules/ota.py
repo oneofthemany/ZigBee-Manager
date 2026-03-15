@@ -176,6 +176,9 @@ class OTAManager:
             "started_at": time.time(),
         }
 
+        self._background_task: Optional[asyncio.Task] = None
+        self._check_interval = 6 * 3600  # Check every 6 hours
+
         # Launch update in background task
         self._update_tasks[ieee] = asyncio.create_task(
             self._run_update(ieee, zigpy_dev, image_meta, force)
@@ -245,6 +248,45 @@ class OTAManager:
             self._update_progress[ieee]["status"] = "cancelled"
             return {"success": True}
         return {"success": False, "error": "No active update"}
+
+
+    def start_background_checks(self):
+        """Start periodic background OTA checks."""
+        if self._background_task and not self._background_task.done():
+            return
+        self._background_task = asyncio.create_task(self._background_check_loop())
+        logger.info(f"OTA background checks started (interval: {self._check_interval}s)")
+
+    def stop_background_checks(self):
+        """Stop periodic background OTA checks."""
+        if self._background_task:
+            self._background_task.cancel()
+            self._background_task = None
+
+    async def _background_check_loop(self):
+        """Periodically check all devices for firmware updates."""
+        # Initial delay — let network stabilise after startup
+        await asyncio.sleep(300)  # 5 minutes
+
+        while True:
+            try:
+                logger.info("OTA background scan starting...")
+                result = await self.check_all_updates()
+                count = result.get("devices_with_updates", 0)
+
+                if count > 0:
+                    logger.info(f"OTA: {count} device(s) have firmware updates available")
+                    if self._emit:
+                        await self._emit("ota_updates_available", result)
+                else:
+                    logger.info("OTA: All devices up to date")
+
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"OTA background check failed: {e}")
+
+            await asyncio.sleep(self._check_interval)
 
     # =========================================================================
     # LOCAL FILE MANAGEMENT
