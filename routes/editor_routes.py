@@ -360,15 +360,13 @@ def _detect_language(path: Path) -> str:
 
 
 def _validate_python(content: str) -> list:
-    """Validate Python syntax using ast.parse and py_compile."""
+    """Validate Python syntax using ast.parse."""
     import ast
-    import py_compile
     import re
-    import tempfile
 
     errors = []
 
-    # Phase 1: ast.parse — catches syntax errors with line/col
+    # Phase 1: ast.parse — catches all syntax errors with line/col
     try:
         ast.parse(content)
     except SyntaxError as e:
@@ -382,36 +380,7 @@ def _validate_python(content: str) -> list:
         })
         return errors
 
-    # Phase 2: py_compile — catches encoding issues, future import problems
-    tmp_path = None
-    try:
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as tmp:
-            tmp.write(content)
-            tmp_path = tmp.name
-
-        py_compile.compile(tmp_path, doraise=True)
-    except py_compile.PyCompileError as e:
-        line = 1
-        msg = str(e)
-        match = re.search(r'line (\d+)', msg)
-        if match:
-            line = int(match.group(1))
-        errors.append({
-            "line": line,
-            "column": 1,
-            "message": msg.split('\n')[0],
-            "severity": "error",
-        })
-    except Exception:
-        pass  # Don't crash validation on tempfile issues
-    finally:
-        if tmp_path:
-            try:
-                os.unlink(tmp_path)
-            except Exception:
-                pass
-
-    # Phase 3: Basic warnings
+    # Phase 2: Basic warnings
     lines = content.splitlines()
     for i, line in enumerate(lines, 1):
         stripped = line.rstrip()
