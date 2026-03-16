@@ -12,7 +12,6 @@ logger = logging.getLogger("ota_routes")
 
 _get_ota_manager = None
 
-
 def register_ota_routes(app: FastAPI, ota_manager_getter: Callable):
     """Register OTA routes on the FastAPI app."""
     global _get_ota_manager
