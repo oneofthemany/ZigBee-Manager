@@ -30,14 +30,19 @@
             return;
         }
 
+        var host = window.location.hostname;
+        var isLocalhost = (host === 'localhost' || host === '127.0.0.1' || host === '::1');
+        if (window.location.protocol === 'https:' && !isLocalhost) {
+            console.log('[PWA] Skipping SW registration — HTTPS on non-localhost');
+            return;
+        }
+
         navigator.serviceWorker.register('/sw.js', { scope: '/' })
             .then(function (reg) {
                 console.log('[PWA] Service worker registered, scope:', reg.scope);
-
-                // Check for updates periodically
                 setInterval(function () {
                     reg.update();
-                }, 60 * 60 * 1000); // Every hour
+                }, 60 * 60 * 1000);
             })
             .catch(function (err) {
                 console.warn('[PWA] Service worker registration failed:', err);

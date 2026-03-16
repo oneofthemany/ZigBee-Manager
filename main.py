@@ -1,6 +1,6 @@
 """
-ZigBee Manager - Main Application
-FastAPI-based web server for ZigBee device management.
+ZigBee Matter Manager - Main Application
+FastAPI-based web server for ZigBee & Matter device management.
 """
 import uvicorn
 import subprocess
@@ -39,7 +39,7 @@ from modules.network_init import (
     select_best_channel, ZIGBEE_CHANNELS
 )
 from modules.spectrum_monitor import SpectrumMonitor, get_history, get_channel_averages, save_scan
-
+from routes.ota_routes import register_ota_routes
 
 # ============================================================================
 # LOGGING CONFIGURATION (NON-BLOCKING)
@@ -80,14 +80,6 @@ logging.getLogger('core').setLevel(logging.INFO)
 logging.getLogger('device').setLevel(logging.INFO)
 
 logger = logging.getLogger('main')
-
-@app.get("/sw.js")
-async def service_worker():
-    return FileResponse(
-        "static/sw.js",
-        media_type="application/javascript",
-        headers={"Service-Worker-Allowed": "/"}
-    )
 
 # ============================================================================
 # CONFIGURATION
@@ -367,7 +359,7 @@ async def lifespan(app: FastAPI):
         logger.warning(f"MQTT connection failed: {e}")
 
 
-    # Initialize MQTT Explorer
+    # Initialise MQTT Explorer
     mqtt_service.mqtt_explorer = MQTTExplorer(mqtt_service, max_messages=1000)
     logger.info("MQTT Explorer initialized")
 
@@ -435,7 +427,7 @@ async def lifespan(app: FastAPI):
         )
         asyncio.create_task(_start_spectrum_monitor(zigbee_service))
 
-    # Initialize group manager
+    # Initialise group manager
     zigbee_service.group_manager = GroupManager(zigbee_service)
     logger.info("Group manager initialized")
 
@@ -445,7 +437,7 @@ async def lifespan(app: FastAPI):
     logger.info("Wired GroupManager callback to MQTT Service")
 
 
-    # Initialize Zone Manager
+    # Initialise Zone Manager
     register_zone_routes(
         app,
         lambda: zigbee_service.zone_manager,
@@ -453,12 +445,16 @@ async def lifespan(app: FastAPI):
     )
     logger.info("Zone API routes registered")
 
-    # Initialize Automation API
+    # Initialise Automation API
     register_automation_routes(
         app,
         lambda: zigbee_service.automation
     )
     logger.info("Automation API routes registered")
+
+    # Initialise OTA API
+    register_ota_routes(app, lambda: zigbee_service.ota_manager)
+    logger.info("OTA API routes registered")
 
     yield  # Application runs here
 

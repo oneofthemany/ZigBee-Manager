@@ -14,7 +14,8 @@
   <img src="https://img.shields.io/badge/zigpy-bellows-orange" alt="zigpy">
   <img src="https://img.shields.io/badge/Home_Assistant-MQTT-41BDF5?logo=homeassistant&logoColor=white" alt="Home Assistant">
   <img src="https://img.shields.io/badge/Matter-WiFi%20%7C%20Thread-7B61FF" alt="Matter">
-  <img src="https://img.shields.io/badge/license-MIT-green" alt="License">
+  <img src="https://img.shields.io/badge/OTA-Firmware%20Updates-FF6B35" alt="OTA">
+  <img src="https://img.shields.io/badge/license-GPL--3.0-green" alt="License">
 </p>
 
 <p align="center">
@@ -22,6 +23,8 @@
   <a href="#-features">Features</a> · 
   <a href="#-web-interface">Web Interface</a> · 
   <a href="#-automation-engine">Automations</a> · 
+  <a href="#-ota-firmware-updates">OTA Updates</a> · 
+  <a href="#-device-onboarding">Device Onboarding</a> · 
   <a href="#-configuration">Configuration</a> · 
   <a href="#-documentation">Docs</a>
 </p>
@@ -31,14 +34,14 @@
 <!-- SCREENSHOT: Full device table view -->
 <p align="center">
   <img src="docs/images/screenshot-devices.png" alt="Device table with LQI, status, and controls" width="90%">
-  <br><em>Device management dashboard — real-time status, LQI, controls, and per-device automation</em>
+  <br><em>Device management dashboard — real-time status, LQI, OTA badges, protocol indicators, and per-device controls</em>
 </p>
 
 ## 📖 Overview
 
-**ZigBee Matter Manager** is a self-hosted gateway application that manages a Zigbee and Matter mesh networks and bridges devices to **Home Assistant** via MQTT Discovery. It also supports **Matter** devices over WiFi (and Thread via OTBR), presenting a unified device list across both protocols. It has a modular Python backend built on [zigpy](https://github.com/zigpy/zigpy)/[bellows](https://github.com/zigpy/bellows) and [python-matter-server](https://github.com/home-assistant-libs/python-matter-server), with a real-time single-page web interface.
+**ZigBee Matter Manager** is a self-hosted gateway application that manages Zigbee and Matter mesh networks and bridges devices to **Home Assistant** via MQTT Discovery. It supports **Matter** devices over WiFi (and Thread via OTBR), presenting a unified device list across both protocols. It has a modular Python backend built on [zigpy](https://github.com/zigpy/zigpy)/[bellows](https://github.com/zigpy/bellows) and [python-matter-server](https://github.com/home-assistant-libs/python-matter-server), with a real-time single-page web interface.
 
-The system is designed for production-grade home automation — running 40+ devices on a Rock 5B with 30+ day uptime, featuring automatic NCP failure recovery, exponential backoff retries, and a fast-path pipeline for latency-critical sensor events.
+The system is designed for production-grade home automation — running 40+ devices on a Rock 5B with 30+ day uptime, featuring automatic NCP failure recovery, exponential backoff retries, OTA firmware management, and a fast-path pipeline for latency-critical sensor events.
 
 ---
 
@@ -83,8 +86,8 @@ On first boot, if `channel`, `pan_id`, `extended_pan_id`, or `network_key` are a
 
 <!-- SCREENSHOT: Device modal with control tab -->
 <p align="center">
-  <img src="docs/images/screenshot-device-modal.png" alt="Device modal showing controls, bindings, clusters, config, and automation tabs" width="70%">
-  <br><em>Device modal — control panel, cluster browser, bindings, per-device configuration, and automation rules</em>
+  <img src="docs/images/screenshot-device-modal.png" alt="Device modal showing controls, bindings, clusters, config, OTA, and automation tabs" width="70%">
+  <br><em>Device modal — control panel, cluster browser, bindings, per-device configuration, OTA firmware, and automation rules</em>
 </p>
 
 ### Zigbee Groups
@@ -111,7 +114,32 @@ Support for **Matter** devices alongside Zigbee — presented as a unified devic
 - **MQTT Discovery** — Matter devices published to Home Assistant using the same discovery patterns
 - **Zero Overhead** — Completely optional; disabled by default with no impact on Zigbee performance
 
-For full documentation see [docs/matter.md](https://github.com/oneofthemany/ZigBee-Manager/blob/main/docs/matter.md).
+<!-- SCREENSHOT: Matter commissioning -->
+<p align="center">
+  <img src="docs/images/screenshot-matter.png" alt="Matter device commissioning and unified device list" width="70%">
+  <br><em>Matter integration — commission via setup code, unified device list with protocol badges</em>
+</p>
+
+For full documentation see [docs/matter.md](docs/matter.md).
+
+### OTA Firmware Updates
+
+Over-the-air firmware management for all Zigbee devices with OTA cluster support (0x0019).
+
+- **Multi-Provider Support** — Automatic image matching via IKEA, LEDVANCE, Sonoff, Inovelli, and other zigpy OTA providers
+- **Per-Device Check & Update** — Check availability, trigger updates, and monitor progress from the device modal OTA tab
+- **Bulk Scan** — One-click "Check OTA" scans all devices for available firmware updates
+- **Live Progress** — Real-time WebSocket-driven progress bar during firmware transfer
+- **Local Firmware Upload** — Upload `.ota`, `.zigbee`, `.bin`, `.ota1`, `.sbl-ota` files for devices not covered by online providers
+- **Background Checks** — Periodic automatic scans (every 6 hours) with notification when updates are found
+- **Image Notify** — Send OTA Image Notify commands to prompt sleepy devices to check for updates
+- **OTA Badge** — Devices with OTA cluster show an OTA badge in the device table for quick identification
+
+<!-- SCREENSHOT: OTA firmware tab -->
+<p align="center">
+  <img src="docs/images/screenshot-ota.png" alt="OTA firmware update tab with check, notify, and progress bar" width="70%">
+  <br><em>OTA firmware tab — check for updates, trigger install, and live progress tracking</em>
+</p>
 
 ### Automation Engine
 
@@ -119,11 +147,21 @@ A full state-machine automation system that executes directly at the Zigbee gate
 
 - **State Machine Triggers** — Fire only on transitions (matched → unmatched), not on every matching update
 - **Multi-Condition Rules** — Up to 5 AND conditions with sustain timers per source device
-- **Prerequisites** — Check other device states before firing, with NOT negation
+- **Prerequisites** — Check other device states before firing, with NOT negation and OR logic across multiple time windows
 - **Recursive Action Sequences** — Command, Delay, Wait For, Gate, If/Then/Else branching, Parallel execution
 - **Group Targets** — Command steps can target Zigbee groups as well as individual devices
+- **Day-of-Week Filtering** — Restrict rules to specific days
+- **Event-Type Auto-Reset** — Attributes like `action` are automatically reset to allow re-triggering
+- **Time Boundary Scheduler** — 30-second polling loop fires rules at exact time boundaries, not just on device state changes
+- **Global Automations Tab** — Dedicated top-level nav tab showing all rules across all devices with inline filtering, editing, and trace log
 - **Trace Log** — Real-time colour-coded evaluation history for debugging automation behaviour
 - **JSON Export** — Download/import rules for backup or sharing
+
+<!-- SCREENSHOT: Global automations tab -->
+<p align="center">
+  <img src="docs/images/screenshot-automations-global.png" alt="Global automations tab with all rules across devices" width="90%">
+  <br><em>Global automations tab — all rules across all devices, filterable by device and state</em>
+</p>
 
 <!-- SCREENSHOT: Automation rule builder -->
 <p align="center">
@@ -131,7 +169,26 @@ A full state-machine automation system that executes directly at the Zigbee gate
   <br><em>Automation rule builder — IF/AND conditions, CHECK prerequisites, THEN/ELSE action sequences</em>
 </p>
 
-For full documentation see [docs/automations.md](https://github.com/oneofthemany/ZigBee-Manager/blob/main/docs/automations.md).
+For full documentation see [docs/automations.md](docs/automations.md).
+
+### Device Onboarding (Unsupported Devices)
+
+A three-layer system for onboarding devices that don't have dedicated cluster handlers — no code changes or restarts required.
+
+- **GenericClusterHandler** — Automatically attached to any cluster without a dedicated handler; captures all attribute reports and commands as raw keys
+- **Device Override Manager** — JSON-driven definitions (`data/device_overrides.json`) that map raw keys to friendly names with scaling, units, and Home Assistant device classes
+- **Visual Mappings UI** — A "Mappings" tab in the device modal for mapping attributes without touching code
+- **Model-Level Promotion** — Map once per device, then promote to a model definition so all devices of the same type inherit the mappings automatically
+- **Manufacturer-Aware Profiles** — Known manufacturer clusters (Aqara 0xFCC0, Tuya 0xEF00, Philips 0xFC00, IKEA 0xFC7C, etc.) get intelligent prefixing and manufacturer code handling
+- **REST API** — Full CRUD for overrides via `/api/device_overrides` endpoints for scripting or bulk operations
+
+<!-- SCREENSHOT: Mappings tab -->
+<p align="center">
+  <img src="docs/images/screenshot-mapping.png" alt="Device mappings tab showing unmapped attributes and active mappings" width="70%">
+  <br><em>Mappings tab — visual attribute mapping for unsupported devices, with model-level promotion</em>
+</p>
+
+For full documentation see [docs/onboarding_unsupported_devices.md](docs/onboarding_unsupported_devices.md).
 
 ### MQTT Explorer
 
@@ -148,7 +205,7 @@ An integrated MQTT debugging tool — monitor all broker traffic in real-time wi
   <br><em>MQTT Explorer — real-time message stream, topic filtering, and publish tool</em>
 </p>
 
-For full documentation see [docs/mqtt-explorer.md](https://github.com/oneofthemany/ZigBee-Manager/blob/main/docs/mqtt-explorer.md).
+For full documentation see [docs/mqtt-explorer.md](docs/mqtt-explorer.md).
 
 ### Zone-Based Presence Detection
 
@@ -173,13 +230,14 @@ An experimental presence detection system using RSSI signal fluctuations from ex
 - **MQTT Queue** — Background publish queue prevents event loop stalls during bursts
 - **Exponential Backoff** — Automatic retry with configurable backoff for transient command failures
 - **Multi-Radio Support** — Auto-detection of EZSP and ZNP coordinators
+- **Orphaned Device Cleanup** — Detect and remove stale database entries for devices no longer on the network
 
 ### Diagnostics & Debugging
 
 - **Live Debug Log** — Real-time filtered log streaming to the browser
 - **Packet Capture** — Raw ZCL frame capture with human-readable decoding
-- **Deep Packet Analysis** — IAS Zone (0x0500), Occupancy (0x0406), and Tuya (0xEF00) protocol decoders
-- **Mesh Topology** — Interactive D3.js force-directed graph with LQI link quality overlay
+- **Deep Packet Analysis** — IAS Zone (0x0500), Occupancy (0x0406), and Tuya (0xEF00) protocol decoders with Tuya DP decoder
+- **Mesh Topology** — Interactive D3.js force-directed graph with LQI link quality overlay and online/offline device zones
 
 <!-- SCREENSHOT: Mesh topology -->
 <p align="center">
@@ -193,6 +251,7 @@ An experimental presence detection system using RSSI signal fluctuations from ex
 - **Full Component Support** — light, switch, cover, climate, sensor, binary_sensor, number
 - **Birth Message Handling** — Automatic republish on HA restart
 - **Device Metadata** — Manufacturer, model, SW version passed through to HA device registry
+- **Delta-Only Publishing** — Only changed attributes are published to avoid false HA automation triggers
 
 ### Supported Devices & Quirk Handling
 
@@ -200,16 +259,15 @@ Tested with 40+ devices across multiple manufacturers:
 
 | Manufacturer       | Devices                            | Notes                                              |
 |:-------------------|:-----------------------------------|:---------------------------------------------------|
-| **Philips Hue**    | Lights, Motion Sensors             | Touchlink reset, binding-based `on_with_timed_off` |
-| **IKEA Tradfri**   | Bulbs, Remotes                     | Standard ZCL                                       |
-| **Aqara / Xiaomi** | Switches, TRV E1, Buttons, Sensors | Full 0xFCC0 manufacturer cluster support           |
-| **Tuya**           | Radar Sensors, Blinds, Switches    | DP (Data Point) mapping via 0xEF00                 |
-| **Hive**           | Smart Heating (SLR, TRV)           | Thermostat cluster with scheduling                 |
-| **Aurora**         | Smart Sockets                      | Power monitoring                                   |
-| **Sonoff**         | Contact Sensors, Switches          | With quirk handling                                |
-| **Matter (WiFi)**  | Any Matter-certified WiFi device   | Via python-matter-server                           |
+| **IKEA**           | Tradfri bulbs (E14, E27, GU10)     | Brightness, color temp, OTA updates                |
+| **Philips**        | Hue lights, motion sensors         | `on_with_timed_off` motion detection on EP1        |
+| **Aqara / Xiaomi** | TRVs, sensors, switches            | Packed binary struct parsing (0xFF01, 0x00DF, 0x00F7), Aqara Opple cluster (0xFCC0) |
+| **Hive**           | SLT6 thermostat, SLR1c receiver    | Proprietary EP9→EP5 handshake during pairing       |
+| **Aurora**         | DoubleSocket50AU                   | Multi-endpoint socket with per-endpoint state      |
+| **Tuya**           | Radar sensors, blinds, switches    | Cluster 0xEF00 DP parsing with device-type filtering |
+| **Generic**        | Contact sensors, smart sockets     | GenericClusterHandler with override mapping         |
 
-**Cluster Handlers:** Basic (0x0000), Power (0x0001), On/Off (0x0006), Level (0x0008), Thermostat (0x0201), Color (0x0300), Window Covering (0x0102), Temperature, Humidity, Illuminance, Occupancy, IAS Zone (0x0500), Metering (0x0702), Electrical Measurement (0x0B04), Aqara (0xFCC0), Tuya (0xEF00).
+New devices can be onboarded via the [Device Onboarding](#device-onboarding-unsupported-devices) system without code changes, or by adding dedicated handlers in `handlers/`.
 
 ---
 
@@ -219,17 +277,18 @@ Access at **http://YOUR_IP:8000**. All tabs update in real-time via WebSocket.
 
 | Tab               | Description                                                                                                                                                  |
 |:------------------|:-------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| **Devices**       | Main device table — LQI, status, last seen, controls. Click any device for a full modal with control, bindings, clusters, configuration, and automation tabs |
-| **Topology**      | Interactive force-directed mesh graph with LQI link quality                                                                                                  |
+| **Devices**       | Main device table — LQI, status, last seen, OTA badges, protocol badges. Click any device for a full modal                                                  |
+| **Topology**      | Interactive force-directed mesh graph with LQI link quality and online/offline zones                                                                         |
 | **Groups**        | Create and control native Zigbee groups                                                                                                                      |
+| **Automations**   | Global automation rules across all devices with inline filtering, editing, and trace log                                                                     |
 | **Zones**         | RSSI-based presence detection zones                                                                                                                          |
 | **MQTT Explorer** | Real-time MQTT traffic monitor and publish tool                                                                                                              |
 | **Settings**      | Rich settings panel — see below                                                                                                                              |
-| **Debug Log**     | Live filtered log stream and raw packet analyser                                                                                                             |
+| **Debug Log**     | Live filtered log stream and raw packet analyser with Tuya DP decoder                                                                                       |
 
 ### Settings Panel
 
-The settings tab is a four-sub-tab panel replacing the old single YAML textarea:
+The settings tab is a four-sub-tab panel:
 
 | Sub-tab               | Description                                                                                                                                                                                      |
 |:----------------------|:-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
@@ -247,7 +306,7 @@ The settings tab is a four-sub-tab panel replacing the old single YAML textarea:
 <!-- SCREENSHOT: Spectrum Analysis -->
 <p align="center">
   <img src="docs/images/screenshot-spectrum.png" alt="Spectrum Analysis tabs" width="70%">
-  <br><em>Settings panel —  spectrum analysis</em>
+  <br><em>Settings panel — spectrum analysis</em>
 </p>
 
 ### Device Modal
@@ -260,6 +319,8 @@ Each device opens a tabbed modal with:
 | **Control**    | Send commands — on/off, brightness sliders, color picker, thermostat setpoints, cover position                                          |
 | **Bindings**   | View and manage ZCL bindings between devices                                                                                            |
 | **Clusters**   | Raw cluster browser — read attributes, explore endpoints                                                                                |
+| **OTA**        | Firmware update management — check for updates, trigger install, live progress bar, image notify                                        |
+| **Mappings**   | Visual attribute mapping for devices using GenericClusterHandler (appears when unmapped attributes exist)                                |
 | **Automation** | Per-device rule builder for the automation engine                                                                                       |
 
 ---
@@ -273,12 +334,15 @@ Each device opens a tabbed modal with:
 | **Matter Bridge**       | aiohttp WebSocket client                     | Translates Matter nodes into unified device format                 |
 | **MQTT Service**        | aiomqtt                                      | Broker connection, reconnection, HA MQTT Discovery                 |
 | **Cluster Handlers**    | handlers/ package                            | ZCL message decoding, normalised state, device-specific logic      |
+| **Generic Handler**     | handlers/generic.py                          | Fallback for unsupported clusters with override manager integration |
 | **Automation Engine**   | modules/automation.py                        | State-machine rules, recursive sequences, direct zigpy execution   |
+| **OTA Manager**         | modules/ota.py                               | Firmware update orchestration, provider config, progress tracking   |
 | **Group Manager**       | modules/groups.py                            | Native Zigbee groups with input/output cluster awareness           |
+| **Device Overrides**    | modules/device_overrides.py                  | JSON-driven attribute mappings for unsupported devices              |
 | **Network Init**        | modules/network_init.py                      | Auto-generation of credentials and channel selection on first boot |
 | **Frontend**            | HTML, Bootstrap 5, D3.js                     | SPA connected via WebSocket for real-time updates                  |
 
-For the full file structure see [docs/structure.md](https://github.com/oneofthemany/ZigBee-Manager/blob/main/docs/structure.md).
+For the full file structure see [docs/structure.md](docs/structure.md).
 
 ---
 
@@ -286,72 +350,48 @@ For the full file structure see [docs/structure.md](https://github.com/oneofthem
 
 Configuration is managed through the **Settings tab** in the web UI, which provides a structured form interface backed by `config.yaml`. Direct file editing is also available via the Advanced sub-tab or on disk.
 
-```bash
-sudo vi /opt/zigbee_matter_manager/config/config.yaml
-```
-
-### First Boot — Auto-Generated Credentials
-
-On startup, if any of the following values are absent or contain placeholder text, the system auto-generates secure random values and writes them to `config.yaml` before the radio starts:
-
-| Value                    | Auto-generated as                          |
-|:-------------------------|:-------------------------------------------|
-| `zigbee.pan_id`          | Random 16-bit hex (e.g. `A3F1`)            |
-| `zigbee.extended_pan_id` | Random 8-byte array                        |
-| `zigbee.network_key`     | Random 128-bit key (16-byte array)         |
-| `zigbee.channel`         | Channel 15 (overridable via spectrum scan) |
-
-### Key Config Sections
-
-| Section              | What to configure                                                  |
-|:---------------------|:-------------------------------------------------------------------|
-| `mqtt`               | `broker_host`, `username`, `password` — match your MQTT broker     |
-| `zigbee.port`        | USB stick path, e.g. `/dev/ttyACM0`                                |
-| `zigbee.channel`     | Zigbee channel — use Spectrum Analysis tab to find the best option |
-| `zigbee.pan_id`      | Network PAN ID — auto-generated on first boot                      |
-| `zigbee.network_key` | 128-bit network encryption key — auto-generated on first boot      |
-| `zigbee.ezsp_config` | Advanced coordinator tuning — pre-configured for large networks    |
-| `matter`             | Optional Matter integration — see [docs/matter.md](https://github.com/oneofthemany/ZigBee-Manager/blob/main/docs/matter.md) |
-
-### Matter Configuration
+### Key Configuration Sections
 
 ```yaml
-# Optional — disabled by default, zero overhead when disabled
+zigbee:
+  port: /dev/ttyACM0          # Serial port for coordinator
+  baudrate: 115200
+  channel: 15                  # Auto-selected via spectrum analysis or manual
+  pan_id: "0x1A2B"            # Auto-generated on first boot
+  extended_pan_id: "..."       # Auto-generated on first boot
+  network_key: [...]           # Auto-generated on first boot (16 bytes)
+
+mqtt:
+  host: 192.168.1.x
+  port: 1883
+  username: mqtt_user
+  password: mqtt_pass
+  base_topic: zigbee2mqtt      # Base topic for HA discovery
+  discovery_prefix: homeassistant
+
 matter:
-  enabled: true                    # Start embedded server
-  port: 5580                       # WebSocket port
-  storage_path: ./data/matter      # Fabric/node persistence
+  enabled: false               # Set true to enable Matter support
+  port: 5580                   # python-matter-server WebSocket port
+
+ota:
+  enabled: true                # Enable OTA firmware update support
+  providers:                   # List of OTA image providers
+    - ikea
+    - ledvance
+    - sonoff
+    - inovelli
+
+web:
+  host: 0.0.0.0
+  port: 8000
+  ssl: false
 ```
 
-See [docs/matter.md](https://github.com/oneofthemany/ZigBee-Manager/blob/main/docs/matter.md) for full setup instructions including prerequisites, commissioning, and troubleshooting.
-
-### Spectrum Analysis & Channel Selection
-
-The **Spectrum Analysis** tab performs a live energy scan via the coordinator across all 16 ZigBee channels (11–26). Results are displayed as a colour-coded bar chart showing RF noise floor per channel, with Wi-Fi 1/6/11 overlap zones annotated.
-
-- **Auto Select** — scans all channels and writes the lowest-interference channel to config automatically
-- **Manual Select** — pick any channel from the dropdown and apply to config
-- Recommended channels avoiding typical Wi-Fi overlap: **15, 20, 25, 26**
-
 ---
 
-## 📚 Documentation
+## 🔧 Troubleshooting
 
-| Document                                                                                                            | Content                                                                          |
-|:--------------------------------------------------------------------------------------------------------------------|:---------------------------------------------------------------------------------|
-| [docs/automations.md](https://github.com/oneofthemany/ZigBee-Manager/blob/main/docs/automations.md)                 | Automation engine — rule builder, step types, state machine, trace log, examples |
-| [docs/mqtt-explorer.md](https://github.com/oneofthemany/ZigBee-Manager/blob/main/docs/mqtt-explorer.md)             | MQTT Explorer — usage guide, wildcard patterns, debugging workflows              |
-| [docs/matter.md](https://github.com/oneofthemany/ZigBee-Manager/blob/main/docs/matter.md)                           | Matter integration — setup, commissioning, architecture, troubleshooting         |
-| [docs/onboarding.md](https://github.com/oneofthemany/ZigBee-Manager/blob/main/docs/onboarding.md)                   | Adding support for new/unsupported devices                                       |
-| [docs/debugging.md](https://github.com/oneofthemany/ZigBee-Manager/blob/main/docs/debugging.md)                     | Built-in debugger, packet capture, filters, log files                            |
-| [docs/aqara_cluster_guide.md](https://github.com/oneofthemany/ZigBee-Manager/blob/main/docs/aqara_cluster_guide.md) | Aqara manufacturer cluster (0xFCC0) implementation                               |
-| [docs/structure.md](https://github.com/oneofthemany/ZigBee-Manager/blob/main/docs/structure.md)                     | Complete file structure map                                                      |
-
----
-
-## 🐛 Debugging & Troubleshooting
-
-### Built-in Tools
+### Debugging Workflow
 
 1. **Live Logs** — Real-time WebSocket log stream with category filtering
 2. **Debug Packets Modal** — Raw ZCL frame capture with decoded summaries
@@ -374,17 +414,32 @@ sudo systemctl status zigbee-matter-manager             # Check service status
 sudo systemctl kill -s SIGKILL zigbee-matter-manager    # Kill the service
 sudo systemctl start zigbee-matter-manager              # Start the service
 sudo journalctl -u zigbee-matter-manager -f             # Follow system logs
-sudo tail -f /opt/zigbee_matter_manager/logs/zigbee.log        # Follow app logs
+sudo tail -f /opt/zigbee_matter_manager/logs/zigbee.log # Follow app logs
 ```
+
+---
+
+## 📚 Documentation
+
+| Document                                                                    | Description                                                        |
+|:----------------------------------------------------------------------------|:-------------------------------------------------------------------|
+| [docs/matter.md](docs/matter.md)                                           | Matter integration — setup, supported features, architecture       |
+| [docs/automations.md](docs/automations.md)                                 | Automation engine — rule syntax, conditions, sequences, examples   |
+| [docs/mqtt-explorer.md](docs/mqtt-explorer.md)                             | MQTT Explorer — usage, filtering, architecture                     |
+| [docs/onboarding.md](docs/onboarding.md)                                   | Developer guide — handler architecture, adding new device support  |
+| [docs/onboarding_unsupported_devices.md](docs/onboarding_unsupported_devices.md) | User guide — visual attribute mapping for unsupported devices |
+| [docs/aqara_cluster_guide.md](docs/aqara_cluster_guide.md)                 | Aqara 0xFCC0 cluster implementation reference                     |
+| [docs/debugging.md](docs/debugging.md)                                     | Debugging features — packet capture, log analysis, troubleshooting |
+| [docs/structure.md](docs/structure.md)                                     | Full project file structure                                        |
 
 ---
 
 ## 🤝 Contributing
 
-Contributions are welcome. The codebase follows a modular handler architecture — adding support for a new device typically means adding or extending a cluster handler in `handlers/`. See [docs/onboarding.md](https://github.com/oneofthemany/ZigBee-Manager/blob/main/docs/onboarding.md) for a step-by-step guide.
+Contributions are welcome. The codebase follows a modular handler architecture — adding support for a new device typically means adding or extending a cluster handler in `handlers/`. For devices that don't need complex logic, the [Device Onboarding](#device-onboarding-unsupported-devices) system can get things working without any code changes. See [docs/onboarding.md](docs/onboarding.md) for a step-by-step developer guide.
 
 ---
 
 ## 📄 License
 
-This project is open source. See [LICENSE](LICENSE) for details.
+This project is licensed under the GNU General Public License v3.0. See [LICENSE](LICENSE) for details.

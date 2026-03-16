@@ -10,6 +10,18 @@ import { openDeviceModal } from './device-modal.js';
 import { initTableSort, sortDevices, applySortState } from './table-sort.js';
 
 
+
+/**
+ * Check if a device has OTA cluster (0x0019) support
+ */
+function hasOTACluster(d) {
+    if (!d.capabilities || !Array.isArray(d.capabilities)) return false;
+    return d.capabilities.some(ep =>
+        (ep.inputs || []).some(c => c.id === 0x0019) ||
+        (ep.outputs || []).some(c => c.id === 0x0019)
+    );
+}
+
 /**
  * Fetch all devices from API and render table
  */
@@ -124,6 +136,12 @@ export function renderDeviceTable() {
             quirkHtml = `<span class="badge bg-info text-dark" style="font-size:0.65rem" title="${d.quirk}">${quirkName}</span>`;
         }
 
+        // OTA Badge
+        let otaHtml = '';
+        if (hasOTACluster(d)) {
+            otaHtml = `<span class="badge bg-warning text-dark" style="font-size:0.65rem" title="Firmware updatable (OTA cluster 0x0019)"><i class="fas fa-microchip"></i> OTA</span>`;
+        }
+
         // Status Badge Logic
         let statusHtml = d.available !== false
             ? '<span class="badge bg-success me-1">Online</span>'
@@ -146,7 +164,7 @@ export function renderDeviceTable() {
             </td>
             <td class="align-middle small">
                 <div>${d.manufacturer || '?'}</div>
-                ${quirkHtml}
+                ${quirkHtml} ${otaHtml}
             </td>
             <td class="align-middle small">
                 <div>${d.model || '?'}</div>

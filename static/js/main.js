@@ -84,6 +84,8 @@ import {
     toggleMeshLabels
 } from './mesh.js';
 
+import { renderOTATab, handleOTAProgress } from './modal/ota.js';
+
 // ============================================================================
 // EXPOSE FUNCTIONS GLOBALLY
 // ============================================================================
@@ -153,6 +155,41 @@ window.handleUnbanClick = handleUnbanClick;
 
 // Automations Page
 window.loadAutomationsPage = loadAutomationsPage;
+
+// OTA
+window.renderOTATab = renderOTATab;
+
+window.otaCheckAll = async function() {
+    const btn = document.getElementById('otaCheckAllBtn');
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Checking...';
+    }
+    try {
+        const resp = await fetch('/api/ota/check-all');
+        const data = await resp.json();
+        const count = data.devices_with_updates || 0;
+        if (count > 0) {
+            let msg = `${count} device(s) have firmware updates available:\n\n`;
+            for (const [ieee, info] of Object.entries(data.updates || {})) {
+                const dev = state.deviceCache[ieee];
+                const name = dev ? dev.friendly_name : ieee;
+                msg += `• ${name}: ${info.current_version} → ${info.new_version}\n`;
+            }
+            msg += '\nOpen each device\'s OTA tab to install.';
+            alert(msg);
+        } else {
+            alert('All devices are up to date — no firmware updates available.');
+        }
+    } catch (e) {
+        alert('OTA check failed: ' + e.message);
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-microchip"></i> Check OTA';
+        }
+    }
+};
 
 // Zones Management
 window.recalibrateZone = recalibrateZone;

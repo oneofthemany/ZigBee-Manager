@@ -9,7 +9,8 @@ import { renderScheduleSection, bindScheduleEvents } from './schedule.js';
 
 // Interaction debounce timer
 let interactionTimeout = null;
-const INTERACTION_DEBOUNCE_MS = 500;
+const INTERACTION_DEBOUNCE_MS = 2000;
+let activeTouchSlider = null;
 
 /**
  * Mark control interaction as active and set debounced clear
@@ -18,9 +19,33 @@ function setInteractionActive() {
     state.controlInteractionActive = true;
     if (interactionTimeout) clearTimeout(interactionTimeout);
     interactionTimeout = setTimeout(() => {
-        state.controlInteractionActive = false;
+        if (!activeTouchSlider) {
+            state.controlInteractionActive = false;
+        }
     }, INTERACTION_DEBOUNCE_MS);
 }
+
+// Touch-aware interaction lock
+document.addEventListener('touchstart', function(e) {
+    if (e.target.matches('#tab-control input[type="range"]')) {
+        activeTouchSlider = e.target;
+        setInteractionActive();
+    }
+}, { passive: true });
+
+document.addEventListener('touchend', function() {
+    if (activeTouchSlider) {
+        activeTouchSlider = null;
+        setInteractionActive();
+    }
+}, { passive: true });
+
+document.addEventListener('touchcancel', function() {
+    if (activeTouchSlider) {
+        activeTouchSlider = null;
+        setInteractionActive();
+    }
+}, { passive: true });
 
 /**
  * Send brightness command with optimistic UI update
@@ -106,6 +131,7 @@ window.onPositionInput = function(value, labelId) {
 export function updateControlValues(device) {
     const s = device.state || {};
     const ieee = device.ieee;
+    const interacting = state.controlInteractionActive;
 
     // Update ON/OFF badges and controls for each endpoint
     if (device.capabilities && Array.isArray(device.capabilities)) {
@@ -113,12 +139,15 @@ export function updateControlValues(device) {
             const epId = ep.id;
             const isOn = s[`on_${epId}`] !== undefined ? s[`on_${epId}`] : (epId === 1 ? s.on : false);
 
-            // Update ON/OFF badge
+            // Update ON/OFF badge (always safe)
             const badge = document.querySelector(`[data-ep-badge="${epId}"]`);
             if (badge) {
                 badge.className = isOn ? 'badge bg-success' : 'badge bg-secondary';
                 badge.textContent = isOn ? 'ON' : 'OFF';
             }
+
+            // Skip all slider/label updates during active interaction
+            if (interacting) return;
 
             // Update brightness slider and label
             const brightness = s[`brightness_${epId}`] !== undefined ? s[`brightness_${epId}`] : (epId === 1 ? s.brightness : null);
@@ -172,6 +201,14 @@ export function updateControlValues(device) {
                 currentTempEl.textContent = `${Number(s[key]).toFixed(1)}°C`;
                 break;
             }
+        }
+    }
+     // Update thermostat target setpoint display
+    const setpointEl = document.querySelector(`[data-thermostat-setpoint="${ieee}"]`);
+    if (setpointEl) {
+        const rawTarget = s.occupied_heating_setpoint || s.heating_setpoint || s.temperature_setpoint;
+        if (rawTarget !== undefined) {
+            setpointEl.textContent = `${Number(rawTarget).toFixed(1)}°C`;
         }
     }
 }
@@ -285,7 +322,7 @@ export function renderControlTab(device) {
                         <div class="col-md-6">
                             <div class="text-center p-3 bg-primary bg-opacity-10 rounded">
                                 <small class="text-muted d-block mb-1">Target</small>
-                                <h2 class="mb-0 text-primary">${targetTemp}°C</h2>
+                                <h2 class="mb-0 text-primary" data-thermostat-setpoint="${device.ieee}">${targetTemp}°C</h2>
                             </div>
                         </div>
                         <div class="col-12">
@@ -567,6 +604,9 @@ window.setThermostatTemp = async function(ieee) {
     }
     try {
         await window.sendCommand(ieee, 'temperature', temp);
+        // Optimistic update — don't wait for WS round-trip
+        const setpointEl = document.querySelector(`[data-thermostat-setpoint="${ieee}"]`);
+        if (setpointEl) setpointEl.textContent = `${temp.toFixed(1)}°C`;
         console.log(`✓ Temperature set to ${temp}°C`);
     } catch (error) {
         console.error('Failed to set temperature:', error);

@@ -20,7 +20,7 @@
 <body>
 <nav class="navbar navbar-dark bg-dark mb-4">
     <div class="container-fluid">
-        <span class="navbar-brand mb-0 h1"><img src="/static/images/zigbee-manager-logo.png" alt="ZigBee Manager" style="height: 32px; width: 32px; border-radius: 50%; margin-right: 8px; vertical-align: middle;">ZigBee Manager</span>
+        <span class="navbar-brand mb-0 h1"><img src="/static/images/zigbee-manager-logo.png" alt="ZigBee Manager" style="height: 32px; width: 32px; border-radius: 50%; margin-right: 8px; vertical-align: middle;">ZigBee Matter Manager</span>
 
         <!-- Connection Status Group -->
         <div class="d-flex align-items-center gap-3">
@@ -74,11 +74,14 @@
                </ul>
            </div>
 
-           <div class="col-auto ms-auto">
-               <button class="btn btn-sm btn-warning me-2" onclick="cleanupOrphans()">
-                   <i class="fas fa-broom"></i> Clean DB
-               </button>
-           </div>
+            <div class="col-auto ms-auto">
+                <button class="btn btn-sm btn-outline-info me-2" id="otaCheckAllBtn" onclick="window.otaCheckAll()">
+                    <i class="fas fa-microchip"></i> Check OTA
+                </button>
+                <button class="btn btn-sm btn-warning me-2" onclick="cleanupOrphans()">
+                    <i class="fas fa-broom"></i> Clean DB
+                </button>
+            </div>
        </div>
    </div>
 </nav>

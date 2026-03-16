@@ -8,6 +8,7 @@ import { fetchAllDevices, handleDeviceUpdate, removeDeviceRow, renderDeviceTable
 import { addLogEntry, updateDebugStatus, handleLivePacket, checkDebugStatus } from './logging.js';
 import { updatePairingUI, checkPairingStatus } from './actions.js';
 import { handleMQTTMessage } from './mqtt-explorer.js';
+import { handleOTAProgress } from './modal/ota.js';
 
 /**
  * Initialize WebSocket connection
@@ -63,6 +64,10 @@ export function initWS() {
                 case "device_updated":
                     // core.py sends { type: 'device_updated', payload: { ieee: '...', data: {...} } }
                     handleDeviceUpdate(msg.payload);
+                    break;
+
+                case 'ota_progress':
+                    handleOTAProgress(msg.data);
                     break;
 
                 case "device_list": // New handler for full list updates

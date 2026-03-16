@@ -34,33 +34,9 @@
     }, { passive: true });
 
 
-    /* ----------------------------------------------------------
-       2. RANGE SLIDER — prevent page scroll during drag
-       ---------------------------------------------------------- */
-
-    document.addEventListener('touchstart', function (e) {
-        if (e.target.matches('input[type="range"]')) {
-            var slider = e.target;
-
-            function blockScroll(ev) {
-                ev.preventDefault();
-            }
-
-            function cleanup() {
-                slider.removeEventListener('touchmove', blockScroll);
-                slider.removeEventListener('touchend', cleanup);
-                slider.removeEventListener('touchcancel', cleanup);
-            }
-
-            slider.addEventListener('touchmove', blockScroll, { passive: false });
-            slider.addEventListener('touchend', cleanup);
-            slider.addEventListener('touchcancel', cleanup);
-        }
-    }, { passive: true });
-
 
     /* ----------------------------------------------------------
-       3. MODAL OVERSCROLL FIX
+       2. MODAL OVERSCROLL FIX
        ---------------------------------------------------------- */
 
     function fixModalOverscroll(el) {
@@ -100,7 +76,7 @@
 
 
     /* ----------------------------------------------------------
-       4. VIEWPORT HEIGHT CSS VARIABLE
+       3. VIEWPORT HEIGHT CSS VARIABLE
        ---------------------------------------------------------- */
 
     function setVH() {
@@ -116,7 +92,7 @@
 
 
     /* ----------------------------------------------------------
-       5. TAB SCROLL FADE INDICATORS
+       4. TAB SCROLL FADE INDICATORS
        ---------------------------------------------------------- */
 
     function updateTabScrollHint(tabBar) {
@@ -155,7 +131,7 @@
 
 
     /* ----------------------------------------------------------
-       6. PREVENT DOUBLE-TAP ZOOM ON CONTROLS
+       5. PREVENT DOUBLE-TAP ZOOM ON CONTROLS
        ---------------------------------------------------------- */
 
     var lastTap = 0;
