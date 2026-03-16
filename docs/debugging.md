@@ -1,8 +1,8 @@
-# Zigbee Gateway Debugging Guide
+# Zigbee Manager Debugging Guide
 
 ## Overview
 
-The Zigbee Gateway includes comprehensive debugging capabilities to help troubleshoot device communication issues, especially for motion sensors and other battery-powered devices.
+The Zigbee Manager includes comprehensive debugging capabilities to help troubleshoot device communication issues, especially for motion sensors and other battery-powered devices.
 
 ## Features
 
@@ -153,7 +153,7 @@ sudo logrotate -d /etc/logrotate.d/zigbee-gateway
 sudo logrotate -f /etc/logrotate.d/zigbee-gateway
 ```
 
-### Customizing Rotation
+### Customising Rotation
 
 Edit `/etc/logrotate.d/zigbee-gateway` to customize:
 
@@ -263,18 +263,18 @@ Response: {
 2. **Use filters** to focus on specific devices or clusters
 3. **Configure logrotate** for production environments
 4. **Monitor disk space** when debugging is enabled for extended periods
-5. **Download and analyze logs offline** for complex issues
+5. **Download and analyse logs offline** for complex issues
 6. **Disable file logging** if you only need live monitoring
 7. **Clear debug data** periodically to free memory
 
 ## Advanced Debugging
 
-### Analyzing Packet Flows
+### Analysing Packet Flows
 
 1. Enable debugging
 2. Trigger the issue (e.g., move in front of motion sensor)
 3. Download debug log
-4. Analyze the sequence of packets:
+4. analyse the sequence of packets:
    ```
    grep "00:17:88:" zigbee_debug.log
    ```
