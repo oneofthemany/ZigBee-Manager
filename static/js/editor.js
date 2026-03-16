@@ -545,7 +545,7 @@ window.editorTestDeploy = async function() {
 
         if (data.action === 'restart') {
             // Python file — trigger restart, page will reload
-            showTestRecoveryBanner('restarting', data.timeout);
+            state.isRestarting = true;
             await fetch('/api/editor/test-restart', { method: 'POST' });
             // Service will restart — page will disconnect and reconnect
         } else {

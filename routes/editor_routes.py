@@ -223,38 +223,41 @@ def register_editor_routes(app: FastAPI, get_zigbee_service):
         """
         Validate file content without saving.
         Returns syntax errors with line/column for Monaco markers.
-        Supports: Python (ast), JSON, YAML.
+        Supports: Python (ast), JSON, YAML, JavaScript, HTML.
         """
-        content = data.get("content", "")
-        language = data.get("language", "")
-        path = data.get("path", "")
+        try:
+            content = data.get("content", "")
+            language = data.get("language", "")
+            path = data.get("path", "")
 
-        # Auto-detect language from path if not provided
-        if not language and path:
-            ext = Path(path).suffix.lower()
-            language = _detect_language(Path(path))
+            # Auto-detect language from path if not provided
+            if not language and path:
+                language = _detect_language(Path(path))
 
-        errors = []
+            errors = []
 
-        if language == "python":
-            errors = _validate_python(content)
-        elif language == "json":
-            errors = _validate_json(content)
-        elif language == "yaml":
-            errors = _validate_yaml(content)
-        elif language == "javascript":
-            errors = _validate_javascript(content)
-        elif language == "html":
-            errors = _validate_html(content)
-        else:
-            return {"success": True, "errors": [], "message": f"No validator for {language}"}
+            if language == "python":
+                errors = _validate_python(content)
+            elif language == "json":
+                errors = _validate_json(content)
+            elif language == "yaml":
+                errors = _validate_yaml(content)
+            elif language == "javascript":
+                errors = _validate_javascript(content)
+            elif language == "html":
+                errors = _validate_html(content)
+            else:
+                return {"success": True, "errors": [], "message": f"No validator for {language}"}
 
-        return {
-            "success": True,
-            "valid": len(errors) == 0,
-            "errors": errors,
-            "language": language,
-        }
+            return {
+                "success": True,
+                "valid": len([e for e in errors if e.get("severity") == "error"]) == 0,
+                "errors": errors,
+                "language": language,
+            }
+        except Exception as e:
+            logger.error(f"Validation error: {e}")
+            return {"success": False, "error": str(e)}
 
     @app.get("/api/editor/backups")
     async def list_backups(path: str = None):
@@ -360,6 +363,7 @@ def _validate_python(content: str) -> list:
     """Validate Python syntax using ast.parse and py_compile."""
     import ast
     import py_compile
+    import re
     import tempfile
 
     errors = []
@@ -376,9 +380,10 @@ def _validate_python(content: str) -> list:
             "message": e.msg,
             "severity": "error",
         })
-        return errors  # No point continuing if syntax is broken
+        return errors
 
     # Phase 2: py_compile — catches encoding issues, future import problems
+    tmp_path = None
     try:
         with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as tmp:
             tmp.write(content)
@@ -386,10 +391,8 @@ def _validate_python(content: str) -> list:
 
         py_compile.compile(tmp_path, doraise=True)
     except py_compile.PyCompileError as e:
-        # Extract line number from error
         line = 1
         msg = str(e)
-        import re
         match = re.search(r'line (\d+)', msg)
         if match:
             line = int(match.group(1))
@@ -399,18 +402,20 @@ def _validate_python(content: str) -> list:
             "message": msg.split('\n')[0],
             "severity": "error",
         })
+    except Exception:
+        pass  # Don't crash validation on tempfile issues
     finally:
-        try:
-            os.unlink(tmp_path)
-        except:
-            pass
+        if tmp_path:
+            try:
+                os.unlink(tmp_path)
+            except Exception:
+                pass
 
-    # Phase 3: Basic warnings (not errors)
+    # Phase 3: Basic warnings
     lines = content.splitlines()
     for i, line in enumerate(lines, 1):
         stripped = line.rstrip()
 
-        # Trailing whitespace
         if stripped != line and stripped:
             errors.append({
                 "line": i, "column": len(stripped) + 1,
@@ -418,7 +423,6 @@ def _validate_python(content: str) -> list:
                 "severity": "warning",
             })
 
-        # Mixed tabs and spaces
         if line and line[0] in (' ', '\t'):
             leading = line[:len(line) - len(line.lstrip())]
             if '\t' in leading and ' ' in leading:
@@ -428,7 +432,6 @@ def _validate_python(content: str) -> list:
                     "severity": "warning",
                 })
 
-        # Common mistakes
         if 'import *' in line:
             errors.append({
                 "line": i, "column": line.index('import *') + 1,
@@ -436,7 +439,6 @@ def _validate_python(content: str) -> list:
                 "severity": "info",
             })
 
-        # Bare except
         if re.match(r'\s*except\s*:', stripped):
             errors.append({
                 "line": i, "column": 1,
