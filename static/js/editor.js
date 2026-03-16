@@ -83,10 +83,6 @@ function buildEditorHTML() {
                  style="height: 36px; background: #252526; overflow-x: auto; white-space: nowrap;">
                 <div id="editorTabBar" class="d-flex align-items-center gap-1"></div>
                 <div class="ms-auto d-flex gap-1">
-                    <button class="btn btn-sm btn-outline-success py-0 px-2" style="font-size: 11px;"
-                            onclick="window.editorValidate()" title="Validate syntax" id="editorValidateBtn" disabled>
-                        <i class="fas fa-check-circle"></i>
-                    </button>
                     <button class="btn btn-sm btn-outline-light py-0 px-2" style="font-size: 11px;"
                             onclick="window.editorSave()" title="Save (Ctrl+S)" id="editorSaveBtn" disabled>
                         <i class="fas fa-save"></i>
@@ -342,7 +338,6 @@ window.editorOpenFile = async function(path) {
         document.getElementById('editorLanguage').textContent = data.language;
         document.getElementById('editorFileSize').textContent = formatSize(data.size);
         document.getElementById('editorSaveBtn').disabled = false;
-        document.getElementById('editorValidateBtn').disabled = false;
         document.getElementById('editorTestBtn').disabled = false;
 
         // Clear previous validation status
