@@ -9,6 +9,7 @@ import { addLogEntry, updateDebugStatus, handleLivePacket, checkDebugStatus } fr
 import { updatePairingUI, checkPairingStatus } from './actions.js';
 import { handleMQTTMessage } from './mqtt-explorer.js';
 import { handleOTAProgress } from './modal/ota.js';
+import { hideTestRecoveryBanner } from './editor.js'
 
 /**
  * Initialize WebSocket connection
@@ -98,10 +99,12 @@ export function initWS() {
                     }
                     break;
 
+                // handle debug status
                 case "debug_status":
                     updateDebugStatus(msg.payload);
                     break;
 
+                //handle debug packet
                 case "debug_packet":
                 case "packet":
                     handleLivePacket(msg.data || msg.payload);
@@ -113,6 +116,15 @@ export function initWS() {
                     updateHAStatus(statusData ? statusData.status : 'unknown');
                     break;
 
+                case 'test_recovery':
+                    if (payload.status === 'auto_rollback') {
+                        alert('Test deployment timed out — changes have been rolled back.');
+                        hideTestRecoveryBanner();
+                        window.location.reload();
+                    }
+                    break;
+
+                // handle mqtt message
                 case "mqtt_message":
                     if (msg.payload) {
                         handleMQTTMessage(msg.payload);

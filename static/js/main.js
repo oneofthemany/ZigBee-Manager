@@ -11,6 +11,8 @@ import { initWS } from './websocket.js';
 import { fetchAllDevices } from './devices.js';
 import { initGroups } from './groups.js';
 import { initMQTTExplorer, handleMQTTMessage } from './mqtt-explorer.js';
+import { initEditor, getEditorInstance } from './editor.js';
+let editorInitialised = false;
 
 import { initSettings } from './settings.js';
 initSettings();
@@ -262,6 +264,15 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     }
+
+    document.querySelector('[data-bs-target="#editor-tab"]')?.addEventListener('shown.bs.tab', () => {
+        if (!editorInitialised) {
+            initEditor();
+            editorInitialised = true;
+        } else if (editorInstance) {
+            editorInstance.layout(); // Fix sizing after tab becomes visible
+        }
+    });
 
     console.log("Zigbee Gateway Frontend Initialized");
 });
