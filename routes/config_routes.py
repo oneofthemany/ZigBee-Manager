@@ -163,9 +163,36 @@ def register_config_routes(app: FastAPI, get_zigbee_service):
                 "best_channel": best, "current_channel": current,
                 "channels": list(range(11, 27))
             }
+        except NotImplementedError:
+            return {"success": False, "error": "Energy scan not supported by this coordinator"}
         except Exception as e:
             logger.error(f"Spectrum scan failed: {e}")
             return {"success": False, "error": str(e)}
+
+    @app.get("/api/zigbee/spectrum/support")
+    async def get_spectrum_support():
+        """Check if the coordinator hardware supports energy scanning."""
+        zigbee_service = get_zigbee_service()
+        if not zigbee_service.app:
+            return {"supported": False, "reason": "Zigbee network not started"}
+
+        monitor = getattr(zigbee_service, 'spectrum_monitor', None)
+        auto_enabled = monitor is not None and monitor._running if monitor else False
+
+        try:
+            result = await zigbee_service.app.energy_scan(
+                channels=range(11, 12), count=1, duration_exp=2
+            )
+            return {
+                "supported": bool(result),
+                "auto_scan_enabled": auto_enabled,
+                "auto_scan_interval": monitor.interval if monitor else 0,
+                "last_scan_ts": monitor.last_scan_ts if monitor else None
+            }
+        except NotImplementedError:
+            return {"supported": False, "reason": "Coordinator does not support energy_scan"}
+        except Exception as e:
+            return {"supported": False, "reason": str(e)}
 
     @app.post("/api/zigbee/channel/auto")
     async def auto_select_channel():

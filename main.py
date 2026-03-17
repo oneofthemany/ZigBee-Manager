@@ -50,10 +50,13 @@ from routes import (
     register_system_routes,
     register_matter_routes,
     register_group_routes,
+    register_editor_routes,
+    register_ota_routes,
+    register_test_recovery_routes,
     register_websocket_routes,
     manager, broadcast_event,
 )
-from routes.ota_routes import register_ota_routes
+
 
 # ============================================================================
 # LOGGING CONFIGURATION (NON-BLOCKING)
@@ -232,14 +235,37 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.error(f"Failed to start Matter bridge: {e}")
 
-    # Spectrum monitor
-    scan_interval = get_conf('zigbee', 'spectrum_scan_interval', 0)
-    if scan_interval and scan_interval > 0:
+    # Spectrum monitor — wait for radio to be ready, detect support
+    spectrum_interval = get_conf('zigbee', 'spectrum_scan_interval', 3600)
+    if spectrum_interval > 0:
         zigbee_service.spectrum_monitor = SpectrumMonitor(
-            zigbee_service, interval=scan_interval
+            app_getter=lambda: zigbee_service.app,
+            interval=spectrum_interval
         )
-        zigbee_service.spectrum_monitor.start()
-        logger.info(f"Spectrum monitor started (interval={scan_interval}s)")
+
+        async def _start_spectrum_monitor(svc):
+            """Wait for radio, probe energy_scan support, then start."""
+            for _ in range(30):
+                if svc.app:
+                    # Probe whether the coordinator supports energy_scan
+                    try:
+                        result = await svc.app.energy_scan(
+                            channels=range(11, 12), count=1, duration_exp=2
+                        )
+                        if result:
+                            svc.spectrum_monitor.start()
+                            logger.info(f"Spectrum monitor started (interval={spectrum_interval}s)")
+                        else:
+                            logger.warning("Spectrum monitor: energy_scan returned empty — disabled")
+                    except NotImplementedError:
+                        logger.warning("Spectrum monitor: energy_scan not supported by this coordinator — disabled")
+                    except Exception as e:
+                        logger.warning(f"Spectrum monitor: energy_scan probe failed ({e}) — disabled")
+                    return
+                await asyncio.sleep(5)
+            logger.warning("Spectrum monitor: radio never ready after 150s — disabled")
+
+        asyncio.create_task(_start_spectrum_monitor(zigbee_service))
 
     # Groups - callback is already wired in ZigbeeService.__init__
     # Just log that it's ready
@@ -248,6 +274,15 @@ async def lifespan(app: FastAPI):
 
     mqtt_service.group_command_callback = zigbee_service.group_manager.handle_mqtt_group_command
     logger.info("Wired GroupManager callback to MQTT Service")
+
+    from modules.test_recovery import get_test_recovery_manager
+    trm = get_test_recovery_manager(broadcast_event)
+    startup_result = trm.check_pending_on_startup()
+    if startup_result:
+        if startup_result.get("rolled_back"):
+            logger.warning(f"Auto-rolled back test deployment: {startup_result.get('path')}")
+        elif startup_result.get("pending"):
+            logger.info(f"Pending test: {startup_result.get('path')} — {startup_result.get('remaining')}s to confirm")
 
     yield  # Application runs here
 
@@ -305,12 +340,12 @@ register_network_routes(app, get_zigbee_service)
 register_system_routes(app, get_zigbee_service, get_mqtt_service, get_manager)
 register_matter_routes(app, get_zigbee_service, get_matter_server, get_matter_bridge)
 register_group_routes(app, get_zigbee_service, get_manager)
+register_editor_routes(app, get_zigbee_service)
+register_test_recovery_routes(app, get_manager)
 register_websocket_routes(app)
-
-# Already-existing route modules
 register_zone_routes(app, lambda: zigbee_service.zone_manager, lambda: zigbee_service.devices)
-register_automation_routes(app, lambda: zigbee_service.automation)
 register_ota_routes(app, lambda: zigbee_service.ota_manager)
+register_automation_routes(app, lambda: zigbee_service.automation)
 
 logger.info("All route modules registered")
 

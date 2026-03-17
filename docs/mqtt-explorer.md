@@ -21,7 +21,7 @@ The **MQTT Explorer** is a powerful debugging and monitoring tool integrated int
 - 🔍 **Debugging device communication** - See exactly what messages devices are sending and receiving
 - 📊 **Monitoring Home Assistant integration** - Verify MQTT discovery and command topics
 - 🧪 **Testing MQTT messages** - Publish test messages to any topic
-- 📈 **Analyzing traffic patterns** - View statistics on message rates and topic usage
+- 📈 **Analysing traffic patterns** - View statistics on message rates and topic usage
 - 🐛 **Troubleshooting connectivity** - Identify missing messages or incorrect payloads
 
 ### Architecture
@@ -114,10 +114,6 @@ The MQTT Explorer uses a **separate MQTT client** that subscribes to all topics 
 2. Click the **"MQTT Explorer"** tab in the navigation bar
 3. The interface will load with monitoring stopped (default state)
 
-![Screenshot: MQTT Explorer Tab Location](screenshots/mqtt-explorer-tab.png)
-
-> **Screenshot Description:** The navigation bar shows tabs for Devices, Topology, Settings, Groups, Debug Log, and the newly added **MQTT Explorer** tab with a broadcast tower icon (📡). The tab is positioned after Debug Log.
-
 ---
 
 ## User Interface Guide
@@ -126,269 +122,7 @@ The MQTT Explorer uses a **separate MQTT client** that subscribes to all topics 
 
 The MQTT Explorer interface is divided into two main columns:
 
-![Screenshot: MQTT Explorer Main Interface](screenshots/mqtt-explorer-main.png)
-
-> **Screenshot Description:**
-> - **Left column (70%)** - Message list with live updates
-> - **Right column (30%)** - Publish form and help information
-> - **Header** - Control buttons and status badge
-> - **Statistics bar** - Four metric cards showing real-time data
-
-### 1. Control Bar
-
-Located at the top of the left column:
-
-![Screenshot: Control Bar](screenshots/mqtt-control-bar.png)
-
-> **Screenshot Description:** The control bar displays:
-> - **Title**: "MQTT Messages" with a status badge
-> - **Status Badge**: Shows "Stopped" (gray) or "Monitoring" (green)
-> - **Button Group**:
-    >   - ▶️ **Start** button (green) - Begins monitoring
->   - ⏹️ **Stop** button (red) - Stops monitoring
->   - 🔄 **Refresh** button (blue) - Manually reloads messages
->   - 🗑️ **Clear** button (yellow) - Clears the buffer
-
-### 2. Statistics Dashboard
-
-Four metric cards displaying real-time statistics:
-
-![Screenshot: Statistics Cards](screenshots/mqtt-statistics.png)
-
-> **Screenshot Description:** Four cards in a row showing:
->
-> **Total Messages**
-> - Large number display (e.g., "1,247")
-> - Gray "Total Messages" label
->
-> **Msg/sec**
-> - Decimal display (e.g., "23.45")
-> - Gray "Msg/sec" label
->
-> **Topics**
-> - Integer display (e.g., "87")
-> - Gray "Topics" label
->
-> **Buffer**
-> - Usage display (e.g., "523 / 1000")
-> - Gray "Buffer" label
-> - Shows current vs maximum capacity
-
-### 3. Filter Controls
-
-Powerful filtering options to narrow down messages:
-
-![Screenshot: Filter Controls](screenshots/mqtt-filters.png)
-
-> **Screenshot Description:** Three input fields in a row:
->
-> **Topic Filter** (left, 40% width)
-> - Text input with placeholder: "Filter by topic (supports + and # wildcards)"
-> - Example: `zigbee/+/state`
-> - Monospace font for readability
->
-> **Search Filter** (middle, 40% width)
-> - Text input with placeholder: "Search in topic or payload..."
-> - Case-insensitive search
-> - Searches both topic strings and payload content
->
-> **Auto-Scroll Checkbox** (right, 20% width)
-> - Checkbox labeled "Auto-scroll"
-> - Checked by default
-> - When enabled, keeps newest messages visible
-
-### 4. Message Table
-
-The main display showing captured MQTT messages:
-
-![Screenshot: Message Table](screenshots/mqtt-message-table.png)
-
-> **Screenshot Description:** A table with 5 columns:
->
-> **Time** (120px)
-> - Format: `HH:MM:SS.mmm` (e.g., "14:23:45.123")
-> - Monospace font
-> - Millisecond precision
->
-> **Topic** (250px)
-> - Blue badge displaying full topic
-> - Truncates with ellipsis if too long
-> - Hover shows full topic
-> - Example: `zigbee/Living_Room_Light/state`
->
-> **Payload** (flexible)
-> - Monospace font
-> - Truncated to 100 characters with "..."
-> - JSON objects show inline
-> - Example: `{"state":"ON","brightness":254}`
->
-> **QoS/Retain** (100px, centered)
-> - QoS badge: Gray (0), Blue (1), Yellow (2)
-> - Small yellow "R" badge if retained
-> - Example: `QoS 1` with `R`
->
-> **Size** (80px, right-aligned)
-> - Byte count with unit
-> - Examples: `45B`, `1.23KB`
-> - Small gray text
-
-#### Row States
-
-Messages appear with visual feedback:
-
-![Screenshot: Message Row States](screenshots/mqtt-row-states.png)
-
-> **Screenshot Description:** Three message rows showing:
->
-> **Normal Row**
-> - White background
-> - Standard text color
-> - Example: Device state update
->
-> **Hover State**
-> - Light blue background (rgba(0, 123, 255, 0.05))
-> - Cursor changes to pointer
-> - Indicates clickable
->
-> **Recent Message** (if implemented)
-> - Slight highlight/fade animation
-> - Helps spot new messages
-> - Fades to normal after 2 seconds
-
-### 5. Message Details Modal
-
-Click any message row to view full details:
-
-![Screenshot: Message Details Modal](screenshots/mqtt-message-modal.png)
-
-> **Screenshot Description:** A Bootstrap modal dialog showing:
->
-> **Header**
-> - Title: "📧 Message Details"
-> - Topic displayed in monospace font
-> - Close button (X) in top-right
->
-> **Timestamp Section**
-> - Label: "Timestamp"
-> - ISO format: `2025-12-17T14:23:45.123Z`
-> - Monospace font
->
-> **Topic Section**
-> - Label: "Topic"
-> - Full topic path without truncation
-> - Example: `homeassistant/light/zigbee_Living_Room_Light/config`
-> - Monospace font
->
-> **Properties Section**
-> - QoS badge (colored by level)
-> - Retained/Not Retained badge
-> - Size badge (e.g., "342 bytes")
-> - Badges displayed inline
->
-> **Payload Section**
-> - Label: "Payload"
-> - Pretty-printed JSON in code block
-> - Syntax highlighting
-> - Scrollable if long (max 400px height)
-> - Example:
-> ```json
-> {
->   "name": "Living Room Light",
->   "state_topic": "zigbee/Living_Room_Light/state",
->   "command_topic": "zigbee/Living_Room_Light/set",
->   "brightness": true,
->   "schema": "json"
-> }
-> ```
->
-> **Footer**
-> - "Close" button (gray)
-
-### 6. Publish Form
-
-Located in the right column for sending test messages:
-
-![Screenshot: Publish Form](screenshots/mqtt-publish-form.png)
-
-> **Screenshot Description:** A card with header "📤 Publish Message" containing:
->
-> **Topic Input**
-> - Label: "Topic"
-> - Placeholder: `e.g., zigbee/test`
-> - Monospace font
-> - Example: `zigbee/Living_Room_Light/set`
->
-> **Payload Textarea**
-> - Label: "Payload"
-> - 4 rows tall, resizable
-> - Monospace font
-> - Placeholder: `{"test": "message"}`
-> - JSON input with syntax awareness
->
-> **QoS Dropdown** (left, 50% width)
-> - Label: "QoS"
-> - Options:
-    >   - `0 - At most once` (default)
->   - `1 - At least once`
->   - `2 - Exactly once`
->
-> **Retain Checkbox** (right, 50% width)
-> - Label: "Retain"
-> - Unchecked by default
-> - Aligned with QoS dropdown
->
-> **Publish Button**
-> - Full width
-> - Blue background
-> - Text: "📤 Publish"
-> - Disabled if topic empty
-
-#### Publishing Workflow
-
-![Screenshot: Publish Workflow](screenshots/mqtt-publish-workflow.png)
-
-> **Screenshot Description:** Three states shown:
->
-> **State 1: Empty Form**
-> - All fields empty
-> - Publish button enabled but shows validation
->
-> **State 2: Filled Form**
-> - Topic: `zigbee/test`
-> - Payload: `{"state": "ON"}`
-> - QoS: 1
-> - Retain: Checked
-> - Publish button highlighted
->
-> **State 3: Success Toast**
-> - Green toast notification: "✓ Message published"
-> - Appears top-right corner
-> - Auto-dismisses after 3 seconds
-
-### 7. Help Card
-
-Contextual help in the right column:
-
-![Screenshot: Help Card](screenshots/mqtt-help-card.png)
-
-> **Screenshot Description:** A card with header "ℹ️ Help" containing:
->
-> **Topic Wildcards Section**
-> - Bold header: "Topic Wildcards"
-> - Bulleted list:
-    >   - `+` - Single level wildcard
-          >     - Gray text: "e.g., `zigbee/+/state`"
->   - `#` - Multi-level wildcard
-      >     - Gray text: "e.g., `zigbee/#`"
->
-> **Features Section**
-> - Bold header: "Features"
-> - Bulleted list:
-    >   - Real-time message monitoring
->   - Topic filtering with wildcards
->   - Payload search
->   - Message inspection
->   - Test message publishing
+![Screenshot: MQTT Explorer Main Interface](../screenshots/mqtt-explorer-main.png)
 
 ---
 
@@ -404,9 +138,7 @@ Contextual help in the right column:
 2. In the **Topic Filter**, enter: `zigbee/+/state`
 3. Watch as device state messages appear
 
-![Screenshot: Monitoring Device States](screenshots/example-device-states.png)
-
-> **Screenshot Description:** Message table showing:
+> **Message table showing:** 
 > ```
 > Time          Topic                              Payload
 > 14:23:45.123  zigbee/Living_Room_Light/state    {"state":"ON","brightness":254}
@@ -437,9 +169,7 @@ Contextual help in the right column:
 3. Remove and re-add a device to trigger discovery
 4. Watch for discovery messages
 
-![Screenshot: HA Discovery Messages](screenshots/example-ha-discovery.png)
-
-> **Screenshot Description:** Message table showing:
+> **Message table showing:** 
 > ```
 > Time          Topic                                           Payload
 > 14:25:01.123  homeassistant/light/.../config                 {"name":"Living Room"...}
@@ -478,9 +208,7 @@ Contextual help in the right column:
 
 ![Screenshot: Command Testing](screenshots/example-command-test.png)
 
-> **Screenshot Description:** Split view showing:
->
-> **Top: Message Table**
+> **Split view showing:**
 > ```
 > 14:30:01.123  zigbee/Living_Room_Light/set    {"state":"ON","brightness":128}  QoS 1
 > 14:30:01.234  zigbee/Living_Room_Light/state  {"state":"ON","brightness":128}  QoS 0
@@ -511,7 +239,7 @@ Contextual help in the right column:
 
 ![Screenshot: Motion Event Search](screenshots/example-motion-search.png)
 
-> **Screenshot Description:** Message table with search active:
+> **Message table with search active:** 
 > ```
 > Search: "motion" [x]
 > 
@@ -545,9 +273,8 @@ Contextual help in the right column:
 3. Restart Home Assistant
 4. Watch for `online` message
 
-![Screenshot: HA Birth Message](screenshots/example-ha-birth.png)
 
-> **Screenshot Description:** Single message highlighted:
+> **Single message highlighted:** 
 > ```
 > Time          Topic                    Payload    QoS/Retain
 > 14:40:05.123  homeassistant/status    online     QoS 1  R
@@ -616,9 +343,7 @@ Matches zero or more topic levels:
 - ✅ `homeassistant/sensor/zigbee_def456/config`
 - ❌ `homeassistant/light/hue_abc123/config` (not zigbee_)
 
-![Screenshot: Wildcard Examples](screenshots/advanced-wildcards.png)
-
-> **Screenshot Description:** Help panel showing:
+> **Help panel showing:** 
 >
 > **Wildcard Examples**
 > ```
@@ -647,63 +372,17 @@ Future feature to export captured messages:
 
 ### 3. Statistics Analysis
 
-The statistics dashboard provides insights:
-
-![Screenshot: Statistics Analysis](screenshots/advanced-statistics.png)
-
-> **Screenshot Description:** Expanded statistics view showing:
->
-> **Message Rate Graph** (if implemented)
-> - Line chart showing msgs/sec over time
-> - 60-second window
-> - Spikes indicate burst activity
->
-> **Top Topics** (if implemented)
-> - Bar chart of most active topics
-> - Example:
-    >   ```
->   zigbee/Bedroom_Sensor/state     142 msgs
->   zigbee/Living_Room_Light/state   89 msgs
->   homeassistant/status             12 msgs
->   ```
->
-> **Traffic Patterns**
-> - Peak time identification
-> - Average message size
-> - Most common QoS levels
-
-**Interpreting Statistics:**
-
-**Total Messages**
-- Indicates system activity level
-- Resets when you click Clear
-- Accumulates from monitoring start
-
-**Messages/Second**
-- Normal: 0-10 msgs/sec (periodic sensors)
-- Busy: 10-50 msgs/sec (active usage)
-- Very Busy: 50+ msgs/sec (multiple motion sensors)
-
-**Unique Topics**
-- Should match: # of devices × ~3-5 topics per device
-- HA discovery adds ~2-3 topics per entity
-- Example: 20 devices = ~100-150 topics
-
-**Buffer Usage**
-- Warning at 800/1000 (80%)
-- Messages roll off oldest-first
-- Clear buffer to reset
 
 ### 4. Real-Time Performance
 
 **Latency Characteristics:**
 
-| Event Type | Expected Latency | Notes |
-|------------|-----------------|--------|
-| Message capture | <5ms | MQTT client to buffer |
-| WebSocket broadcast | <10ms | Buffer to frontend |
-| Total end-to-end | <20ms | Broker to display |
-| Message processing | <1ms | Filtering and search |
+| Event Type          | Expected Latency | Notes                   |
+|---------------------|------------------|-------------------------|
+| Message capture     | <5ms             | MQTT client to buffer   |
+| WebSocket broadcast | <10ms            | Buffer to frontend      |
+| Total end-to-end    | <20ms            | Broker to display       |
+| Message processing  | <1ms             | Filtering and search    |
 
 **Performance Tips:**
 - ✅ Use specific topic filters (reduces processing)
@@ -716,9 +395,7 @@ The statistics dashboard provides insights:
 
 Combine MQTT Explorer with other gateway features:
 
-![Screenshot: Multi-Tool Debugging](screenshots/advanced-multi-tool.png)
-
-> **Screenshot Description:** Browser window with three tabs open:
+> **Browser window with three tabs open:** 
 >
 > **Tab 1: MQTT Explorer**
 > - Shows MQTT message for motion sensor
@@ -1378,15 +1055,15 @@ http://localhost:8000/?mqtt_filter=zigbee/+/state
 
 **Q: How does this compare to MQTT Explorer (desktop app)?**
 
-| Feature | Desktop MQTT Explorer | This Tool |
-|---------|----------------------|-----------|
-| Installation | Separate app | Built into gateway |
-| Real-time | Yes | Yes |
-| Topic tree | Yes | No (list view) |
-| History | Persistent | Buffer only |
-| Publishing | Yes | Yes |
-| Filtering | Tree-based | Pattern-based |
-| Best for | Development, setup | Runtime debugging |
+| Feature       | Desktop MQTT Explorer | This Tool            |
+|---------------|-----------------------|----------------------|
+| Installation  | Separate app          | Built into gateway   |
+| Real-time     | Yes                   | Yes                  |
+| Topic tree    | Yes                   | No (list view)       |
+| History       | Persistent            | Buffer only          |
+| Publishing    | Yes                   | Yes                  |
+| Filtering     | Tree-based            | Pattern-based        |
+| Best for      | Development, setup    | Runtime debugging    |
 
 **Use desktop app when:**
 - Setting up MQTT broker initially
@@ -1423,13 +1100,13 @@ curl http://localhost:8000/api/mqtt_explorer/messages
 
 ## Appendix: Keyboard Shortcuts
 
-| Key | Action |
-|-----|--------|
-| `Ctrl + F` | Focus search filter |
-| `Ctrl + K` | Clear all filters |
-| `Escape` | Close message modal |
-| `Space` | Start/Stop monitoring |
-| `Ctrl + L` | Clear message buffer |
+| Key          | Action                |
+|--------------|-----------------------|
+| `Ctrl + F`   | Focus search filter   |
+| `Ctrl + K`   | Clear all filters     |
+| `Escape`     | Close message modal   |
+| `Space`      | Start/Stop monitoring |
+| `Ctrl + L`   | Clear message buffer  |
 
 ## Appendix: API Reference
 
