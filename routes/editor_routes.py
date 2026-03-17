@@ -18,16 +18,18 @@ PROJECT_ROOT = Path("/opt/zigbee_manager")
 
 # Directories the editor can access
 ALLOWED_DIRS = [
-    "",              # Root .py files (core/, main.py, device.py, mqtt.py)
+    "",              # Root .py files (main.py, device.py, mqtt.py etc.)
     "core",
     "routes",
     "modules",
     "handlers",
+    "static",
     "static/js",
     "static/js/modal",
     "static/css",
     "config",
     "docs",
+    "data",
 ]
 
 # Editable file extensions
@@ -116,15 +118,7 @@ def register_editor_routes(app: FastAPI, get_zigbee_service):
 
                     if item.is_file() and _is_editable(item):
                         dir_entry["children"].append(_get_file_info(item))
-                    elif item.is_dir() and rel_dir == "":
-                        # Only show subdirs that are in ALLOWED_DIRS
-                        sub_rel = str(item.relative_to(PROJECT_ROOT))
-                        if sub_rel in ALLOWED_DIRS:
-                            dir_entry["children"].append({
-                                "name": item.name,
-                                "path": sub_rel,
-                                "is_dir": True,
-                            })
+                    # Subdirs are listed as their own sections — don't add folder entries
             except PermissionError:
                 continue
 
