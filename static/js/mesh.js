@@ -600,6 +600,7 @@ async function refreshPacketStats() {
 
         // Update global data ref
         dashboardMeshData = data;
+        addMobileLabelsToPacketStats();
 
         // Only update the stats table and summary
         populatePacketStats(data.nodes || [], data.stats_summary || {});
@@ -734,6 +735,26 @@ function populatePacketStats(nodes, summary) {
             </tr>
         `;
     }).join('');
+}
+
+function addMobileLabelsToPacketStats() {
+    const table = document.querySelector('#meshPacketStats table');
+    if (!table) return;
+
+    // Get header texts
+    const headers = [];
+    table.querySelectorAll('thead th').forEach(th => {
+        headers.push(th.textContent.trim());
+    });
+
+    // Add data-label to each td
+    table.querySelectorAll('tbody tr').forEach(row => {
+        row.querySelectorAll('td').forEach((td, i) => {
+            if (headers[i]) {
+                td.setAttribute('data-label', headers[i]);
+            }
+        });
+    });
 }
 
 // Helper functions
