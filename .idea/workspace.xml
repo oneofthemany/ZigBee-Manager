@@ -4,9 +4,10 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="">
-      <change afterPath="$PROJECT_DIR$/data/banned_devices.json" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/modules/device_ban.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/device_ban.py" afterDir="false" />
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="new B2F homage">
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/routes/editor_routes.py" beforeDir="false" afterPath="$PROJECT_DIR$/routes/editor_routes.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/static/js/editor.js" beforeDir="false" afterPath="$PROJECT_DIR$/static/js/editor.js" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -26,7 +27,7 @@
   <component name="Git.Settings">
     <option name="RECENT_BRANCH_BY_REPOSITORY">
       <map>
-        <entry key="$PROJECT_DIR$" value="main" />
+        <entry key="$PROJECT_DIR$" value="dev" />
       </map>
     </option>
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
@@ -195,7 +196,31 @@
       <option name="project" value="LOCAL" />
       <updated>1773665652926</updated>
     </task>
-    <option name="localTasksCounter" value="15" />
+    <task id="LOCAL-00015" summary="device ban fixed to look at data dir as opposed to root">
+      <option name="closed" value="true" />
+      <created>1773915209227</created>
+      <option name="number" value="00015" />
+      <option name="presentableId" value="LOCAL-00015" />
+      <option name="project" value="LOCAL" />
+      <updated>1773915209227</updated>
+    </task>
+    <task id="LOCAL-00016" summary="xmls">
+      <option name="closed" value="true" />
+      <created>1773915223370</created>
+      <option name="number" value="00016" />
+      <option name="presentableId" value="LOCAL-00016" />
+      <option name="project" value="LOCAL" />
+      <updated>1773915223370</updated>
+    </task>
+    <task id="LOCAL-00017" summary="new B2F homage">
+      <option name="closed" value="true" />
+      <created>1773919904495</created>
+      <option name="number" value="00017" />
+      <option name="presentableId" value="LOCAL-00017" />
+      <option name="project" value="LOCAL" />
+      <updated>1773919904495</updated>
+    </task>
+    <option name="localTasksCounter" value="18" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -222,6 +247,9 @@
     <MESSAGE value="new screens" />
     <MESSAGE value="editor fixes for time machine" />
     <MESSAGE value="workspace update" />
-    <option name="LAST_COMMIT_MESSAGE" value="workspace update" />
+    <MESSAGE value="device ban fixed to look at data dir as opposed to root" />
+    <MESSAGE value="xmls" />
+    <MESSAGE value="new B2F homage" />
+    <option name="LAST_COMMIT_MESSAGE" value="new B2F homage" />
   </component>
 </project>
