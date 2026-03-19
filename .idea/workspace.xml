@@ -5,8 +5,7 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="">
-      <change afterPath="$PROJECT_DIR$/data/banned_devices.json" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/modules/device_ban.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/device_ban.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/static/js/deploy-animation.js" beforeDir="false" afterPath="$PROJECT_DIR$/static/js/deploy-animation.js" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -61,7 +60,7 @@
     "RunOnceActivity.readMode.enableVisualFormatting": "true",
     "cf.first.check.clang-format": "false",
     "cidr.known.project.marker": "true",
-    "git-widget-placeholder": "main",
+    "git-widget-placeholder": "dev",
     "kotlin-language-version-configured": "true",
     "last_opened_file_path": "/home/smu02/StudioProjects/ZigBee-Matter-Manager",
     "project.structure.last.edited": "SDKs",
