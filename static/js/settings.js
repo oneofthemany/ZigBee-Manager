@@ -354,9 +354,22 @@ function renderSpectrumChart(data) {
 
     // Wi-Fi overlap annotations (typical)
     const wifiOverlap = {
-        11: 'WiFi-1', 12: 'WiFi-1', 13: 'WiFi-1',
-        16: 'WiFi-6', 17: 'WiFi-6',
-        21: 'WiFi-11', 22: 'WiFi-11'
+        11: '1,2',
+        12: '1,2,3',
+        13: '1,2,3,4',
+        14: '1,2,3,4,5',
+        15: '2,3,4,5,6',
+        16: '3,4,5,6,7',
+        17: '4,5,6,7,8',
+        18: '5,6,7,8,9',
+        19: '6,7,8,9,10',
+        20: '7,8,9,10,11',
+        21: '8,9,10,11,12',
+        22: '9,10,11,12,13',
+        23: '10,11,12,13',
+        24: '11,12,13,14',
+        25: '12,13,14',
+        26: '13,14'
     };
 
     // Simple SVG chart (no external deps beyond what's available)
@@ -469,9 +482,9 @@ export async function loadSpectrumHistory() {
     container.innerHTML = '<div class="text-center text-muted py-3 small"><i class="fas fa-spinner fa-spin"></i> Loading...</div>';
 
     try {
-        const [histRes, avgRes] = await Promise.all([
+        const [histRes, statsRes] = await Promise.all([
             fetch(`/api/zigbee/spectrum/history?hours=${hours}`).then(r => r.json()),
-            fetch(`/api/zigbee/spectrum/averages?hours=${hours}`).then(r => r.json())
+            fetch(`/api/zigbee/spectrum/stats?hours=${hours}`).then(r => r.json())
         ]);
 
         if (!histRes.success || !histRes.records.length) {
@@ -479,10 +492,16 @@ export async function loadSpectrumHistory() {
             return;
         }
 
-        renderHistoryChart(histRes.records, avgRes.averages || {}, hours, container);
+        if (statsRes.success && statsRes.stats) {
+            renderHistoryChart(statsRes.stats, hours, container);
+        } else {
+            // Fallback: compute stats client-side from raw records
+            const stats = computeStatsFromRecords(histRes.records);
+            renderHistoryChart(stats, hours, container);
+        }
 
         if (meta) {
-            const count = histRes.records.length / 16; // 16 channels per scan
+            const count = histRes.records.length / 16;
             meta.textContent = `${Math.round(count)} scans over the last ${hours}h`;
         }
 
@@ -491,88 +510,253 @@ export async function loadSpectrumHistory() {
     }
 }
 
-function renderHistoryChart(records, averages, hours, container) {
-    // Group records by channel, build time series per channel
+function computeStatsFromRecords(records) {
     const byChannel = {};
     for (const r of records) {
         if (!byChannel[r.channel]) byChannel[r.channel] = [];
-        byChannel[r.channel].push({ ts: r.timestamp, energy: r.energy });
+        byChannel[r.channel].push(r.energy);
     }
+    const stats = {};
+    for (const [ch, vals] of Object.entries(byChannel)) {
+        vals.sort((a, b) => a - b);
+        const n = vals.length;
+        const mean = vals.reduce((a, b) => a + b, 0) / n;
+        const variance = vals.reduce((a, b) => a + (b - mean) ** 2, 0) / n;
+        stats[ch] = {
+            min: vals[0], max: vals[n - 1],
+            mean: Math.round(mean * 10) / 10,
+            stddev: Math.round(Math.sqrt(variance) * 10) / 10,
+            median: vals[Math.floor(n / 2)],
+            p25: vals[Math.max(0, Math.floor(n * 0.25) - 1)],
+            p75: vals[Math.min(n - 1, Math.floor(n * 0.75))],
+            count: n
+        };
+    }
+    return stats;
+}
 
-    const channels = Object.keys(byChannel).map(Number).sort((a, b) => a - b);
+function renderHistoryChart(stats, hours, container) {
+    const channels = Object.keys(stats).map(Number).sort((a, b) => a - b);
     if (!channels.length) return;
 
-    // Average energy per channel across the period
-    const avgPerChannel = channels.map(ch => {
-        const vals = byChannel[ch].map(p => p.energy);
-        return { ch, avg: Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) };
-    });
+    // Find best/worst by mean
+    let bestCh = channels[0], worstCh = channels[0];
+    for (const ch of channels) {
+        if (stats[ch].mean < stats[bestCh].mean) bestCh = ch;
+        if (stats[ch].mean > stats[worstCh].mean) worstCh = ch;
+    }
 
-    // Find best (lowest avg) and worst (highest avg) channels
-    const best = avgPerChannel.reduce((a, b) => a.avg < b.avg ? a : b);
-    const worst = avgPerChannel.reduce((a, b) => a.avg > b.avg ? a : b);
-
-    // Build SVG bar chart of averages with min/max range indicators
-    const W = container.clientWidth || 680;
-    const H = 200;
-    const padL = 40, padR = 20, padT = 16, padB = 50;
+    const W = container.clientWidth || 700;
+    const H = 320;
+    const padL = 44, padR = 20, padT = 20, padB = 90;
     const plotW = W - padL - padR;
     const plotH = H - padT - padB;
-    const barW = Math.floor(plotW / channels.length) - 4;
+    const colW = plotW / channels.length;
+    const boxW = Math.max(12, Math.floor(colW * 0.55));
 
-    const bars = avgPerChannel.map(({ ch, avg }, i) => {
-        const x = padL + i * (plotW / channels.length) + 2;
-        const barH = Math.round((avg / 255) * plotH);
-        const y = padT + plotH - barH;
+    const yScale = v => padT + plotH - Math.round((v / 255) * plotH);
 
-        // Range: min/max as thin overlay
-        const vals = byChannel[ch].map(p => p.energy);
-        const minE = Math.min(...vals);
-        const maxE = Math.max(...vals);
-        const rangeTop = padT + plotH - Math.round((maxE / 255) * plotH);
-        const rangeH = Math.round(((maxE - minE) / 255) * plotH);
+    // Y-axis grid
+    const yTicks = [0, 50, 100, 150, 200, 255].map(v => {
+        const y = yScale(v);
+        return `<line x1="${padL}" y1="${y}" x2="${padL + plotW}" y2="${y}" stroke="#eee" stroke-width="1"/>
+                <text x="${padL - 6}" y="${y + 3}" text-anchor="end" font-size="9" fill="#aaa">${v}</text>`;
+    }).join('');
 
-        const color = ch === best.ch ? '#0d6efd'
-                    : avg < 80 ? '#198754'
-                    : avg < 150 ? '#ffc107'
-                    : '#dc3545';
+    // WiFi ↔ Zigbee overlap mapping (all 14 channels, 22MHz bandwidth each)
+    const zbToWifi = {
+        11: [1,2],       12: [1,2,3],     13: [1,2,3,4],   14: [1,2,3,4,5],
+        15: [2,3,4,5,6], 16: [3,4,5,6,7], 17: [4,5,6,7,8], 18: [5,6,7,8,9],
+        19: [6,7,8,9,10],20: [7,8,9,10,11],21: [8,9,10,11,12],22: [9,10,11,12,13],
+        23: [10,11,12,13],24: [11,12,13,14],25: [12,13,14],  26: [13,14]
+    };
+    const commonWifi = new Set([1, 6, 11]); // Non-overlapping config
+
+    // Build WiFi density heatmap (how many WiFi channels overlap each ZB channel)
+    const maxOverlap = 5;
+    const wifiHeatmap = channels.map((ch, i) => {
+        const cx = padL + i * colW;
+        const count = (zbToWifi[ch] || []).length;
+        const intensity = count / maxOverlap;
+        const alpha = (0.03 + intensity * 0.06).toFixed(3);
+        return `<rect x="${cx}" y="${padT}" width="${colW}" height="${plotH}"
+                      fill="rgba(220,53,69,${alpha})"/>`;
+    }).join('');
+
+    // Box plots
+    const boxes = channels.map((ch, i) => {
+        const s = stats[ch];
+        const cx = padL + i * colW + colW / 2;
+        const bx = cx - boxW / 2;
+
+        const yMin = yScale(s.min);
+        const yMax = yScale(s.max);
+        const yMean = yScale(s.mean);
+        const yMedian = yScale(s.median);
+        const yP25 = yScale(s.p25);
+        const yP75 = yScale(s.p75);
+        const yStdHi = yScale(Math.min(255, s.mean + s.stddev));
+        const yStdLo = yScale(Math.max(0, s.mean - s.stddev));
+
+        // Color by mean energy
+        const isBest = ch === bestCh;
+        const fillColor = isBest ? 'rgba(13,110,253,0.15)'
+                        : s.mean < 80 ? 'rgba(25,135,84,0.12)'
+                        : s.mean < 150 ? 'rgba(255,193,7,0.12)'
+                        : 'rgba(220,53,69,0.12)';
+        const strokeColor = isBest ? '#0d6efd'
+                          : s.mean < 80 ? '#198754'
+                          : s.mean < 150 ? '#e0a800'
+                          : '#dc3545';
+        const lightStroke = isBest ? 'rgba(13,110,253,0.3)'
+                          : s.mean < 80 ? 'rgba(25,135,84,0.3)'
+                          : s.mean < 150 ? 'rgba(255,193,7,0.3)'
+                          : 'rgba(220,53,69,0.3)';
 
         return `
-          <!-- range indicator -->
-          <rect x="${x + barW/2 - 1}" y="${rangeTop}" width="2" height="${Math.max(rangeH, 2)}"
-                fill="${color}" opacity="0.3"/>
-          <!-- avg bar -->
-          <rect x="${x}" y="${y}" width="${barW}" height="${barH}" fill="${color}" rx="2" opacity="0.85"/>
-          <!-- channel label -->
-          <text x="${x + barW/2}" y="${padT + plotH + 14}" text-anchor="middle" font-size="10"
-                fill="${ch === best.ch ? '#0d6efd' : '#555'}"
-                font-weight="${ch === best.ch ? 'bold' : 'normal'}">${ch}${ch === best.ch ? '★' : ''}</text>
-          <!-- avg value -->
-          ${avg > 20 ? `<text x="${x + barW/2}" y="${y - 3}" text-anchor="middle" font-size="8" fill="${color}">${avg}</text>` : ''}
+          <!-- Whisker: min to max -->
+          <line x1="${cx}" y1="${yMax}" x2="${cx}" y2="${yMin}" stroke="${lightStroke}" stroke-width="1"/>
+          <!-- Min cap -->
+          <line x1="${cx - 4}" y1="${yMin}" x2="${cx + 4}" y2="${yMin}" stroke="${lightStroke}" stroke-width="1.5"/>
+          <!-- Max cap -->
+          <line x1="${cx - 4}" y1="${yMax}" x2="${cx + 4}" y2="${yMax}" stroke="${lightStroke}" stroke-width="1.5"/>
+
+          <!-- Std dev band -->
+          <rect x="${bx + 2}" y="${yStdHi}" width="${boxW - 4}" height="${Math.max(1, yStdLo - yStdHi)}"
+                fill="${strokeColor}" opacity="0.1" rx="2"/>
+
+          <!-- IQR box (P25 to P75) -->
+          <rect x="${bx}" y="${yP75}" width="${boxW}" height="${Math.max(1, yP25 - yP75)}"
+                fill="${fillColor}" stroke="${strokeColor}" stroke-width="1.5" rx="3"/>
+
+          <!-- Median line -->
+          <line x1="${bx + 1}" y1="${yMedian}" x2="${bx + boxW - 1}" y2="${yMedian}"
+                stroke="${strokeColor}" stroke-width="2" stroke-dasharray="3,2"/>
+
+          <!-- Mean diamond -->
+          <polygon points="${cx},${yMean - 4} ${cx + 4},${yMean} ${cx},${yMean + 4} ${cx - 4},${yMean}"
+                   fill="${strokeColor}" opacity="0.9"/>
+
+          <!-- Channel label -->
+          <text x="${cx}" y="${padT + plotH + 14}" text-anchor="middle" font-size="10"
+                fill="${isBest ? '#0d6efd' : '#555'}"
+                font-weight="${isBest ? 'bold' : 'normal'}">${ch}${isBest ? '★' : ''}</text>
+
+          <!-- Stats text below channel -->
+          <text x="${cx}" y="${padT + plotH + 26}" text-anchor="middle" font-size="8" fill="#999">
+            μ${s.mean}
+          </text>
+          <text x="${cx}" y="${padT + plotH + 36}" text-anchor="middle" font-size="7" fill="#bbb">
+            σ${s.stddev}
+          </text>
+
+          <!-- WiFi overlap row -->
+          <text x="${cx}" y="${padT + plotH + 48}" text-anchor="middle" font-size="6.5" fill="#ccc">
+            ${(zbToWifi[ch] || []).map(w => commonWifi.has(w) ? w + '*' : w).join(',')}
+          </text>
+
+          <!-- Tooltip area (invisible rect for hover) -->
+          <rect x="${bx - 2}" y="${padT}" width="${boxW + 4}" height="${plotH}"
+                fill="transparent" class="spectrum-hover"
+                data-ch="${ch}" data-min="${s.min}" data-max="${s.max}"
+                data-mean="${s.mean}" data-stddev="${s.stddev}"
+                data-median="${s.median}" data-p25="${s.p25}" data-p75="${s.p75}"
+                data-count="${s.count}"/>
         `;
     }).join('');
 
-    // Y ticks
-    const yTicks = [0, 64, 128, 192, 255].map(v => {
-        const y = padT + plotH - Math.round((v / 255) * plotH);
-        return `<line x1="${padL - 4}" y1="${y}" x2="${padL + plotW}" y2="${y}" stroke="#e8e8e8" stroke-width="1"/>
-                <text x="${padL - 6}" y="${y + 4}" text-anchor="end" font-size="9" fill="#aaa">${v}</text>`;
-    }).join('');
+    // Tooltip element
+    const tooltipId = 'spectrumTooltip_' + Date.now();
 
     container.innerHTML = `
-      <svg width="100%" height="${H}" viewBox="0 0 ${W} ${H}">
+      <svg width="100%" height="${H}" viewBox="0 0 ${W} ${H}" style="font-family: system-ui, sans-serif;">
+        <!-- WiFi density heatmap background -->
+        ${wifiHeatmap}
         ${yTicks}
-        ${bars}
+
+        <!-- Axes -->
         <line x1="${padL}" y1="${padT}" x2="${padL}" y2="${padT + plotH}" stroke="#ccc" stroke-width="1"/>
         <line x1="${padL}" y1="${padT + plotH}" x2="${padL + plotW}" y2="${padT + plotH}" stroke="#ccc" stroke-width="1"/>
-        <text x="${padL + plotW/2}" y="${H - 4}" text-anchor="middle" font-size="10" fill="#888">Channel (avg energy, bars show min/max range)</text>
+
+        <!-- Y axis label -->
+        <text x="11" y="${padT + plotH/2}" text-anchor="middle" font-size="9" fill="#999"
+              transform="rotate(-90, 11, ${padT + plotH/2})">Energy (0–255)</text>
+
+        <!-- Box plots -->
+        ${boxes}
+
+        <!-- WiFi row label -->
+        <text x="${padL - 6}" y="${padT + plotH + 48}" text-anchor="end" font-size="7" fill="#bbb">WiFi</text>
       </svg>
-      <div class="d-flex gap-3 mt-1 flex-wrap small">
-        <span class="text-success"><i class="fas fa-check-circle me-1"></i>Best avg: ch ${best.ch} (${best.avg})</span>
-        <span class="text-danger"><i class="fas fa-exclamation-circle me-1"></i>Most noisy: ch ${worst.ch} (${worst.avg})</span>
+
+      <!-- Legend -->
+      <div class="d-flex gap-3 mt-2 flex-wrap small align-items-center">
+        <span class="d-flex align-items-center gap-1">
+          <svg width="14" height="14"><rect x="1" y="2" width="12" height="10" fill="rgba(25,135,84,0.15)" stroke="#198754" stroke-width="1.5" rx="2"/></svg>
+          IQR (P25–P75)
+        </span>
+        <span class="d-flex align-items-center gap-1">
+          <svg width="14" height="14"><line x1="1" y1="7" x2="13" y2="7" stroke="#666" stroke-width="2" stroke-dasharray="3,2"/></svg>
+          Median
+        </span>
+        <span class="d-flex align-items-center gap-1">
+          <svg width="14" height="14"><polygon points="7,2 11,7 7,12 3,7" fill="#666"/></svg>
+          Mean
+        </span>
+        <span class="d-flex align-items-center gap-1">
+          <svg width="14" height="14"><rect x="3" y="3" width="8" height="8" fill="#666" opacity="0.1" rx="1"/></svg>
+          ±1σ band
+        </span>
+        <span class="d-flex align-items-center gap-1">
+          <svg width="14" height="14"><line x1="7" y1="1" x2="7" y2="13" stroke="rgba(0,0,0,0.2)" stroke-width="1"/><line x1="4" y1="1" x2="10" y2="1" stroke="rgba(0,0,0,0.2)" stroke-width="1.5"/><line x1="4" y1="13" x2="10" y2="13" stroke="rgba(0,0,0,0.2)" stroke-width="1.5"/></svg>
+          Min–Max
+        </span>
+        <span class="d-flex align-items-center gap-1">
+          <svg width="14" height="14"><rect x="1" y="2" width="12" height="10" fill="rgba(220,53,69,0.08)" rx="1"/></svg>
+          WiFi density
+        </span>
       </div>
+
+      <!-- Summary -->
+      <div class="d-flex gap-3 mt-1 flex-wrap small">
+        <span class="text-primary"><i class="fas fa-trophy me-1"></i>Best: ch ${bestCh} (μ=${stats[bestCh].mean}, σ=${stats[bestCh].stddev})</span>
+        <span class="text-danger"><i class="fas fa-exclamation-triangle me-1"></i>Noisiest: ch ${worstCh} (μ=${stats[worstCh].mean}, σ=${stats[worstCh].stddev})</span>
+        <span class="text-muted">${stats[channels[0]].count} samples/ch over ${hours}h</span>
+      </div>
+      <div class="mt-1 small text-muted">
+        <strong>WiFi row:</strong> Numbers = overlapping WiFi channels. <strong>*</strong> = common non-overlapping config (1, 6, 11).
+        Background tint = WiFi density (more overlap = darker).
+      </div>
+
+      <!-- Hover tooltip -->
+      <div id="${tooltipId}" style="display:none;position:fixed;background:rgba(30,30,30,0.95);color:#fff;padding:8px 12px;border-radius:6px;font-size:12px;pointer-events:none;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.3);max-width:200px;"></div>
     `;
+
+    // Wire up hover tooltips
+    const tooltip = document.getElementById(tooltipId);
+    container.querySelectorAll('.spectrum-hover').forEach(el => {
+        el.addEventListener('mouseenter', e => {
+            const d = e.target.dataset;
+            tooltip.innerHTML = `
+                <div style="font-weight:600;margin-bottom:4px;">Channel ${d.ch}</div>
+                <div>Mean: <b>${d.mean}</b> &nbsp; Median: ${d.median}</div>
+                <div>Std Dev: ${d.stddev}</div>
+                <div>Min: ${d.min} &nbsp; Max: ${d.max}</div>
+                <div>P25: ${d.p25} &nbsp; P75: ${d.p75}</div>
+                <div style="color:#aaa;margin-top:2px;">${d.count} samples</div>
+            `;
+            tooltip.style.display = 'block';
+        });
+        el.addEventListener('mousemove', e => {
+            tooltip.style.left = (e.clientX + 12) + 'px';
+            tooltip.style.top = (e.clientY - 10) + 'px';
+        });
+        el.addEventListener('mouseleave', () => {
+            tooltip.style.display = 'none';
+        });
+    });
 }
+
 
 // ============================================================================
 // FORM VALUE COLLECTION

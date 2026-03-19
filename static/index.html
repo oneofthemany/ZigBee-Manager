@@ -96,6 +96,7 @@
        <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#zones"><i class="fas fa-bullseye"></i> Zones</button></li>
        <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#mqtt-explorer"><i class="fas fa-broadcast-tower"></i> MQTT Explorer</button></li>
        <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#debug"><i class="fas fa-terminal"></i> Debug Log</button></li>
+       <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#editor-tab"><i class="fas fa-code"></i> <span class="d-none d-md-inline">Editor</span></button></li>
    </ul>
 
 <div class="tab-content">
@@ -929,6 +930,12 @@
                 </div>
             </div>
         </div>
+
+        <!-- CODE EDITOR TAB -->
+        <div class="tab-pane fade" id="editor-tab">
+            <div id="editorContainer"></div>
+        </div>
+
     </div>
 </div>
 
@@ -1076,6 +1083,7 @@
 <script type="module" src="/static/js/main.js"></script>
 <script src="/static/js/theme-toggle.js"></script>
 <script src="/static/js/device-status.js"></script>
+<script src="/static/js/device-search.js"></script>
 <script src="/static/js/mobile-helpers.js"></script>
 </body>
 </html>

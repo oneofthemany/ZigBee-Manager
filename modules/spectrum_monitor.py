@@ -10,6 +10,7 @@ import logging
 import sqlite3
 import time
 from typing import Optional, TYPE_CHECKING
+import math
 
 if TYPE_CHECKING:
     from zigpy.application import ControllerApplication
@@ -84,6 +85,58 @@ def get_channel_averages(hours: int = 24, db_path: str = DB_PATH) -> dict:
         ).fetchall()
     return {row[0]: round(row[1], 1) for row in rows}
 
+
+
+def get_channel_stats(hours: int = 24, db_path: str = DB_PATH) -> dict:
+    """
+    Return per-channel statistics over the past N hours.
+    Returns {channel: {min, max, mean, stddev, p25, p75, median, count}}
+    """
+    import math
+
+    since = int(time.time()) - (hours * 3600)
+    with sqlite3.connect(db_path) as conn:
+        rows = conn.execute(
+            "SELECT channel, energy FROM spectrum_history "
+            "WHERE timestamp >= ? ORDER BY channel, energy",
+            (since,)
+        ).fetchall()
+
+    # Group by channel
+    by_channel = {}
+    for ch, energy in rows:
+        if ch not in by_channel:
+            by_channel[ch] = []
+        by_channel[ch].append(energy)
+
+    stats = {}
+    for ch in sorted(by_channel.keys()):
+        vals = sorted(by_channel[ch])
+        n = len(vals)
+        if n == 0:
+            continue
+
+        mean_val = sum(vals) / n
+        variance = sum((v - mean_val) ** 2 for v in vals) / n
+        stddev = math.sqrt(variance)
+
+        # Percentiles (nearest-rank)
+        p25_idx = max(0, int(n * 0.25) - 1)
+        p75_idx = min(n - 1, int(n * 0.75))
+        med_idx = n // 2
+
+        stats[ch] = {
+            "min": vals[0],
+            "max": vals[-1],
+            "mean": round(mean_val, 1),
+            "stddev": round(stddev, 1),
+            "median": vals[med_idx],
+            "p25": vals[p25_idx],
+            "p75": vals[p75_idx],
+            "count": n
+        }
+
+    return stats
 
 def prune_old_records(keep_days: int = 7, db_path: str = DB_PATH):
     """Remove records older than keep_days to prevent unbounded growth."""

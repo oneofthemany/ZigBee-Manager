@@ -1,0 +1,227 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="AutoImportSettings">
+    <option name="autoReloadType" value="NONE" />
+  </component>
+  <component name="ChangeListManager">
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="workspace update">
+      <change beforePath="$PROJECT_DIR$/.idea/misc.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/misc.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+    </list>
+    <option name="SHOW_DIALOG" value="false" />
+    <option name="HIGHLIGHT_CONFLICTS" value="true" />
+    <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
+    <option name="LAST_RESOLUTION" value="IGNORE" />
+  </component>
+  <component name="ClangdSettings">
+    <option name="formatViaClangd" value="false" />
+  </component>
+  <component name="FileTemplateManagerImpl">
+    <option name="RECENT_TEMPLATES">
+      <list>
+        <option value="Python Script" />
+      </list>
+    </option>
+  </component>
+  <component name="Git.Settings">
+    <option name="RECENT_BRANCH_BY_REPOSITORY">
+      <map>
+        <entry key="$PROJECT_DIR$" value="main" />
+      </map>
+    </option>
+    <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
+  </component>
+  <component name="GitHubPullRequestSearchHistory">{
+  &quot;lastFilter&quot;: {
+    &quot;state&quot;: &quot;OPEN&quot;,
+    &quot;assignee&quot;: &quot;oneofthemany&quot;
+  }
+}</component>
+  <component name="GithubPullRequestsUISettings">{
+  &quot;selectedUrlAndAccountId&quot;: {
+    &quot;url&quot;: &quot;https://github.com/oneofthemany/ZigBee-Matter-Manager.git&quot;,
+    &quot;accountId&quot;: &quot;b00be1dc-7b4f-4311-ab84-b3d2175df6fb&quot;
+  }
+}</component>
+  <component name="ProjectColorInfo">{
+  &quot;associatedIndex&quot;: 2
+}</component>
+  <component name="ProjectId" id="3AZqW3eyC7DpzZlS55VTuXMuSaI" />
+  <component name="ProjectViewState">
+    <option name="hideEmptyMiddlePackages" value="true" />
+    <option name="showLibraryContents" value="true" />
+  </component>
+  <component name="PropertiesComponent">{
+  &quot;keyToString&quot;: {
+    &quot;ModuleVcsDetector.initialDetectionPerformed&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.cidr.known.project.marker&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.readMode.enableVisualFormatting&quot;: &quot;true&quot;,
+    &quot;cf.first.check.clang-format&quot;: &quot;false&quot;,
+    &quot;cidr.known.project.marker&quot;: &quot;true&quot;,
+    &quot;git-widget-placeholder&quot;: &quot;dev&quot;,
+    &quot;kotlin-language-version-configured&quot;: &quot;true&quot;,
+    &quot;last_opened_file_path&quot;: &quot;/home/smu02/StudioProjects/ZigBee-Matter-Manager&quot;,
+    &quot;project.structure.last.edited&quot;: &quot;SDKs&quot;,
+    &quot;project.structure.proportion&quot;: &quot;0.0&quot;,
+    &quot;project.structure.side.proportion&quot;: &quot;0.0&quot;
+  }
+}</component>
+  <component name="RecentsManager">
+    <key name="MoveFile.RECENT_KEYS">
+      <recent name="$PROJECT_DIR$" />
+      <recent name="$PROJECT_DIR$/mqtt" />
+    </key>
+  </component>
+  <component name="TaskManager">
+    <task active="true" id="Default" summary="Default task">
+      <changelist id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="" />
+      <created>1772810468546</created>
+      <option name="number" value="Default" />
+      <option name="presentableId" value="Default" />
+      <updated>1772810468546</updated>
+    </task>
+    <task id="LOCAL-00001" summary="new automations tab which mirrors the automations made in the device modal">
+      <option name="closed" value="true" />
+      <created>1772810974186</created>
+      <option name="number" value="00001" />
+      <option name="presentableId" value="LOCAL-00001" />
+      <option name="project" value="LOCAL" />
+      <updated>1772810974186</updated>
+    </task>
+    <task id="LOCAL-00002" summary="deleted as moved to new core services">
+      <option name="closed" value="true" />
+      <created>1773652419201</created>
+      <option name="number" value="00002" />
+      <option name="presentableId" value="LOCAL-00002" />
+      <option name="project" value="LOCAL" />
+      <updated>1773652419201</updated>
+    </task>
+    <task id="LOCAL-00003" summary="updated to cater for mqtt_queue in modules dir">
+      <option name="closed" value="true" />
+      <created>1773652971418</created>
+      <option name="number" value="00003" />
+      <option name="presentableId" value="LOCAL-00003" />
+      <option name="project" value="LOCAL" />
+      <updated>1773652971418</updated>
+    </task>
+    <task id="LOCAL-00004" summary="duplicate">
+      <option name="closed" value="true" />
+      <created>1773653060544</created>
+      <option name="number" value="00004" />
+      <option name="presentableId" value="LOCAL-00004" />
+      <option name="project" value="LOCAL" />
+      <updated>1773653060544</updated>
+    </task>
+    <task id="LOCAL-00005" summary="duplicate">
+      <option name="closed" value="true" />
+      <created>1773653089193</created>
+      <option name="number" value="00005" />
+      <option name="presentableId" value="LOCAL-00005" />
+      <option name="project" value="LOCAL" />
+      <updated>1773653089193</updated>
+    </task>
+    <task id="LOCAL-00006" summary="new code editor tab using Monaco Editor and test recovery functions allowing user to test code updates with recovery - includes all code extensions">
+      <option name="closed" value="true" />
+      <created>1773661323243</created>
+      <option name="number" value="00006" />
+      <option name="presentableId" value="LOCAL-00006" />
+      <option name="project" value="LOCAL" />
+      <updated>1773661323243</updated>
+    </task>
+    <task id="LOCAL-00007" summary="line removed">
+      <option name="closed" value="true" />
+      <created>1773661341218</created>
+      <option name="number" value="00007" />
+      <option name="presentableId" value="LOCAL-00007" />
+      <option name="project" value="LOCAL" />
+      <updated>1773661341218</updated>
+    </task>
+    <task id="LOCAL-00008" summary="updated old text reference to be zigbee matter">
+      <option name="closed" value="true" />
+      <created>1773663796154</created>
+      <option name="number" value="00008" />
+      <option name="presentableId" value="LOCAL-00008" />
+      <option name="project" value="LOCAL" />
+      <updated>1773663796154</updated>
+    </task>
+    <task id="LOCAL-00009" summary="screens added">
+      <option name="closed" value="true" />
+      <created>1773664049184</created>
+      <option name="number" value="00009" />
+      <option name="presentableId" value="LOCAL-00009" />
+      <option name="project" value="LOCAL" />
+      <updated>1773664049184</updated>
+    </task>
+    <task id="LOCAL-00010" summary="updated markdowns">
+      <option name="closed" value="true" />
+      <created>1773664070541</created>
+      <option name="number" value="00010" />
+      <option name="presentableId" value="LOCAL-00010" />
+      <option name="project" value="LOCAL" />
+      <updated>1773664070541</updated>
+    </task>
+    <task id="LOCAL-00011" summary="new screens">
+      <option name="closed" value="true" />
+      <created>1773664677184</created>
+      <option name="number" value="00011" />
+      <option name="presentableId" value="LOCAL-00011" />
+      <option name="project" value="LOCAL" />
+      <updated>1773664677184</updated>
+    </task>
+    <task id="LOCAL-00012" summary="editor fixes for time machine">
+      <option name="closed" value="true" />
+      <created>1773665551781</created>
+      <option name="number" value="00012" />
+      <option name="presentableId" value="LOCAL-00012" />
+      <option name="project" value="LOCAL" />
+      <updated>1773665551781</updated>
+    </task>
+    <task id="LOCAL-00013" summary="workspace update">
+      <option name="closed" value="true" />
+      <created>1773665579770</created>
+      <option name="number" value="00013" />
+      <option name="presentableId" value="LOCAL-00013" />
+      <option name="project" value="LOCAL" />
+      <updated>1773665579770</updated>
+    </task>
+    <task id="LOCAL-00014" summary="workspace update">
+      <option name="closed" value="true" />
+      <created>1773665652926</created>
+      <option name="number" value="00014" />
+      <option name="presentableId" value="LOCAL-00014" />
+      <option name="project" value="LOCAL" />
+      <updated>1773665652926</updated>
+    </task>
+    <option name="localTasksCounter" value="15" />
+    <servers />
+  </component>
+  <component name="Vcs.Log.Tabs.Properties">
+    <option name="TAB_STATES">
+      <map>
+        <entry key="MAIN">
+          <value>
+            <State />
+          </value>
+        </entry>
+      </map>
+    </option>
+  </component>
+  <component name="VcsManagerConfiguration">
+    <MESSAGE value="new automations tab which mirrors the automations made in the device modal" />
+    <MESSAGE value="deleted as moved to new core services" />
+    <MESSAGE value="updated to cater for mqtt_queue in modules dir" />
+    <MESSAGE value="duplicate" />
+    <MESSAGE value="new code editor tab using Monaco Editor and test recovery functions allowing user to test code updates with recovery - includes all code extensions" />
+    <MESSAGE value="line removed" />
+    <MESSAGE value="updated old text reference to be zigbee matter" />
+    <MESSAGE value="screens added" />
+    <MESSAGE value="updated markdowns" />
+    <MESSAGE value="new screens" />
+    <MESSAGE value="editor fixes for time machine" />
+    <MESSAGE value="workspace update" />
+    <option name="LAST_COMMIT_MESSAGE" value="workspace update" />
+  </component>
+</project>

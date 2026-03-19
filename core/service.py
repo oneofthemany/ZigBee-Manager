@@ -1,0 +1,1373 @@
+"""
+Zigbee Matter Service Core - ZHA-inspired architecture.
+ZigbeeService is composed from focused mixin classes.
+
+Mixins:
+  ConfigBuilderMixin  - Radio config builders (EZSP/ZNP)
+  MQTTHandlerMixin    - Announcements, republish, bridge status
+  TopologyMixin       - Mesh data, LQI scanning, connection table
+  BanningMixin        - Ban/unban/kick
+  DatabaseMixin       - Orphan detection, DB cleanup
+  TabsMixin           - Device tab CRUD
+
+This file retains: __init__, start(), stop(), zigpy listener interface,
+handle_device_update, handle_mqtt_command, announce_device, send_command,
+rename_device, configure_device, interview_device, poll_device, bind_devices,
+permit_join, touchlink, get_device_list, and utility methods.
+"""
+import asyncio
+import logging
+import json
+import time
+import os
+import re
+import traceback
+from typing import Dict, Any, Optional
+from contextlib import suppress
+
+import bellows.uart
+import bellows.config
+from bellows.ash import NcpFailure
+import zigpy.types
+import zigpy.config
+import zigpy.device
+import bellows.ezsp
+import zigpy_znp.api
+import zigpy_znp.config
+from pathlib import Path
+
+import zigpy.zdo.types as zdo_types
+from zigpy.zcl.clusters.security import IasZone
+
+from device import ZigManDevice
+from modules.json_helpers import prepare_for_json, sanitise_device_state
+from modules.packet_stats import packet_stats
+from modules.zones import ZoneManager
+from handlers.zones_handler import setup_rssi_listener
+from modules.zigbee_debug import get_debugger
+from handlers.fast_path import FastPathProcessor
+from modules.device_ban import get_ban_manager
+from modules.touchlink import create_touchlink_manager, TouchlinkManager
+from modules.automation import AutomationEngine
+from modules.ota import OTAManager, build_ota_config
+
+# Import mixins
+from core.config_builder import ConfigBuilderMixin
+from core.mqtt_handler import MQTTHandlerMixin
+from core.topology import TopologyMixin
+from core.banning import BanningMixin
+from core.database import DatabaseMixin
+from core.tabs import TabsMixin
+from core.polling import PollingScheduler
+
+logger = logging.getLogger("core")
+
+# Try Loading Quirks
+try:
+    import zhaquirks
+    try:
+        import zhaquirks.centralite
+        logger.info("Loaded Centralite/Hive quirks")
+    except ImportError:
+        pass
+    zhaquirks.setup()
+    logger.info("ZHA Quirks loaded successfully")
+except Exception as e:
+    logging.warning(f"Failed to load ZHA Quirks: {e}")
+
+
+class ZigbeeService(
+    ConfigBuilderMixin,
+    MQTTHandlerMixin,
+    TopologyMixin,
+    BanningMixin,
+    DatabaseMixin,
+    TabsMixin,
+):
+    """
+    Core Zigbee service implementing zigpy's listener interface.
+    Based on ZHA's gateway architecture with MQTT command handling.
+    """
+
+    def __init__(self, port, mqtt_client, config, event_callback=None):
+        self.port = port
+        self.app = None
+        self.mqtt = mqtt_client
+        self.callback = event_callback
+        self._update_debounce_tasks = {}
+
+        # Connect MQTT callbacks
+        if self.mqtt:
+            self.mqtt.command_callback = self.handle_mqtt_command
+            self.mqtt.ha_status_callback = self.republish_all_devices
+            self.mqtt.status_change_callback = self.handle_bridge_status_change
+
+        self.event_callback = event_callback or self._default_event_callback
+
+        self.devices: Dict[str, ZigManDevice] = {}
+        self.friendly_names = self._load_json("./data/names.json")
+        self.device_settings = self._load_json("./data/device_settings.json")
+
+        # Device override manager
+        from modules.device_overrides import get_override_manager
+        self.override_manager = get_override_manager()
+
+        self.polling_config = self._load_json("./data/polling_config.json")
+
+        # State cache
+        self.state_cache = self._load_json("./data/device_state_cache.json")
+        self._cache_dirty = False
+        self._save_task = None
+        self._debounce_seconds = 2.0
+
+        self.join_history = []
+        self._config = config
+
+        # Pairing state
+        self.pairing_expiration = 0
+
+        # Banning
+        self.ban_manager = get_ban_manager()
+
+        # Polling scheduler
+        self.polling_scheduler = PollingScheduler(self)
+
+        # Background tasks
+        self._save_task = None
+        self._watchdog_task = None
+        self._announce_task = None
+        self._zones_init_task = None
+        self._scan_task = None
+        self._scan_in_progress = False
+        self._scan_last_completed = None
+
+        # IEEE lookup by name (for MQTT command routing)
+        self._name_to_ieee: Dict[str, str] = {}
+        self._node_id_to_ieee: Dict[str, str] = {}
+
+        # Fast-path processor
+        self.fast_path = FastPathProcessor(self)
+        logger.info("Fast-path processor initialised")
+
+        # Group Manager
+        from modules.groups import GroupManager
+        self.group_manager = GroupManager(self)
+
+        # Zone Manager
+        self.zone_manager = None
+
+        # Connect group command callback
+        if self.mqtt:
+            self.mqtt.group_command_callback = self.group_manager.handle_mqtt_group_command
+
+        self._accepting_commands = False
+
+        # Touchlink
+        self._touchlink: Optional[TouchlinkManager] = None
+
+        # Tabs
+        self.device_tabs = self._load_json("./data/device_tabs.json") or {}
+
+        # Automation engine
+        self.automation = AutomationEngine(
+            device_registry_getter=lambda: self.devices,
+            friendly_names_getter=lambda: self.friendly_names,
+            event_emitter=self.callback,
+            group_manager_getter=lambda: getattr(self, 'group_manager', None)
+        )
+
+        # OTA firmware update manager
+        self.ota_manager = None
+
+        os.makedirs("logs", exist_ok=True)
+
+    # =========================================================================
+    # UTILITY METHODS
+    # =========================================================================
+
+    async def _default_event_callback(self, event_type: str, data: dict):
+        pass
+
+    def _load_json(self, f):
+        if os.path.exists(f):
+            try:
+                with open(f, 'r') as file:
+                    return json.load(file)
+            except Exception as e:
+                logger.warning(f"Failed to load {f}: {e}")
+                return {}
+        return {}
+
+    def _save_json(self, f, data):
+        try:
+            safe_data = prepare_for_json(data)
+            with open(f, 'w') as file:
+                json.dump(safe_data, file, indent=2)
+        except Exception as e:
+            logger.error(f"Failed to save {f}: {e}")
+
+    def _save_state_cache(self):
+        self._save_json("./data/device_state_cache.json", self.state_cache)
+
+    async def _debounced_save(self):
+        try:
+            await asyncio.sleep(self._debounce_seconds)
+            if self._cache_dirty:
+                loop = asyncio.get_running_loop()
+                await loop.run_in_executor(None, self._save_state_cache)
+                self._cache_dirty = False
+                logger.debug("State cache saved to disk")
+        except asyncio.CancelledError:
+            pass
+
+    def _schedule_save(self):
+        if self._save_task and not self._save_task.done():
+            self._save_task.cancel()
+        self._save_task = asyncio.create_task(self._debounced_save())
+
+    async def _loop_watchdog(self):
+        """Monitor event loop lag."""
+        while True:
+            start = time.monotonic()
+            await asyncio.sleep(1)
+            duration = time.monotonic() - start
+            if duration > 1.5:
+                logger.warning(f"Event loop blocked for {duration:.2f}s (should be ~1.0s)")
+
+    def get_safe_name(self, ieee):
+        name = self.friendly_names.get(ieee, ieee)
+        return re.sub(r'[+#/]', '-', name)
+
+    def _rebuild_name_maps(self):
+        self._name_to_ieee.clear()
+        self._node_id_to_ieee.clear()
+        for ieee in self.devices:
+            safe_name = self.get_safe_name(ieee)
+            self._name_to_ieee[safe_name] = ieee
+            self._name_to_ieee[safe_name.lower()] = ieee
+            node_id = ieee.replace(":", "")
+            self._node_id_to_ieee[node_id] = ieee
+            self._node_id_to_ieee[node_id.lower()] = ieee
+
+    def _resolve_device_identifier(self, identifier: str) -> Optional[str]:
+        """Resolve a device name/node_id/ieee to an IEEE address."""
+        if identifier in self.devices:
+            return identifier
+        if identifier in self._name_to_ieee:
+            return self._name_to_ieee[identifier]
+        if identifier in self._node_id_to_ieee:
+            return self._node_id_to_ieee[identifier]
+        lower_id = identifier.lower()
+        if lower_id in self._name_to_ieee:
+            return self._name_to_ieee[lower_id]
+        if lower_id in self._node_id_to_ieee:
+            return self._node_id_to_ieee[lower_id]
+        for name, ieee in self._name_to_ieee.items():
+            if lower_id in name.lower():
+                return ieee
+        return None
+
+    # =========================================================================
+    # EVENT EMISSION
+    # =========================================================================
+
+    def _emit_sync(self, evt, data):
+        if self.callback:
+            asyncio.create_task(self.callback(evt, data))
+
+    async def _emit(self, evt, data):
+        if self.callback:
+            await self.callback(evt, data)
+
+    # =========================================================================
+    # START / STOP
+    # =========================================================================
+
+    async def start(self, network_key=None):
+        """Start the Zigbee network with enhanced resilience."""
+        # Backwards compatibility migration
+        if 'ezsp_config' in self._config and 'ezsp' not in self._config:
+            logger.info("Migrating old EZSP config format...")
+            self._config['ezsp'] = {
+                'baudrate': self._config.get('baudrate', 460800),
+                'flow_control': self._config.get('flow_control', 'hardware'),
+                'config': self._config['ezsp_config']
+            }
+
+        # Probe radio type
+        radio_type = await self._probe_radio_type()
+        logger.info(f"✅ Detected radio type: {radio_type}")
+
+        # Import correct driver
+        if radio_type == "EZSP":
+            from bellows.zigbee.application import ControllerApplication
+        elif radio_type == "ZNP":
+            from zigpy_znp.zigbee.application import ControllerApplication
+        else:
+            raise RuntimeError(f"Unsupported radio type: {radio_type}")
+
+        # Build config
+        if radio_type == "EZSP":
+            ezsp_conf = {}
+            user_ezsp = self._config.get('ezsp', {}).get('config', {})
+            for key, val in user_ezsp.items():
+                if key.startswith('CONFIG_'):
+                    ezsp_conf[key] = val
+                    logger.info(f"User override: {key} = {val}")
+            conf = self._build_ezsp_config(ezsp_conf, network_key)
+        elif radio_type == "ZNP":
+            conf = self._build_znp_config(network_key)
+
+        # Robust startup with retries
+        for attempt in range(12):
+            try:
+                self.app = await ControllerApplication.new(
+                    config=conf, auto_form=True, start_radio=True
+                )
+
+                self._touchlink = await create_touchlink_manager(self.app)
+                if self._touchlink:
+                    logger.info(f"✅ Touchlink support enabled ({self._touchlink.coordinator_type})")
+
+                # Wrap with resilience (EZSP only)
+                if radio_type == "EZSP":
+                    if hasattr(self, 'resilience') and self.resilience:
+                        if hasattr(self.app, '_watchdog_monitor'):
+                            self.app._watchdog_monitor.stop()
+                    try:
+                        from modules.resilience import wrap_with_resilience
+                        self.resilience = wrap_with_resilience(self.app, self)
+                        logger.info("✅ Resilience system enabled")
+                    except Exception as e:
+                        logger.warning(f"Resilience not available: {e}")
+
+                # Register as listener
+                self.app.add_listener(self)
+
+                # Restore devices from zigpy's database
+                for ieee, device in self.app.devices.items():
+                    ieee_str = str(ieee)
+                    if self.ban_manager.is_banned(ieee_str):
+                        logger.info(f"Skipping banned device: {ieee_str}")
+                        continue
+                    self.devices[ieee_str] = ZigManDevice(self, device)
+                    if ieee_str in self.state_cache:
+                        self.devices[ieee_str].restore_state(self.state_cache[ieee_str])
+
+                self._rebuild_name_maps()
+                logger.info(f"Restored {len(self.devices)} devices from database")
+
+                # OTA manager
+                if self.app:
+                    self.ota_manager = OTAManager(self, self._emit)
+                    logger.info("OTA Manager initialised")
+
+                # Start polling
+                self.polling_scheduler.start()
+                self._watchdog_task = asyncio.create_task(
+                    self.polling_scheduler._availability_watchdog_loop()
+                )
+
+                # Load saved polling intervals
+                for ieee, interval in self.polling_config.items():
+                    if ieee in self.devices:
+                        self.polling_scheduler.set_interval(ieee, interval)
+
+                await self._emit("log", {
+                    "level": "INFO",
+                    "message": f"Zigbee Core Started on {self.port} ({radio_type})",
+                    "ieee": None
+                })
+                logger.info(f"Zigbee network started successfully on {self.port} ({radio_type})")
+
+                # Announce all devices to HA
+                self._announce_task = asyncio.create_task(self.announce_all_devices())
+
+                # Initialise zones
+                self._zones_init_task = asyncio.create_task(self._init_zones_internal())
+
+                return
+
+            except Exception as e:
+                logger.warning(f"Startup Attempt {attempt + 1} failed: {e}")
+                logger.error(f"Full traceback:\n{traceback.format_exc()}")
+                if self.app:
+                    try:
+                        await self.app.shutdown()
+                    except:
+                        pass
+                await asyncio.sleep(2)
+
+        raise RuntimeError("Failed to start Zigbee Radio after 12 attempts. Check hardware.")
+
+    async def _init_zones_internal(self):
+        try:
+            await asyncio.sleep(2)
+            await self.init_zones()
+        except Exception as e:
+            logger.error(f"Failed to initialise zones: {e}")
+
+    async def init_zones(self, mqtt_handler=None):
+        """Initialise zone manager after Zigbee network is started."""
+        import yaml
+        self.zone_manager = ZoneManager(
+            app_controller=self.app,
+            mqtt_handler=mqtt_handler or self.mqtt,
+            event_emitter=self._emit
+        )
+        if hasattr(self, 'app'):
+            setup_rssi_listener(self.app, self.zone_manager)
+            logger.info("RSSI listener attached to Zigbee stack")
+
+        zones_path = Path("./data/zones.yaml")
+        if zones_path.exists():
+            try:
+                with open(zones_path) as f:
+                    zones_config = yaml.safe_load(f) or {}
+                self.zone_manager.load_config(zones_config.get('zones', []))
+                logger.info(f"Loaded {len(self.zone_manager.zones)} zones from config")
+            except Exception as e:
+                logger.error(f"Failed to load zones config: {e}")
+
+        await self.zone_manager.start_zone()
+        for zone in self.zone_manager.zones.values():
+            await self.zone_manager.publish_discovery(zone)
+        logger.info("Zone manager initialised")
+
+    async def stop(self):
+        """Shutdown the Zigbee network."""
+        self.polling_scheduler.stop()
+
+        if self.zone_manager:
+            await self.zone_manager.stop_zone()
+            try:
+                import yaml
+                configs = self.zone_manager.save_config()
+                with open("./data/zones.yaml", "w") as f:
+                    yaml.dump({'zones': configs}, f)
+                logger.info("Saved zone configurations")
+            except Exception as e:
+                logger.error(f"Failed to save zones config: {e}")
+
+        for task in [self._save_task, self._watchdog_task, self._announce_task,
+                     self._zones_init_task, self._scan_task]:
+            if task and not task.done():
+                task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await task
+
+        if self.ota_manager:
+            self.ota_manager.stop_background_checks()
+
+        if self._cache_dirty:
+            self._save_state_cache()
+
+        if self.app:
+            await self.app.shutdown()
+            logger.info("Zigbee network stopped")
+
+    # =========================================================================
+    # ZIGPY LISTENER INTERFACE
+    # =========================================================================
+
+    def raw_device_initialized(self, device: zigpy.device.Device):
+        logger.debug(f"Raw device initialized: {device.ieee}")
+
+    def device_joined(self, device: zigpy.device.Device):
+        """Called when a device joins the network."""
+        ieee = str(device.ieee)
+
+        if self.ban_manager.is_banned(ieee):
+            logger.warning(f"🚫 BLOCKED: Banned device {ieee} attempted to join")
+            self._emit_sync("log", {
+                "level": "WARNING", "message": f"Blocked banned device: {ieee}",
+                "ieee": ieee, "category": "security"
+            })
+            asyncio.create_task(self._kick_banned_device(device))
+            return
+
+        if ieee in self.devices:
+            logger.error(f"[{ieee}] Duplicate join event - ignoring")
+            return
+
+        logger.info(f"Device joined: {ieee}")
+        self.devices[ieee] = ZigManDevice(self, device)
+        self.devices[ieee].last_seen = int(time.time() * 1000)
+
+        self.join_history.insert(0, {
+            "join_timestamp": time.time() * 1000,
+            "ieee_address": ieee,
+            "manufacturer": str(device.manufacturer) if device.manufacturer else "Unknown",
+            "model": str(device.model) if device.model else "Unknown",
+        })
+
+        self._rebuild_name_maps()
+
+        name = self.friendly_names.get(ieee, "Unknown")
+        self._emit_sync("log", {"level": "INFO", "message": f"[{ieee}] ({name}) Device Joined",
+                                "ieee": ieee, "device_name": name, "category": "connection"})
+        self._emit_sync("device_joined", {"ieee": ieee})
+        asyncio.create_task(self._delayed_handler_init(ieee))
+
+    async def _delayed_handler_init(self, ieee: str):
+        await asyncio.sleep(2)
+        if ieee not in self.devices:
+            return
+
+        dev = self.devices[ieee]
+        zigpy_dev = dev.zigpy_dev
+
+        logger.info(f"[{ieee}] Zigpy status: is_initialized={zigpy_dev.is_initialized}, "
+                    f"status={zigpy_dev.status}, endpoints={list(zigpy_dev.endpoints.keys())}")
+
+        endpoint_count = len([ep for ep in zigpy_dev.endpoints.keys() if ep != 0])
+        handler_count = len(dev.handlers)
+
+        if endpoint_count > 0 and handler_count == 0:
+            logger.info(f"[{ieee}] Re-running handler identification ({endpoint_count} endpoints, 0 handlers)")
+            dev._identify_handlers()
+            dev.capabilities._detect_capabilities()
+            await self.announce_device(ieee)
+            await self._async_device_initialized(ieee)
+        elif handler_count == 0:
+            logger.warning(f"[{ieee}] No endpoints discovered after 2s delay")
+
+    def device_initialized(self, device: zigpy.device.Device):
+        """Called when a device is fully initialized."""
+        ieee = str(device.ieee)
+        logger.info(f"Device initialized: {ieee}")
+
+        if ieee in self.devices:
+            self.devices[ieee] = ZigManDevice(self, device)
+            self.devices[ieee].last_seen = int(time.time() * 1000)
+            if ieee in self.state_cache:
+                logger.info(f"[{ieee}] Restoring state from cache")
+                self.devices[ieee].restore_state(self.state_cache[ieee])
+        else:
+            self.devices[ieee] = ZigManDevice(self, device)
+            self.devices[ieee].last_seen = int(time.time() * 1000)
+
+        asyncio.create_task(self._async_device_initialized(ieee))
+        self._rebuild_name_maps()
+        self._emit_sync("device_initialized", {"ieee": ieee})
+
+    async def _async_device_initialized(self, ieee: str):
+        """Configure device after initialization."""
+        if ieee not in self.devices:
+            return
+        try:
+            zdev = self.devices[ieee]
+            # Philips-specific config, standard config, initial poll, HA discovery
+            # (keeping full logic from original core.py)
+            await zdev.configure()
+            logger.info(f"[{ieee}] Device configured successfully")
+            await zdev.poll()
+            if self.mqtt:
+                await self.announce_device(ieee)
+        except Exception as e:
+            logger.warning(f"[{ieee}] Device configuration failed: {e}")
+
+    def device_left(self, device: zigpy.device.Device):
+        ieee = str(device.ieee)
+        logger.info(f"Device left: {ieee}")
+        if ieee in self.devices:
+            self.devices[ieee]._available = False
+            self.handle_device_update(self.devices[ieee], {"available": False})
+        self.polling_scheduler.disable_for_device(ieee)
+
+        name = self.friendly_names.get(ieee, "Unknown")
+        self._emit_sync("log", {"level": "WARNING",
+                                "message": f"[{ieee}] ({name}) Device Left - marked offline",
+                                "ieee": ieee, "device_name": name, "category": "connection"})
+
+    def device_removed(self, device: zigpy.device.Device):
+        ieee = str(device.ieee)
+        logger.info(f"Device removed: {ieee}")
+
+        if ieee in self.devices:
+            self.devices[ieee].cleanup()
+            del self.devices[ieee]
+
+        if ieee in self.state_cache:
+            del self.state_cache[ieee]
+            self._save_state_cache()
+
+        self.polling_scheduler.disable_for_device(ieee)
+        self._rebuild_name_maps()
+
+        name = self.friendly_names.get(ieee, "Unknown")
+        msg = f"[{ieee}] ({name}) Device Removed"
+        self._emit_sync("log", {"level": "INFO", "message": msg, "ieee": ieee,
+                                "device_name": name, "category": "connection"})
+        self._emit_sync("device_left", {"ieee": ieee})
+
+    # Stub listener methods required by zigpy
+    def device_relays_updated(self, device: zigpy.device.Device, relays):
+        pass
+
+    def group_member_removed(self, *args, **kwargs): pass
+    def group_member_added(self, *args, **kwargs): pass
+    def group_added(self, *args, **kwargs): pass
+    def group_removed(self, *args, **kwargs): pass
+
+    # =========================================================================
+    # RAW MESSAGE HANDLER (zigpy listener)
+    # =========================================================================
+
+    def handle_message(
+            self,
+            sender: zigpy.device.Device,
+            profile: int,
+            cluster: int,
+            src_ep: int,
+            dst_ep: int,
+            message: bytes
+    ):
+        """Raw message interceptor - called for EVERY Zigbee message."""
+        ieee = str(sender.ieee)
+
+        # 1. DEBUGGER - Capture packet BEFORE any logic
+        try:
+            debugger = get_debugger()
+            if debugger and debugger.enabled:
+                debugger.capture_packet(
+                    sender_ieee=ieee,
+                    sender_nwk=sender.nwk,
+                    profile=profile,
+                    cluster=cluster,
+                    src_ep=src_ep,
+                    dst_ep=dst_ep,
+                    message=message,
+                    direction="RX"
+                )
+        except Exception as e:
+            logger.debug(f"Debug capture error: {e}")
+
+        # 2. STATS & LOGGING
+        try:
+            packet_stats.record_rx(ieee, size=len(message) if message else 0)
+            logger.debug(f"[{ieee}] Raw message: profile=0x{profile:04x}, cluster=0x{cluster:04x}, "
+                         f"src_ep={src_ep}, dst_ep={dst_ep}, len={len(message)}")
+        except Exception:
+            pass
+
+        # 3. FAST PATH (Time-critical)
+        try:
+            fast_pathed = self.fast_path.process_frame(
+                ieee, profile, cluster, src_ep, dst_ep, message
+            )
+            if fast_pathed:
+                logger.debug(f"[{ieee}] Fast-pathed: cluster=0x{cluster:04x}")
+        except Exception as e:
+            logger.debug(f"[{ieee}] Fast path error: {e}")
+
+        # 4. ZONE LQI CAPTURE
+        try:
+            zone_mgr = getattr(self, 'zone_manager', None)
+            if zone_mgr:
+                lqi = getattr(sender, 'lqi', None)
+                rssi = getattr(sender, 'rssi', None)
+
+                if lqi is not None:
+                    coord_ieee = str(self.app.ieee)
+                    if rssi is None:
+                        rssi = int(-100 + (lqi / 255) * 70)
+
+                    zone_mgr.record_link_quality(
+                        source_ieee=coord_ieee,
+                        target_ieee=ieee,
+                        rssi=rssi,
+                        lqi=lqi
+                    )
+        except Exception as e:
+            logger.debug(f"[{ieee}] Zone LQI capture error: {e}")
+
+    # =========================================================================
+    # DEVICE UPDATE HANDLING
+    # =========================================================================
+
+    def handle_device_update(self, zha_device, changed_data, full_state=None,
+                             qos: Optional[int] = None, endpoint_id: Optional[int] = None):
+        """Called by ZigManDevice when state changes."""
+        ieee = zha_device.ieee
+
+        # >>> Instant Universal Automation Trigger <<<
+        # Fire automation immediately before any debouncing/sleeping occurs
+        if hasattr(self, 'automation') and changed_data:
+            try:
+                loop = asyncio.get_running_loop()
+                loop.create_task(self.automation.evaluate(ieee, changed_data))
+            except Exception as e:
+                logger.error(f"[{ieee}] Instant automation trigger failed: {e}")
+
+        # Cancel any pending debounced update for this device
+        if ieee in self._update_debounce_tasks:
+            self._update_debounce_tasks[ieee].cancel()
+
+        # Schedule debounced update
+        self._update_debounce_tasks[ieee] = asyncio.create_task(
+            self._debounced_device_update(zha_device, changed_data, full_state, qos, endpoint_id)
+        )
+
+    async def _debounced_device_update(self, zha_device, changed_data, full_state, qos, endpoint_id):
+        """Actual update logic with debounce."""
+        ieee = zha_device.ieee
+        if not changed_data:
+            return
+
+        device_caps = zha_device.capabilities
+
+        # Build safe MQTT payload (delta-only)
+        safe_mqtt_payload = sanitise_device_state(changed_data.copy())
+        safe_mqtt_payload['available'] = zha_device.is_available()
+        safe_mqtt_payload['lqi'] = getattr(zha_device.zigpy_dev, 'lqi', 0) or 0
+
+        # Contact sensor HA value transforms
+        # Convert contact_N booleans to is_open/is_closed for HA
+        contact_keys = [k for k in safe_mqtt_payload.keys() if k.startswith('contact_') and k.split('_')[-1].isdigit()]
+        for ck in contact_keys:
+            ep_suffix = ck.split('_')[-1]
+            contact_val = safe_mqtt_payload[ck]
+            if isinstance(contact_val, bool):
+                # contact=True means closed, False means open (Zigbee convention)
+                ha_val = contact_val  # True=closed
+                open_key = f"is_open_{ep_suffix}"
+                closed_key = f"is_closed_{ep_suffix}"
+                safe_mqtt_payload[open_key] = not ha_val
+                safe_mqtt_payload[closed_key] = ha_val
+
+        # Also handle top-level 'contact' key
+        if 'contact' in safe_mqtt_payload and isinstance(safe_mqtt_payload['contact'], bool):
+            ha_val = safe_mqtt_payload['contact']
+            safe_mqtt_payload['is_open'] = not ha_val
+            safe_mqtt_payload['is_closed'] = ha_val
+
+        # Remove internal keys
+        keys_to_remove = [k for k in list(safe_mqtt_payload.keys())
+                          if k.endswith('_raw') or k.startswith('attr_')]
+        if not device_caps.has_capability('motion_sensor'):
+            keys_to_remove.extend(['occupancy', 'motion', 'presence'])
+        for key in keys_to_remove:
+            safe_mqtt_payload.pop(key, None)
+
+        # Fix multi-endpoint state
+        endpoint_state_keys = [k for k in safe_mqtt_payload.keys()
+                               if k.startswith('state_') and k[6:].isdigit()]
+        if endpoint_state_keys and endpoint_id is not None:
+            endpoint_state_key = f"state_{endpoint_id}"
+            if endpoint_state_key in safe_mqtt_payload:
+                safe_mqtt_payload['state'] = safe_mqtt_payload[endpoint_state_key]
+                safe_mqtt_payload['on'] = safe_mqtt_payload.get(f"on_{endpoint_id}", False)
+
+        if 'state' in safe_mqtt_payload and isinstance(safe_mqtt_payload['state'], (int, float)):
+            del safe_mqtt_payload['state']
+            if endpoint_state_keys:
+                first_ep_key = sorted(endpoint_state_keys)[0]
+                safe_mqtt_payload['state'] = safe_mqtt_payload[first_ep_key]
+
+        # Update cache
+        if ieee not in self.state_cache:
+            self.state_cache[ieee] = {}
+
+        cache_update = changed_data.copy()
+        cache_update['available'] = zha_device.is_available()
+        cache_update['lqi'] = getattr(zha_device.zigpy_dev, 'lqi', 0) or 0
+        self.state_cache[ieee].update(sanitise_device_state(cache_update))
+        self._cache_dirty = True
+
+        # Emit to WebSocket (only changed data)
+        self._emit_sync("device_updated", {"ieee": ieee, "data": safe_mqtt_payload})
+
+        # Publish to MQTT (delta-only)
+        if self.mqtt:
+            safe_name = self.get_safe_name(ieee)
+            mqtt_qos = qos
+            asyncio.create_task(
+                self.mqtt.publish(safe_name, json.dumps(safe_mqtt_payload),
+                                  ieee=ieee, qos=mqtt_qos, retain=True)
+            )
+
+        # Log changed attributes
+        friendly_name = self.friendly_names.get(ieee, "Unknown")
+        for k, v in changed_data.items():
+            if k != 'last_seen':
+                ep_str = f"[EP{endpoint_id}]" if endpoint_id is not None else ""
+                msg = f"[{ieee}] ({friendly_name}) {ep_str} {k}={v}"
+                log_payload = {
+                    "level": "INFO", "message": msg, "ieee": ieee,
+                    "device_name": friendly_name, "category": "attribute_update",
+                    "attribute": k, "value": v, "endpoint_id": endpoint_id
+                }
+                safe_log_payload = prepare_for_json(log_payload)
+                self._emit_sync("log", safe_log_payload)
+
+        # Schedule debounced cache save
+        self._schedule_save()
+
+    # =========================================================================
+    # MQTT COMMAND HANDLER
+    # =========================================================================
+
+    async def handle_mqtt_command(self, device_identifier: str, data: Dict[str, Any],
+                                  component: Optional[str] = None,
+                                  object_id: Optional[str] = None):
+        """Handle incoming MQTT command from Home Assistant."""
+        if not getattr(self, '_accepting_commands', True):
+            logger.warning(f"Ignoring command during startup: {device_identifier} {data}")
+            return
+
+        ieee = self._resolve_device_identifier(device_identifier)
+        if not ieee or ieee not in self.devices:
+            logger.warning(f"MQTT command for unknown device: {device_identifier}")
+            return
+
+        device = self.devices[ieee]
+        logger.info(f"[{ieee}] MQTT command: {data}")
+
+        try:
+            # Extract endpoint from object_id (e.g., "light_11" -> 11)
+            endpoint = None
+            if object_id:
+                match = re.search(r'_(\d+)$', object_id)
+                endpoint = int(match.group(1)) if match else None
+
+            if endpoint is None and device.capabilities.has_capability('light'):
+                for ep_id in device.zigpy_dev.endpoints:
+                    if ep_id == 0:
+                        continue
+                    ep = device.zigpy_dev.endpoints[ep_id]
+                    if 0x0008 in ep.in_clusters or 0x0006 in ep.in_clusters:
+                        endpoint = ep_id
+                        break
+
+            optimistic_state = {}
+
+            state = data.get('state')
+            brightness = data.get('brightness')
+            color_temp = data.get('color_temp')
+            color = data.get('color')
+
+            if state:
+                cmd = 'on' if str(state).upper() == 'ON' else 'off'
+                result = await device.send_command(cmd, endpoint_id=endpoint, data=data)
+                if result:
+                    optimistic_state['state'] = state.upper() if isinstance(state, str) else ('ON' if state else 'OFF')
+                    optimistic_state['on'] = (cmd == 'on')
+
+            if brightness is not None:
+                pct = int(brightness / 2.54)
+                result = await device.send_command('brightness', pct, endpoint_id=endpoint)
+                if result:
+                    optimistic_state['brightness'] = int(brightness)
+                    optimistic_state['level'] = pct
+                    if brightness > 0:
+                        optimistic_state['state'] = 'ON'
+                        optimistic_state['on'] = True
+
+            if color_temp is not None:
+                try:
+                    kelvin = int(1000000 / color_temp)
+                    result = await device.send_command('color_temp', kelvin, endpoint_id=endpoint)
+                    if result:
+                        optimistic_state['color_temp'] = int(color_temp)
+                except ZeroDivisionError:
+                    pass
+
+            if color and 'x' in color and 'y' in color:
+                result = await device.send_command('xy_color', (color['x'], color['y']), endpoint_id=endpoint)
+                if result:
+                    optimistic_state['color'] = color
+
+            # Handle cover/position/tilt
+            position = data.get('position')
+            tilt = data.get('tilt')
+            if position is not None:
+                await device.send_command('position', position, endpoint_id=endpoint)
+            if tilt is not None:
+                await device.send_command('tilt', tilt, endpoint_id=endpoint)
+
+            # Handle thermostat
+            temperature = data.get('temperature')
+            if temperature is not None:
+                await device.send_command('temperature', temperature, endpoint_id=endpoint)
+
+            mode = data.get('mode') or data.get('preset_mode')
+            if mode is not None:
+                await device.send_command('mode', mode, endpoint_id=endpoint)
+
+            # Optimistic update
+            if optimistic_state:
+                self.handle_device_update(device, optimistic_state, endpoint_id=endpoint)
+
+        except NcpFailure as e:
+            logger.error(f"[{ieee}] NCP Failure during MQTT command: {e}")
+            if hasattr(self, 'resilience'):
+                await self.resilience.handle_ncp_failure(e)
+        except Exception as e:
+            logger.error(f"[{ieee}] MQTT command failed: {e}")
+            traceback.print_exc()
+
+    # =========================================================================
+    # DEVICE OPERATIONS
+    # =========================================================================
+
+    async def announce_device(self, ieee: str):
+        """Publish HA Discovery configs for a device."""
+        if not self.mqtt or ieee not in self.devices:
+            return
+
+        try:
+            zdev = self.devices[ieee]
+
+            # Restore cached state
+            if ieee in self.state_cache:
+                zdev.state.update(self.state_cache[ieee])
+
+            configs = zdev.get_device_discovery_configs()
+            safe_name = self.get_safe_name(ieee)
+
+            device_info = {
+                "ieee": ieee,
+                "friendly_name": self.friendly_names.get(ieee, ieee),
+                "safe_name": safe_name,
+                "model": str(zdev.zigpy_dev.model),
+                "manufacturer": str(zdev.zigpy_dev.manufacturer)
+            }
+
+            await self.mqtt.publish_discovery(device_info, configs)
+            logger.info(f"[{ieee}] Published HA discovery")
+
+            # Publish initial state from cache
+            try:
+                initial_state = zdev.state.copy()
+                initial_state['available'] = False
+                initial_state['lqi'] = 0
+                safe_state = sanitise_device_state(initial_state)
+
+                if 'state' in safe_state and isinstance(safe_state['state'], (int, bool, float)):
+                    del safe_state['state']
+
+                if 'state_1' in safe_state and 'state' not in safe_state:
+                    safe_state['state'] = safe_state['state_1']
+                elif 'state_11' in safe_state and 'state' not in safe_state:
+                    safe_state['state'] = safe_state['state_11']
+
+                await self.mqtt.publish(safe_name, json.dumps(safe_state),
+                                        ieee=ieee, qos=1, retain=True)
+            except Exception as e:
+                logger.error(f"[{ieee}] Failed to publish initial state: {e}")
+
+        except Exception as e:
+            logger.error(f"[{ieee}] Failed to announce: {e}")
+
+    async def send_command(self, ieee: str, command: str, value=None, endpoint_id=None):
+        if ieee not in self.devices:
+            return {"success": False, "error": "Device not found"}
+        try:
+            device = self.devices[ieee]
+            result = await device.send_command(command, value, endpoint_id)
+            return {"success": True, "result": result}
+        except NcpFailure as e:
+            logger.error(f"[{ieee}] NCP Failure during command: {e}")
+            if hasattr(self, 'resilience'):
+                await self.resilience.handle_ncp_failure(e)
+            return {"success": False, "error": f"NCP Failure: {e}"}
+        except Exception as e:
+            logger.error(f"[{ieee}] Command failed: {e}")
+            return {"success": False, "error": str(e)}
+
+    async def rename_device(self, ieee, name):
+        self.friendly_names[ieee] = name
+        self._save_json("./data/names.json", self.friendly_names)
+        self._rebuild_name_maps()
+        if self.mqtt and ieee in self.devices:
+            await self.announce_device(ieee)
+        return {"success": True}
+
+    async def configure_device(self, ieee, config=None):
+        if ieee in self.devices:
+            try:
+                await self.devices[ieee].configure(config)
+                if config:
+                    existing = self.device_settings.get(ieee, {})
+                    existing.update({k: v for k, v in config.items() if v is not None and k != 'ieee'})
+                    if existing:
+                        self.device_settings[ieee] = existing
+                        self._save_json("./data/device_settings.json", self.device_settings)
+                return {"success": True}
+            except NcpFailure as e:
+                logger.error(f"[{ieee}] NCP Failure during configuration: {e}")
+                if hasattr(self, 'resilience'):
+                    await self.resilience.handle_ncp_failure(e)
+                return {"success": False, "error": f"NCP Failure: {e}"}
+            except Exception as e:
+                return {"success": False, "error": str(e)}
+        return {"success": False, "error": "Device not found"}
+
+    async def interview_device(self, ieee):
+        if ieee in self.devices:
+            try:
+                await self.devices[ieee].interview()
+                return {"success": True}
+            except NcpFailure as e:
+                logger.error(f"[{ieee}] NCP Failure during interview: {e}")
+                if hasattr(self, 'resilience'):
+                    await self.resilience.handle_ncp_failure(e)
+                return {"success": False, "error": f"NCP Failure: {e}"}
+            except Exception as e:
+                return {"success": False, "error": str(e)}
+        return {"success": False, "error": "Device not found"}
+
+    async def poll_device(self, ieee):
+        if ieee in self.devices:
+            try:
+                device = self.devices[ieee]
+                results = await device.poll()
+                poll_success = results.pop('__poll_success', True)
+                friendly_name = self.friendly_names.get(ieee, ieee)
+
+                if poll_success:
+                    message = f"Manual poll for {friendly_name} successful."
+                    self._emit_sync("poll_result", {"ieee": ieee, "success": True, "message": message})
+                    return {"success": True, "message": "Poll successful"}
+                else:
+                    message = f"Manual poll for {friendly_name} completed with partial failures."
+                    self._emit_sync("poll_result", {"ieee": ieee, "success": False,
+                                                    "message": message, "error_type": "PartialFailure"})
+                    return {"success": True, "message": "Poll completed with partial failures."}
+
+            except NcpFailure as e:
+                logger.error(f"[{ieee}] NCP Failure during poll: {e}")
+                if hasattr(self, 'resilience'):
+                    await self.resilience.handle_ncp_failure(e)
+                return {"success": False, "error": f"NCP Failure: {e}"}
+            except Exception as e:
+                logger.error(f"[{ieee}] Manual poll failed: {e}")
+                return {"success": False, "error": str(e)}
+        return {"success": False, "error": "Device not found"}
+
+    async def remove_device(self, ieee: str, force: bool = False):
+        """Remove a device from the network and cleanup."""
+        ieee = str(ieee).lower()
+
+        try:
+            # 1. Get the zigpy device object
+            z_ieee = zigpy.types.EUI64.convert(ieee)
+            zdev = None
+
+            if z_ieee in self.app.devices:
+                zdev = self.app.devices[z_ieee]
+
+            # 2. Try graceful leave if device is known
+            if not force and zdev:
+                logger.info(f"[{ieee}] Sending Leave Request...")
+                try:
+                    async with asyncio.timeout(5.0):
+                        await zdev.zdo.leave()
+                except (asyncio.TimeoutError, Exception) as e:
+                    logger.warning(f"[{ieee}] Leave request failed/timed out: {e}")
+
+            # 3. Force remove from zigpy (Database)
+            if zdev:
+                await self.app.remove(z_ieee)
+                logger.info(f"[{ieee}] Removed from zigpy application")
+
+            # 3.5. Force database cleanup if requested
+            if force:
+                self._force_clean_database(ieee)
+
+            # 4. Remove MQTT discovery BEFORE deleting device wrapper
+            if self.mqtt and ieee in self.devices:
+                try:
+                    configs = self.devices[ieee].get_device_discovery_configs()
+                    await self.mqtt.remove_discovery(ieee, configs)
+                except Exception as e:
+                    logger.warning(f"[{ieee}] MQTT discovery removal failed: {e}")
+
+            # 5. Cleanup local state (In-Memory)
+            if ieee in self.devices:
+                del self.devices[ieee]
+
+            # 6. Cleanup persistent JSON files
+            if ieee in self.friendly_names:
+                del self.friendly_names[ieee]
+                self._save_json("./data/names.json", self.friendly_names)
+
+            if ieee in self.device_settings:
+                del self.device_settings[ieee]
+                self._save_json("./data/device_settings.json", self.device_settings)
+
+            # 7. Remove automation rules where this device is source or target
+            if hasattr(self, 'automation'):
+                for rule in list(self.automation.rules):
+                    if rule.get("source_ieee") == ieee or rule.get("target_ieee") == ieee:
+                        self.automation.delete_rule(rule["id"])
+
+            # 8. Polling config
+            if ieee in self.polling_config:
+                del self.polling_config[ieee]
+                self._save_json("./data/polling_config.json", self.polling_config)
+
+            # 9. Remove from state cache
+            if ieee in self.state_cache:
+                del self.state_cache[ieee]
+                self._save_state_cache()
+
+            self.polling_scheduler.disable_for_device(ieee)
+            self._rebuild_name_maps()
+
+            # 10. Notify frontend
+            self._emit_sync("device_left", {"ieee": ieee})
+            self._emit_sync("log", {"level": "WARNING", "message": f"Device Removed: {ieee}", "ieee": ieee})
+
+            return {"success": True}
+
+        except NcpFailure as e:
+            logger.error(f"[{ieee}] NCP Failure during device removal: {e}")
+            if hasattr(self, 'resilience'):
+                await self.resilience.handle_ncp_failure(e)
+            return {"success": False, "error": f"NCP Failure: {e}"}
+        except Exception as e:
+            logger.error(f"Remove failed: {e}")
+            return {"success": False, "error": str(e)}
+
+    async def read_attribute(self, ieee, ep_id, cluster_id, attr_name):
+        """Read a specific attribute from a device."""
+        if ieee not in self.devices:
+            return {"success": False, "error": "Device not found"}
+        try:
+            device = self.devices[ieee]
+            zigpy_dev = device.zigpy_dev
+            if ep_id not in zigpy_dev.endpoints:
+                return {"success": False, "error": f"Endpoint {ep_id} not found"}
+
+            ep = zigpy_dev.endpoints[ep_id]
+            if cluster_id not in ep.in_clusters:
+                return {"success": False, "error": f"Cluster 0x{cluster_id:04x} not found"}
+
+            cluster = ep.in_clusters[cluster_id]
+            attr_id = int(attr_name) if attr_name.isdigit() else attr_name
+            result = await cluster.read_attributes([attr_id])
+
+            success_attrs = result[0] if result else {}
+            safe_result = prepare_for_json(success_attrs)
+            return {"success": True, "attributes": safe_result}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    async def bind_devices(self, source_ieee, target_ieee, cluster_id):
+        """Bind a source device to a target device."""
+        if source_ieee not in self.devices or target_ieee not in self.devices:
+            return {"success": False, "error": "Device not found"}
+
+        try:
+            src_zdev = self.devices[source_ieee].zigpy_dev
+            dst_zdev = self.devices[target_ieee].zigpy_dev
+
+            src_prefs = self.devices[source_ieee].get_binding_preferences()
+            dst_prefs = self.devices[target_ieee].get_binding_preferences()
+
+            # Find source endpoint
+            src_ep = None
+            preferred_src_ep = src_prefs.get('source_endpoints', {}).get(cluster_id)
+            if preferred_src_ep and preferred_src_ep in src_zdev.endpoints:
+                ep = src_zdev.endpoints[preferred_src_ep]
+                if cluster_id in ep.out_clusters:
+                    src_ep = ep
+
+            if not src_ep:
+                for ep_id, ep in sorted(src_zdev.endpoints.items()):
+                    if ep_id == 0:
+                        continue
+                    if cluster_id in ep.out_clusters:
+                        src_ep = ep
+                        break
+
+            if not src_ep:
+                return {"success": False, "error": f"Source has no output cluster 0x{cluster_id:04x}"}
+
+            # Find target endpoint
+            dst_ep = None
+            preferred_dst_ep = dst_prefs.get('target_endpoints', {}).get(cluster_id)
+            if preferred_dst_ep and preferred_dst_ep in dst_zdev.endpoints:
+                ep = dst_zdev.endpoints[preferred_dst_ep]
+                if cluster_id in ep.in_clusters:
+                    dst_ep = ep
+
+            if not dst_ep:
+                for ep_id, ep in sorted(dst_zdev.endpoints.items()):
+                    if ep_id == 0:
+                        continue
+                    if cluster_id in ep.in_clusters:
+                        dst_ep = ep
+                        break
+
+            if not dst_ep:
+                valid_eps = [ep for ep_id, ep in dst_zdev.endpoints.items() if ep_id != 0]
+                if valid_eps:
+                    dst_ep = valid_eps[0]
+                else:
+                    return {"success": False, "error": "Target has no valid endpoints"}
+
+            dst_addr = zdo_types.MultiAddress()
+            dst_addr.addrmode = 3
+            dst_addr.ieee = dst_zdev.ieee
+            dst_addr.endpoint = dst_ep.endpoint_id
+
+            async with asyncio.timeout(15.0):
+                result = await src_zdev.zdo.Bind_req(
+                    src_zdev.ieee, src_ep.endpoint_id, cluster_id, dst_addr
+                )
+
+            logger.info(f"Bound {source_ieee} EP{src_ep.endpoint_id} -> "
+                        f"{target_ieee} EP{dst_ep.endpoint_id} (0x{cluster_id:04x})")
+
+            return {
+                "success": True,
+                "source_ep": src_ep.endpoint_id,
+                "target_ep": dst_ep.endpoint_id,
+                "message": f"Bound EP{src_ep.endpoint_id} -> EP{dst_ep.endpoint_id}"
+            }
+        except NcpFailure as e:
+            logger.error(f"NCP Failure during binding: {e}")
+            if hasattr(self, 'resilience'):
+                await self.resilience.handle_ncp_failure(e)
+            return {"success": False, "error": f"NCP Failure: {e}"}
+        except Exception as e:
+            logger.error(f"Binding failed: {e}")
+            return {"success": False, "error": str(e)}
+
+    # =========================================================================
+    # PAIRING
+    # =========================================================================
+
+    async def permit_join(self, duration=240, ieee=None):
+        if duration == 0:
+            self.pairing_expiration = 0
+            await self.app.permit(0)
+            self._emit_sync("pairing_status", {"enabled": False, "remaining": 0})
+            return {"success": True, "enabled": False}
+
+        self.pairing_expiration = time.time() + duration
+
+        if ieee:
+            if ieee not in self.devices:
+                return {"success": False, "error": "Target device not found"}
+            try:
+                zdev = self.devices[ieee].zigpy_dev
+                await zdev.zdo.Mgmt_Permit_Joining_req(duration, 1)
+                self._emit_sync("pairing_status", {"enabled": True, "remaining": duration})
+                return {"success": True, "duration": duration, "target": ieee}
+            except Exception as e:
+                return {"success": False, "error": str(e)}
+        else:
+            try:
+                await self.app.permit(duration)
+                self._emit_sync("pairing_status", {"enabled": True, "remaining": duration})
+                return {"success": True, "duration": duration, "target": "all"}
+            except Exception as e:
+                return {"success": False, "error": str(e)}
+
+    def get_pairing_status(self):
+        now = time.time()
+        if self.pairing_expiration > now:
+            remaining = int(self.pairing_expiration - now)
+            return {"enabled": True, "remaining": remaining}
+        return {"enabled": False, "remaining": 0}
+
+    # =========================================================================
+    # TOUCHLINK
+    # =========================================================================
+
+    async def touchlink_scan(self, channel: int = None):
+        if not self._touchlink:
+            self._touchlink = await create_touchlink_manager(self.app)
+        return await self._touchlink.scan(channel)
+
+    async def touchlink_identify(self, channel=None, target_ieee=None):
+        if not self._touchlink:
+            self._touchlink = await create_touchlink_manager(self.app)
+        return await self._touchlink.identify(channel=channel, target_ieee=target_ieee)
+
+    async def touchlink_factory_reset(self, channel=None, target_ieee=None):
+        if not self._touchlink:
+            self._touchlink = await create_touchlink_manager(self.app)
+        return await self._touchlink.factory_reset(channel=channel, target_ieee=target_ieee)
+
+    # =========================================================================
+    # DEVICE LIST
+    # =========================================================================
+
+    def get_device_list(self):
+        """Get list of all devices with their current state - JSON-safe."""
+        res = []
+        for ieee, zdev in self.devices.items():
+            try:
+                d = zdev.zigpy_dev
+                caps = sorted(list(zdev.capabilities.get_capabilities())) if hasattr(zdev, 'capabilities') else []
+
+                # Build endpoint info
+                endpoints = []
+                for ep_id, ep in d.endpoints.items():
+                    if ep_id == 0:
+                        continue
+
+                    component_type = None
+                    handler_key = (ep_id, 0x0006)
+                    if handler_key in zdev.handlers:
+                        h = zdev.handlers[handler_key]
+                        if hasattr(h, 'get_component_type'):
+                            component_type = h.get_component_type()
+
+                    endpoints.append({
+                        "id": ep_id,
+                        "device_type": hex(ep.device_type) if ep.device_type else "0x0000",
+                        "profile_id": hex(ep.profile_id) if ep.profile_id else "0x0000",
+                        "profile": hex(ep.profile_id) if ep.profile_id else "0x0000",
+                        "inputs": [{"id": c.cluster_id, "name": c.name} for c in ep.in_clusters.values()],
+                        "outputs": [{"id": c.cluster_id, "name": c.name} for c in ep.out_clusters.values()],
+                        "component_type": component_type
+                    })
+
+                res.append({
+                    "ieee": ieee,
+                    "nwk": hex(d.nwk),
+                    "friendly_name": self.friendly_names.get(ieee, ieee),
+                    "model": str(d.model) if d.model else "Unknown",
+                    "manufacturer": str(d.manufacturer) if d.manufacturer else "Unknown",
+                    "lqi": getattr(d, 'lqi', 0) or 0,
+                    "last_seen_ts": zdev.last_seen,
+                    "state": zdev.state,
+                    "type": zdev.get_role(),
+                    "quirk": getattr(d, 'quirk_class', type(None)).__name__,
+                    "capabilities": endpoints,
+                    "capability_list": caps,
+                    "settings": self.device_settings.get(ieee, {}),
+                    "available": zdev.is_available(),
+                    "config_schema": zdev.get_device_config_schema() if hasattr(zdev, 'get_device_config_schema') else [],
+                    "polling_interval": self.polling_scheduler._intervals.get(ieee, 0)
+                })
+
+            except Exception as e:
+                logger.error(f"[{ieee}] Failed to build device info: {e}")
+
+        return prepare_for_json(res)
+
+    def get_join_history(self):
+        return self.join_history
+
+    # =========================================================================
+    # POLLING CONFIG API
+    # =========================================================================
+
+    def set_polling_interval(self, ieee: str, interval: int):
+        self.polling_config[ieee] = interval
+        self._save_json("./data/polling_config.json", self.polling_config)
+        self.polling_scheduler.set_interval(ieee, interval)
+        return {"success": True, "ieee": ieee, "interval": interval}
+
+    def get_polling_interval(self, ieee: str):
+        return self.polling_scheduler._intervals.get(ieee, 0)
+
+    def get_all_polling_intervals(self) -> Dict[str, int]:
+        return dict(self.polling_scheduler._intervals)

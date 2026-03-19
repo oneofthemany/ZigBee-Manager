@@ -22,7 +22,7 @@ from typing import Optional
 logger = logging.getLogger("matter_server")
 
 
-class EmbeddedMatterServer:
+class MatterServerManager:
     """
     Manages python-matter-server as a child process.
 
