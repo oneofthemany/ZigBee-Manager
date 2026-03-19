@@ -17,7 +17,12 @@ class DeviceBanManager:
     Devices in the ban list are immediately sent leave requests when they attempt to join.
     """
 
-    def __init__(self, storage_path: str = "banned_devices.json"):
+    def __init__(self, storage_path: str = None):
+        if storage_path is None:
+            storage_path = os.path.join(
+                os.path.dirname(os.path.abspath(__file__)),
+                "data", "banned_devices.json"
+            )
         self.storage_path = storage_path
         self._banned: Set[str] = set()
         self._load()
@@ -100,9 +105,13 @@ class DeviceBanManager:
 _ban_manager: Optional[DeviceBanManager] = None
 
 
-def get_ban_manager(storage_path: str = "banned_devices.json") -> DeviceBanManager:
+def get_ban_manager() -> DeviceBanManager:
     """Get or create the singleton ban manager."""
     global _ban_manager
     if _ban_manager is None:
+        storage_path = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)),
+            "..", "data", "banned_devices.json"
+        )
         _ban_manager = DeviceBanManager(storage_path)
     return _ban_manager
