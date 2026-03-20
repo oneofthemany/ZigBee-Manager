@@ -224,15 +224,15 @@ def query_system_metrics(hours: int = 1, bucket_minutes: int = 1) -> List[Dict]:
 def query_packet_stats(ieee: Optional[str] = None, hours: int = 1) -> List[Dict]:
     """Get packet stats history for a device or all devices."""
     db = _get_db()
+    hours = int(hours)
     if ieee:
-        result = db.execute("""
+        result = db.execute(f"""
             SELECT ts, ieee, rx_packets, tx_packets, errors, retries, lqi
             FROM packet_stats
-            WHERE ieee = ? AND ts >= now() - INTERVAL ? HOUR
+            WHERE ieee = ? AND ts >= now() - INTERVAL '{hours} hours'
             ORDER BY ts ASC
-        """, [ieee, hours]).fetchall()
+        """, [ieee]).fetchall()
     else:
-        # Aggregate across all devices per time bucket
         result = db.execute(f"""
             SELECT
                 time_bucket(INTERVAL '5 minutes', ts) AS bucket,
@@ -255,24 +255,26 @@ def query_packet_stats(ieee: Optional[str] = None, hours: int = 1) -> List[Dict]
 def query_device_state_history(ieee: str, attribute: str, hours: int = 24) -> List[Dict]:
     """Get state change history for a specific device attribute."""
     db = _get_db()
-    result = db.execute("""
+    hours = int(hours)
+    result = db.execute(f"""
         SELECT ts, value, numeric_val
         FROM device_states
-        WHERE ieee = ? AND attribute = ? AND ts >= now() - INTERVAL ? HOUR
+        WHERE ieee = ? AND attribute = ? AND ts >= now() - INTERVAL '{hours} hours'
         ORDER BY ts ASC
-    """, [ieee, attribute, hours]).fetchall()
+    """, [ieee, attribute]).fetchall()
     return [{"ts": r[0], "value": r[1], "numeric_val": r[2]} for r in result]
 
 
 def query_spectrum_history(hours: int = 24) -> List[Dict]:
     """Get spectrum scan history."""
     db = _get_db()
-    result = db.execute("""
+    hours = int(hours)
+    result = db.execute(f"""
         SELECT ts, channel, energy
         FROM spectrum_scans
-        WHERE ts >= now() - INTERVAL ? HOUR
+        WHERE ts >= now() - INTERVAL '{hours} hours'
         ORDER BY ts ASC
-    """, [hours]).fetchall()
+    """).fetchall()
     return [{"ts": r[0], "channel": r[1], "energy": r[2]} for r in result]
 
 
