@@ -98,6 +98,22 @@ class AIAutomations:
     def __init__(self, ai_assistant, automation_engine):
         self._ai = ai_assistant
         self._engine = automation_engine
+        # Pre-warm the model so first real request doesn't timeout
+        if self._ai and self._ai.is_configured():
+            try:
+                asyncio.create_task(self._warmup())
+            except RuntimeError:
+                pass  # No event loop yet, will load on first use
+
+    async def _warmup(self):
+        """Send a trivial request to force Ollama to load the model into RAM."""
+        try:
+            await asyncio.sleep(30)  # Let startup settle first
+            logger.info("AI warmup: loading model into memory...")
+            await self._ai.chat("Respond with only: OK", "warmup", temperature=0)
+            logger.info("AI warmup complete — model loaded")
+        except Exception as e:
+            logger.debug(f"AI warmup skipped (will load on first use): {e}")
 
     def _build_device_context(self) -> str:
         """Build a compact device summary for the LLM system prompt."""
