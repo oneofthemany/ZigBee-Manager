@@ -121,8 +121,34 @@ class MatterServerManager:
 
         return await self._spawn()
 
+
+    async def _kill_orphans(self):
+        """Kill any leftover matter-server processes from previous runs."""
+        import subprocess
+        try:
+            result = subprocess.run(
+                ["pgrep", "-f", "matter_server.server.*--port.*" + str(self.port)],
+                capture_output=True, text=True
+            )
+            if result.stdout.strip():
+                pids = result.stdout.strip().split('\n')
+                my_pid = os.getpid()
+                for pid in pids:
+                    pid = int(pid.strip())
+                    if pid != my_pid:
+                        try:
+                            os.kill(pid, signal.SIGKILL)
+                            logger.warning(f"Killed orphaned matter-server process: {pid}")
+                        except ProcessLookupError:
+                            pass
+                # Wait for them to die
+                await asyncio.sleep(1)
+        except Exception as e:
+            logger.debug(f"Orphan cleanup: {e}")
+
     async def _spawn(self) -> bool:
         """Spawn the subprocess."""
+        await self._kill_orphans()
         cmd = self._build_command()
         logger.info(f"Starting Matter server: {' '.join(cmd)}")
 

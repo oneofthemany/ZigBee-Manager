@@ -37,6 +37,13 @@ matter:
   # enabled: false
   # server_url: ws://localhost:5580/ws
 
+ai:
+  provider: ollama
+  model: llama3.1:8b-instruct-q4_K_M
+  base_url: http://localhost:11434/v1
+  temperature: 0.3
+  max_tokens: 2000
+
 zigbee:
   port: /dev/ttyUSB0 # Serial port for Zigbee radio
   # Serial: /dev/ttyACM0 (EZSP), /dev/ttyUSB0 (ZNP)

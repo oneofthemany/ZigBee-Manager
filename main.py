@@ -34,6 +34,7 @@ import random
 # Import services
 from core import ZigbeeService
 from mqtt import MQTTService
+from modules.boot_guard_hooks import clear_boot_failure_counter
 from modules.zigbee_debug import get_debugger
 from modules.json_helpers import prepare_for_json, safe_json_dumps
 from modules.mqtt_explorer import MQTTExplorer
@@ -41,6 +42,13 @@ from modules.zones_api import register_zone_routes
 from modules.automation_api import register_automation_routes
 from modules.network_init import ensure_network_credentials
 from modules.spectrum_monitor import SpectrumMonitor
+from modules.ai_assistant import AIAssistant
+from modules.ai_automations import AIAutomations
+from modules.ai_api import register_ai_routes
+from modules.safe_deploy import register_deploy_routes, check_deploy_on_startup
+from modules.system_monitor import SystemMonitor
+from modules.telemetry_collector import TelemetryCollector
+from modules.telemetry_api import register_telemetry_routes
 
 # Import route registrations
 from routes import (
@@ -181,6 +189,7 @@ def get_manager():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    clear_boot_failure_counter()
     # Startup
     log_listener.start()
     logger.info("Starting Zigbee Gateway (Threaded Logging Enabled)...")
@@ -275,6 +284,25 @@ async def lifespan(app: FastAPI):
     mqtt_service.group_command_callback = zigbee_service.group_manager.handle_mqtt_group_command
     logger.info("Wired GroupManager callback to MQTT Service")
 
+    # ── System Monitor & Telemetry ──
+    system_monitor = SystemMonitor(
+        interval=30,
+        event_callback=broadcast_event,
+    )
+    system_monitor.start()
+    logger.info("System monitor started")
+
+    telemetry_collector = TelemetryCollector(
+        device_registry_getter=lambda: zigbee_service.devices,
+        retention_days=7,
+    )
+    telemetry_collector.start()
+    logger.info("Telemetry collector started")
+
+    register_telemetry_routes(app, lambda: system_monitor)
+    zigbee_service.telemetry_collector = telemetry_collector
+
+    # ──  Recovery ──
     from modules.test_recovery import get_test_recovery_manager
     trm = get_test_recovery_manager(broadcast_event)
     startup_result = trm.check_pending_on_startup()
@@ -284,10 +312,52 @@ async def lifespan(app: FastAPI):
         elif startup_result.get("pending"):
             logger.info(f"Pending test: {startup_result.get('path')} — {startup_result.get('remaining')}s to confirm")
 
+    # Initialise AI Assistant
+    ai_config = CONFIG.get("ai", {})
+    ai_assistant = AIAssistant(ai_config)
+    ai_automations = AIAutomations(ai_assistant, zigbee_service.automation)
+    logger.info(f"AI Assistant initialised: {ai_assistant.provider}/{ai_assistant.model} "
+                f"configured={ai_assistant.is_configured()}")
+
+    # AI config persistence helper
+    def _save_ai_config(ai_cfg):
+        try:
+            with open("./config/config.yaml", "r") as f:
+                cfg = yaml.safe_load(f) or {}
+            cfg["ai"] = ai_cfg
+            with open("./config/config.yaml", "w") as f:
+                yaml.dump(cfg, f, default_flow_style=False, sort_keys=False)
+            logger.info("AI config saved to config.yaml")
+        except Exception as e:
+            logger.error(f"Failed to save AI config: {e}")
+
+    register_ai_routes(
+        app,
+        ai_assistant_getter=lambda: ai_assistant,
+        ai_automations_getter=lambda: ai_automations,
+        config_saver=_save_ai_config,
+    )
+
+
+    # Safe Deploy
+    register_deploy_routes(app, service_name="zigbee_manager")
+    logger.info("Safe deploy routes registered")
+
+    # Check if we're recovering from a deploy
+    asyncio.create_task(check_deploy_on_startup())
+
     yield  # Application runs here
 
     # Shutdown
     logger.info("Shutting down Zigbee Gateway...")
+
+    # 1. monitors and telemetry first
+    system_monitor.stop()
+    telemetry_collector.stop()
+    from modules.telemetry_db import close as close_telemetry_db
+    close_telemetry_db()
+
+    # 2. services
     await zigbee_service.stop()
     await mqtt_service.stop()
     if hasattr(zigbee_service, 'spectrum_monitor'):
@@ -346,9 +416,6 @@ register_websocket_routes(app)
 register_zone_routes(app, lambda: zigbee_service.zone_manager, lambda: zigbee_service.devices)
 register_ota_routes(app, lambda: zigbee_service.ota_manager)
 register_automation_routes(app, lambda: zigbee_service.automation)
-
-logger.info("All route modules registered")
-
 
 # ============================================================================
 # ENTRY POINT
