@@ -112,7 +112,7 @@ class AIAssistant:
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.post(url, json=payload, headers=headers,
-                                        timeout=aiohttp.ClientTimeout(total=60)) as resp:
+                                        timeout=aiohttp.ClientTimeout(total=180)) as resp:
                     if resp.status != 200:
                         body = await resp.text()
                         logger.error(f"AI API error {resp.status}: {body[:500]}")
