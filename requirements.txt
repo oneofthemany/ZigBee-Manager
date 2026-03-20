@@ -10,3 +10,4 @@ zigpy-znp==0.14.2
 aiohttp
 python-matter-server
 python-multipart
+duckdb
