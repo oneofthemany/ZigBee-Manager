@@ -41,6 +41,10 @@ from modules.zones_api import register_zone_routes
 from modules.automation_api import register_automation_routes
 from modules.network_init import ensure_network_credentials
 from modules.spectrum_monitor import SpectrumMonitor
+from modules.ai_assistant import AIAssistant
+from modules.ai_automations import AIAutomations
+from modules.ai_api import register_ai_routes
+from modules.safe_deploy import register_deploy_routes, check_deploy_on_startup
 
 # Import route registrations
 from routes import (
@@ -284,6 +288,40 @@ async def lifespan(app: FastAPI):
         elif startup_result.get("pending"):
             logger.info(f"Pending test: {startup_result.get('path')} — {startup_result.get('remaining')}s to confirm")
 
+    # Initialise AI Assistant
+    ai_config = CONFIG.get("ai", {})
+    ai_assistant = AIAssistant(ai_config)
+    ai_automations = AIAutomations(ai_assistant, zigbee_service.automation)
+    logger.info(f"AI Assistant initialised: {ai_assistant.provider}/{ai_assistant.model} "
+                f"configured={ai_assistant.is_configured()}")
+
+    # AI config persistence helper
+    def _save_ai_config(ai_cfg):
+        try:
+            with open("./config/config.yaml", "r") as f:
+                cfg = yaml.safe_load(f) or {}
+            cfg["ai"] = ai_cfg
+            with open("./config/config.yaml", "w") as f:
+                yaml.dump(cfg, f, default_flow_style=False, sort_keys=False)
+            logger.info("AI config saved to config.yaml")
+        except Exception as e:
+            logger.error(f"Failed to save AI config: {e}")
+
+    register_ai_routes(
+        app,
+        ai_assistant_getter=lambda: ai_assistant,
+        ai_automations_getter=lambda: ai_automations,
+        config_saver=_save_ai_config,
+    )
+
+
+    # Safe Deploy
+    register_deploy_routes(app, service_name="zigbee_manager")
+    logger.info("Safe deploy routes registered")
+
+    # Check if we're recovering from a deploy
+    asyncio.create_task(check_deploy_on_startup())
+
     yield  # Application runs here
 
     # Shutdown
@@ -346,9 +384,6 @@ register_websocket_routes(app)
 register_zone_routes(app, lambda: zigbee_service.zone_manager, lambda: zigbee_service.devices)
 register_ota_routes(app, lambda: zigbee_service.ota_manager)
 register_automation_routes(app, lambda: zigbee_service.automation)
-
-logger.info("All route modules registered")
-
 
 # ============================================================================
 # ENTRY POINT
