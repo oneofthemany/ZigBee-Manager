@@ -125,7 +125,8 @@ echo
 echo "Step 10: Installing systemd service..."
 if [ -f "zigbee-matter-manager.service" ]; then
     sed -i "s|WorkingDirectory=.*|WorkingDirectory=$INSTALL_DIR|g" zigbee-matter-manager.service
-    sed -i "s|ExecStart=.*|ExecStart=$VENV_DIR/bin/python main.py|g" zigbee-matter-manager.service
+    sed -i "s|ExecStartPre=.*|ExecStartPre=$VENV_DIR/bin/python3 boot_guard.py|g" zigbee-matter-manager.service
+    sed -i "s|ExecStart=.*|ExecStart=$VENV_DIR/bin/python3 main.py|g" zigbee-matter-manager.service
     sed -i "s|ReadWritePaths=.*|ReadWritePaths=$LOG_DIR $INSTALL_DIR /data|g" zigbee-matter-manager.service
 
     cp zigbee-matter-manager.service /etc/systemd/system/
