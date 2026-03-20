@@ -33,8 +33,6 @@ export function initMQTTExplorer() {
 
     // Load initial stats once on load
     updateStats();
-
-    // REMOVED the hardcoded setInterval from here!
 }
 
 /**
