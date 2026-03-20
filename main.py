@@ -34,6 +34,7 @@ import random
 # Import services
 from core import ZigbeeService
 from mqtt import MQTTService
+from modules.boot_guard_hooks import clear_boot_failure_counter
 from modules.zigbee_debug import get_debugger
 from modules.json_helpers import prepare_for_json, safe_json_dumps
 from modules.mqtt_explorer import MQTTExplorer
@@ -188,6 +189,7 @@ def get_manager():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    clear_boot_failure_counter()
     # Startup
     log_listener.start()
     logger.info("Starting Zigbee Gateway (Threaded Logging Enabled)...")
