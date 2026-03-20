@@ -19,6 +19,9 @@ let mqttExplorerState = {
     maxMessages: 500
 };
 
+// Store the interval ID so we can clear it later
+let statsInterval = null;
+
 /**
  * Initialize MQTT Explorer
  */
@@ -28,12 +31,34 @@ export function initMQTTExplorer() {
     // Set up event listeners
     setupEventListeners();
 
-    // Load initial stats
+    // Load initial stats once on load
     updateStats();
 
-    // Start periodic stats refresh
-    setInterval(updateStats, 2000);
+    // REMOVED the hardcoded setInterval from here!
 }
+
+/**
+ * Start polling stats - when tab opens
+ */
+export function startMQTTStats() {
+    if (!statsInterval) {
+        updateStats(); // Fetch immediately on tab open
+        statsInterval = setInterval(updateStats, 2000);
+        console.log('MQTT stats polling started.');
+    }
+}
+
+/**
+ * Stop polling stats - when tab closes
+ */
+export function stopMQTTStats() {
+    if (statsInterval) {
+        clearInterval(statsInterval);
+        statsInterval = null;
+        console.log('MQTT stats polling stopped.');
+    }
+}
+
 
 /**
  * Set up event listeners for MQTT Explorer controls
