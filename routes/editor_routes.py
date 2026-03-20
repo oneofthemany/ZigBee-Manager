@@ -374,7 +374,39 @@ def _validate_python(content: str) -> list:
         })
         return errors
 
-    # Phase 2: Basic warnings
+    # Phase 2: Check for used-but-not-imported stdlib modules
+    STDLIB_MODULES = {
+        "asyncio", "json", "os", "sys", "time", "logging", "re",
+        "subprocess", "shutil", "signal", "uuid", "traceback",
+        "threading", "functools", "pathlib", "datetime",
+    }
+    imported_names = set()
+    tree = ast.parse(content)
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                imported_names.add(alias.asname or alias.name.split(".")[0])
+        elif isinstance(node, ast.ImportFrom):
+            if node.module:
+                imported_names.add(node.module.split(".")[0])
+            for alias in node.names:
+                imported_names.add(alias.asname or alias.name)
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name):
+            used = node.value.id
+            if used in STDLIB_MODULES and used not in imported_names:
+                errors.append({
+                    "line": node.lineno,
+                    "column": node.col_offset + 1,
+                    "endLine": node.lineno,
+                    "endColumn": node.col_offset + len(used) + 1,
+                    "message": f"'{used}' is used but not imported — will cause NameError at runtime",
+                    "severity": "error",
+                })
+
+
+    # Phase 3: Basic warnings
     lines = content.splitlines()
     for i, line in enumerate(lines, 1):
         stripped = line.rstrip()
