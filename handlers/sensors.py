@@ -409,7 +409,7 @@ class DeviceTemperatureHandler(ClusterHandler):
 
     # Reporting: Min 60s, Max 3600s, Change 1 degree
     REPORT_CONFIG = [
-        {"attr": "current_temperature", "min": 60, "max": 3600, "change": 1},
+        ("current_temperature", 60, 3600, 1),
     ]
 
     def attribute_updated(self, attrid: int, value: Any, timestamp: Optional[float] = None):
