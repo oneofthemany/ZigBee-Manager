@@ -364,7 +364,10 @@ export function renderControlTab(device) {
             const epId = ep.id;
 
             // Skip sensors/buttons
-            if (ep.component_type === "sensor") {
+            const capList = device.capability_list || [];
+            if (ep.component_type === "sensor" ||
+                capList.includes('contact_sensor') ||
+                (capList.includes('motion_sensor') && !capList.includes('switch') && !capList.includes('light'))) {
                 return;
             }
 
@@ -563,6 +566,81 @@ export function renderControlTab(device) {
                 }
             }
         });
+    }
+
+    // --- Sensor Display (Contact, Motion, IAS Zone) ---
+    const capList = device.capability_list || [];
+    const isContactSensor = capList.includes('contact_sensor');
+    const isMotionSensor = capList.includes('motion_sensor') || capList.includes('occupancy_sensing');
+    const isIASZone = capList.includes('ias_zone');
+
+    if (isContactSensor) {
+        controlsFound = true;
+        const contact = s.contact;
+        const isOpen = s.is_open;
+        const isClosed = contact === true || isOpen === false;
+        const statusText = isClosed ? 'CLOSED' : 'OPEN';
+        const statusClass = isClosed ? 'bg-success' : 'bg-danger';
+        const icon = isClosed ? 'fa-door-closed' : 'fa-door-open';
+
+        html += `
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                        <strong><i class="fas ${icon}"></i> Contact Sensor</strong>
+                        <span class="badge ${statusClass}">${statusText}</span>
+                    </div>
+                    <div class="card-body text-center">
+                        <i class="fas ${icon} fa-3x mb-2 ${isClosed ? 'text-success' : 'text-danger'}"></i>
+                        <p class="mb-0 fw-bold">${statusText}</p>
+                    </div>
+                </div>
+            </div>`;
+    }
+
+    if (isMotionSensor && !isContactSensor) {
+        controlsFound = true;
+        const occupied = s.occupancy === true || s.motion === true || s.presence === true;
+        const statusText = occupied ? 'MOTION' : 'CLEAR';
+        const statusClass = occupied ? 'bg-danger' : 'bg-success';
+        const icon = occupied ? 'fa-running' : 'fa-shield-alt';
+
+        html += `
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                        <strong><i class="fas fa-eye"></i> Motion Sensor</strong>
+                        <span class="badge ${statusClass}">${statusText}</span>
+                    </div>
+                    <div class="card-body text-center">
+                        <i class="fas ${icon} fa-3x mb-2 ${occupied ? 'text-danger' : 'text-success'}"></i>
+                        <p class="mb-0 fw-bold">${statusText}</p>
+                    </div>
+                </div>
+            </div>`;
+    }
+
+    if (isIASZone && !isContactSensor && !isMotionSensor) {
+        controlsFound = true;
+        const zoneStatus = s.zone_status || 0;
+        const alarm = s.alarm || s.water_leak || s.smoke || s.vibration || (zoneStatus & 1);
+        const statusText = alarm ? 'ALARM' : 'OK';
+        const statusClass = alarm ? 'bg-danger' : 'bg-success';
+        const icon = alarm ? 'fa-exclamation-triangle' : 'fa-check-circle';
+
+        html += `
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                        <strong><i class="fas fa-shield-alt"></i> Zone Sensor</strong>
+                        <span class="badge ${statusClass}">${statusText}</span>
+                    </div>
+                    <div class="card-body text-center">
+                        <i class="fas ${icon} fa-3x mb-2 ${alarm ? 'text-danger' : 'text-success'}"></i>
+                        <p class="mb-0 fw-bold">${statusText}</p>
+                    </div>
+                </div>
+            </div>`;
     }
 
     if (!controlsFound) {
