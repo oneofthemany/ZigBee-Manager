@@ -2,112 +2,120 @@
 modules/spectrum_monitor.py
 
 Background spectrum scanner — runs periodic energy scans and stores
-results in zigbee.db for historical analysis and interference correlation.
+results in DuckDB (via telemetry_db) for historical analysis and
+interference correlation.
+
+Migration from SQLite: This module previously stored data in zigbee.db.
+On first run after migration, existing SQLite data is copied to DuckDB
+automatically, then the SQLite table is left untouched (zigpy still
+uses zigbee.db for its own tables).
 """
 
 import asyncio
 import logging
-import sqlite3
+import os
 import time
-from typing import Optional, TYPE_CHECKING
-import math
+from typing import Dict, List, Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from zigpy.application import ControllerApplication
 
 logger = logging.getLogger(__name__)
 
-DB_PATH = "zigbee.db"
 DEFAULT_INTERVAL = 3600  # 1 hour
 CHANNELS = list(range(11, 27))
+SQLITE_DB_PATH = "zigbee.db"
+MIGRATION_MARKER = "./data/.spectrum_migrated"
 
 
 # ============================================================================
-# DATABASE
+# DUCKDB-BACKED FUNCTIONS (replace old SQLite versions)
 # ============================================================================
 
-def init_spectrum_table(db_path: str = DB_PATH):
-    """Create spectrum_history table if it doesn't exist."""
-    with sqlite3.connect(db_path) as conn:
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS spectrum_history (
-                id        INTEGER PRIMARY KEY AUTOINCREMENT,
-                timestamp INTEGER NOT NULL,
-                channel   INTEGER NOT NULL,
-                energy    INTEGER NOT NULL
-            )
-        """)
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_spectrum_ts ON spectrum_history(timestamp)")
-        conn.commit()
-
-
-def save_scan(results: dict, db_path: str = DB_PATH):
+def save_scan(results: dict, db_path: str = None):
     """
-    Persist one scan's worth of channel→energy pairs.
-    results: {channel(int): energy(int 0-255)}
+    Persist one scan's worth of channel→energy pairs to DuckDB.
+    db_path parameter kept for backward compatibility but ignored.
     """
-    ts = int(time.time())
-    rows = [(ts, ch, int(energy)) for ch, energy in results.items()]
-    with sqlite3.connect(db_path) as conn:
-        conn.executemany(
-            "INSERT INTO spectrum_history (timestamp, channel, energy) VALUES (?,?,?)",
-            rows
-        )
-        conn.commit()
-    logger.debug(f"Spectrum scan saved: {len(rows)} channels at ts={ts}")
+    if not results:
+        return
+    try:
+        from modules.telemetry_db import write_spectrum_scan
+        write_spectrum_scan(results)
+        logger.debug(f"Spectrum scan saved: {len(results)} channels")
+    except Exception as e:
+        logger.warning(f"Failed to save spectrum scan: {e}")
 
 
-def get_history(hours: int = 24, db_path: str = DB_PATH) -> list:
+def get_history(hours: int = 24, db_path: str = None) -> list:
     """
-    Return scan records for the past N hours.
+    Return scan records for the past N hours from DuckDB.
     Returns list of {timestamp, channel, energy} dicts.
     """
-    since = int(time.time()) - (hours * 3600)
-    with sqlite3.connect(db_path) as conn:
-        conn.row_factory = sqlite3.Row
-        rows = conn.execute(
-            "SELECT timestamp, channel, energy FROM spectrum_history WHERE timestamp >= ? ORDER BY timestamp ASC",
-            (since,)
-        ).fetchall()
-    return [dict(r) for r in rows]
+    try:
+        from modules.telemetry_db import query_spectrum_history
+        rows = query_spectrum_history(hours=hours)
+        # Convert to the format the frontend expects
+        return [
+            {
+                "timestamp": int(r["ts"].timestamp()) if hasattr(r["ts"], "timestamp") else int(r["ts"]),
+                "channel": r["channel"],
+                "energy": r["energy"],
+            }
+            for r in rows
+        ]
+    except Exception as e:
+        logger.warning(f"Failed to query spectrum history: {e}")
+        return []
 
 
-def get_channel_averages(hours: int = 24, db_path: str = DB_PATH) -> dict:
+def get_channel_averages(hours: int = 24, db_path: str = None) -> dict:
     """
     Return average energy per channel over the past N hours.
     Returns {channel: avg_energy}
     """
-    since = int(time.time()) - (hours * 3600)
-    with sqlite3.connect(db_path) as conn:
-        rows = conn.execute(
-            "SELECT channel, AVG(energy) as avg_energy FROM spectrum_history WHERE timestamp >= ? GROUP BY channel",
-            (since,)
-        ).fetchall()
-    return {row[0]: round(row[1], 1) for row in rows}
+    try:
+        from modules.telemetry_db import _get_db
+        db = _get_db()
+        result = db.execute(f"""
+            SELECT channel, AVG(energy) as avg_energy
+            FROM spectrum_scans
+            WHERE ts >= now() - INTERVAL '{int(hours)} hours'
+            GROUP BY channel
+        """).fetchall()
+        return {int(row[0]): round(float(row[1]), 1) for row in result}
+    except Exception as e:
+        logger.warning(f"Failed to query spectrum averages: {e}")
+        return {}
 
 
-
-def get_channel_stats(hours: int = 24, db_path: str = DB_PATH) -> dict:
+def get_channel_stats(hours: int = 24, db_path: str = None) -> dict:
     """
     Return per-channel statistics over the past N hours.
     Returns {channel: {min, max, mean, stddev, p25, p75, median, count}}
     """
     import math
 
-    since = int(time.time()) - (hours * 3600)
-    with sqlite3.connect(db_path) as conn:
-        rows = conn.execute(
-            "SELECT channel, energy FROM spectrum_history "
-            "WHERE timestamp >= ? ORDER BY channel, energy",
-            (since,)
-        ).fetchall()
+    try:
+        from modules.telemetry_db import _get_db
+        db = _get_db()
+        rows = db.execute(f"""
+            SELECT channel, energy
+            FROM spectrum_scans
+            WHERE ts >= now() - INTERVAL '{int(hours)} hours'
+            ORDER BY channel, energy
+        """).fetchall()
+    except Exception as e:
+        logger.warning(f"Failed to query spectrum stats: {e}")
+        return {}
 
     # Group by channel
     by_channel = {}
     for ch, energy in rows:
+        ch = int(ch)
         if ch not in by_channel:
             by_channel[ch] = []
-        by_channel[ch].append(energy)
+        by_channel[ch].append(int(energy))
 
     stats = {}
     for ch in sorted(by_channel.keys()):
@@ -138,16 +146,78 @@ def get_channel_stats(hours: int = 24, db_path: str = DB_PATH) -> dict:
 
     return stats
 
-def prune_old_records(keep_days: int = 7, db_path: str = DB_PATH):
-    """Remove records older than keep_days to prevent unbounded growth."""
-    cutoff = int(time.time()) - (keep_days * 86400)
-    with sqlite3.connect(db_path) as conn:
-        deleted = conn.execute(
-            "DELETE FROM spectrum_history WHERE timestamp < ?", (cutoff,)
-        ).rowcount
-        conn.commit()
-    if deleted:
-        logger.info(f"Spectrum history pruned: {deleted} old records removed")
+
+def prune_old_records(keep_days: int = 7, db_path: str = None):
+    """Prune is now handled by telemetry_db.prune() — this is a no-op for compatibility."""
+    pass
+
+
+# ============================================================================
+# ONE-TIME MIGRATION FROM SQLITE
+# ============================================================================
+
+def _migrate_from_sqlite():
+    """
+    Copy existing spectrum_history data from zigbee.db (SQLite) to DuckDB.
+    Runs once, then writes a marker file so it never runs again.
+    """
+    if os.path.isfile(MIGRATION_MARKER):
+        return  # Already migrated
+
+    if not os.path.isfile(SQLITE_DB_PATH):
+        _write_migration_marker(0)
+        return
+
+    try:
+        import sqlite3
+        conn = sqlite3.connect(SQLITE_DB_PATH)
+
+        # Check if the table exists
+        cursor = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='spectrum_history'"
+        )
+        if not cursor.fetchone():
+            conn.close()
+            _write_migration_marker(0)
+            return
+
+        # Read all existing data
+        rows = conn.execute(
+            "SELECT timestamp, channel, energy FROM spectrum_history ORDER BY timestamp ASC"
+        ).fetchall()
+        conn.close()
+
+        if not rows:
+            _write_migration_marker(0)
+            return
+
+        # Write to DuckDB in batches
+        from modules.telemetry_db import _get_db
+        db = _get_db()
+
+        batch_size = 1000
+        total = 0
+        for i in range(0, len(rows), batch_size):
+            batch = rows[i:i + batch_size]
+            db.executemany("""
+                INSERT INTO spectrum_scans (ts, channel, energy)
+                VALUES (to_timestamp(?), ?, ?)
+            """, batch)
+            total += len(batch)
+
+        logger.info(f"Spectrum migration complete: {total} records copied from SQLite to DuckDB")
+        _write_migration_marker(total)
+
+    except Exception as e:
+        logger.error(f"Spectrum migration failed: {e}")
+        # Don't write marker — retry on next startup
+
+
+def _write_migration_marker(count: int):
+    """Write marker file to prevent re-migration."""
+    os.makedirs(os.path.dirname(MIGRATION_MARKER), exist_ok=True)
+    with open(MIGRATION_MARKER, "w") as f:
+        f.write(f"migrated={count} ts={int(time.time())}\n")
 
 
 # ============================================================================
@@ -156,26 +226,26 @@ def prune_old_records(keep_days: int = 7, db_path: str = DB_PATH):
 
 class SpectrumMonitor:
     """
-    Runs periodic background energy scans and stores results in zigbee.db.
+    Runs periodic background energy scans and stores results in DuckDB.
     Attach to zigbee_service after radio start.
     """
 
-    def __init__(self, app_getter, interval: int = DEFAULT_INTERVAL, db_path: str = DB_PATH):
+    def __init__(self, app_getter, interval: int = DEFAULT_INTERVAL, db_path: str = None):
         """
         Args:
             app_getter: callable returning the zigpy ControllerApplication (or None)
             interval:   seconds between scans (default 3600 = 1 hour)
-            db_path:    SQLite database path
+            db_path:    Ignored (kept for backward compatibility)
         """
         self._get_app = app_getter
         self.interval = interval
-        self.db_path = db_path
         self._task: Optional[asyncio.Task] = None
         self._running = False
         self.last_scan: Optional[dict] = None
         self.last_scan_ts: Optional[int] = None
 
-        init_spectrum_table(db_path)
+        # Run one-time migration from SQLite
+        _migrate_from_sqlite()
 
     def start(self):
         if not self._running:
@@ -224,8 +294,7 @@ class SpectrumMonitor:
             )
             clean = {int(ch): int(e) for ch, e in results.items()}
 
-            save_scan(clean, self.db_path)
-            prune_old_records(keep_days=7, db_path=self.db_path)
+            save_scan(clean)
 
             self.last_scan = clean
             self.last_scan_ts = int(time.time())

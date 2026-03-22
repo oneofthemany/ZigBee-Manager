@@ -10,7 +10,7 @@ import { updateLastSeenTimes } from './utils.js';
 import { initWS } from './websocket.js';
 import { fetchAllDevices } from './devices.js';
 import { initGroups } from './groups.js';
-import { initMQTTExplorer, handleMQTTMessage } from './mqtt-explorer.js';
+import { initMQTTExplorer, handleMQTTMessage, startMQTTStats, stopMQTTStats } from './mqtt-explorer.js';
 import { initEditor, getEditorInstance } from './editor.js';
 let editorInitialised = false;
 
@@ -38,6 +38,9 @@ import {
     deleteZone,
     viewZoneDetails
 } from './zones.js';
+
+
+import { initSystemTab } from './system-telemetry.js';
 
 import {
     openDeviceModal,
@@ -236,6 +239,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // Initialise Zones
     initZones();
 
+    // Initialise system tab
+    initSystemTab();
+
     // Initial fetch
     fetchAllDevices();
 
@@ -250,7 +256,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if(settingsTab) {
         settingsTab.addEventListener('click', () => {
             loadConfigYaml();
-            loadSSLStatus();  // ADD
+            loadSSLStatus();
         });
     }
 
@@ -262,6 +268,20 @@ document.addEventListener('DOMContentLoaded', () => {
             if (typeof loadMeshTopology === 'function') {
                 loadMeshTopology();
             }
+        });
+    }
+
+    // Set up listeners for the MQTT Explorer Tab
+    const mqttTabTrigger = document.querySelector('button[data-bs-target="#mqtt-explorer"], a[data-bs-target="#mqtt-explorer"]');
+    if (mqttTabTrigger) {
+        // When tab is shown, start polling
+        mqttTabTrigger.addEventListener('shown.bs.tab', () => {
+            startMQTTStats();
+        });
+
+        // When tab is hidden, stop polling
+        mqttTabTrigger.addEventListener('hidden.bs.tab', () => {
+            stopMQTTStats();
         });
     }
 
@@ -315,5 +335,5 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }).catch(() => {});
 
-    console.log("Zigbee Gateway Frontend Initialized");
+    console.log("Zigbee Matter Manager Frontend Initialised");
 });

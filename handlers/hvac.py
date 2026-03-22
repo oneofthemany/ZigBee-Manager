@@ -1,7 +1,7 @@
 """
 HVAC cluster handlers for Zigbee devices.
 Handles: Thermostats, TRVs (Thermostatic Radiator Valves), HVAC systems
-Compatible with: Hive Smart Heating, generic TRVs, AC units
+Compatible with: Hive Smart Heating (SLR1c, SLR1b), Aqara TRVs, generic thermostats
 """
 import logging
 from typing import Any, Dict, Optional, List
@@ -41,23 +41,32 @@ class ThermostatSystemMode(IntEnum):
 class ThermostatHandler(ClusterHandler):
     """
     Handles Thermostat cluster (0x0201).
-    Adopted from ZHA implementation for robust Hive support.
+
+    MQTT State Keys (Home Assistant compatible):
+    - current_temperature: Current room temperature (for HA climate)
+    - temperature: Alias for current_temperature
+    - local_temperature: Raw local temp from device
+    - occupied_heating_setpoint: Target setpoint in °C
+    - target_temp: Alias for occupied_heating_setpoint (for scheduler)
+    - system_mode: "off", "heat", "auto", etc.
+    - hvac_action: "heating", "idle", "off"
+    - heating_demand: PI demand percentage (0-100)
     """
     CLUSTER_ID = 0x0201
 
-    # ZHA-aligned reporting configuration
+    # Reporting configuration
     REPORT_CONFIG = [
-        # Local Temperature: Min 30s, Max 300s, Change 0.25°C (25)
-        ("local_temperature", 30, 300, 10),
+        # Local Temperature: Min 30s, Max 300s, Change 0.5°C (50)
+        ("local_temperature", 60, 300, 50),
 
-        # Setpoints: Min 10s, Max 300s, Change 0.5°C (50)
-        ("occupied_heating_setpoint", 10, 300, 50),
-        ("occupied_cooling_setpoint", 10, 300, 50),
-        ("unoccupied_heating_setpoint", 10, 300, 50),
+        # Setpoints: Min 10s, Max 300s, Change 0.1°C (10)
+        ("occupied_heating_setpoint", 0, 300, 10),   # min=0 for instant updates
+        ("occupied_cooling_setpoint", 0, 300, 10),
+        ("unoccupied_heating_setpoint", 0, 300, 10),
 
-        # PI Demand: Min 30s, Max 300s, Change 5% (5)
-        ("pi_heating_demand", 30, 300, 5),
-        ("pi_cooling_demand", 30, 300, 5),
+        # PI Demand: Min 60s, Max 300s, Change 10% (10)
+        ("pi_heating_demand", 60, 300, 10),
+        ("pi_cooling_demand", 60, 300, 10),
 
         # States: Min 10s, Max 300s, Change 1 (Discrete)
         ("system_mode", 10, 300, 1),
@@ -195,16 +204,20 @@ class ThermostatHandler(ClusterHandler):
         updates = {}
 
         if attrid == self.ATTR_LOCAL_TEMP:
-            # If it's a receiver, this might be internal temp, not room temp.
             if self.is_receiver:
+                # Receiver gets temperature via binding from thermostat
                 updates["internal_temperature"] = parsed_value
+                updates["current_temperature"] = parsed_value  # HA climate needs this
+                updates["temperature"] = parsed_value
             else:
                 updates["local_temperature"] = parsed_value
+                updates["current_temperature"] = parsed_value
                 updates["temperature"] = parsed_value
 
         elif attrid == self.ATTR_OCCUPIED_HEATING_SETPOINT:
             updates["occupied_heating_setpoint"] = parsed_value
             updates["heating_setpoint"] = parsed_value
+            updates["target_temp"] = parsed_value
 
         elif attrid == self.ATTR_SYSTEM_MODE:
             updates["system_mode"] = parsed_value
@@ -217,10 +230,9 @@ class ThermostatHandler(ClusterHandler):
             updates["hvac_action"] = action
 
         elif attrid == self.ATTR_INTERNAL_TEMP:
-            # --- Map internal_temperature to local_temperature ---
-            # SLR1c reports this. Map it to local_temperature for HA consistency.
             updates["internal_temperature"] = parsed_value
             updates["local_temperature"] = parsed_value
+            updates["current_temperature"] = parsed_value  # HA climate key
             updates["temperature"] = parsed_value
 
         elif attrid == self.ATTR_PI_HEATING_DEMAND:
@@ -256,9 +268,9 @@ class ThermostatHandler(ClusterHandler):
         })
 
         self.device.update_state({
-            "temperature": temperature,
             "heating_setpoint": temperature,
             "occupied_heating_setpoint": temperature,
+            "target_temp": temperature,  # Scheduler compatibility
         })
 
 
@@ -440,22 +452,25 @@ class ThermostatHandler(ClusterHandler):
     # --- COMMANDS ---
     async def set_heating_setpoint(self, temperature: float):
         """Set heating setpoint in degrees Celsius."""
-        # 1. Clamp to System Capabilities
         temperature = max(self._min_heat, min(self._max_heat, float(temperature)))
-
-        logger.info(f"[{self.device.ieee}] Setting setpoint to {temperature}°C (Limits: {self._min_heat}-{self._max_heat})")
-
-        # 2. Convert to Zigbee Centidegrees (REQUIRED)
         value = int(temperature * 100)
 
-        await self.cluster.write_attributes({"occupied_heating_setpoint": value})
+        logger.info(f"[{self.device.ieee}] Writing occupied_heating_setpoint: {temperature}°C ({value} centidegrees)")
 
-        # Optimistic update
-        self.device.update_state({
-            "heating_setpoint": temperature,
-            "occupied_heating_setpoint": temperature,
-            "temperature_setpoint": temperature
-        })
+        try:
+            result = await self.cluster.write_attributes({"occupied_heating_setpoint": value})
+            logger.error(f"[{self.device.ieee}] Write result: {result}")  # Changed to ERROR to see it
+
+            # Optimistic update
+            self.device.update_state({
+                "heating_setpoint": temperature,
+                "occupied_heating_setpoint": temperature,
+                "target_temp": temperature,
+            })
+        except Exception as e:
+            logger.error(f"[{self.device.ieee}] Write failed: {e}")
+            import traceback
+            traceback.print_exc()
 
     async def set_system_mode(self, mode: str):
         """Set system mode (off, auto, heat)."""

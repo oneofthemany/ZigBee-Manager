@@ -3,11 +3,11 @@ database:
   path: zigbee.db
 
 mqtt:
-  base_topic: zigbee_ha
+  base_topic: zigbee_manager
   broker_host: 192.168.1.1
   broker_port: 1883
   username: mqtt
-  password: password
+  password: mqtt_password
   qos: 1
 
 logging:
@@ -19,9 +19,35 @@ web:
   port: 8000
   debug: false
   secret_key: ssshItsASecret
+  ssl:
+    enabled: false
+    cert_file: certs/cert.pem
+    key_file: certs/key.pem
+
+# Matter integration (optional — requires python-matter-server)
+matter:
+   enabled: true                    # Start embedded server
+   port: 5580                       # WS port (default 5580)
+   storage_path: ./data/matter      # Fabric/node persistence
+   vendor_id: 0xFFF1                # Matter vendor ID (default)
+   fabric_id: 1                     # Fabric ID (default)
+   bluetooth_adapter: 0             # BLE adapter index (optional, for commissioning)
+
+  # --- OR use an external server instead ---
+  # enabled: false
+  # server_url: ws://localhost:5580/ws
+
+ai:
+  provider: ollama
+  model: llama3.1:8b-instruct-q4_K_M
+  base_url: http://localhost:11434/v1
+  temperature: 0.3
+  max_tokens: 2000
 
 zigbee:
-  port: /dev/ttyACM0 # Serial port for Zigbee radio
+  port: /dev/ttyUSB0 # Serial port for Zigbee radio
+  # Serial: /dev/ttyACM0 (EZSP), /dev/ttyUSB0 (ZNP)
+  # MultiPAN (zigbeed): socket://127.0.0.1:9999
 
   # Radio type: auto (default), ezsp, znp, deconz
   # Set to 'auto' to detect automatically, or specify explicitly
@@ -29,10 +55,10 @@ zigbee:
 
   # Zigbee Network Settings
   channel: 25
-  pan_id: A12B
-  extended_pan_id: [12, 139, etc]
+  pan_id: A1B2
+  extended_pan_id: [12, 139, 142, etc.]
   # Network Key (32-character hex string or array of 16 bytes)
-  network_key: [162, 53, 36, 49, etc]
+  network_key: [162, 53, 36, 49, etc.]
   # Adapter Configuration
   coordinator_type: ember
   topology_scan_interval: 120
@@ -50,21 +76,20 @@ zigbee:
   aps_unicast_message_count: 10    # Conservative message limit
 
 
-  # Enhanced EZSP Configuration (Standard Profile)
-  # This is optimized for networks up to ~30 devices
-  #ezsp_config:
-  #  CONFIG_PACKET_BUFFER_COUNT: 254
-  #  CONFIG_NEIGHBOR_TABLE_SIZE: 26
-  #  CONFIG_ADDRESS_TABLE_SIZE: 16
-  #  CONFIG_MULTICAST_TABLE_SIZE: 16
-  #  CONFIG_BINDING_TABLE_SIZE: 32
-  #  CONFIG_APS_UNICAST_MESSAGE_COUNT: 20
-  #  CONFIG_SOURCE_ROUTE_TABLE_SIZE: 200
-  #  CONFIG_ROUTE_TABLE_SIZE: 16
-  #  CONFIG_MAX_HOPS: 30
+    # Enhanced EZSP Configuration (Standard Profile)
+    # This is optimized for networks up to ~30 devices
+    #ezsp_config:
+    #  CONFIG_PACKET_BUFFER_COUNT: 254
+    #  CONFIG_NEIGHBOR_TABLE_SIZE: 26
+    #  CONFIG_ADDRESS_TABLE_SIZE: 16
+    #  CONFIG_MULTICAST_TABLE_SIZE: 16
+    #  CONFIG_BINDING_TABLE_SIZE: 32
+    #  CONFIG_APS_UNICAST_MESSAGE_COUNT: 20
+    #  CONFIG_SOURCE_ROUTE_TABLE_SIZE: 200
+    #  CONFIG_ROUTE_TABLE_SIZE: 16
+    #  CONFIG_MAX_HOPS: 30
   #  CONFIG_INDIRECT_TRANSMISSION_TIMEOUT: 7680
 
-   #For large networks (40+ devices), use these instead:
   #For large networks (40+ devices), use these instead:
   ezsp:
     baudrate: 460800
@@ -92,7 +117,6 @@ zigbee:
   znp:
     baudrate: 115200
     # ZNP typically doesn't need flow control
-    #flow_control:
 
     # ZNP-specific settings
     config:

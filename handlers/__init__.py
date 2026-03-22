@@ -97,6 +97,9 @@ from .lighting import (
 from .lightlink import (
     LightLinkHandler,
 )
+
+from .generic import GenericClusterHandler
+
 # Public API
 __all__ = [
     # Base
@@ -131,6 +134,7 @@ __all__ = [
     # General
     "OnOffHandler",
     "LevelControlHandler",
+    "GenericClusterHandler",
 
     "GroupsHandler",
     "ScenesHandler",

@@ -9,6 +9,8 @@
 
 import { state } from './state.js';
 import { initAutomationTab } from './modal/automation.js';
+import { initAIAutomations, renderAIPanel } from './ai-automations.js';
+
 
 const OP = { eq:'=', neq:'≠', gt:'>', lt:'<', gte:'≥', lte:'≤', in:'∈', nin:'∉', changed:'Δ' };
 
@@ -31,6 +33,8 @@ export async function loadAutomationsPage() {
     const container = document.getElementById('automations-content');
     if (!container) return;
     container.innerHTML = `<div class="text-center text-muted py-4"><i class="fas fa-spinner fa-spin"></i> Loading automations...</div>`;
+
+    await initAIAutomations();
 
     try {
         const [rulesRes, devsRes] = await Promise.all([
@@ -83,6 +87,9 @@ function _renderPage(container, devices) {
                 <button class="btn btn-sm btn-success" onclick="window._apCreate()"><i class="fas fa-plus"></i> New Rule</button>
             </div>
         </div>
+
+        <!-- AI Automation Builder -->
+        ${renderAIPanel()}
 
         <!-- Create Rule Panel (hidden by default) -->
         <div id="ap-create-panel" class="card mb-3" style="display:none">

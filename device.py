@@ -1,5 +1,5 @@
 """
-ZHA Device Wrapper - Handles cluster handlers and state management.
+Zigbee Manager Device Wrapper - Handles cluster handlers and state management.
 Based on ZHA's device architecture.
 """
 import time
@@ -7,13 +7,16 @@ import logging
 import asyncio
 import json
 from typing import Dict, Any, Optional, List
+from zigpy.zcl.clusters.general import Basic
 
 # Import the registry from handlers package
 from handlers.base import HANDLER_REGISTRY, ClusterHandler
-from error_handler import with_retries, CommandWrapper
-from device_capabilities import DeviceCapabilities
-from zigpy.zcl.clusters.general import Basic
-from json_helpers import sanitise_device_state
+
+# import from modules
+from modules.error_handler import with_retries, CommandWrapper
+from modules.device_capabilities import DeviceCapabilities
+from modules.json_helpers import sanitise_device_state
+from modules.packet_stats import packet_stats
 
 # Import handlers to trigger registration decorators
 from handlers.security import *
@@ -27,15 +30,26 @@ from handlers.blinds import *
 from handlers.aqara import *
 from handlers.lightlink import *
 from handlers.lighting import *
+from handlers.diagnostics import *
+from handlers.generic import *
+
 
 logger = logging.getLogger("device")
 
 # How long before a device is considered unavailable
-CONSIDER_UNAVAILABLE_BATTERY = 60 * 60 * 25  # 25 hours for battery devices
-CONSIDER_UNAVAILABLE_MAINS = 60 * 60 * 25    # 25 hours for mains-powered devices
+CONSIDER_UNAVAILABLE_BATTERY = 60 * 60 * 25   # 25 hours for battery devices
+CONSIDER_UNAVAILABLE_MAINS = 60 * 60 * 25     # 25 hours for mains-powered devices
+CONSIDER_UNAVAILABLE_PASSIVE = 60 * 60 * 72   # 72 hours for passive-only sensors
+
+SKIP_GENERIC_CLUSTERS = {
+    0x0019,  # OTA Upgrade
+    0x0021,  # Green Power Proxy
+    0x0020,  # Poll Control
+    0x000A,  # Time
+}
 
 
-class ZHADevice:
+class ZigManDevice:
     """
     Wrapper around a zigpy device that manages cluster handlers
     and state aggregation.
@@ -50,6 +64,21 @@ class ZHADevice:
         self.handlers: Dict[Any, Any] = {}
 
         self.state: Dict[str, Any] = {}
+
+        # Initialize basic info from Zigpy device
+        self.manufacturer = zigpy_dev.manufacturer
+        self.model = zigpy_dev.model
+
+        # --- FORCE INFO INTO STATE IMMEDIATELY ---
+        if self.manufacturer:
+            self.state["manufacturer"] = str(self.manufacturer)
+        else:
+            self.state["manufacturer"] = "Unknown"
+
+        if self.model:
+            self.state["model"] = str(self.model)
+        else:
+            self.state["model"] = "Unknown"
 
         # Initialize to 0 so devices appear Offline until they communicate
         self.last_seen = 0
@@ -76,21 +105,6 @@ class ZHADevice:
         # Initialize Capabilities Logic
         self.capabilities = DeviceCapabilities(self)
 
-        # Initialize basic info from Zigpy device
-        self.manufacturer = zigpy_dev.manufacturer
-        self.model = zigpy_dev.model
-
-        # --- FORCE INFO INTO STATE IMMEDIATELY ---
-        if self.manufacturer:
-            self.state["manufacturer"] = str(self.manufacturer)
-        else:
-            self.state["manufacturer"] = "Unknown"
-
-        if self.model:
-            self.state["model"] = str(self.model)
-        else:
-            self.state["model"] = "Unknown"
-
         # Initialize command wrapper
         try:
             self._cmd_wrapper = CommandWrapper(self)
@@ -100,7 +114,7 @@ class ZHADevice:
         # Load preferred endpoints from settings if available
         if self.ieee in self.service.device_settings:
             settings = self.service.device_settings[self.ieee]
-            if 'preferred_endpoints' in settings:
+            if isinstance(settings, dict) and 'preferred_endpoints' in settings:
                 self._preferred_endpoints = settings['preferred_endpoints']
 
         # Schedule query only if absolutely nothing is known
@@ -108,33 +122,65 @@ class ZHADevice:
             self._schedule_basic_info_query()
 
         # Perform initial cleanup of state
-        self.sanitize_state()
+        self.sanitise_state()
 
         logger.info(f"[{self.ieee}] Device wrapper created - "
                     f"Model: {self.model}, Manufacturer: {self.manufacturer}, "
                     f"Quirk: {self.quirk_name}")
 
-    def sanitize_state(self):
+    def sanitise_state(self):
         """Purges invalid fields from self.state based on current capabilities."""
+
+        # 1. Remove generic keys from infrastructure clusters (OTA, Poll Control, etc.)
+        # Remove generic keys from infrastructure clusters
+        INFRASTRUCTURE_PREFIXES = (
+            'cluster_0019_', 'cluster_0021_', 'cluster_0020_', 'cluster_000a_'
+        )
+        infra_keys = [k for k in self.state if k.startswith(INFRASTRUCTURE_PREFIXES)]
+        if infra_keys:
+            logger.info(f"[{self.ieee}] 🧹 Purging infrastructure keys: {infra_keys}")
+            for k in infra_keys:
+                del self.state[k]
+
+        # 2. Remove stale opple raw struct keys (these should be parsed into named attributes)
+        OPPLE_PARSED_ATTRS = (
+            'opple_0x00dc', 'opple_0x00df', 'opple_0x00e5', 'opple_0x00f7',
+            'opple_0x00ee', 'opple_0x0271', 'opple_0x0275', 'opple_0x027b',
+            'opple_0x027e', 'opple_0x0280', 'opple_0x040a',
+        )
+        opple_stale = [k for k in self.state if k in OPPLE_PARSED_ATTRS]
+        if opple_stale:
+            logger.info(f"[{self.ieee}] 🧹 Purging stale opple struct keys: {opple_stale}")
+            for k in opple_stale:
+                del self.state[k]
+
+        # 3. Remove stale xiaomi raw struct keys (these should be parsed into named attributes)
+        XIAOMI_BASIC_RAW = ('attr_0000_ff01', 'attr_0000_ff02')
+        xiaomi_stale = [k for k in self.state if k in XIAOMI_BASIC_RAW]
+        if xiaomi_stale:
+            logger.info(f"[{self.ieee}] 🧹 Purging stale Xiaomi Basic keys: {xiaomi_stale}")
+            for k in xiaomi_stale:
+                del self.state[k]
+
+        # 4. Capability-based sanitisation
         if not hasattr(self, 'capabilities'):
             return
 
         keys_to_remove = []
         for key in self.state:
-            # Check if field is allowed
             if not self.capabilities.allows_field(key):
                 keys_to_remove.append(key)
 
         if keys_to_remove:
-            logger.info(f"[{self.ieee}] 🧹 SANITIZING STATE: Removing unsupported keys: {keys_to_remove}")
+            logger.info(f"[{self.ieee}] 🧹 SANITISING STATE: Removing unsupported keys: {keys_to_remove}")
             for key in keys_to_remove:
                 del self.state[key]
 
-            # Sync back to cache immediately if we purged something
-            if hasattr(self.service, 'state_cache'):
-                self.service.state_cache[self.ieee] = self.state.copy()
-                self.service._cache_dirty = True
-                logger.info(f"[{self.ieee}] 💾 Cache dirty flagged after sanitization")
+        # Sync back to cache if anything was purged
+        if (infra_keys or keys_to_remove) and hasattr(self, 'service') and hasattr(self.service, 'state_cache'):
+            self.service.state_cache[self.ieee] = self.state.copy()
+            self.service._cache_dirty = True
+            logger.info(f"[{self.ieee}] 💾 Cache dirty flagged after sanitisation")
 
     def _schedule_basic_info_query(self):
         """Schedule a background task to query basic info."""
@@ -165,7 +211,7 @@ class ZHADevice:
                         # Re-detect capabilities in case quirks apply now
                         self.capabilities._detect_capabilities()
                         # Sanitize state again with new capabilities
-                        self.sanitize_state()
+                        self.sanitise_state()
                         # Update state so cache gets the new info
                         self.update_state(updates)
                     break
@@ -208,40 +254,37 @@ class ZHADevice:
             self.handlers.clear()
 
         # 2. NUCLEAR OPTION: Scan for zombies from previous runs
-        # This fixes the issue where recreating the device wrapper leaves old handlers attached
-        # because the zigpy_dev object persists in memory.
         cleaned_count = 0
 
         try:
-            for ep in self.zigpy_dev.endpoints.values():
-                if ep.endpoint_id == 0: continue
+            for ep_id, ep in self.zigpy_dev.endpoints.items():
+                if ep_id == 0:  # Skip ZDO endpoint
+                    continue
 
                 # Check all clusters (In and Out)
-                all_clusters = list(ep.in_clusters.values()) + list(ep.out_clusters.values())
+                all_clusters = []
+                if hasattr(ep, 'in_clusters'):
+                    all_clusters.extend(ep.in_clusters.values())
+                if hasattr(ep, 'out_clusters'):
+                    all_clusters.extend(ep.out_clusters.values())
 
                 for cluster in all_clusters:
-                    if not hasattr(cluster, '_listeners'): continue
+                    if not hasattr(cluster, '_listeners'):
+                        continue
 
-                    # Create a copy to iterate safely while modifying
-                    # zigpy listeners are usually a list
                     current_listeners = list(cluster._listeners)
 
                     for listener in current_listeners:
                         is_zombie = False
 
-                        # Check if it's one of OUR handlers
-                        # Method A: Instance of ClusterHandler class
                         if isinstance(listener, ClusterHandler):
                             is_zombie = True
-
-                        # Method B: Check module name (handles reloads/different class refs)
                         elif hasattr(listener, '__module__') and 'handlers' in listener.__module__:
                             is_zombie = True
 
-                        if is_zombie:
-                            if listener in cluster._listeners:
-                                cluster._listeners.remove(listener)
-                                cleaned_count += 1
+                        if is_zombie and listener in cluster._listeners:
+                            cluster._listeners.remove(listener)
+                            cleaned_count += 1
 
         except Exception as e:
             logger.error(f"[{self.ieee}] Error during zombie cleanup: {e}")
@@ -249,6 +292,12 @@ class ZHADevice:
         if cleaned_count > 0:
             logger.warning(f"[{self.ieee}] 🧟 Removed {cleaned_count} zombie handlers from zigpy clusters")
 
+
+    def get_handlers_info(self) -> Dict:
+        return {
+            "count": len(self.handlers),
+            "clusters": [f"0x{k[1] if isinstance(k, tuple) else k:04x}" for k in self.handlers.keys()]
+        }
 
     def _identify_handlers(self):
         """Scan device endpoints and attach appropriate cluster handlers."""
@@ -282,26 +331,36 @@ class ZHADevice:
                 cid = cluster.cluster_id
                 handler_cls = HANDLER_REGISTRY.get(cid)
 
-                if handler_cls:
-                    if cid in preferred_endpoints and ep_id != preferred_endpoints[cid]:
-                        logger.debug(f"[{self.ieee}] Skipping cluster 0x{cid:04x} on EP{ep_id} (preferred EP{preferred_endpoints[cid]})")
+                if not handler_cls:
+                    if cid in SKIP_GENERIC_CLUSTERS:
+                        logger.debug(f"[{self.ieee}] Skipping infrastructure cluster 0x{cid:04X} — no generic fallback")
                         return
+                    from handlers.generic import GenericClusterHandler
+                    handler_cls = GenericClusterHandler
+                    logger.info(f"[{self.ieee}] No handler for 0x{cid:04X} on EP{ep_id} — using GenericClusterHandler")
 
-                    try:
-                        handler_key = (ep_id, cid)
-                        handler = handler_cls(self, cluster)
-                        self.handlers[handler_key] = handler
-                        if cid not in self.handlers or ep_id == 1:
-                            self.handlers[cid] = handler
-                    except Exception as e:
-                        logger.error(f"[{self.ieee}] Failed to attach handler for EP{ep_id} 0x{cid:04x}: {e}")
+                if cid in preferred_endpoints and ep_id != preferred_endpoints[cid]:
+                    logger.debug(f"[{self.ieee}] Skipping cluster 0x{cid:04x} on EP{ep_id} (preferred EP{preferred_endpoints[cid]})")
+                    return
+
+                try:
+                    handler_key = (ep_id, cid)
+                    handler = handler_cls(self, cluster)
+                    self.handlers[handler_key] = handler
+                    if cid not in self.handlers or ep_id == 1:
+                        self.handlers[cid] = handler
+                except Exception as e:
+                    logger.error(f"[{self.ieee}] Failed to attach handler for EP{ep_id} 0x{cid:04x}: {e}")
 
             for cluster in ep.in_clusters.values(): attach_handler(cluster, is_server=True)
             for cluster in ep.out_clusters.values(): attach_handler(cluster, is_server=False)
 
+        # FORCE POWER SOURCE UPDATE
+        self._is_battery_powered()
+
         if hasattr(self, 'capabilities'):
             self.capabilities._detect_capabilities()
-            self.sanitize_state()
+            self.sanitise_state()
 
     def restore_state(self, cached_state):
         """
@@ -332,7 +391,7 @@ class ZHADevice:
                 logger.info(f"[{self.ieee}] 💉 Injected missing Model: {self.model}")
 
             # 3. PURGE: Aggressively remove fields that don't belong
-            self.sanitize_state()
+            self.sanitise_state()
 
 
             # 4. SYNC BACK: CRITICAL STEP
@@ -455,6 +514,11 @@ class ZHADevice:
 
         if changed:
             changed['last_seen'] = self.last_seen
+
+            # Update state cache and schedule save
+            self.service.state_cache[self.ieee] = self.state.copy()
+            self.service._cache_dirty = True
+            self.service._schedule_save()
 
             # Update service cache
             self.service.handle_device_update(self, changed, qos=qos, endpoint_id=endpoint_id)
@@ -614,16 +678,18 @@ class ZHADevice:
         if role == "Coordinator":
             return True
 
-        # Passive event-driven devices are always "available"
-        # They only report on events, not periodic check-ins
-        if self._is_passive_device():
-            return True
-
         if self.last_seen == 0:
             return False
 
         elapsed = (time.time() * 1000) - self.last_seen
-        threshold = CONSIDER_UNAVAILABLE_BATTERY if self._is_battery_powered() else CONSIDER_UNAVAILABLE_MAINS
+
+        if self._is_passive_device():
+            threshold = CONSIDER_UNAVAILABLE_PASSIVE
+        elif self._is_battery_powered():
+            threshold = CONSIDER_UNAVAILABLE_BATTERY
+        else:
+            threshold = CONSIDER_UNAVAILABLE_MAINS
+
         return elapsed < (threshold * 1000)
 
     def _is_passive_device(self) -> bool:
@@ -643,66 +709,113 @@ class ZHADevice:
         # If it has passive sensors but no active reporting, it's passive-only
         return bool(has_passive) and not has_active
 
+    @property
+    def is_battery(self) -> bool:
+        """Public property to check battery status."""
+        return self._is_battery_powered()
+
     def _is_battery_powered(self) -> bool:
-        """Check if device is battery powered."""
-        # 1. Check strict Power Source attribute if available
-        power_source = str(self.state.get('power_source', '')).lower()
-        if 'mains' in power_source or 'dc' in power_source:
-            return False
-        if 'battery' in power_source:
-            return True
+        """Check if device is battery powered and update state."""
+        # Default to existing state if available, else assume Battery for EndDevices
+        is_battery = True
 
-        # 2. Check Logical Type (Router vs End Device)
+        # 1. Logical Type (Definitive)
         role = self.get_role()
-        if role == "Router" or role == "Coordinator":
-            return False
+        if role in ["Router", "Coordinator"]:
+            is_battery = False
 
-        # 3. Check for Green Power Proxy (0x0021) - Indicates Mains
-        # Skip ZDO (EP0) to avoid 'No such in_clusters ZDO command' error
+        # 2. Green Power Cluster (Strong Indicator of Mains)
         try:
             for ep_id, ep in self.zigpy_dev.endpoints.items():
-                if ep_id == 0: continue # SKIP ZDO
+                if ep_id == 0: continue
                 if 0x0021 in ep.in_clusters or 0x0021 in ep.out_clusters:
-                    return False
+                    is_battery = False
+                    break
         except Exception:
-            pass # Safety catch for iteration issues
-
-        # 4. Fallback for End Devices (Assume Battery unless proven otherwise)
-        if "lumi.switch" in str(self.model).lower() and "neutral" in str(self.model).lower():
             pass
 
-        return True
+        # 3. Model Name Heuristics
+        model = str(self.model).lower() if self.model else ""
+        if any(x in model for x in ['plug', 'socket', 'outlet', 'switch', 'light', 'bulb']):
+            is_battery = False
+
+        # 4. Sync result to self.state so Frontend sees it
+        current = self.state.get('power_source', 'Unknown')
+
+        if not is_battery:
+            self.state['power_source'] = 'Mains'
+        elif is_battery and current == 'Unknown':
+            self.state['power_source'] = 'Battery'
+
+        return is_battery
+
 
     async def configure(self, config: Optional[Dict] = None):
-        """Configure cluster handlers (bindings/reporting) and apply settings."""
+        """Configure cluster handlers with smart endpoint filtering."""
         logger.info(f"[{self.ieee}] Configuring device...")
 
         # Fast Path: Targeted Updates
         if config and config.get('updates'):
             updates = config['updates']
-
-            # Let each handler process its own config keys
             for handler in self.handlers.values():
                 if hasattr(handler, 'apply_configuration'):
                     try:
                         await handler.apply_configuration(updates)
                     except Exception as e:
-                        logger.warning(f"[{self.ieee}] Config failed for handler {handler.__class__.__name__}: {e}")
-
-            # QoS Setting
+                        logger.warning(f"[{self.ieee}] Config failed for {handler.__class__.__name__}: {e}")
             if 'qos' in config:
                 self.service.device_settings.setdefault(self.ieee, {})['qos'] = config['qos']
-
             return
 
+        # Slow Path: Smart Configuration using capabilities
+        stats = {
+            'configured': 0,
+            'skipped_not_configurable': 0,
+            'skipped_controller': 0,
+            'failed': 0,
+        }
+
         configured = set()
+
         for h in self.handlers.values():
-            if h in configured: continue
+            if h in configured:
+                continue
+
+            ep_id = h.endpoint.endpoint_id
+            cluster_id = h.cluster_id
+
+            # Check endpoint configurability
+            if not self.capabilities.is_endpoint_configurable(ep_id):
+                role = self.capabilities.get_endpoint_role(ep_id)
+                if role == 'controller':
+                    stats['skipped_controller'] += 1
+                    logger.debug(f"[{self.ieee}] Skip EP{ep_id}:0x{cluster_id:04x} (controller endpoint)")
+                else:
+                    stats['skipped_not_configurable'] += 1
+                    logger.debug(f"[{self.ieee}] Skip EP{ep_id}:0x{cluster_id:04x} (no configurable clusters)")
+                continue
+
+            # Check cluster configurability
+            if not self.capabilities.is_cluster_configurable(cluster_id, ep_id):
+                stats['skipped_not_configurable'] += 1
+                logger.debug(f"[{self.ieee}] Skip EP{ep_id}:0x{cluster_id:04x} (cluster not configurable)")
+                continue
+
+            # Configure
             try:
                 await h.configure()
                 configured.add(h)
+                stats['configured'] += 1
             except Exception as e:
-                logger.warning(f"[{self.ieee}] Config failed for 0x{h.cluster_id:04x}: {e}")
+                stats['failed'] += 1
+                logger.warning(f"[{self.ieee}] Config failed EP{ep_id}:0x{cluster_id:04x}: {e}")
+
+        # Summary
+        total_skipped = stats['skipped_not_configurable'] + stats['skipped_controller']
+        logger.info(
+            f"[{self.ieee}] Config: {stats['configured']} configured, "
+            f"{total_skipped} skipped, {stats['failed']} failed"
+        )
 
     async def interview(self):
         """Re-interview the device."""
@@ -772,139 +885,176 @@ class ZHADevice:
     @with_retries(max_retries=3, backoff_base=1.5, timeout=10.0)
     async def send_command(self, command: str, value=None, endpoint_id=None, data: Optional[Dict] = None):
         """Execute command on device."""
-        logger.info(f"[{self.ieee}] CMD: {command}={value} EP={endpoint_id}")
-        command = command.lower()
+        try:
+            packet_stats.record_tx(self.ieee)
+            logger.info(f"[{self.ieee}] CMD: {command}={value} EP={endpoint_id}")
+            command = command.lower()
 
-        # Normalize value types (frontend sends strings)
-        if value is not None and isinstance(value, str):
-            if value.replace('.', '').replace('-', '').isdigit():
-                value = float(value) if '.' in value else int(value)
+            # Normalize value types (frontend sends strings)
+            if value is not None and isinstance(value, str):
+                if value.replace('.', '').replace('-', '').isdigit():
+                    value = float(value) if '.' in value else int(value)
 
-        def get_handler(cid):
-            if endpoint_id:
-                if (endpoint_id, cid) in self.handlers:
-                    return self.handlers[(endpoint_id, cid)]
-            return self.handlers.get(cid)
+            def get_handler(cid):
+                if endpoint_id:
+                    if (endpoint_id, cid) in self.handlers:
+                        return self.handlers[(endpoint_id, cid)]
+                return self.handlers.get(cid)
 
-        # Check capabilities safely
-        has_cap = getattr(self.capabilities, 'has_capability', lambda x: False)
+            # Check capabilities safely
+            has_cap = getattr(self.capabilities, 'has_capability', lambda x: False)
 
-        # Track optimistic state changes
-        optimistic_state = {}
-        success = False
+            # Track optimistic state changes
+            optimistic_state = {}
+            success = False
 
-        # LIGHT / SWITCH LOGIC
-        if has_cap('light') or has_cap('switch'):
-            if command in ['on', 'off', 'toggle']:
-                h = get_handler(0x0006)
-                if h:
-                    if command == 'on':
-                        await h.turn_on()
-                        optimistic_state['state'] = 'ON'
-                        optimistic_state['on'] = True
-                    elif command == 'off':
-                        # Extract transition from data dict
-                        transition = data.get('transition') if data else None
-                        transition_time = int(transition * 10) if transition else None
-                        await h.turn_off(transition_time=transition_time)
-                        optimistic_state['state'] = 'OFF'
-                        optimistic_state['on'] = False
+            # LIGHT / SWITCH LOGIC
+            if has_cap('light') or has_cap('switch'):
+                if command in ['on', 'off', 'toggle']:
+                    h = get_handler(0x0006)
+                    if h:
+                        if command == 'on':
+                            await h.turn_on()
+                            optimistic_state['state'] = 'ON'
+                            optimistic_state['on'] = True
+                        elif command == 'off':
+                            # Extract transition from data dict
+                            transition = data.get('transition') if data else None
+                            transition_time = int(transition * 10) if transition else None
+                            await h.turn_off(transition_time=transition_time)
+                            optimistic_state['state'] = 'OFF'
+                            optimistic_state['on'] = False
+                        else:
+                            await h.toggle()
+                            # Toggle: invert current state
+                            current = self.state.get('on', False)
+                            optimistic_state['state'] = 'OFF' if current else 'ON'
+                            optimistic_state['on'] = not current
+                        success = True
+
+                elif command == 'brightness' and value is not None:
+                    h = get_handler(0x0008)
+                    if h:
+                        await h.set_brightness_pct(int(value))
+                        # Store both formats for compatibility
+                        optimistic_state['brightness'] = int(value * 2.54) if value <= 100 else int(value)
+                        optimistic_state['level'] = int(value) if value <= 100 else int(value / 2.54)
+                        # Brightness > 0 implies ON
+                        if value > 0:
+                            optimistic_state['state'] = 'ON'
+                            optimistic_state['on'] = True
+                        success = True
+
+                elif command == 'color_temp' and value is not None:
+                    h = get_handler(0x0300)
+                    if h:
+                        await h.set_color_temp_kelvin(int(value))
+                        mireds = int(1000000 / value) if value > 0 else 250
+                        optimistic_state['color_temp'] = mireds
+                        optimistic_state['color_temp_mireds'] = mireds
+                        success = True
                     else:
-                        await h.toggle()
-                        # Toggle: invert current state
-                        current = self.state.get('on', False)
-                        optimistic_state['state'] = 'OFF' if current else 'ON'
-                        optimistic_state['on'] = not current
-                    success = True
+                        logger.error(f"[{self.ieee}] No ColorClusterHandler (0x0300) for color_temp")
 
-            elif command == 'brightness' and value is not None:
-                h = get_handler(0x0008)
-                if h:
-                    await h.set_brightness_pct(int(value))
-                    # Store both formats for compatibility
-                    optimistic_state['brightness'] = int(value * 2.54) if value <= 100 else int(value)
-                    optimistic_state['level'] = int(value) if value <= 100 else int(value / 2.54)
-                    # Brightness > 0 implies ON
-                    if value > 0:
-                        optimistic_state['state'] = 'ON'
-                        optimistic_state['on'] = True
-                    success = True
+                elif command == 'xy_color' and value is not None:
+                    h = get_handler(0x0300)
+                    if h:
+                        x, y = value if isinstance(value, (list, tuple)) else (0.5, 0.5)
+                        if isinstance(x, float) and x <= 1.0:
+                            x = int(x * 65535)
+                        if isinstance(y, float) and y <= 1.0:
+                            y = int(y * 65535)
+                        await h.set_xy_color(int(x), int(y))
+                        optimistic_state['color_x'] = x
+                        optimistic_state['color_y'] = y
+                        optimistic_state['color_mode'] = 'xy'
+                        success = True
+                    else:
+                        logger.error(f"[{self.ieee}] No ColorClusterHandler (0x0300) for xy_color")
 
-            elif command == 'color_temp' and value is not None:
-                h = get_handler(0x0300)
-                if h:
-                    await h.set_color_temp_kelvin(int(value))
-                    # Convert Kelvin to mireds for state
-                    mireds = int(1000000 / value) if value > 0 else 250
-                    optimistic_state['color_temp'] = mireds
-                    optimistic_state['color_temp_mireds'] = mireds
-                    success = True
+                elif command == 'hs_color' and value is not None:
+                    h = get_handler(0x0300)
+                    if h:
+                        hue, sat = value if isinstance(value, (list, tuple)) else (0, 100)
+                        zcl_hue = int((hue / 360) * 254)
+                        zcl_sat = int((sat / 100) * 254)
+                        await h.set_hue_sat(zcl_hue, zcl_sat)
+                        optimistic_state['hue'] = zcl_hue
+                        optimistic_state['saturation'] = zcl_sat
+                        optimistic_state['color_mode'] = 'hs'
+                        success = True
+                    else:
+                        logger.error(f"[{self.ieee}] No ColorClusterHandler (0x0300) for hs_color")
 
-        # AQARA MANUFACTURER CLUSTER COMMANDS (0xFCC0)
-        if not success and command in ['window_detection', 'valve_detection', 'motor_calibration', 'child_lock']:
-            h = get_handler(0xFCC0)
-            if h and hasattr(h, 'process_command'):
-                h.process_command(command, value)
-                success = True
-                # Optimistic updates
-                if command == 'motor_calibration':
-                    optimistic_state['motor_calibration'] = 'calibrating' if value else 'idle'
-                else:
-                    optimistic_state[command] = bool(value)
-
-        # HVAC COMMANDS - route to handler if process_command exists
-        if not success and command in ['temperature', 'system_mode']:
-            h = get_handler(0x0201)
-            if h:
-                if hasattr(h, 'process_command'):
+            # AQARA MANUFACTURER CLUSTER COMMANDS (0xFCC0)
+            if not success and command in ['window_detection', 'valve_detection', 'motor_calibration', 'child_lock']:
+                h = get_handler(0xFCC0)
+                if h and hasattr(h, 'process_command'):
                     h.process_command(command, value)
                     success = True
                     # Optimistic updates
-                    if command == 'temperature':
+                    if command == 'motor_calibration':
+                        optimistic_state['motor_calibration'] = 'calibrating' if value else 'idle'
+                    else:
+                        optimistic_state[command] = bool(value)
+
+            # HVAC COMMANDS - route to handler if process_command exists
+            if not success and command in ['temperature', 'system_mode']:
+                h = get_handler(0x0201)
+                if h:
+                    if hasattr(h, 'process_command'):
+                        h.process_command(command, value)
+                        success = True
+                        # Optimistic updates
+                        if command == 'temperature':
+                            optimistic_state['temperature_setpoint'] = float(value)
+                        elif command == 'system_mode':
+                            optimistic_state['system_mode'] = str(value).lower()
+                    elif command == 'temperature':
+                        # Fallback for compatibility with Hive receivers
+                        await h.set_heating_setpoint(float(value))
                         optimistic_state['temperature_setpoint'] = float(value)
-                    elif command == 'system_mode':
-                        optimistic_state['system_mode'] = str(value).lower()
-                elif command == 'temperature':
-                    # Fallback for compatibility with Hive receivers
-                    await h.set_heating_setpoint(float(value))
-                    optimistic_state['temperature_setpoint'] = float(value)
+                        success = True
+
+            # GENERAL COMMANDS (Fallthrough)
+            elif not success and command == 'identify':
+                h = get_handler(0x0003)
+                if h:
+                    await h.identify(5)
                     success = True
 
-        # GENERAL COMMANDS (Fallthrough)
-        elif not success and command == 'identify':
-            h = get_handler(0x0003)
-            if h:
-                await h.identify(5)
-                success = True
+            # COVER COMMANDS
+            if not success and (has_cap('cover') or command in ['open', 'close', 'stop', 'position']):
+                h = get_handler(0x0102)
+                if h:
+                    if command == 'open':
+                        await h.open()
+                        optimistic_state['position'] = 100
+                        optimistic_state['state'] = 'open'
+                    elif command == 'close':
+                        await h.close()
+                        optimistic_state['position'] = 0
+                        optimistic_state['state'] = 'closed'
+                    elif command == 'stop':
+                        await h.stop()
+                    elif command == 'position' and value is not None:
+                        await h.set_position(int(value))
+                        optimistic_state['position'] = int(value)
+                    success = True
 
-        # COVER COMMANDS
-        if not success and (has_cap('cover') or command in ['open', 'close', 'stop', 'position']):
-            h = get_handler(0x0102)
-            if h:
-                if command == 'open':
-                    await h.open()
-                    optimistic_state['position'] = 100
-                    optimistic_state['state'] = 'open'
-                elif command == 'close':
-                    await h.close()
-                    optimistic_state['position'] = 0
-                    optimistic_state['state'] = 'closed'
-                elif command == 'stop':
-                    await h.stop()
-                elif command == 'position' and value is not None:
-                    await h.set_position(int(value))
-                    optimistic_state['position'] = int(value)
-                success = True
+            # =========================================================================
+            # OPTIMISTIC STATE UPDATE
+            # =========================================================================
+            if success and optimistic_state:
+                logger.info(f"[{self.ieee}] Optimistic update: {optimistic_state}")
+                # This triggers handle_device_update AND _publish_json_state
+                self.update_state(optimistic_state, endpoint_id=endpoint_id)
 
-        # =========================================================================
-        # OPTIMISTIC STATE UPDATE
-        # =========================================================================
-        if success and optimistic_state:
-            logger.info(f"[{self.ieee}] Optimistic update: {optimistic_state}")
-            # This triggers handle_device_update AND _publish_json_state
-            self.update_state(optimistic_state, endpoint_id=endpoint_id)
+            return success
 
-        return success
+        except Exception as e:
+            packet_stats.record_error(self.ieee)  # Track error
+            raise
 
     async def read_attribute_raw(self, ep_id: int, cluster_id: int, attr_name: str) -> Any:
         ep = self.zigpy_dev.endpoints.get(ep_id)
@@ -920,10 +1070,18 @@ class ZHADevice:
 
     def get_role(self) -> str:
         d = self.zigpy_dev
-        if self.service.app.state.node_info.ieee == d.ieee: return "Coordinator"
-        if "_TZE" in str(d.manufacturer): return "Router"
+        if self.service.app.state.node_info.ieee == d.ieee:
+            return "Coordinator"
+        if "_TZE" in str(d.manufacturer):
+            return "Router"
+
+        # For Aqara/LUMI devices - check node_desc
         if hasattr(d, 'node_desc') and d.node_desc:
-            return "Router" if d.node_desc.logical_type == 1 else "EndDevice"
+            role = "Router" if d.node_desc.logical_type == 1 else "EndDevice"
+            logger.debug(f"[{d.ieee}] LUMI device: logical_type={d.node_desc.logical_type} -> {role}")
+            return role
+
+        logger.debug(f"[{d.ieee}] No node_desc found")
         return "EndDevice"
 
     def get_binding_preferences(self) -> Dict[str, Dict[int, int]]:
@@ -1003,7 +1161,10 @@ class ZHADevice:
         Helper to enforce JSON schema on Light/Cover configs.
         """
         component = payload.get('component')
-        config = payload.get('config', payload)  # Get nested config or use payload directly
+        if component not in ['light', 'cover']:
+            return
+
+        config = payload.get('config', payload)
 
         if component == "light":
             if 'schema' not in config:

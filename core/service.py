@@ -809,6 +809,10 @@ class ZigbeeService(
         self.state_cache[ieee].update(sanitise_device_state(cache_update))
         self._cache_dirty = True
 
+        # Record state changes to telemetry DB
+        if hasattr(self, 'telemetry_collector') and self.telemetry_collector:
+            self.telemetry_collector.record_state_change(ieee, changed_data)
+
         # Emit to WebSocket (only changed data)
         self._emit_sync("device_updated", {"ieee": ieee, "data": safe_mqtt_payload})
 
