@@ -4,9 +4,7 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="adding priv and sec commands to podman args">
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-    </list>
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="final dir and dep fixes" />
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -106,14 +104,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00016" summary="xml">
-      <option name="closed" value="true" />
-      <created>1773921189139</created>
-      <option name="number" value="00016" />
-      <option name="presentableId" value="LOCAL-00016" />
-      <option name="project" value="LOCAL" />
-      <updated>1773921189139</updated>
     </task>
     <task id="LOCAL-00017" summary="new ai NLM for automations">
       <option name="closed" value="true" />
@@ -499,7 +489,15 @@
       <option name="project" value="LOCAL" />
       <updated>1774272291553</updated>
     </task>
-    <option name="localTasksCounter" value="65" />
+    <task id="LOCAL-00065" summary="final dir and dep fixes">
+      <option name="closed" value="true" />
+      <created>1774273718909</created>
+      <option name="number" value="00065" />
+      <option name="presentableId" value="LOCAL-00065" />
+      <option name="project" value="LOCAL" />
+      <updated>1774273718909</updated>
+    </task>
+    <option name="localTasksCounter" value="66" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -514,7 +512,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="improve the editor to verify imports before allowing file to be saved" />
     <MESSAGE value="migrate to duckdb for persistence" />
     <MESSAGE value="result patch for db" />
     <MESSAGE value="new bootguard to  recover from backup in the event of restart failure" />
@@ -539,6 +536,7 @@
     <MESSAGE value="libglib2.0-0 \\ added" />
     <MESSAGE value="remove usns arg" />
     <MESSAGE value="adding priv and sec commands to podman args" />
-    <option name="LAST_COMMIT_MESSAGE" value="adding priv and sec commands to podman args" />
+    <MESSAGE value="final dir and dep fixes" />
+    <option name="LAST_COMMIT_MESSAGE" value="final dir and dep fixes" />
   </component>
 </project>

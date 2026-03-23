@@ -323,13 +323,12 @@ prepare_data_dirs() {
         mkdir -p "$d"
     done
 
-    chown -R 1000:1000 "$DATA_DIR"
-    chmod -R u+rwX "$DATA_DIR"
-    ok "Volume permissions set (owner: 1000:1000) at ${DATA_DIR}"
+    # Permissions are managed inside the container via the Containerfile.
+    # Host dirs are owned by the running user and accessible via --privileged.
+    ok "Data directories ready at ${DATA_DIR}"
 
     if [[ ! -f "$DATA_DIR/config/config.yaml" ]] && [[ -f "$APP_DIR/config/config.yaml" ]]; then
         cp "$APP_DIR/config/config.yaml" "$DATA_DIR/config/config.yaml"
-        chown 1000:1000 "$DATA_DIR/config/config.yaml"
         ok "Default config.yaml copied to ${DATA_DIR}/config/"
     fi
 
@@ -372,11 +371,10 @@ run_container() {
         fi
     fi
 
-
-
+    # Podman rootless keep-id: do NOT combine with --group-add as they conflict.
+    # dialout access is handled via matching GID baked into the image at build time.
     if [[ "$RUNTIME" == "podman" ]]; then
-        run_args+=(--security-opt label=disable)
-        run_args+=(--privileged )
+        run_args+=(--userns keep-id)
     fi
 
     info "Starting container '${CONTAINER_NAME}' ..."
