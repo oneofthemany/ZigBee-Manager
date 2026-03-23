@@ -4,7 +4,9 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="chmod after dir creation - duh" />
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="/data added to chown for matter server">
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+    </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -104,14 +106,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00027" summary="new system tab">
-      <option name="closed" value="true" />
-      <created>1774009387488</created>
-      <option name="number" value="00027" />
-      <option name="presentableId" value="LOCAL-00027" />
-      <option name="project" value="LOCAL" />
-      <updated>1774009387489</updated>
     </task>
     <task id="LOCAL-00028" summary="new telemetry collector">
       <option name="closed" value="true" />
@@ -497,7 +491,15 @@
       <option name="project" value="LOCAL" />
       <updated>1774279066715</updated>
     </task>
-    <option name="localTasksCounter" value="76" />
+    <task id="LOCAL-00076" summary="/data added to chown for matter server">
+      <option name="closed" value="true" />
+      <created>1774279389514</created>
+      <option name="number" value="00076" />
+      <option name="presentableId" value="LOCAL-00076" />
+      <option name="project" value="LOCAL" />
+      <updated>1774279389514</updated>
+    </task>
+    <option name="localTasksCounter" value="77" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -512,7 +514,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="xml push" />
     <MESSAGE value="new build script for automated install from repo" />
     <MESSAGE value="head -1 bug fix" />
     <MESSAGE value="missing fix" />
@@ -537,6 +538,7 @@
     <MESSAGE value="typo in dir chown" />
     <MESSAGE value="space added" />
     <MESSAGE value="chmod after dir creation - duh" />
-    <option name="LAST_COMMIT_MESSAGE" value="chmod after dir creation - duh" />
+    <MESSAGE value="/data added to chown for matter server" />
+    <option name="LAST_COMMIT_MESSAGE" value="/data added to chown for matter server" />
   </component>
 </project>

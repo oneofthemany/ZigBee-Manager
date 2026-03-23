@@ -370,7 +370,7 @@ run_container() {
 
     if [[ "$RUNTIME" == "podman" ]]; then
         run_args+=(--security-opt label=disable)
-        run_args+=(--privileged)
+        #run_args+=(--privileged)
     fi
 
     info "Starting container '${CONTAINER_NAME}' ..."
