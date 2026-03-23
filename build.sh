@@ -36,13 +36,16 @@ detect_runtime() {
     else
         die "Neither podman nor docker found. Please install one and re-run."
     fi
-    ok "Container runtime: ${BOLD}$RUNTIME${NC} ($(${RUNTIME} --version | head -1))"
+    # Capture full version into variable first — avoids SIGPIPE/pipefail from | head -1
+    local ver
+    ver=$("$RUNTIME" --version 2>&1 || true)
+    ver="${ver%%$'\n'*}"
+    ok "Container runtime: ${BOLD}$RUNTIME${NC} ($ver)"
 }
 
 # ── Port availability ─────────────────────────────────────────────────────────
 port_in_use() {
     local port=$1
-    # ss preferred; fall back to netstat, then /proc/net/tcp
     if command -v ss &>/dev/null; then
         ss -tlnH "sport = :${port}" 2>/dev/null | grep -q .
     elif command -v netstat &>/dev/null; then
@@ -103,7 +106,6 @@ fetch_repo() {
 # ── USB / Zigbee coordinator detection ───────────────────────────────────────
 detect_usb_coordinator() {
     USB_DEVICE=""
-    # Common Zigbee coordinator USB device patterns
     local candidates=(
         /dev/serial/by-id/*CP2102*
         /dev/serial/by-id/*EZSP*
@@ -116,7 +118,6 @@ detect_usb_coordinator() {
     )
 
     for candidate in "${candidates[@]}"; do
-        # expand glob without failing on no match
         for dev in $candidate; do
             [[ -c "$dev" ]] && { USB_DEVICE="$dev"; break 2; }
         done
@@ -130,34 +131,30 @@ detect_usb_coordinator() {
     fi
 }
 
-# ── Write Containerfile (Dockerfile) ─────────────────────────────────────────
+# ── Write Containerfile ───────────────────────────────────────────────────────
 write_containerfile() {
     cat > "$APP_DIR/Containerfile" << 'DOCKERFILE'
 FROM python:3.11-slim
 
-# System deps — minimal, no package-manager assumptions needed in image
 RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential \
         git \
         libffi-dev \
         libssl-dev \
         logrotate \
+        curl \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# Dependencies first (layer cache)
 COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip \
  && pip install --no-cache-dir -r requirements.txt
 
-# Application source
 COPY . .
 
-# /data required by CHIP SDK (Matter)
 RUN mkdir -p /data /app/data/matter /app/logs /app/config
 
-# Non-root user
 RUN groupadd -r zigbee && useradd -r -g zigbee -d /app zigbee \
  && chown -R zigbee:zigbee /app /data
 
@@ -185,16 +182,9 @@ build_image() {
 
 # ── Prepare host data directories ─────────────────────────────────────────────
 prepare_data_dirs() {
-    local dirs=(
-        "$DATA_DIR/config"
-        "$DATA_DIR/data"
-        "$DATA_DIR/logs"
-    )
-    for d in "${dirs[@]}"; do
-        mkdir -p "$d"
-    done
+    local dirs=("$DATA_DIR/config" "$DATA_DIR/data" "$DATA_DIR/logs")
+    for d in "${dirs[@]}"; do mkdir -p "$d"; done
 
-    # Seed config.yaml if not already present
     if [[ ! -f "$DATA_DIR/config/config.yaml" ]] && [[ -f "$APP_DIR/config/config.yaml" ]]; then
         cp "$APP_DIR/config/config.yaml" "$DATA_DIR/config/config.yaml"
         ok "Default config.yaml copied to ${DATA_DIR}/config/"
@@ -208,7 +198,6 @@ run_container() {
     local host_port=$1
     local host_matter_port=$2
 
-    # Stop/remove existing container if present
     if "$RUNTIME" inspect "$CONTAINER_NAME" &>/dev/null 2>&1; then
         warn "Existing container '${CONTAINER_NAME}' found — removing..."
         "$RUNTIME" rm -f "$CONTAINER_NAME"
@@ -225,10 +214,8 @@ run_container() {
         --volume "${DATA_DIR}/logs:/app/logs:Z"
     )
 
-    # USB device passthrough
-    if [[ -n "$USB_DEVICE" ]]; then
+    if [[ -n "${USB_DEVICE:-}" ]]; then
         run_args+=(--device "${USB_DEVICE}:${USB_DEVICE}")
-        # Podman: also pass the real path if symlink
         if [[ "$RUNTIME" == "podman" && -L "$USB_DEVICE" ]]; then
             local real_dev
             real_dev=$(readlink -f "$USB_DEVICE")
@@ -236,9 +223,8 @@ run_container() {
         fi
     fi
 
-    # Podman rootless: add userns keep-id so volume mounts are writable
     if [[ "$RUNTIME" == "podman" ]]; then
-        run_args+=(--userns keep-id)
+        run_args+=(--usns keep-id)
     fi
 
     info "Starting container '${CONTAINER_NAME}' ..."
@@ -246,7 +232,7 @@ run_container() {
     ok "Container started."
 }
 
-# ── Systemd / launchd / init.d auto-start (optional) ─────────────────────────
+# ── Systemd auto-start ────────────────────────────────────────────────────────
 install_autostart() {
     if ! command -v systemctl &>/dev/null; then
         warn "systemd not found — skipping auto-start setup."
@@ -256,7 +242,6 @@ install_autostart() {
     local unit_name="zigbee-matter-manager-container"
     local unit_file="/etc/systemd/system/${unit_name}.service"
 
-    # Podman can generate a unit directly
     if [[ "$RUNTIME" == "podman" ]]; then
         info "Generating systemd unit via podman generate systemd..."
         local unit_content
@@ -270,7 +255,6 @@ install_autostart() {
         fi
     fi
 
-    # Generic fallback unit
     sudo tee "$unit_file" > /dev/null << UNIT
 [Unit]
 Description=Zigbee Matter Manager Container
@@ -315,15 +299,15 @@ FORCE_REBUILD=false
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --port)       PREFERRED_PORT="$2";   shift 2 ;;
-        --usb)        USB_DEVICE="$2";       shift 2 ;;
-        --dir)        APP_DIR="$2";          shift 2 ;;
-        --data)       DATA_DIR="$2";         shift 2 ;;
-        --branch)     REPO_BRANCH="$2";      shift 2 ;;
-        --runtime)    RUNTIME="$2";          shift 2 ;;
+        --port)         PREFERRED_PORT="$2";     shift 2 ;;
+        --usb)          USB_DEVICE="$2";         shift 2 ;;
+        --dir)          APP_DIR="$2";            shift 2 ;;
+        --data)         DATA_DIR="$2";           shift 2 ;;
+        --branch)       REPO_BRANCH="$2";        shift 2 ;;
+        --runtime)      RUNTIME="$2";            shift 2 ;;
         --no-autostart) INSTALL_AUTOSTART=false; shift ;;
-        --rebuild)    FORCE_REBUILD=true;    shift ;;
-        --help|-h)    usage ;;
+        --rebuild)      FORCE_REBUILD=true;      shift ;;
+        --help|-h)      usage ;;
         *) die "Unknown argument: $1. Use --help for usage." ;;
     esac
 done
@@ -339,17 +323,14 @@ check_deps
 detect_runtime
 fetch_repo
 
-# USB coordinator (skip if already set via --usb)
 [[ -z "${USB_DEVICE:-}" ]] && detect_usb_coordinator
 
-# Port selection
 HOST_PORT=$(pick_host_port "$PREFERRED_PORT")
 HOST_MATTER_PORT=$(pick_host_port "$MATTER_INTERNAL_PORT")
 
 write_containerfile
 
-# Skip rebuild if image already exists and --rebuild not set
-if "$FORCE_REBUILD" || ! "$RUNTIME" image inspect "${IMAGE_NAME}:latest" &>/dev/null 2>&1; then
+if [[ "$FORCE_REBUILD" == true ]] || ! "$RUNTIME" image inspect "${IMAGE_NAME}:latest" &>/dev/null 2>&1; then
     build_image
 else
     info "Image ${IMAGE_NAME}:latest already exists — skipping build (use --rebuild to force)."
@@ -361,15 +342,18 @@ run_container "$HOST_PORT" "$HOST_MATTER_PORT"
 [[ "$INSTALL_AUTOSTART" == true ]] && install_autostart
 
 # ── Summary ───────────────────────────────────────────────────────────────────
+# Capture host IP without a pipe — avoids SIGPIPE/pipefail
+HOST_IP=$(hostname -I 2>/dev/null || hostname)
+HOST_IP="${HOST_IP%% *}"
+
 echo
 echo -e "${BOLD}=====================================================${NC}"
 echo -e "${GREEN}${BOLD}   Deployment Complete!${NC}"
 echo -e "${BOLD}=====================================================${NC}"
 echo
-echo -e "  ${BOLD}Web Interface:${NC}  http://$(hostname -I | awk '{print $1}'):${HOST_PORT}"
+echo -e "  ${BOLD}Web Interface:${NC}  http://${HOST_IP}:${HOST_PORT}"
 echo -e "  ${BOLD}Matter Port:${NC}    ${HOST_MATTER_PORT} (internal ${MATTER_INTERNAL_PORT})"
-[[ -n "${USB_DEVICE:-}" ]] && \
-echo -e "  ${BOLD}Zigbee USB:${NC}     ${USB_DEVICE}"
+[[ -n "${USB_DEVICE:-}" ]] && echo -e "  ${BOLD}Zigbee USB:${NC}     ${USB_DEVICE}"
 echo -e "  ${BOLD}Config:${NC}         ${DATA_DIR}/config/config.yaml"
 echo -e "  ${BOLD}Logs:${NC}           ${DATA_DIR}/logs/"
 echo -e "  ${BOLD}Runtime:${NC}        ${RUNTIME}"
