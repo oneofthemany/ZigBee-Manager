@@ -226,7 +226,7 @@ run_container() {
     fi
 
     if [[ "$RUNTIME" == "podman" ]]; then
-        run_args+=(--usns keep-id)
+        run_args+=(--userns keep-id)
     fi
 
     info "Starting container '${CONTAINER_NAME}' ..."
