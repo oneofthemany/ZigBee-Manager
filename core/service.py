@@ -294,19 +294,26 @@ class ZigbeeService(
                 'config': self._config['ezsp_config']
             }
 
-        # Probe radio type
-        radio_type = await self._probe_radio_type()
-        logger.info(f"✅ Detected radio type: {radio_type}")
+        # Probe radio type + serial parameters (protocol-level handshake)
+        probe_result = await self._probe_radio_type()
+        radio_type = probe_result["radio_type"]
+        logger.info(
+            f"✅ Detected radio: {radio_type} @ "
+            f"{probe_result.get('baudrate', '?')} baud / "
+            f"{probe_result.get('flow_control', '?')} flow"
+        )
 
         # Import correct driver
         if radio_type == "EZSP":
             from bellows.zigbee.application import ControllerApplication
         elif radio_type == "ZNP":
             from zigpy_znp.zigbee.application import ControllerApplication
+        elif radio_type == "DECONZ":
+            from zigpy_deconz.zigbee.application import ControllerApplication
         else:
             raise RuntimeError(f"Unsupported radio type: {radio_type}")
 
-        # Build config
+        # Build config using detected serial parameters
         if radio_type == "EZSP":
             ezsp_conf = {}
             user_ezsp = self._config.get('ezsp', {}).get('config', {})
@@ -314,9 +321,11 @@ class ZigbeeService(
                 if key.startswith('CONFIG_'):
                     ezsp_conf[key] = val
                     logger.info(f"User override: {key} = {val}")
-            conf = self._build_ezsp_config(ezsp_conf, network_key)
+            conf = self._build_ezsp_config(ezsp_conf, network_key, detected=probe_result)
         elif radio_type == "ZNP":
-            conf = self._build_znp_config(network_key)
+            conf = self._build_znp_config(network_key, detected=probe_result)
+        elif radio_type == "DECONZ":
+            conf = self._build_deconz_config(network_key, detected=probe_result)
 
         # Robust startup with retries
         for attempt in range(12):
