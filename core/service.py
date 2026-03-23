@@ -682,6 +682,40 @@ class ZigbeeService(
         except Exception as e:
             logger.debug(f"[{ieee}] Zone LQI capture error: {e}")
 
+        # 5. CONTACT SENSOR FALLBACK
+        # zigpy may not dispatch OnOff Report Attributes on output clusters
+        # to handlers correctly — handle directly from raw message
+        try:
+            if cluster == 0x0006 and ieee in self.devices:
+                zdev = self.devices[ieee]
+                if hasattr(zdev, 'capabilities') and zdev.capabilities.has_capability('contact_sensor'):
+                    if len(message) >= 7:
+                        command_id = message[2]
+                        if command_id == 0x0A:  # Report Attributes
+                            attr_id = message[3] | (message[4] << 8)
+                            if attr_id == 0x0000:  # OnOff attribute
+                                value = bool(message[6])
+                                is_open = value
+                                ep_id = src_ep
+                                updates = {
+                                    f"contact_{ep_id}": not is_open,
+                                    f"is_open_{ep_id}": is_open,
+                                    f"is_closed_{ep_id}": not is_open,
+                                    f"state_{ep_id}": "OPEN" if is_open else "CLOSED",
+                                }
+                                if ep_id == 1:
+                                    updates.update({
+                                        "contact": not is_open,
+                                        "is_open": is_open,
+                                        "is_closed": not is_open,
+                                        "state": "OPEN" if is_open else "CLOSED",
+                                    })
+                                zdev.update_state(updates, endpoint_id=ep_id)
+                                zdev.last_seen = int(time.time() * 1000)
+                                logger.info(f"[{ieee}] Contact sensor: {'OPEN' if is_open else 'CLOSED'}")
+        except Exception as e:
+            logger.debug(f"[{ieee}] Contact sensor fallback error: {e}")
+
     # =========================================================================
     # DEVICE UPDATE HANDLING
     # =========================================================================
@@ -774,10 +808,6 @@ class ZigbeeService(
         cache_update['lqi'] = getattr(zha_device.zigpy_dev, 'lqi', 0) or 0
         self.state_cache[ieee].update(sanitise_device_state(cache_update))
         self._cache_dirty = True
-
-        # Record state changes to telemetry DB
-        if hasattr(self, 'telemetry_collector') and self.telemetry_collector:
-            self.telemetry_collector.record_state_change(ieee, changed_data)
 
         # Emit to WebSocket (only changed data)
         self._emit_sync("device_updated", {"ieee": ieee, "data": safe_mqtt_payload})

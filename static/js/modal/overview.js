@@ -97,7 +97,8 @@ export function renderOverviewTab(device) {
     const hasContactSensing = () => {
         const hasIASZoneCluster = hasCluster(0x0500);
         const hasContactData = s.contact !== undefined || s.is_open !== undefined;
-        return hasIASZoneCluster && hasContactData;
+        const hasContactCapability = (device.capability_list || []).includes('contact_sensor');
+        return (hasIASZoneCluster && hasContactData) || hasContactCapability || hasContactData;
     };
 
     const hasIASZone = () => {

@@ -248,6 +248,9 @@ class OnOffHandler(ClusterHandler):
 
     def _is_contact_sensor(self) -> bool:
         """Detect if this OnOff cluster is from a contact sensor."""
+        if hasattr(self.device, 'capabilities') and self.device.capabilities.has_capability('contact_sensor'):
+            return True
+
         ep = self.endpoint
 
         # Count non-ZDO endpoints
