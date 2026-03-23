@@ -286,16 +286,18 @@ WORKDIR /app
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip \
- && pip install --no-cache-dir -r requirements.txt
+ && pip install --no-cache-dir -r requirements.txt \
+ && pip install --no-cache-dir "python-matter-server[server]"
 
 COPY . .
 
 # /data required by CHIP SDK (Matter)
-RUN mkdir -p /data /app/data/matter /app/logs /app/config
+RUN mkdir -p /data /app/data/matter /app/logs /app/config /app/data/backups
 
 # Create zigbee user (UID 1000) with dialout membership for tty access.
 # --group-add at runtime injects the host's actual dialout GID as supplemental.
 RUN groupadd -r -g 20 dialout 2>/dev/null || true \
+ && groupmod -g ${DIALOUT_GID:-20} dialout 2>/dev/null || true \
  && groupadd -r zigbee \
  && useradd -r -u 1000 -g zigbee -G dialout -d /app zigbee \
  && chown -R zigbee:zigbee /app /data
@@ -316,6 +318,7 @@ DOCKERFILE
 build_image() {
     info "Building image ${BOLD}${IMAGE_NAME}${NC} ..."
     "$RUNTIME" build \
+        --build-arg DIALOUT_GID="${DIALOUT_GID:-20}" \
         --tag "${IMAGE_NAME}:latest" \
         --file "$APP_DIR/Containerfile" \
         "$APP_DIR"
