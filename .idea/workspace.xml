@@ -4,10 +4,7 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="commented out priv to test access to device">
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/build.sh" beforeDir="false" afterPath="$PROJECT_DIR$/build.sh" afterDir="false" />
-    </list>
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="priv to true" />
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -132,14 +129,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00031" summary="new system toast notifications">
-      <option name="closed" value="true" />
-      <created>1774009478845</created>
-      <option name="number" value="00031" />
-      <option name="presentableId" value="LOCAL-00031" />
-      <option name="project" value="LOCAL" />
-      <updated>1774009478845</updated>
     </task>
     <task id="LOCAL-00032" summary="xml push">
       <option name="closed" value="true" />
@@ -525,7 +514,15 @@
       <option name="project" value="LOCAL" />
       <updated>1774282542639</updated>
     </task>
-    <option name="localTasksCounter" value="80" />
+    <task id="LOCAL-00080" summary="priv to true">
+      <option name="closed" value="true" />
+      <created>1774286416595</created>
+      <option name="number" value="00080" />
+      <option name="presentableId" value="LOCAL-00080" />
+      <option name="project" value="LOCAL" />
+      <updated>1774286416595</updated>
+    </task>
+    <option name="localTasksCounter" value="81" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -540,7 +537,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="head -1 bug fix" />
     <MESSAGE value="missing fix" />
     <MESSAGE value="zigpy fix" />
     <MESSAGE value="typo in line 229" />
@@ -565,6 +561,7 @@
     <MESSAGE value="chmod after dir creation - duh" />
     <MESSAGE value="/data added to chown for matter server" />
     <MESSAGE value="commented out priv to test access to device" />
-    <option name="LAST_COMMIT_MESSAGE" value="commented out priv to test access to device" />
+    <MESSAGE value="priv to true" />
+    <option name="LAST_COMMIT_MESSAGE" value="priv to true" />
   </component>
 </project>

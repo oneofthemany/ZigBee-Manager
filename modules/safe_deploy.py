@@ -43,7 +43,6 @@ router = APIRouter(prefix="/api/system", tags=["system"])
 # ============================================================================
 # CONFIGURATION
 # ============================================================================
-
 APP_DIR = os.environ.get('ZMM_APP_DIR', '/app')
 BACKUP_DIR = os.environ.get('ZMM_BACKUP_DIR', '/app/data/backups')
 MAX_BACKUPS = 10
