@@ -105,14 +105,6 @@
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
     </task>
-    <task id="LOCAL-00029" summary="new system &amp; telemetry features">
-      <option name="closed" value="true" />
-      <created>1774009437944</created>
-      <option name="number" value="00029" />
-      <option name="presentableId" value="LOCAL-00029" />
-      <option name="project" value="LOCAL" />
-      <updated>1774009437944</updated>
-    </task>
     <task id="LOCAL-00030" summary="new telemetry duckdb">
       <option name="closed" value="true" />
       <created>1774009449363</created>
@@ -497,7 +489,15 @@
       <option name="project" value="LOCAL" />
       <updated>1774280224867</updated>
     </task>
-    <option name="localTasksCounter" value="78" />
+    <task id="LOCAL-00078" summary="commented out priv to test access to device">
+      <option name="closed" value="true" />
+      <created>1774280270750</created>
+      <option name="number" value="00078" />
+      <option name="presentableId" value="LOCAL-00078" />
+      <option name="project" value="LOCAL" />
+      <updated>1774280270750</updated>
+    </task>
+    <option name="localTasksCounter" value="79" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
