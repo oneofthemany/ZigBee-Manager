@@ -36,7 +36,6 @@ detect_runtime() {
     else
         die "Neither podman nor docker found. Please install one and re-run."
     fi
-    # Capture full version into variable first — avoids SIGPIPE/pipefail from | head -1
     local ver
     ver=$("$RUNTIME" --version 2>&1 || true)
     ver="${ver%%$'\n'*}"
@@ -118,18 +117,31 @@ detect_usb_coordinator() {
         /dev/ttyUSB0
         /dev/ttyACM0
     )
-
     for candidate in "${candidates[@]}"; do
         for dev in $candidate; do
             [[ -c "$dev" ]] && { USB_DEVICE="$dev"; break 2; }
         done
     done
-
     if [[ -n "$USB_DEVICE" ]]; then
         ok "Zigbee coordinator detected: ${BOLD}${USB_DEVICE}${NC}"
     else
         warn "No Zigbee USB coordinator detected automatically."
         warn "You can specify one with --usb /dev/ttyUSB0"
+    fi
+}
+
+# ── Resolve host dialout GID ──────────────────────────────────────────────────
+resolve_dialout_gid() {
+    DIALOUT_GID=""
+    if getent group dialout &>/dev/null; then
+        DIALOUT_GID=$(getent group dialout | cut -d: -f3)
+        ok "Host dialout GID: ${BOLD}${DIALOUT_GID}${NC}"
+    elif getent group uucp &>/dev/null; then
+        # Some distros (Arch, Alpine) use uucp instead of dialout
+        DIALOUT_GID=$(getent group uucp | cut -d: -f3)
+        ok "Host uucp GID (dialout equivalent): ${BOLD}${DIALOUT_GID}${NC}"
+    else
+        warn "Could not resolve dialout/uucp group — USB device access may fail inside container."
     fi
 }
 
@@ -155,9 +167,15 @@ RUN pip install --no-cache-dir --upgrade pip \
 
 COPY . .
 
+# /data required by CHIP SDK (Matter)
 RUN mkdir -p /data /app/data/matter /app/logs /app/config
 
-RUN groupadd -r zigbee && useradd -r -g zigbee -d /app zigbee \
+# Create zigbee user (UID 1000) and add to dialout (GID 20) for tty access.
+# GID 20 is the Debian/Ubuntu dialout GID — matches most host systems.
+# At runtime --group-add passes the actual host dialout GID as a supplemental group.
+RUN groupadd -r -g 20 dialout 2>/dev/null || true \
+ && groupadd -r zigbee \
+ && useradd -r -u 1000 -g zigbee -G dialout -d /app zigbee \
  && chown -R zigbee:zigbee /app /data
 
 USER zigbee
@@ -185,10 +203,19 @@ build_image() {
 # ── Prepare host data directories ─────────────────────────────────────────────
 prepare_data_dirs() {
     local dirs=("$DATA_DIR/config" "$DATA_DIR/data" "$DATA_DIR/logs")
-    for d in "${dirs[@]}"; do mkdir -p "$d"; done
+    for d in "${dirs[@]}"; do
+        mkdir -p "$d"
+    done
+
+    # Ensure the zigbee container user (UID 1000) can write to mounted volumes.
+    # This is necessary when the script is run as root on the host.
+    chown -R 1000:1000 "$DATA_DIR"
+    chmod -R u+rwX "$DATA_DIR"
+    ok "Volume permissions set (owner: 1000:1000) at ${DATA_DIR}"
 
     if [[ ! -f "$DATA_DIR/config/config.yaml" ]] && [[ -f "$APP_DIR/config/config.yaml" ]]; then
         cp "$APP_DIR/config/config.yaml" "$DATA_DIR/config/config.yaml"
+        chown 1000:1000 "$DATA_DIR/config/config.yaml"
         ok "Default config.yaml copied to ${DATA_DIR}/config/"
     fi
 
@@ -215,6 +242,11 @@ run_container() {
         --volume "${DATA_DIR}/data:/app/data:Z"
         --volume "${DATA_DIR}/logs:/app/logs:Z"
     )
+
+    # Pass host dialout GID as supplemental group so tty devices are accessible
+    if [[ -n "${DIALOUT_GID:-}" ]]; then
+        run_args+=(--group-add "$DIALOUT_GID")
+    fi
 
     if [[ -n "${USB_DEVICE:-}" ]]; then
         run_args+=(--device "${USB_DEVICE}:${USB_DEVICE}")
@@ -326,6 +358,7 @@ detect_runtime
 fetch_repo
 
 [[ -z "${USB_DEVICE:-}" ]] && detect_usb_coordinator
+resolve_dialout_gid
 
 HOST_PORT=$(pick_host_port "$PREFERRED_PORT")
 HOST_MATTER_PORT=$(pick_host_port "$MATTER_INTERNAL_PORT")
@@ -341,10 +374,11 @@ fi
 prepare_data_dirs
 run_container "$HOST_PORT" "$HOST_MATTER_PORT"
 
-[[ "$INSTALL_AUTOSTART" == true ]] && install_autostart
+if [[ "$INSTALL_AUTOSTART" == true ]]; then
+    install_autostart
+fi
 
 # ── Summary ───────────────────────────────────────────────────────────────────
-# Capture host IP without a pipe — avoids SIGPIPE/pipefail
 HOST_IP=$(hostname -I 2>/dev/null || hostname)
 HOST_IP="${HOST_IP%% *}"
 
@@ -355,7 +389,9 @@ echo -e "${BOLD}=====================================================${NC}"
 echo
 echo -e "  ${BOLD}Web Interface:${NC}  http://${HOST_IP}:${HOST_PORT}"
 echo -e "  ${BOLD}Matter Port:${NC}    ${HOST_MATTER_PORT} (internal ${MATTER_INTERNAL_PORT})"
-[[ -n "${USB_DEVICE:-}" ]] && echo -e "  ${BOLD}Zigbee USB:${NC}     ${USB_DEVICE}"
+if [[ -n "${USB_DEVICE:-}" ]]; then
+    echo -e "  ${BOLD}Zigbee USB:${NC}     ${USB_DEVICE}"
+fi
 echo -e "  ${BOLD}Config:${NC}         ${DATA_DIR}/config/config.yaml"
 echo -e "  ${BOLD}Logs:${NC}           ${DATA_DIR}/logs/"
 echo -e "  ${BOLD}Runtime:${NC}        ${RUNTIME}"

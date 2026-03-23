@@ -4,7 +4,7 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="head -1 bug fix">
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="typo in line 229">
       <change beforePath="$PROJECT_DIR$/build.sh" beforeDir="false" afterPath="$PROJECT_DIR$/build.sh" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -466,7 +466,31 @@
       <option name="project" value="LOCAL" />
       <updated>1774261911385</updated>
     </task>
-    <option name="localTasksCounter" value="46" />
+    <task id="LOCAL-00046" summary="missing fix">
+      <option name="closed" value="true" />
+      <created>1774263149950</created>
+      <option name="number" value="00046" />
+      <option name="presentableId" value="LOCAL-00046" />
+      <option name="project" value="LOCAL" />
+      <updated>1774263149950</updated>
+    </task>
+    <task id="LOCAL-00047" summary="zigpy fix">
+      <option name="closed" value="true" />
+      <created>1774263271137</created>
+      <option name="number" value="00047" />
+      <option name="presentableId" value="LOCAL-00047" />
+      <option name="project" value="LOCAL" />
+      <updated>1774263271137</updated>
+    </task>
+    <task id="LOCAL-00048" summary="typo in line 229">
+      <option name="closed" value="true" />
+      <created>1774263421710</created>
+      <option name="number" value="00048" />
+      <option name="presentableId" value="LOCAL-00048" />
+      <option name="project" value="LOCAL" />
+      <updated>1774263421710</updated>
+    </task>
+    <option name="localTasksCounter" value="49" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -481,9 +505,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="initial commit of safe deploy" />
-    <MESSAGE value="kill orphans added to remove swap bug" />
-    <MESSAGE value="duckdb added for system telemetry persistence" />
     <MESSAGE value="updates for system and improvement for mqtt explorer stats - removing noisy updateStats to only be active when tab is open" />
     <MESSAGE value="new syste monitor nd telemetry" />
     <MESSAGE value="updated stats gathering to be less noisy" />
@@ -506,6 +527,9 @@
     <MESSAGE value="xml push" />
     <MESSAGE value="new build script for automated install from repo" />
     <MESSAGE value="head -1 bug fix" />
-    <option name="LAST_COMMIT_MESSAGE" value="head -1 bug fix" />
+    <MESSAGE value="missing fix" />
+    <MESSAGE value="zigpy fix" />
+    <MESSAGE value="typo in line 229" />
+    <option name="LAST_COMMIT_MESSAGE" value="typo in line 229" />
   </component>
 </project>
