@@ -7,6 +7,12 @@
 
 set -euo pipefail
 
+# Must run as root - all podman operations use root context for device passthrough
+if [[ "$EUID" -ne 0 ]]; then
+    echo "Re-running as root..."
+    exec sudo bash "$0" "$@"
+fi
+
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
 CYAN='\033[0;36m'; BOLD='\033[1m'; NC='\033[0m'
 
@@ -18,12 +24,12 @@ die()     { error "$*"; exit 1; }
 
 REPO_URL="https://github.com/oneofthemany/ZigBee-Matter-Manager.git"
 REPO_BRANCH="main"
-APP_DIR="${ZMM_APP_DIR:-$HOME/zigbee-matter-manager}"
+APP_DIR="${ZMM_APP_DIR:-/opt/zigbee-matter-manager}"
 IMAGE_NAME="zigbee-matter-manager"
 CONTAINER_NAME="zigbee-matter-manager"
 INTERNAL_PORT=8000
 MATTER_INTERNAL_PORT=5580
-DATA_DIR="${ZMM_DATA_DIR:-$HOME/.zigbee-matter-manager}"
+DATA_DIR="${ZMM_DATA_DIR:-/opt/zigbee-matter-manager-data}"
 
 # Known Zigbee coordinator USB VID:PID pairs
 declare -a ZIGBEE_USB_IDS=(
@@ -250,11 +256,8 @@ resolve_dialout_gid() {
 }
 
 write_containerfile() {
-    local dialout_gid="${DIALOUT_GID:-20}"
+    cat > "$APP_DIR/Containerfile" << 'DOCKERFILE'
 
-    # Note: heredoc is NOT quoted so ${dialout_gid} expands, but Dockerfile
-    # variables like $HOME are not present so this is safe.
-    cat > "$APP_DIR/Containerfile" << DOCKERFILE
 FROM python:3.11-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \\
@@ -279,24 +282,14 @@ RUN pip install --no-cache-dir --upgrade pip \\
 
 COPY . .
 
-# Create all required directories
+# Create all required directories - running as root so no user switching needed
 RUN mkdir -p /data /app/data/matter /app/data/backups /app/logs /app/config \\
- && mkdir -p /usr/local/lib/python3.11/site-packages/credentials/development/paa-root-certs
-
-# Create zigbee user (UID 1000).
-# dialout group is created with the host's actual GID (${dialout_gid})
-# so the container user can open the tty device without --privileged.
-RUN groupadd -f -g ${dialout_gid} dialout \\
- && groupadd -r zigbee \\
- && useradd -r -u 1000 -g zigbee -G dialout -d /app zigbee \\
- && chown -R zigbee:zigbee /app /data /app/data /app/logs /app/config \\
- && chown -R zigbee:zigbee /usr/local/lib/python3.11/site-packages/credentials
+ && mkdir -p /usr/local/lib/python3.11/site-packages/credentials/development/paa-root-certs \\
+ && chmod -R 777 /data /app/data /app/logs /app/config
 
 # Redirect safe_deploy and app dirs to writable paths
 ENV ZMM_BACKUP_DIR=/app/data/backups
 ENV ZMM_APP_DIR=/app
-
-USER zigbee
 
 EXPOSE 8000 5580
 
@@ -305,7 +298,7 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \\
 
 CMD ["python", "main.py"]
 DOCKERFILE
-    ok "Containerfile written (dialout GID: ${dialout_gid})."
+    ok "Containerfile written."
 }
 
 build_image() {
@@ -368,10 +361,10 @@ run_container() {
         fi
     fi
 
-    if [[ "$RUNTIME" == "podman" ]]; then
-        run_args+=(--security-opt label=disable)
-        run_args+=(--privileged=true)
-    fi
+    # Always add privileged, udev mount and SELinux disable for device access
+    run_args+=(--security-opt label=disable)
+    run_args+=(--privileged=true)
+    run_args+=(--volume /run/udev:/run/udev:ro)
 
     info "Starting container '${CONTAINER_NAME}' ..."
     "$RUNTIME" run "${run_args[@]}" "${IMAGE_NAME}:latest"
@@ -474,7 +467,6 @@ else
     ok "Using specified USB device: ${BOLD}${USB_DEVICE}${NC}"
 fi
 
-resolve_dialout_gid
 
 HOST_PORT=$(pick_host_port "$PREFERRED_PORT")
 HOST_MATTER_PORT=$(pick_host_port "$MATTER_INTERNAL_PORT")

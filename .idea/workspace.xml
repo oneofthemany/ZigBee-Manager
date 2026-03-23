@@ -4,7 +4,10 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="priv to true" />
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="space removed">
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/build.sh" beforeDir="false" afterPath="$PROJECT_DIR$/build.sh" afterDir="false" />
+    </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -129,14 +132,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00032" summary="xml push">
-      <option name="closed" value="true" />
-      <created>1774009488739</created>
-      <option name="number" value="00032" />
-      <option name="presentableId" value="LOCAL-00032" />
-      <option name="project" value="LOCAL" />
-      <updated>1774009488739</updated>
     </task>
     <task id="LOCAL-00033" summary="timeout=aiohttp.ClientTimeout increased to 180">
       <option name="closed" value="true" />
@@ -522,7 +517,15 @@
       <option name="project" value="LOCAL" />
       <updated>1774286416595</updated>
     </task>
-    <option name="localTasksCounter" value="81" />
+    <task id="LOCAL-00081" summary="space removed">
+      <option name="closed" value="true" />
+      <created>1774286947554</created>
+      <option name="number" value="00081" />
+      <option name="presentableId" value="LOCAL-00081" />
+      <option name="project" value="LOCAL" />
+      <updated>1774286947554</updated>
+    </task>
+    <option name="localTasksCounter" value="82" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -537,7 +540,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="missing fix" />
     <MESSAGE value="zigpy fix" />
     <MESSAGE value="typo in line 229" />
     <MESSAGE value="dialout and permission fix for directories" />
@@ -562,6 +564,7 @@
     <MESSAGE value="/data added to chown for matter server" />
     <MESSAGE value="commented out priv to test access to device" />
     <MESSAGE value="priv to true" />
-    <option name="LAST_COMMIT_MESSAGE" value="priv to true" />
+    <MESSAGE value="space removed" />
+    <option name="LAST_COMMIT_MESSAGE" value="space removed" />
   </component>
 </project>
