@@ -4,9 +4,7 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="libglib2.0-0 \\ added">
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-    </list>
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="remove usns arg" />
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -106,22 +104,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00012" summary="editor fixes for time machine">
-      <option name="closed" value="true" />
-      <created>1773665551781</created>
-      <option name="number" value="00012" />
-      <option name="presentableId" value="LOCAL-00012" />
-      <option name="project" value="LOCAL" />
-      <updated>1773665551781</updated>
-    </task>
-    <task id="LOCAL-00013" summary="workspace update">
-      <option name="closed" value="true" />
-      <created>1773665579770</created>
-      <option name="number" value="00013" />
-      <option name="presentableId" value="LOCAL-00013" />
-      <option name="project" value="LOCAL" />
-      <updated>1773665579770</updated>
     </task>
     <task id="LOCAL-00014" summary="workspace update">
       <option name="closed" value="true" />
@@ -499,7 +481,23 @@
       <option name="project" value="LOCAL" />
       <updated>1774270749317</updated>
     </task>
-    <option name="localTasksCounter" value="61" />
+    <task id="LOCAL-00061" summary="remove usns arg">
+      <option name="closed" value="true" />
+      <created>1774271558948</created>
+      <option name="number" value="00061" />
+      <option name="presentableId" value="LOCAL-00061" />
+      <option name="project" value="LOCAL" />
+      <updated>1774271558949</updated>
+    </task>
+    <task id="LOCAL-00062" summary="remove usns arg">
+      <option name="closed" value="true" />
+      <created>1774271563824</created>
+      <option name="number" value="00062" />
+      <option name="presentableId" value="LOCAL-00062" />
+      <option name="project" value="LOCAL" />
+      <updated>1774271563825</updated>
+    </task>
+    <option name="localTasksCounter" value="63" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -514,7 +512,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="timeout=aiohttp.ClientTimeout increased to 180" />
     <MESSAGE value="add in a warmup function for ai assistant" />
     <MESSAGE value="improve the editor to verify imports before allowing file to be saved" />
     <MESSAGE value="migrate to duckdb for persistence" />
@@ -539,6 +536,7 @@
     <MESSAGE value="dir fixes for backups inside container" />
     <MESSAGE value="APP_DIR reinstated due to removal in error" />
     <MESSAGE value="libglib2.0-0 \\ added" />
-    <option name="LAST_COMMIT_MESSAGE" value="libglib2.0-0 \\ added" />
+    <MESSAGE value="remove usns arg" />
+    <option name="LAST_COMMIT_MESSAGE" value="remove usns arg" />
   </component>
 </project>

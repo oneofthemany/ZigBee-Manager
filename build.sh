@@ -367,6 +367,13 @@ run_container() {
         fi
     fi
 
+
+
+    if [[ "$RUNTIME" == "podman" ]]; then
+        run_args+=(--security-opt label=disable)
+        run_args+=(--privileged )
+    fi
+
     info "Starting container '${CONTAINER_NAME}' ..."
     "$RUNTIME" run "${run_args[@]}" "${IMAGE_NAME}:latest"
     ok "Container started."
