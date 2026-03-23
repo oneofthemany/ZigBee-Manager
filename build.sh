@@ -340,6 +340,14 @@ prepare_data_dirs() {
         ok "Default config.yaml copied to ${DATA_DIR}/config/"
     fi
 
+    # Patch the selected USB device into config.yaml so the app uses the right port.
+    # Handles both 'port: /dev/ttyUSBx' and 'device: /dev/ttyUSBx' patterns.
+    if [[ -n "${USB_DEVICE:-}" && -f "$DATA_DIR/config/config.yaml" ]]; then
+        sed -i "s|port:.*\/dev\/tty[A-Za-z]*[0-9]*|port: ${USB_DEVICE}|g" "$DATA_DIR/config/config.yaml"
+        sed -i "s|device:.*\/dev\/tty[A-Za-z]*[0-9]*|device: ${USB_DEVICE}|g" "$DATA_DIR/config/config.yaml"
+        ok "Serial port patched in config.yaml → ${BOLD}${USB_DEVICE}${NC}"
+    fi
+
     ok "Data directories ready at ${DATA_DIR}"
 }
 

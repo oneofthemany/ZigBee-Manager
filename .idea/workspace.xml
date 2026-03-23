@@ -4,7 +4,7 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="dialout and permission fix for directories">
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="syntax error line 129 fix">
       <change beforePath="$PROJECT_DIR$/build.sh" beforeDir="false" afterPath="$PROJECT_DIR$/build.sh" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -105,30 +105,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00001" summary="new automations tab which mirrors the automations made in the device modal">
-      <option name="closed" value="true" />
-      <created>1772810974186</created>
-      <option name="number" value="00001" />
-      <option name="presentableId" value="LOCAL-00001" />
-      <option name="project" value="LOCAL" />
-      <updated>1772810974186</updated>
-    </task>
-    <task id="LOCAL-00002" summary="deleted as moved to new core services">
-      <option name="closed" value="true" />
-      <created>1773652419201</created>
-      <option name="number" value="00002" />
-      <option name="presentableId" value="LOCAL-00002" />
-      <option name="project" value="LOCAL" />
-      <updated>1773652419201</updated>
-    </task>
-    <task id="LOCAL-00003" summary="updated to cater for mqtt_queue in modules dir">
-      <option name="closed" value="true" />
-      <created>1773652971418</created>
-      <option name="number" value="00003" />
-      <option name="presentableId" value="LOCAL-00003" />
-      <option name="project" value="LOCAL" />
-      <updated>1773652971418</updated>
     </task>
     <task id="LOCAL-00004" summary="duplicate">
       <option name="closed" value="true" />
@@ -498,7 +474,31 @@
       <option name="project" value="LOCAL" />
       <updated>1774263793212</updated>
     </task>
-    <option name="localTasksCounter" value="50" />
+    <task id="LOCAL-00050" summary="safe pats for VID and PID for dongle detection">
+      <option name="closed" value="true" />
+      <created>1774264445147</created>
+      <option name="number" value="00050" />
+      <option name="presentableId" value="LOCAL-00050" />
+      <option name="project" value="LOCAL" />
+      <updated>1774264445148</updated>
+    </task>
+    <task id="LOCAL-00051" summary="safe pats for VID and PID for dongle detection">
+      <option name="closed" value="true" />
+      <created>1774264452701</created>
+      <option name="number" value="00051" />
+      <option name="presentableId" value="LOCAL-00051" />
+      <option name="project" value="LOCAL" />
+      <updated>1774264452701</updated>
+    </task>
+    <task id="LOCAL-00052" summary="syntax error line 129 fix">
+      <option name="closed" value="true" />
+      <created>1774264584207</created>
+      <option name="number" value="00052" />
+      <option name="presentableId" value="LOCAL-00052" />
+      <option name="project" value="LOCAL" />
+      <updated>1774264584207</updated>
+    </task>
+    <option name="localTasksCounter" value="53" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -513,8 +513,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="new syste monitor nd telemetry" />
-    <MESSAGE value="updated stats gathering to be less noisy" />
     <MESSAGE value="text removal" />
     <MESSAGE value="new system tab" />
     <MESSAGE value="new telemetry collector" />
@@ -538,6 +536,8 @@
     <MESSAGE value="zigpy fix" />
     <MESSAGE value="typo in line 229" />
     <MESSAGE value="dialout and permission fix for directories" />
-    <option name="LAST_COMMIT_MESSAGE" value="dialout and permission fix for directories" />
+    <MESSAGE value="safe pats for VID and PID for dongle detection" />
+    <MESSAGE value="syntax error line 129 fix" />
+    <option name="LAST_COMMIT_MESSAGE" value="syntax error line 129 fix" />
   </component>
 </project>
