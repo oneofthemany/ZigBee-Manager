@@ -85,7 +85,9 @@ check_deps() {
     for cmd in git curl; do
         command -v "$cmd" &>/dev/null || missing+=("$cmd")
     done
-    [[ ${#missing[@]} -gt 0 ]] && die "Missing required tools: ${missing[*]}"
+    if [[ ${#missing[@]} -gt 0 ]]; then
+        die "Missing required tools: ${missing[*]}"
+    fi
 }
 
 # ── Clone / update repo ───────────────────────────────────────────────────────
