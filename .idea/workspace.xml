@@ -4,9 +4,8 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="patch selected device to config.yaml">
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="dir fixes">
       <change beforePath="$PROJECT_DIR$/build.sh" beforeDir="false" afterPath="$PROJECT_DIR$/build.sh" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/modules/safe_deploy.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/safe_deploy.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -106,22 +105,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00005" summary="duplicate">
-      <option name="closed" value="true" />
-      <created>1773653089193</created>
-      <option name="number" value="00005" />
-      <option name="presentableId" value="LOCAL-00005" />
-      <option name="project" value="LOCAL" />
-      <updated>1773653089193</updated>
-    </task>
-    <task id="LOCAL-00006" summary="new code editor tab using Monaco Editor and test recovery functions allowing user to test code updates with recovery - includes all code extensions">
-      <option name="closed" value="true" />
-      <created>1773661323243</created>
-      <option name="number" value="00006" />
-      <option name="presentableId" value="LOCAL-00006" />
-      <option name="project" value="LOCAL" />
-      <updated>1773661323243</updated>
     </task>
     <task id="LOCAL-00007" summary="line removed">
       <option name="closed" value="true" />
@@ -499,7 +482,23 @@
       <option name="project" value="LOCAL" />
       <updated>1774265167790</updated>
     </task>
-    <option name="localTasksCounter" value="54" />
+    <task id="LOCAL-00054" summary="BACKUP directory changed for container intro">
+      <option name="closed" value="true" />
+      <created>1774265562525</created>
+      <option name="number" value="00054" />
+      <option name="presentableId" value="LOCAL-00054" />
+      <option name="project" value="LOCAL" />
+      <updated>1774265562525</updated>
+    </task>
+    <task id="LOCAL-00055" summary="dir fixes">
+      <option name="closed" value="true" />
+      <created>1774265673483</created>
+      <option name="number" value="00055" />
+      <option name="presentableId" value="LOCAL-00055" />
+      <option name="project" value="LOCAL" />
+      <updated>1774265673483</updated>
+    </task>
+    <option name="localTasksCounter" value="56" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -514,8 +513,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="new system tab" />
-    <MESSAGE value="new telemetry collector" />
     <MESSAGE value="new system &amp; telemetry features" />
     <MESSAGE value="new telemetry duckdb" />
     <MESSAGE value="new system toast notifications" />
@@ -539,6 +536,8 @@
     <MESSAGE value="safe pats for VID and PID for dongle detection" />
     <MESSAGE value="syntax error line 129 fix" />
     <MESSAGE value="patch selected device to config.yaml" />
-    <option name="LAST_COMMIT_MESSAGE" value="patch selected device to config.yaml" />
+    <MESSAGE value="BACKUP directory changed for container intro" />
+    <MESSAGE value="dir fixes" />
+    <option name="LAST_COMMIT_MESSAGE" value="dir fixes" />
   </component>
 </project>

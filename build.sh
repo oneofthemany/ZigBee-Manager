@@ -1,13 +1,12 @@
 #!/bin/bash
 # =============================================================================
-# Zigbee Matter Manager — Container Build & Deploy Script
+# Zigbee Matter Manager - Container Build & Deploy Script
 # Supports: Podman (preferred) and Docker
 # Internal port: 8000 (fixed). External port: auto-detected.
 # =============================================================================
 
 set -euo pipefail
 
-# ── Colours ──────────────────────────────────────────────────────────────────
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
 CYAN='\033[0;36m'; BOLD='\033[1m'; NC='\033[0m'
 
@@ -17,7 +16,6 @@ warn()    { echo -e "${YELLOW}${BOLD}[WARN]${NC}  $*"; }
 error()   { echo -e "${RED}${BOLD}[ERR ]${NC}  $*" >&2; }
 die()     { error "$*"; exit 1; }
 
-# ── Defaults ─────────────────────────────────────────────────────────────────
 REPO_URL="https://github.com/oneofthemany/ZigBee-Matter-Manager.git"
 REPO_BRANCH="main"
 APP_DIR="${ZMM_APP_DIR:-$HOME/zigbee-matter-manager}"
@@ -27,23 +25,21 @@ INTERNAL_PORT=8000
 MATTER_INTERNAL_PORT=5580
 DATA_DIR="${ZMM_DATA_DIR:-$HOME/.zigbee-matter-manager}"
 
-# ── Known Zigbee coordinator USB VID:PID pairs ───────────────────────────────
-# Format: "vid:pid|Description"
+# Known Zigbee coordinator USB VID:PID pairs
 declare -a ZIGBEE_USB_IDS=(
     "10c4:ea60|Silicon Labs CP210x (SONOFF, Tube, Electrolama, many EZSP sticks)"
-    "10c4:8a2a|Silicon Labs CP210x variant (some EZSP)"
+    "10c4:8a2a|Silicon Labs CP210x variant"
     "1a86:7523|CH340 (ZStack/ZNP coordinators)"
     "1a86:55d4|CH9102 (ZStack/ZNP coordinators)"
-    "0403:6001|FTDI FT232RL (some coordinators)"
-    "0403:6015|FTDI FT231X (some coordinators)"
+    "0403:6001|FTDI FT232RL"
+    "0403:6015|FTDI FT231X"
     "1cf1:0030|Dresden Elektronik ConBee II"
     "0451:16a8|Texas Instruments CC2531"
     "0451:bef3|Texas Instruments CC2652 Launchpad"
-    "10c4:ea71|Silicon Labs CP2108 (some EZSP)"
-    "067b:2303|Prolific PL2303 (some coordinators)"
+    "10c4:ea71|Silicon Labs CP2108"
+    "067b:2303|Prolific PL2303"
 )
 
-# ── Runtime detection ─────────────────────────────────────────────────────────
 detect_runtime() {
     if command -v podman &>/dev/null; then
         RUNTIME="podman"
@@ -58,7 +54,6 @@ detect_runtime() {
     ok "Container runtime: ${BOLD}$RUNTIME${NC} ($ver)"
 }
 
-# ── Port availability ─────────────────────────────────────────────────────────
 port_in_use() {
     local port=$1
     if command -v ss &>/dev/null; then
@@ -84,7 +79,7 @@ find_free_port() {
 pick_host_port() {
     local preferred=$1
     if port_in_use "$preferred"; then
-        warn "Port ${preferred} is in use — scanning for next available port..."
+        warn "Port ${preferred} is in use - scanning for next available port..."
         local found
         found=$(find_free_port "$((preferred + 1))")
         warn "Using port ${BOLD}${found}${NC} instead."
@@ -94,7 +89,6 @@ pick_host_port() {
     fi
 }
 
-# ── Dependency checks ─────────────────────────────────────────────────────────
 check_deps() {
     local missing=()
     for cmd in git curl; do
@@ -105,27 +99,23 @@ check_deps() {
     fi
 }
 
-# ── Clone / update repo ───────────────────────────────────────────────────────
 fetch_repo() {
     if [[ -d "$APP_DIR/.git" ]]; then
-        info "Repository already exists — pulling latest ${REPO_BRANCH}..."
+        info "Repository already exists - pulling latest ${REPO_BRANCH}..."
         git -C "$APP_DIR" fetch origin
         git -C "$APP_DIR" checkout "$REPO_BRANCH"
         git -C "$APP_DIR" pull --ff-only origin "$REPO_BRANCH"
         ok "Repository updated."
     else
-        info "Cloning ${REPO_URL} → ${APP_DIR} ..."
+        info "Cloning ${REPO_URL} -> ${APP_DIR} ..."
         git clone --branch "$REPO_BRANCH" "$REPO_URL" "$APP_DIR"
         ok "Repository cloned."
     fi
 }
 
-# ── Resolve tty node from USB sysfs path ─────────────────────────────────────
-# Given a sysfs USB device path, find the associated ttyUSB/ttyACM node
 usb_sysfs_to_tty() {
     local usbpath="$1"
     local tty=""
-    # Walk child dirs looking for tty node — use nullglob to avoid literal globs on no match
     local old_nullglob
     old_nullglob=$(shopt -p nullglob 2>/dev/null || true)
     shopt -s nullglob
@@ -137,7 +127,6 @@ usb_sysfs_to_tty() {
         fi
     done
     eval "$old_nullglob" 2>/dev/null || shopt -u nullglob
-    # Fallback: search via find
     if [[ -z "$tty" ]]; then
         tty=$(find "$usbpath" -maxdepth 6 -name "tty*" 2>/dev/null \
               | grep -oE 'tty[A-Z]+[0-9]+' | head -1 || true)
@@ -145,15 +134,13 @@ usb_sysfs_to_tty() {
     echo "$tty"
 }
 
-# ── Zigbee coordinator detection via VID:PID ─────────────────────────────────
 detect_usb_coordinator() {
     USB_DEVICE=""
-    info "Scanning for known Zigbee coordinators..."
+    info "Scanning for known Zigbee coordinators by VID:PID..."
 
     declare -a found_devices=()
     declare -a found_labels=()
 
-    # Iterate sysfs USB devices and match VID:PID
     for devpath in /sys/bus/usb/devices/*/; do
         local vidfile="${devpath}idVendor"
         local pidfile="${devpath}idProduct"
@@ -167,18 +154,14 @@ detect_usb_coordinator() {
         pid=$(cat "$pidfile" 2>/dev/null || true)
         vidpid="${vid}:${pid}"
         product=$(cat "$productfile" 2>/dev/null || echo "Unknown device")
-        serial=$(cat "$serialfile" 2>/dev/null || echo "")
+        serial=$(cat "$serialfile" 2>/dev/null || true)
 
         for entry in "${ZIGBEE_USB_IDS[@]}"; do
-            local known_id known_desc
-            known_id="${entry%%|*}"
-            known_desc="${entry##*|}"
-
+            local known_id="${entry%%|*}"
             if [[ "$vidpid" == "$known_id" ]]; then
-                # Resolve the tty node
                 tty=$(usb_sysfs_to_tty "$devpath")
                 if [[ -n "$tty" && -c "/dev/${tty}" ]]; then
-                    label="${product} [${vidpid}] → /dev/${tty}"
+                    label="${product} [${vidpid}] -> /dev/${tty}"
                     [[ -n "$serial" ]] && label+=" (S/N: ${serial})"
                     found_devices+=("/dev/${tty}")
                     found_labels+=("$label")
@@ -202,7 +185,6 @@ detect_usb_coordinator() {
         return
     fi
 
-    # Multiple candidates — present a menu
     echo
     warn "Multiple potential Zigbee coordinators found:"
     echo
@@ -225,7 +207,7 @@ detect_usb_coordinator() {
                 _prompt_manual_usb
                 break
             elif [[ $choice -eq $((count+2)) ]]; then
-                warn "No USB device selected — Zigbee radio will not be available."
+                warn "No USB device selected - Zigbee radio will not be available."
                 break
             fi
         fi
@@ -233,7 +215,6 @@ detect_usb_coordinator() {
     done
 }
 
-# ── Manual USB entry fallback ─────────────────────────────────────────────────
 _prompt_manual_usb() {
     echo
     warn "Available serial devices on this system:"
@@ -250,11 +231,10 @@ _prompt_manual_usb() {
             die "Device ${manual_dev} does not exist or is not a character device."
         fi
     else
-        warn "No USB device selected — Zigbee radio will not be available."
+        warn "No USB device selected - Zigbee radio will not be available."
     fi
 }
 
-# ── Resolve host dialout GID ──────────────────────────────────────────────────
 resolve_dialout_gid() {
     DIALOUT_GID=""
     if getent group dialout &>/dev/null; then
@@ -264,75 +244,79 @@ resolve_dialout_gid() {
         DIALOUT_GID=$(getent group uucp | cut -d: -f3)
         ok "Host uucp GID (dialout equivalent): ${BOLD}${DIALOUT_GID}${NC}"
     else
-        warn "Could not resolve dialout/uucp group — USB device access may fail inside container."
+        DIALOUT_GID=20
+        warn "Could not resolve dialout/uucp group - defaulting to GID 20."
     fi
 }
 
-# ── Write Containerfile ───────────────────────────────────────────────────────
 write_containerfile() {
-    cat > "$APP_DIR/Containerfile" << 'DOCKERFILE'
+    local dialout_gid="${DIALOUT_GID:-20}"
+
+    # Note: heredoc is NOT quoted so ${dialout_gid} expands, but Dockerfile
+    # variables like $HOME are not present so this is safe.
+    cat > "$APP_DIR/Containerfile" << DOCKERFILE
 FROM python:3.11-slim
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-        build-essential \
-        git \
-        libffi-dev \
-        libssl-dev \
-        logrotate \
-        curl \
+RUN apt-get update && apt-get install -y --no-install-recommends \\
+        build-essential \\
+        git \\
+        libffi-dev \\
+        libssl-dev \\
+        logrotate \\
+        curl \\
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir --upgrade pip \
- && pip install --no-cache-dir -r requirements.txt \
+# Install app deps then Matter [server] extra for CHIP SDK wheels
+RUN pip install --no-cache-dir --upgrade pip \\
+ && pip install --no-cache-dir -r requirements.txt \\
  && pip install --no-cache-dir "python-matter-server[server]"
 
 COPY . .
 
-# /data required by CHIP SDK (Matter)
-RUN mkdir -p /data /app/data/matter /app/logs /app/config /app/data/backups
+# /data required by CHIP SDK; backups dir used by safe_deploy module
+RUN mkdir -p /data /app/data/matter /app/data/backups /app/logs /app/config
 
-# Create zigbee user (UID 1000) with dialout membership for tty access.
-# --group-add at runtime injects the host's actual dialout GID as supplemental.
-RUN groupadd -r -g 20 dialout 2>/dev/null || true \
- && groupmod -g ${DIALOUT_GID:-20} dialout 2>/dev/null || true \
- && groupadd -r zigbee \
- && useradd -r -u 1000 -g zigbee -G dialout -d /app zigbee \
+# Create zigbee user (UID 1000).
+# dialout group is created with the host's actual GID (${dialout_gid})
+# so the container user can open the tty device without --privileged.
+RUN groupadd -f -g ${dialout_gid} dialout \\
+ && groupadd -r zigbee \\
+ && useradd -r -u 1000 -g zigbee -G dialout -d /app zigbee \\
  && chown -R zigbee:zigbee /app /data
+
+# Redirect safe_deploy backups to a writable in-container path
+ENV ZMM_BACKUP_DIR=/app/data/backups
 
 USER zigbee
 
 EXPOSE 8000 5580
 
-HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \\
     CMD curl -f http://localhost:8000/api/status || exit 1
 
 CMD ["python", "main.py"]
 DOCKERFILE
-    ok "Containerfile written."
+    ok "Containerfile written (dialout GID: ${dialout_gid})."
 }
 
-# ── Build image ───────────────────────────────────────────────────────────────
 build_image() {
     info "Building image ${BOLD}${IMAGE_NAME}${NC} ..."
     "$RUNTIME" build \
-        --build-arg DIALOUT_GID="${DIALOUT_GID:-20}" \
         --tag "${IMAGE_NAME}:latest" \
         --file "$APP_DIR/Containerfile" \
         "$APP_DIR"
     ok "Image built: ${IMAGE_NAME}:latest"
 }
 
-# ── Prepare host data directories ─────────────────────────────────────────────
 prepare_data_dirs() {
     local dirs=("$DATA_DIR/config" "$DATA_DIR/data" "$DATA_DIR/logs")
     for d in "${dirs[@]}"; do
         mkdir -p "$d"
     done
 
-    # Ensure container user (UID 1000) can write to mounted volumes
     chown -R 1000:1000 "$DATA_DIR"
     chmod -R u+rwX "$DATA_DIR"
     ok "Volume permissions set (owner: 1000:1000) at ${DATA_DIR}"
@@ -343,24 +327,22 @@ prepare_data_dirs() {
         ok "Default config.yaml copied to ${DATA_DIR}/config/"
     fi
 
-    # Patch the selected USB device into config.yaml so the app uses the right port.
-    # Handles both 'port: /dev/ttyUSBx' and 'device: /dev/ttyUSBx' patterns.
+    # Patch the selected USB device into config.yaml
     if [[ -n "${USB_DEVICE:-}" && -f "$DATA_DIR/config/config.yaml" ]]; then
         sed -i "s|port:.*\/dev\/tty[A-Za-z]*[0-9]*|port: ${USB_DEVICE}|g" "$DATA_DIR/config/config.yaml"
         sed -i "s|device:.*\/dev\/tty[A-Za-z]*[0-9]*|device: ${USB_DEVICE}|g" "$DATA_DIR/config/config.yaml"
-        ok "Serial port patched in config.yaml → ${BOLD}${USB_DEVICE}${NC}"
+        ok "Serial port patched in config.yaml -> ${BOLD}${USB_DEVICE}${NC}"
     fi
 
     ok "Data directories ready at ${DATA_DIR}"
 }
 
-# ── Run container ─────────────────────────────────────────────────────────────
 run_container() {
     local host_port=$1
     local host_matter_port=$2
 
     if "$RUNTIME" inspect "$CONTAINER_NAME" &>/dev/null 2>&1; then
-        warn "Existing container '${CONTAINER_NAME}' found — removing..."
+        warn "Existing container '${CONTAINER_NAME}' found - removing..."
         "$RUNTIME" rm -f "$CONTAINER_NAME"
     fi
 
@@ -375,14 +357,8 @@ run_container() {
         --volume "${DATA_DIR}/logs:/app/logs:Z"
     )
 
-    # Pass host dialout GID as supplemental group
-    if [[ -n "${DIALOUT_GID:-}" ]]; then
-        run_args+=(--group-add "$DIALOUT_GID")
-    fi
-
     if [[ -n "${USB_DEVICE:-}" ]]; then
         run_args+=(--device "${USB_DEVICE}:${USB_DEVICE}")
-        # Podman: also pass real path if symlink
         if [[ "$RUNTIME" == "podman" && -L "$USB_DEVICE" ]]; then
             local real_dev
             real_dev=$(readlink -f "$USB_DEVICE")
@@ -390,6 +366,8 @@ run_container() {
         fi
     fi
 
+    # Podman rootless keep-id: do NOT combine with --group-add as they conflict.
+    # dialout access is handled via matching GID baked into the image at build time.
     if [[ "$RUNTIME" == "podman" ]]; then
         run_args+=(--userns keep-id)
     fi
@@ -399,10 +377,9 @@ run_container() {
     ok "Container started."
 }
 
-# ── Systemd auto-start ────────────────────────────────────────────────────────
 install_autostart() {
     if ! command -v systemctl &>/dev/null; then
-        warn "systemd not found — skipping auto-start setup."
+        warn "systemd not found - skipping auto-start setup."
         return
     fi
 
@@ -440,7 +417,6 @@ UNIT
     ok "systemd unit installed: ${unit_name}"
 }
 
-# ── Usage ─────────────────────────────────────────────────────────────────────
 usage() {
     cat << EOF
 ${BOLD}Usage:${NC} $0 [OPTIONS]
@@ -459,7 +435,6 @@ EOF
     exit 0
 }
 
-# ── Argument parsing ──────────────────────────────────────────────────────────
 PREFERRED_PORT=$INTERNAL_PORT
 INSTALL_AUTOSTART=true
 FORCE_REBUILD=false
@@ -479,10 +454,9 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# ── Main ──────────────────────────────────────────────────────────────────────
 echo
 echo -e "${BOLD}=====================================================${NC}"
-echo -e "${BOLD}   Zigbee Matter Manager — Container Build & Deploy  ${NC}"
+echo -e "${BOLD}   Zigbee Matter Manager - Container Build & Deploy  ${NC}"
 echo -e "${BOLD}=====================================================${NC}"
 echo
 
@@ -490,7 +464,6 @@ check_deps
 detect_runtime
 fetch_repo
 
-# USB: use --usb override if provided, otherwise detect by VID:PID
 if [[ -z "${USB_DEVICE:-}" ]]; then
     detect_usb_coordinator
 else
@@ -510,7 +483,7 @@ write_containerfile
 if [[ "$FORCE_REBUILD" == true ]] || ! "$RUNTIME" image inspect "${IMAGE_NAME}:latest" &>/dev/null 2>&1; then
     build_image
 else
-    info "Image ${IMAGE_NAME}:latest already exists — skipping build (use --rebuild to force)."
+    info "Image ${IMAGE_NAME}:latest already exists - skipping build (use --rebuild to force)."
 fi
 
 prepare_data_dirs
@@ -520,7 +493,6 @@ if [[ "$INSTALL_AUTOSTART" == true ]]; then
     install_autostart
 fi
 
-# ── Summary ───────────────────────────────────────────────────────────────────
 HOST_IP=$(hostname -I 2>/dev/null || hostname)
 HOST_IP="${HOST_IP%% *}"
 
