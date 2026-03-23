@@ -27,6 +27,22 @@ INTERNAL_PORT=8000
 MATTER_INTERNAL_PORT=5580
 DATA_DIR="${ZMM_DATA_DIR:-$HOME/.zigbee-matter-manager}"
 
+# ── Known Zigbee coordinator USB VID:PID pairs ───────────────────────────────
+# Format: "vid:pid|Description"
+declare -a ZIGBEE_USB_IDS=(
+    "10c4:ea60|Silicon Labs CP210x (SONOFF, Tube, Electrolama, many EZSP sticks)"
+    "10c4:8a2a|Silicon Labs CP210x variant (some EZSP)"
+    "1a86:7523|CH340 (ZStack/ZNP coordinators)"
+    "1a86:55d4|CH9102 (ZStack/ZNP coordinators)"
+    "0403:6001|FTDI FT232RL (some coordinators)"
+    "0403:6015|FTDI FT231X (some coordinators)"
+    "1cf1:0030|Dresden Elektronik ConBee II"
+    "0451:16a8|Texas Instruments CC2531"
+    "0451:bef3|Texas Instruments CC2652 Launchpad"
+    "10c4:ea71|Silicon Labs CP2108 (some EZSP)"
+    "067b:2303|Prolific PL2303 (some coordinators)"
+)
+
 # ── Runtime detection ─────────────────────────────────────────────────────────
 detect_runtime() {
     if command -v podman &>/dev/null; then
@@ -104,29 +120,131 @@ fetch_repo() {
     fi
 }
 
-# ── USB / Zigbee coordinator detection ───────────────────────────────────────
+# ── Resolve tty node from USB sysfs path ─────────────────────────────────────
+# Given a sysfs USB device path, find the associated ttyUSB/ttyACM node
+usb_sysfs_to_tty() {
+    local usbpath="$1"
+    local tty=""
+    # Walk child dirs looking for tty node
+    for ttydir in "${usbpath}"/*/*/tty/tty* "${usbpath}"/*/tty/tty* 2>/dev/null; do
+        if [[ -d "$ttydir" ]]; then
+            tty=$(basename "$ttydir")
+            break
+        fi
+    done
+    # Fallback: search via find
+    if [[ -z "$tty" ]]; then
+        tty=$(find "$usbpath" -name "tty*" -maxdepth 6 2>/dev/null | grep -oP 'tty[A-Z]+\d+' | head -1 || true)
+    fi
+    echo "$tty"
+}
+
+# ── Zigbee coordinator detection via VID:PID ─────────────────────────────────
 detect_usb_coordinator() {
     USB_DEVICE=""
-    local candidates=(
-        /dev/serial/by-id/*CP2102*
-        /dev/serial/by-id/*EZSP*
-        /dev/serial/by-id/*zigbee*
-        /dev/serial/by-id/*Zigbee*
-        /dev/serial/by-id/*CH340*
-        /dev/serial/by-id/*CH341*
-        /dev/ttyUSB0
-        /dev/ttyACM0
-    )
-    for candidate in "${candidates[@]}"; do
-        for dev in $candidate; do
-            [[ -c "$dev" ]] && { USB_DEVICE="$dev"; break 2; }
+    info "Scanning for known Zigbee coordinators..."
+
+    declare -a found_devices=()
+    declare -a found_labels=()
+
+    # Iterate sysfs USB devices and match VID:PID
+    for devpath in /sys/bus/usb/devices/*/; do
+        local vidfile="${devpath}idVendor"
+        local pidfile="${devpath}idProduct"
+        local productfile="${devpath}product"
+        local serialfile="${devpath}serial"
+
+        [[ -f "$vidfile" && -f "$pidfile" ]] || continue
+
+        local vid pid vidpid product serial tty label
+        vid=$(cat "$vidfile" 2>/dev/null || true)
+        pid=$(cat "$pidfile" 2>/dev/null || true)
+        vidpid="${vid}:${pid}"
+        product=$(cat "$productfile" 2>/dev/null || echo "Unknown device")
+        serial=$(cat "$serialfile" 2>/dev/null || echo "")
+
+        for entry in "${ZIGBEE_USB_IDS[@]}"; do
+            local known_id known_desc
+            known_id="${entry%%|*}"
+            known_desc="${entry##*|}"
+
+            if [[ "$vidpid" == "$known_id" ]]; then
+                # Resolve the tty node
+                tty=$(usb_sysfs_to_tty "$devpath")
+                if [[ -n "$tty" && -c "/dev/${tty}" ]]; then
+                    label="${product} [${vidpid}] → /dev/${tty}"
+                    [[ -n "$serial" ]] && label+=" (S/N: ${serial})"
+                    found_devices+=("/dev/${tty}")
+                    found_labels+=("$label")
+                fi
+                break
+            fi
         done
     done
-    if [[ -n "$USB_DEVICE" ]]; then
-        ok "Zigbee coordinator detected: ${BOLD}${USB_DEVICE}${NC}"
+
+    local count=${#found_devices[@]}
+
+    if [[ $count -eq 0 ]]; then
+        warn "No known Zigbee coordinator found by VID:PID."
+        _prompt_manual_usb
+        return
+    fi
+
+    if [[ $count -eq 1 ]]; then
+        USB_DEVICE="${found_devices[0]}"
+        ok "Zigbee coordinator detected: ${BOLD}${found_labels[0]}${NC}"
+        return
+    fi
+
+    # Multiple candidates — present a menu
+    echo
+    warn "Multiple potential Zigbee coordinators found:"
+    echo
+    for i in "${!found_devices[@]}"; do
+        echo -e "  ${BOLD}$((i+1))${NC}) ${found_labels[$i]}"
+    done
+    echo -e "  ${BOLD}$((count+1))${NC}) Enter device path manually"
+    echo -e "  ${BOLD}$((count+2))${NC}) Skip (no USB device)"
+    echo
+
+    local choice
+    while true; do
+        read -rp "  Select coordinator [1-$((count+2))]: " choice
+        if [[ "$choice" =~ ^[0-9]+$ ]]; then
+            if [[ $choice -ge 1 && $choice -le $count ]]; then
+                USB_DEVICE="${found_devices[$((choice-1))]}"
+                ok "Selected: ${found_labels[$((choice-1))]}"
+                break
+            elif [[ $choice -eq $((count+1)) ]]; then
+                _prompt_manual_usb
+                break
+            elif [[ $choice -eq $((count+2)) ]]; then
+                warn "No USB device selected — Zigbee radio will not be available."
+                break
+            fi
+        fi
+        warn "Invalid selection, try again."
+    done
+}
+
+# ── Manual USB entry fallback ─────────────────────────────────────────────────
+_prompt_manual_usb() {
+    echo
+    warn "Available serial devices on this system:"
+    for dev in /dev/ttyUSB* /dev/ttyACM*; do
+        [[ -c "$dev" ]] && echo "    $dev"
+    done
+    echo
+    read -rp "  Enter Zigbee coordinator device path (or leave blank to skip): " manual_dev
+    if [[ -n "$manual_dev" ]]; then
+        if [[ -c "$manual_dev" ]]; then
+            USB_DEVICE="$manual_dev"
+            ok "Using: ${USB_DEVICE}"
+        else
+            die "Device ${manual_dev} does not exist or is not a character device."
+        fi
     else
-        warn "No Zigbee USB coordinator detected automatically."
-        warn "You can specify one with --usb /dev/ttyUSB0"
+        warn "No USB device selected — Zigbee radio will not be available."
     fi
 }
 
@@ -137,7 +255,6 @@ resolve_dialout_gid() {
         DIALOUT_GID=$(getent group dialout | cut -d: -f3)
         ok "Host dialout GID: ${BOLD}${DIALOUT_GID}${NC}"
     elif getent group uucp &>/dev/null; then
-        # Some distros (Arch, Alpine) use uucp instead of dialout
         DIALOUT_GID=$(getent group uucp | cut -d: -f3)
         ok "Host uucp GID (dialout equivalent): ${BOLD}${DIALOUT_GID}${NC}"
     else
@@ -170,9 +287,8 @@ COPY . .
 # /data required by CHIP SDK (Matter)
 RUN mkdir -p /data /app/data/matter /app/logs /app/config
 
-# Create zigbee user (UID 1000) and add to dialout (GID 20) for tty access.
-# GID 20 is the Debian/Ubuntu dialout GID — matches most host systems.
-# At runtime --group-add passes the actual host dialout GID as a supplemental group.
+# Create zigbee user (UID 1000) with dialout membership for tty access.
+# --group-add at runtime injects the host's actual dialout GID as supplemental.
 RUN groupadd -r -g 20 dialout 2>/dev/null || true \
  && groupadd -r zigbee \
  && useradd -r -u 1000 -g zigbee -G dialout -d /app zigbee \
@@ -207,8 +323,7 @@ prepare_data_dirs() {
         mkdir -p "$d"
     done
 
-    # Ensure the zigbee container user (UID 1000) can write to mounted volumes.
-    # This is necessary when the script is run as root on the host.
+    # Ensure container user (UID 1000) can write to mounted volumes
     chown -R 1000:1000 "$DATA_DIR"
     chmod -R u+rwX "$DATA_DIR"
     ok "Volume permissions set (owner: 1000:1000) at ${DATA_DIR}"
@@ -243,13 +358,14 @@ run_container() {
         --volume "${DATA_DIR}/logs:/app/logs:Z"
     )
 
-    # Pass host dialout GID as supplemental group so tty devices are accessible
+    # Pass host dialout GID as supplemental group
     if [[ -n "${DIALOUT_GID:-}" ]]; then
         run_args+=(--group-add "$DIALOUT_GID")
     fi
 
     if [[ -n "${USB_DEVICE:-}" ]]; then
         run_args+=(--device "${USB_DEVICE}:${USB_DEVICE}")
+        # Podman: also pass real path if symlink
         if [[ "$RUNTIME" == "podman" && -L "$USB_DEVICE" ]]; then
             local real_dev
             real_dev=$(readlink -f "$USB_DEVICE")
@@ -314,7 +430,7 @@ ${BOLD}Usage:${NC} $0 [OPTIONS]
 
 ${BOLD}Options:${NC}
   --port   PORT      Preferred host port  (default: ${INTERNAL_PORT})
-  --usb    DEVICE    Zigbee USB device    (default: auto-detect)
+  --usb    DEVICE    Zigbee USB device    (default: auto-detect by VID:PID)
   --dir    PATH      App clone directory  (default: ${APP_DIR})
   --data   PATH      Persistent data dir  (default: ${DATA_DIR})
   --branch NAME      Git branch           (default: ${REPO_BRANCH})
@@ -357,7 +473,16 @@ check_deps
 detect_runtime
 fetch_repo
 
-[[ -z "${USB_DEVICE:-}" ]] && detect_usb_coordinator
+# USB: use --usb override if provided, otherwise detect by VID:PID
+if [[ -z "${USB_DEVICE:-}" ]]; then
+    detect_usb_coordinator
+else
+    if [[ ! -c "$USB_DEVICE" ]]; then
+        die "Specified USB device ${USB_DEVICE} does not exist or is not a character device."
+    fi
+    ok "Using specified USB device: ${BOLD}${USB_DEVICE}${NC}"
+fi
+
 resolve_dialout_gid
 
 HOST_PORT=$(pick_host_port "$PREFERRED_PORT")
