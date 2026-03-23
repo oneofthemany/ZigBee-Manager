@@ -289,7 +289,7 @@ RUN mkdir -p /data /app/data/matter /app/data/backups /app/logs /app/config \\
 RUN groupadd -f -g ${dialout_gid} dialout \\
  && groupadd -r zigbee \\
  && useradd -r -u 1000 -g zigbee -G dialout -d /app zigbee \\
- && chown -R zigbee:zigbee /app /app/data /app/logs /app/config \\
+ && chown -R zigbee:zigbee /app /data /app/data /app/logs /app/config \\
  && chown -R zigbee:zigbee /usr/local/lib/python3.11/site-packages/credentials
 
 # Redirect safe_deploy and app dirs to writable paths
