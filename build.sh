@@ -323,12 +323,6 @@ prepare_data_dirs() {
         mkdir -p "$d"
     done
 
-    # Make host volume dirs writable by any user (UID 1000 inside container).
-    # chmod instead of chown so this works without root on the host.
-    chmod -R a+rwX "$DATA_DIR"
-    ok "Volume permissions set at ${DATA_DIR}"
-
-
     if [[ ! -f "$DATA_DIR/config/config.yaml" ]] && [[ -f "$APP_DIR/config/config.yaml" ]]; then
         cp "$APP_DIR/config/config.yaml" "$DATA_DIR/config/config.yaml"
         ok "Default config.yaml copied to ${DATA_DIR}/config/"
@@ -341,6 +335,7 @@ prepare_data_dirs() {
         ok "Serial port patched in config.yaml -> ${BOLD}${USB_DEVICE}${NC}"
     fi
 
+    chmod -R a+rwX "$DATA_DIR"
     ok "Data directories ready at ${DATA_DIR}"
 }
 
