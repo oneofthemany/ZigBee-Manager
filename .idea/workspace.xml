@@ -4,9 +4,8 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="updated to handle auto chip detect">
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/modules/safe_deploy.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/safe_deploy.py" afterDir="false" />
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="rolled back">
+      <change beforePath="$PROJECT_DIR$/build.sh" beforeDir="false" afterPath="$PROJECT_DIR$/build.sh" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -146,14 +145,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00037" summary="result patch for db">
-      <option name="closed" value="true" />
-      <created>1774019768657</created>
-      <option name="number" value="00037" />
-      <option name="presentableId" value="LOCAL-00037" />
-      <option name="project" value="LOCAL" />
-      <updated>1774019768657</updated>
     </task>
     <task id="LOCAL-00038" summary="new bootguard to  recover from backup in the event of restart failure">
       <option name="closed" value="true" />
@@ -539,7 +530,15 @@
       <option name="project" value="LOCAL" />
       <updated>1774294007920</updated>
     </task>
-    <option name="localTasksCounter" value="86" />
+    <task id="LOCAL-00086" summary="rolled back">
+      <option name="closed" value="true" />
+      <created>1774294103846</created>
+      <option name="number" value="00086" />
+      <option name="presentableId" value="LOCAL-00086" />
+      <option name="project" value="LOCAL" />
+      <updated>1774294103846</updated>
+    </task>
+    <option name="localTasksCounter" value="87" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -554,7 +553,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="dialout and permission fix for directories" />
     <MESSAGE value="safe pats for VID and PID for dongle detection" />
     <MESSAGE value="syntax error line 129 fix" />
     <MESSAGE value="patch selected device to config.yaml" />
@@ -579,6 +577,7 @@
     <MESSAGE value="space removed" />
     <MESSAGE value="moved to root user to debug whey device wont attach to rootless container" />
     <MESSAGE value="updated to handle auto chip detect" />
-    <option name="LAST_COMMIT_MESSAGE" value="updated to handle auto chip detect" />
+    <MESSAGE value="rolled back" />
+    <option name="LAST_COMMIT_MESSAGE" value="rolled back" />
   </component>
 </project>
