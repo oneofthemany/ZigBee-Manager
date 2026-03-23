@@ -4,7 +4,7 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="dir fixes for backups inside container">
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="APP_DIR reinstated due to removal in error">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -106,14 +106,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00009" summary="screens added">
-      <option name="closed" value="true" />
-      <created>1773664049184</created>
-      <option name="number" value="00009" />
-      <option name="presentableId" value="LOCAL-00009" />
-      <option name="project" value="LOCAL" />
-      <updated>1773664049184</updated>
     </task>
     <task id="LOCAL-00010" summary="updated markdowns">
       <option name="closed" value="true" />
@@ -499,7 +491,15 @@
       <option name="project" value="LOCAL" />
       <updated>1774266762782</updated>
     </task>
-    <option name="localTasksCounter" value="58" />
+    <task id="LOCAL-00058" summary="APP_DIR reinstated due to removal in error">
+      <option name="closed" value="true" />
+      <created>1774270071502</created>
+      <option name="number" value="00058" />
+      <option name="presentableId" value="LOCAL-00058" />
+      <option name="project" value="LOCAL" />
+      <updated>1774270071503</updated>
+    </task>
+    <option name="localTasksCounter" value="59" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -514,7 +514,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="new telemetry duckdb" />
     <MESSAGE value="new system toast notifications" />
     <MESSAGE value="timeout=aiohttp.ClientTimeout increased to 180" />
     <MESSAGE value="add in a warmup function for ai assistant" />
@@ -539,6 +538,7 @@
     <MESSAGE value="BACKUP directory changed for container intro" />
     <MESSAGE value="dir fixes" />
     <MESSAGE value="dir fixes for backups inside container" />
-    <option name="LAST_COMMIT_MESSAGE" value="dir fixes for backups inside container" />
+    <MESSAGE value="APP_DIR reinstated due to removal in error" />
+    <option name="LAST_COMMIT_MESSAGE" value="APP_DIR reinstated due to removal in error" />
   </component>
 </project>
