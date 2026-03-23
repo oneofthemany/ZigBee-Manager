@@ -4,9 +4,7 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="/data added to chown for matter server">
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-    </list>
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="commented out priv to test access to device" />
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -106,14 +104,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00028" summary="new telemetry collector">
-      <option name="closed" value="true" />
-      <created>1774009403260</created>
-      <option name="number" value="00028" />
-      <option name="presentableId" value="LOCAL-00028" />
-      <option name="project" value="LOCAL" />
-      <updated>1774009403260</updated>
     </task>
     <task id="LOCAL-00029" summary="new system &amp; telemetry features">
       <option name="closed" value="true" />
@@ -499,7 +489,15 @@
       <option name="project" value="LOCAL" />
       <updated>1774279389514</updated>
     </task>
-    <option name="localTasksCounter" value="77" />
+    <task id="LOCAL-00077" summary="commented out priv to test access to device">
+      <option name="closed" value="true" />
+      <created>1774280224867</created>
+      <option name="number" value="00077" />
+      <option name="presentableId" value="LOCAL-00077" />
+      <option name="project" value="LOCAL" />
+      <updated>1774280224867</updated>
+    </task>
+    <option name="localTasksCounter" value="78" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -514,7 +512,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="new build script for automated install from repo" />
     <MESSAGE value="head -1 bug fix" />
     <MESSAGE value="missing fix" />
     <MESSAGE value="zigpy fix" />
@@ -539,6 +536,7 @@
     <MESSAGE value="space added" />
     <MESSAGE value="chmod after dir creation - duh" />
     <MESSAGE value="/data added to chown for matter server" />
-    <option name="LAST_COMMIT_MESSAGE" value="/data added to chown for matter server" />
+    <MESSAGE value="commented out priv to test access to device" />
+    <option name="LAST_COMMIT_MESSAGE" value="commented out priv to test access to device" />
   </component>
 </project>
