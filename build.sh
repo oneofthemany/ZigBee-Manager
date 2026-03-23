@@ -125,16 +125,22 @@ fetch_repo() {
 usb_sysfs_to_tty() {
     local usbpath="$1"
     local tty=""
-    # Walk child dirs looking for tty node
-    for ttydir in "${usbpath}"/*/*/tty/tty* "${usbpath}"/*/tty/tty* 2>/dev/null; do
+    # Walk child dirs looking for tty node — use nullglob to avoid literal globs on no match
+    local old_nullglob
+    old_nullglob=$(shopt -p nullglob 2>/dev/null || true)
+    shopt -s nullglob
+    local ttydir
+    for ttydir in "${usbpath}"/*/*/tty/tty* "${usbpath}"/*/tty/tty*; do
         if [[ -d "$ttydir" ]]; then
             tty=$(basename "$ttydir")
             break
         fi
     done
+    eval "$old_nullglob" 2>/dev/null || shopt -u nullglob
     # Fallback: search via find
     if [[ -z "$tty" ]]; then
-        tty=$(find "$usbpath" -name "tty*" -maxdepth 6 2>/dev/null | grep -oP 'tty[A-Z]+\d+' | head -1 || true)
+        tty=$(find "$usbpath" -maxdepth 6 -name "tty*" 2>/dev/null \
+              | grep -oE 'tty[A-Z]+[0-9]+' | head -1 || true)
     fi
     echo "$tty"
 }
@@ -156,7 +162,7 @@ detect_usb_coordinator() {
 
         [[ -f "$vidfile" && -f "$pidfile" ]] || continue
 
-        local vid pid vidpid product serial tty label
+        local vid="" pid="" vidpid="" product="" serial="" tty="" label=""
         vid=$(cat "$vidfile" 2>/dev/null || true)
         pid=$(cat "$pidfile" 2>/dev/null || true)
         vidpid="${vid}:${pid}"
