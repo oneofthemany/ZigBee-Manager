@@ -371,11 +371,10 @@ run_container() {
         fi
     fi
 
-    # Podman rootless keep-id: do NOT combine with --group-add as they conflict.
-    # dialout access is handled via matching GID baked into the image at build time.
-    if [[ "$RUNTIME" == "podman" ]]; then
-        run_args+=(--userns keep-id)
-    fi
+  if [[ "$RUNTIME" == "podman" ]]; then
+      run_args+=(--security-opt label=disable)
+      run_args+=(--privileged)
+  fi
 
     info "Starting container '${CONTAINER_NAME}' ..."
     "$RUNTIME" run "${run_args[@]}" "${IMAGE_NAME}:latest"
