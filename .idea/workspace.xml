@@ -4,9 +4,7 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="removal of chwon of DAT_DIR as not needed">
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-    </list>
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="sec and priv for runtime args in podman" />
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -106,22 +104,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00018" summary="improved to cater for new ai elements and container creation for ollama">
-      <option name="closed" value="true" />
-      <created>1774002553375</created>
-      <option name="number" value="00018" />
-      <option name="presentableId" value="LOCAL-00018" />
-      <option name="project" value="LOCAL" />
-      <updated>1774002553375</updated>
-    </task>
-    <task id="LOCAL-00019" summary="new ai and safe deploy">
-      <option name="closed" value="true" />
-      <created>1774002587053</created>
-      <option name="number" value="00019" />
-      <option name="presentableId" value="LOCAL-00019" />
-      <option name="project" value="LOCAL" />
-      <updated>1774002587053</updated>
     </task>
     <task id="LOCAL-00020" summary="initial commit of safe deploy">
       <option name="closed" value="true" />
@@ -499,7 +481,23 @@
       <option name="project" value="LOCAL" />
       <updated>1774274111679</updated>
     </task>
-    <option name="localTasksCounter" value="67" />
+    <task id="LOCAL-00067" summary="removal of chwon of DAT_DIR as not needed">
+      <option name="closed" value="true" />
+      <created>1774276551570</created>
+      <option name="number" value="00067" />
+      <option name="presentableId" value="LOCAL-00067" />
+      <option name="project" value="LOCAL" />
+      <updated>1774276551570</updated>
+    </task>
+    <task id="LOCAL-00068" summary="sec and priv for runtime args in podman">
+      <option name="closed" value="true" />
+      <created>1774276656276</created>
+      <option name="number" value="00068" />
+      <option name="presentableId" value="LOCAL-00068" />
+      <option name="project" value="LOCAL" />
+      <updated>1774276656276</updated>
+    </task>
+    <option name="localTasksCounter" value="69" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -514,7 +512,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="result patch for db" />
     <MESSAGE value="new bootguard to  recover from backup in the event of restart failure" />
     <MESSAGE value="adding in boot guard to service" />
     <MESSAGE value="bug fix for contact sensors and better initialisation for devices" />
@@ -539,6 +536,7 @@
     <MESSAGE value="adding priv and sec commands to podman args" />
     <MESSAGE value="final dir and dep fixes" />
     <MESSAGE value="removal of chwon of DAT_DIR as not needed" />
-    <option name="LAST_COMMIT_MESSAGE" value="removal of chwon of DAT_DIR as not needed" />
+    <MESSAGE value="sec and priv for runtime args in podman" />
+    <option name="LAST_COMMIT_MESSAGE" value="sec and priv for runtime args in podman" />
   </component>
 </project>

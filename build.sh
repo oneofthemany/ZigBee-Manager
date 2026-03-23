@@ -323,9 +323,11 @@ prepare_data_dirs() {
         mkdir -p "$d"
     done
 
-    # Permissions are managed inside the container via the Containerfile.
-    # Host dirs are owned by the running user and accessible via --privileged.
-    ok "Data directories ready at ${DATA_DIR}"
+    # Make host volume dirs writable by any user (UID 1000 inside container).
+    # chmod instead of chown so this works without root on the host.
+    chmod -R a+rwX "$DATA_DIR"
+    ok "Volume permissions set at ${DATA_DIR}"
+
 
     if [[ ! -f "$DATA_DIR/config/config.yaml" ]] && [[ -f "$APP_DIR/config/config.yaml" ]]; then
         cp "$APP_DIR/config/config.yaml" "$DATA_DIR/config/config.yaml"
@@ -371,10 +373,10 @@ run_container() {
         fi
     fi
 
-  if [[ "$RUNTIME" == "podman" ]]; then
-      run_args+=(--security-opt label=disable)
-      run_args+=(--privileged)
-  fi
+    if [[ "$RUNTIME" == "podman" ]]; then
+        run_args+=(--security-opt label=disable)
+        run_args+=(--privileged)
+    fi
 
     info "Starting container '${CONTAINER_NAME}' ..."
     "$RUNTIME" run "${run_args[@]}" "${IMAGE_NAME}:latest"
