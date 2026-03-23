@@ -1,12 +1,12 @@
 fastapi
 uvicorn[standard]
-zigpy>=0.70.0,<0.75.0
+zigpy
 bellows<0.40
 aiomqtt
 pyyaml
 zha-quirks<0.0.130
 pydantic
-zigpy-znp==0.14.2
+zigpy-znp
 aiohttp
 python-matter-server
 python-multipart
