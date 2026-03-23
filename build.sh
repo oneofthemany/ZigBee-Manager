@@ -264,6 +264,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \\
         libssl-dev \\
         logrotate \\
         curl \\
+        libglib2.0-0 \\
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
