@@ -265,6 +265,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \\
         logrotate \\
         curl \\
         libglib2.0-0 \\
+        libnl-3-200 \\
+        libnl-route-3-200 \\
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -277,8 +279,9 @@ RUN pip install --no-cache-dir --upgrade pip \\
 
 COPY . .
 
-# /data required by CHIP SDK; backups dir used by safe_deploy module
-RUN mkdir -p /data /app/data/matter /app/data/backups /app/logs /app/config
+# Create all required directories
+RUN mkdir -p /data /app/data/matter /app/data/backups /app/logs /app/config \\
+ && mkdir -p /usr/local/lib/python3.11/site-packages/credentials/development/paa-root-certs
 
 # Create zigbee user (UID 1000).
 # dialout group is created with the host's actual GID (${dialout_gid})
@@ -286,10 +289,12 @@ RUN mkdir -p /data /app/data/matter /app/data/backups /app/logs /app/config
 RUN groupadd -f -g ${dialout_gid} dialout \\
  && groupadd -r zigbee \\
  && useradd -r -u 1000 -g zigbee -G dialout -d /app zigbee \\
- && chown -R zigbee:zigbee /app /data
+ && chown -R zigbee:zigbee /app /data \\
+ && chown -R zigbee:zigbee /usr/local/lib/python3.11/site-packages/credentials
 
-# Redirect safe_deploy backups to a writable in-container path
+# Redirect safe_deploy and app dirs to writable paths
 ENV ZMM_BACKUP_DIR=/app/data/backups
+ENV ZMM_APP_DIR=/app
 
 USER zigbee
 
