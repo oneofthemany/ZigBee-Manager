@@ -4,7 +4,7 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="remove usns arg" />
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="adding priv and sec commands to podman args" />
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -104,14 +104,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00014" summary="workspace update">
-      <option name="closed" value="true" />
-      <created>1773665652926</created>
-      <option name="number" value="00014" />
-      <option name="presentableId" value="LOCAL-00014" />
-      <option name="project" value="LOCAL" />
-      <updated>1773665652926</updated>
     </task>
     <task id="LOCAL-00015" summary="improved animation">
       <option name="closed" value="true" />
@@ -497,7 +489,15 @@
       <option name="project" value="LOCAL" />
       <updated>1774271563825</updated>
     </task>
-    <option name="localTasksCounter" value="63" />
+    <task id="LOCAL-00063" summary="adding priv and sec commands to podman args">
+      <option name="closed" value="true" />
+      <created>1774272050216</created>
+      <option name="number" value="00063" />
+      <option name="presentableId" value="LOCAL-00063" />
+      <option name="project" value="LOCAL" />
+      <updated>1774272050216</updated>
+    </task>
+    <option name="localTasksCounter" value="64" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -512,7 +512,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="add in a warmup function for ai assistant" />
     <MESSAGE value="improve the editor to verify imports before allowing file to be saved" />
     <MESSAGE value="migrate to duckdb for persistence" />
     <MESSAGE value="result patch for db" />
@@ -537,6 +536,7 @@
     <MESSAGE value="APP_DIR reinstated due to removal in error" />
     <MESSAGE value="libglib2.0-0 \\ added" />
     <MESSAGE value="remove usns arg" />
-    <option name="LAST_COMMIT_MESSAGE" value="remove usns arg" />
+    <MESSAGE value="adding priv and sec commands to podman args" />
+    <option name="LAST_COMMIT_MESSAGE" value="adding priv and sec commands to podman args" />
   </component>
 </project>
