@@ -44,8 +44,8 @@ router = APIRouter(prefix="/api/system", tags=["system"])
 # CONFIGURATION
 # ============================================================================
 
-APP_DIR = "~/zigbee_matter_manager"
-BACKUP_DIR = os.path.join(APP_DIR, "backups")
+APP_DIR = os.environ.get('ZMM_APP_DIR', '/app')
+BACKUP_DIR = os.environ.get('ZMM_BACKUP_DIR', '/app/data/backups')
 MAX_BACKUPS = 10
 HEALTH_CHECK_URL = "http://localhost:8000/api/devices"
 HEALTH_CHECK_TIMEOUT = 60       # seconds to wait for healthy restart

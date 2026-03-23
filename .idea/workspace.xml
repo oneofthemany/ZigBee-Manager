@@ -4,9 +4,9 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="space removed">
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="updated to handle auto chip detect">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/build.sh" beforeDir="false" afterPath="$PROJECT_DIR$/build.sh" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/modules/safe_deploy.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/safe_deploy.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -51,28 +51,42 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent"><![CDATA[{
-  "keyToString": {
-    "ModuleVcsDetector.initialDetectionPerformed": "true",
-    "Python.main.executor": "Run",
-    "RunOnceActivity.ShowReadmeOnStart": "true",
-    "RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252": "true",
-    "RunOnceActivity.cidr.known.project.marker": "true",
-    "RunOnceActivity.git.unshallow": "true",
-    "RunOnceActivity.readMode.enableVisualFormatting": "true",
-    "SHARE_PROJECT_CONFIGURATION_FILES": "true",
-    "SHELLCHECK.PATH": "/var/home/smu02/.local/share/Google/AndroidStudio2025.3.1/Shell Script/shellcheck",
-    "Shell Script.deploy.sh.executor": "Run",
-    "cf.first.check.clang-format": "false",
-    "cidr.known.project.marker": "true",
-    "git-widget-placeholder": "main",
-    "kotlin-language-version-configured": "true",
-    "last_opened_file_path": "/home/smu02/StudioProjects/ZigBee-Matter-Manager",
-    "project.structure.last.edited": "Project",
-    "project.structure.proportion": "0.0",
-    "project.structure.side.proportion": "0.2"
+  <component name="PropertiesComponent">{
+  &quot;keyToString&quot;: {
+    &quot;ModuleVcsDetector.initialDetectionPerformed&quot;: &quot;true&quot;,
+    &quot;Python.main.executor&quot;: &quot;Run&quot;,
+    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.cidr.known.project.marker&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.readMode.enableVisualFormatting&quot;: &quot;true&quot;,
+    &quot;SHARE_PROJECT_CONFIGURATION_FILES&quot;: &quot;true&quot;,
+    &quot;SHELLCHECK.PATH&quot;: &quot;/var/home/smu02/.local/share/Google/AndroidStudio2025.3.1/Shell Script/shellcheck&quot;,
+    &quot;Shell Script.deploy.sh.executor&quot;: &quot;Run&quot;,
+    &quot;cf.first.check.clang-format&quot;: &quot;false&quot;,
+    &quot;cidr.known.project.marker&quot;: &quot;true&quot;,
+    &quot;git-widget-placeholder&quot;: &quot;main&quot;,
+    &quot;kotlin-language-version-configured&quot;: &quot;true&quot;,
+    &quot;last_opened_file_path&quot;: &quot;/home/smu02/StudioProjects/ZigBee-Matter-Manager&quot;,
+    &quot;project.structure.last.edited&quot;: &quot;Project&quot;,
+    &quot;project.structure.proportion&quot;: &quot;0.0&quot;,
+    &quot;project.structure.side.proportion&quot;: &quot;0.2&quot;,
+    &quot;settings.editor.selected.configurable&quot;: &quot;AndroidSdkUpdater&quot;
   }
-}]]></component>
+}</component>
+  <component name="PyConsoleOptionsProvider">
+    <option name="myPythonConsoleState">
+      <console-settings sdk-home="$USER_HOME$/venv/bin/python3.14">
+        <option name="sdk">
+          <Sdk />
+        </option>
+        <option name="mySdkHome" value="$USER_HOME$/venv/bin/python3.14" />
+        <option name="mySdk">
+          <Sdk />
+        </option>
+      </console-settings>
+    </option>
+  </component>
   <component name="RecentsManager">
     <key name="MoveFile.RECENT_KEYS">
       <recent name="$PROJECT_DIR$" />
@@ -132,38 +146,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00033" summary="timeout=aiohttp.ClientTimeout increased to 180">
-      <option name="closed" value="true" />
-      <created>1774017919943</created>
-      <option name="number" value="00033" />
-      <option name="presentableId" value="LOCAL-00033" />
-      <option name="project" value="LOCAL" />
-      <updated>1774017919943</updated>
-    </task>
-    <task id="LOCAL-00034" summary="add in a warmup function for ai assistant">
-      <option name="closed" value="true" />
-      <created>1774017969263</created>
-      <option name="number" value="00034" />
-      <option name="presentableId" value="LOCAL-00034" />
-      <option name="project" value="LOCAL" />
-      <updated>1774017969263</updated>
-    </task>
-    <task id="LOCAL-00035" summary="improve the editor to verify imports before allowing file to be saved">
-      <option name="closed" value="true" />
-      <created>1774018015787</created>
-      <option name="number" value="00035" />
-      <option name="presentableId" value="LOCAL-00035" />
-      <option name="project" value="LOCAL" />
-      <updated>1774018015787</updated>
-    </task>
-    <task id="LOCAL-00036" summary="migrate to duckdb for persistence">
-      <option name="closed" value="true" />
-      <created>1774019731705</created>
-      <option name="number" value="00036" />
-      <option name="presentableId" value="LOCAL-00036" />
-      <option name="project" value="LOCAL" />
-      <updated>1774019731705</updated>
     </task>
     <task id="LOCAL-00037" summary="result patch for db">
       <option name="closed" value="true" />
@@ -525,7 +507,39 @@
       <option name="project" value="LOCAL" />
       <updated>1774286947554</updated>
     </task>
-    <option name="localTasksCounter" value="82" />
+    <task id="LOCAL-00082" summary="moved to root user to debug whey device wont attach to rootless container">
+      <option name="closed" value="true" />
+      <created>1774287505273</created>
+      <option name="number" value="00082" />
+      <option name="presentableId" value="LOCAL-00082" />
+      <option name="project" value="LOCAL" />
+      <updated>1774287505273</updated>
+    </task>
+    <task id="LOCAL-00083" summary="updated to handle auto chip detect">
+      <option name="closed" value="true" />
+      <created>1774293895243</created>
+      <option name="number" value="00083" />
+      <option name="presentableId" value="LOCAL-00083" />
+      <option name="project" value="LOCAL" />
+      <updated>1774293895244</updated>
+    </task>
+    <task id="LOCAL-00084" summary="updated to handle auto chip detect">
+      <option name="closed" value="true" />
+      <created>1774293999194</created>
+      <option name="number" value="00084" />
+      <option name="presentableId" value="LOCAL-00084" />
+      <option name="project" value="LOCAL" />
+      <updated>1774293999194</updated>
+    </task>
+    <task id="LOCAL-00085" summary="updated to handle auto chip detect">
+      <option name="closed" value="true" />
+      <created>1774294007920</created>
+      <option name="number" value="00085" />
+      <option name="presentableId" value="LOCAL-00085" />
+      <option name="project" value="LOCAL" />
+      <updated>1774294007920</updated>
+    </task>
+    <option name="localTasksCounter" value="86" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -540,8 +554,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="zigpy fix" />
-    <MESSAGE value="typo in line 229" />
     <MESSAGE value="dialout and permission fix for directories" />
     <MESSAGE value="safe pats for VID and PID for dongle detection" />
     <MESSAGE value="syntax error line 129 fix" />
@@ -565,6 +577,8 @@
     <MESSAGE value="commented out priv to test access to device" />
     <MESSAGE value="priv to true" />
     <MESSAGE value="space removed" />
-    <option name="LAST_COMMIT_MESSAGE" value="space removed" />
+    <MESSAGE value="moved to root user to debug whey device wont attach to rootless container" />
+    <MESSAGE value="updated to handle auto chip detect" />
+    <option name="LAST_COMMIT_MESSAGE" value="updated to handle auto chip detect" />
   </component>
 </project>
