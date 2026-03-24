@@ -4,8 +4,11 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="">
-      <change beforePath="$PROJECT_DIR$/build.sh" beforeDir="false" afterPath="$PROJECT_DIR$/build.sh" afterDir="false" />
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="if then fix for [] elements">
+      <change afterPath="$PROJECT_DIR$/handlers/poll_control.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/core/service.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/service.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/device.py" beforeDir="false" afterPath="$PROJECT_DIR$/device.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/handlers/security.py" beforeDir="false" afterPath="$PROJECT_DIR$/handlers/security.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -145,14 +148,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00038" summary="new bootguard to  recover from backup in the event of restart failure">
-      <option name="closed" value="true" />
-      <created>1774020748013</created>
-      <option name="number" value="00038" />
-      <option name="presentableId" value="LOCAL-00038" />
-      <option name="project" value="LOCAL" />
-      <updated>1774020748013</updated>
     </task>
     <task id="LOCAL-00039" summary="adding in boot guard to service">
       <option name="closed" value="true" />
@@ -538,7 +533,15 @@
       <option name="project" value="LOCAL" />
       <updated>1774294103846</updated>
     </task>
-    <option name="localTasksCounter" value="87" />
+    <task id="LOCAL-00087" summary="if then fix for [] elements">
+      <option name="closed" value="true" />
+      <created>1774342418539</created>
+      <option name="number" value="00087" />
+      <option name="presentableId" value="LOCAL-00087" />
+      <option name="project" value="LOCAL" />
+      <updated>1774342418540</updated>
+    </task>
+    <option name="localTasksCounter" value="88" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -553,7 +556,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="safe pats for VID and PID for dongle detection" />
     <MESSAGE value="syntax error line 129 fix" />
     <MESSAGE value="patch selected device to config.yaml" />
     <MESSAGE value="BACKUP directory changed for container intro" />
@@ -578,7 +580,8 @@
     <MESSAGE value="moved to root user to debug whey device wont attach to rootless container" />
     <MESSAGE value="updated to handle auto chip detect" />
     <MESSAGE value="rolled back" />
-    <option name="LAST_COMMIT_MESSAGE" value="rolled back" />
+    <MESSAGE value="if then fix for [] elements" />
+    <option name="LAST_COMMIT_MESSAGE" value="if then fix for [] elements" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>

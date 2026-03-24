@@ -660,6 +660,13 @@ class ZigbeeService(
         except Exception:
             pass
 
+        # 2b. UPDATE LAST SEEN for all known devices
+        try:
+            if ieee in self.devices:
+                self.devices[ieee].update_last_seen()
+        except Exception:
+            pass
+
         # 3. FAST PATH (Time-critical)
         try:
             fast_pathed = self.fast_path.process_frame(

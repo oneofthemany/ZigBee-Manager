@@ -98,12 +98,11 @@ class IASZoneHandler(ClusterHandler):
         if command_id == 0x00:
             # Zone Status Change Notification - THIS IS THE MOTION EVENT
             self._handle_zone_status_change(args)
-            
+
         elif command_id == 0x01:
-            # Zone Enroll Request
-            logger.info(f"[{self.device.ieee}] IAS Zone Enroll Request received")
-            # We should respond with enroll response, but this is usually
-            # handled during initial configuration
+            # Zone Enroll Request — MUST respond or device won't enrol
+            logger.info(f"[{self.device.ieee}] IAS Zone Enroll Request received — responding")
+            asyncio.create_task(self._send_enroll_response())
             
         else:
             logger.debug(f"[{self.device.ieee}] Unknown IAS Zone command: 0x{command_id:02x}")
@@ -217,6 +216,22 @@ class IASZoneHandler(ClusterHandler):
             logger.error(f"[{self.device.ieee}] Failed to parse IAS zone status: {e}")
             import traceback
             traceback.print_exc()
+
+    async def _send_enroll_response(self):
+        """Send IAS Zone Enroll Response (command 0x00, server->client)."""
+        try:
+            # enroll_response(enroll_response_code, zone_id)
+            # 0 = Success, zone_id = 0 (auto-assign)
+            result = await self.cluster.enroll_response(0x00, 0)
+            logger.info(f"[{self.device.ieee}] IAS Zone Enroll Response sent: {result}")
+        except AttributeError:
+            try:
+                result = await self.cluster.command(0x00, 0x00, 0)
+                logger.info(f"[{self.device.ieee}] IAS Zone Enroll Response sent (fallback): {result}")
+            except Exception as e:
+                logger.warning(f"[{self.device.ieee}] Enroll response fallback failed: {e}")
+        except Exception as e:
+            logger.warning(f"[{self.device.ieee}] IAS Zone Enroll Response failed: {e}")
 
     def attribute_updated(self, attrid: int, value: Any, timestamp: Optional[float] = None):
         """
