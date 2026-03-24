@@ -4,15 +4,8 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="more changes to try and get container buikd successfull">
-      <change afterPath="$PROJECT_DIR$/modules/dongle_jedi.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/modules/dongle_jedi_api.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/static/css/setup-wizard.css" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/static/js/setup-wizard.js" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/main.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/modules/test_recovery.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/test_recovery.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/routes/editor_routes.py" beforeDir="false" afterPath="$PROJECT_DIR$/routes/editor_routes.py" afterDir="false" />
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="folder dir &gt; /app for new container build">
+      <change beforePath="$PROJECT_DIR$/core/config_builder.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/config_builder.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -152,22 +145,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00050" summary="safe pats for VID and PID for dongle detection">
-      <option name="closed" value="true" />
-      <created>1774264445147</created>
-      <option name="number" value="00050" />
-      <option name="presentableId" value="LOCAL-00050" />
-      <option name="project" value="LOCAL" />
-      <updated>1774264445148</updated>
-    </task>
-    <task id="LOCAL-00051" summary="safe pats for VID and PID for dongle detection">
-      <option name="closed" value="true" />
-      <created>1774264452701</created>
-      <option name="number" value="00051" />
-      <option name="presentableId" value="LOCAL-00051" />
-      <option name="project" value="LOCAL" />
-      <updated>1774264452701</updated>
     </task>
     <task id="LOCAL-00052" summary="syntax error line 129 fix">
       <option name="closed" value="true" />
@@ -545,7 +522,23 @@
       <option name="project" value="LOCAL" />
       <updated>1774355234176</updated>
     </task>
-    <option name="localTasksCounter" value="99" />
+    <task id="LOCAL-00099" summary="new setup wizard with dongle jedi">
+      <option name="closed" value="true" />
+      <created>1774384775026</created>
+      <option name="number" value="00099" />
+      <option name="presentableId" value="LOCAL-00099" />
+      <option name="project" value="LOCAL" />
+      <updated>1774384775026</updated>
+    </task>
+    <task id="LOCAL-00100" summary="folder dir &gt; /app for new container build">
+      <option name="closed" value="true" />
+      <created>1774384814493</created>
+      <option name="number" value="00100" />
+      <option name="presentableId" value="LOCAL-00100" />
+      <option name="project" value="LOCAL" />
+      <updated>1774384814493</updated>
+    </task>
+    <option name="localTasksCounter" value="101" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -560,8 +553,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="sec and priv for runtime args in podman" />
-    <MESSAGE value="chmod added to the data dir" />
     <MESSAGE value="chown to config and log dirs inside container" />
     <MESSAGE value="typo in dir chown" />
     <MESSAGE value="space added" />
@@ -585,7 +576,9 @@
     <MESSAGE value="requirement patches" />
     <MESSAGE value="testing new UID GUID for container build" />
     <MESSAGE value="more changes to try and get container buikd successfull" />
-    <option name="LAST_COMMIT_MESSAGE" value="more changes to try and get container buikd successfull" />
+    <MESSAGE value="new setup wizard with dongle jedi" />
+    <MESSAGE value="folder dir &gt; /app for new container build" />
+    <option name="LAST_COMMIT_MESSAGE" value="folder dir &gt; /app for new container build" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
