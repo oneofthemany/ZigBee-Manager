@@ -319,7 +319,7 @@ COPY . .
 # Required directories (includes CHIP SDK credentials path for Matter PAA certs)
 RUN mkdir -p /data /app/data/matter /app/data/backups /app/logs /app/config \
         /usr/local/lib/python3.11/site-packages/credentials/development/paa-root-certs \
- && chown -R ${HOST_UID}:${HOST_GID} /app /data \
+ && chown -R ${HOST_UID}:${HOST_GID} /app /data /app/data /app/logs /app/config \
         /usr/local/lib/python3.11/site-packages/credentials
 
 ENV ZMM_BACKUP_DIR=/app/data/backups
@@ -364,6 +364,15 @@ build_image() {
 # PREPARE DATA DIRECTORIES
 # =============================================================================
 prepare_data_dirs() {
+    # Reclaim ownership — previous runs with :Z or different UID may have
+    # changed ownership to root/container user
+    if [[ -d "$DATA_DIR" ]]; then
+        if ! [[ -w "$DATA_DIR" ]]; then
+            info "Reclaiming ownership of ${DATA_DIR}..."
+            sudo chown -R "$(id -u):$(id -g)" "$DATA_DIR"
+        fi
+    fi
+
     local dirs=(
         "$DATA_DIR/config"
         "$DATA_DIR/data"
@@ -372,6 +381,13 @@ prepare_data_dirs() {
     )
     for d in "${dirs[@]}"; do
         mkdir -p "$d"
+    done
+
+    # Ensure all subdirs are writable (catches partial ownership issues)
+    for d in "${dirs[@]}"; do
+        if ! [[ -w "$d" ]]; then
+            sudo chown -R "$(id -u):$(id -g)" "$d"
+        fi
     done
 
     # Seed config.yaml
@@ -409,9 +425,9 @@ run_container() {
         --restart unless-stopped
         --publish "${host_port}:${INTERNAL_PORT}"
         --publish "${host_matter_port}:${MATTER_INTERNAL_PORT}"
-        --volume "${DATA_DIR}/config:/app/config:Z"
-        --volume "${DATA_DIR}/data:/app/data:Z"
-        --volume "${DATA_DIR}/logs:/app/logs:Z"
+        --volume "${DATA_DIR}/config:/app/config"
+        --volume "${DATA_DIR}/data:/app/data"
+        --volume "${DATA_DIR}/logs:/app/logs"
     )
 
     # ── USB device passthrough ──

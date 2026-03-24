@@ -4,10 +4,8 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="chown all dirs">
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="testing new UID GUID for container build">
       <change beforePath="$PROJECT_DIR$/build.sh" beforeDir="false" afterPath="$PROJECT_DIR$/build.sh" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/requirements.txt" beforeDir="false" afterPath="$PROJECT_DIR$/requirements.txt" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -147,22 +145,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00047" summary="zigpy fix">
-      <option name="closed" value="true" />
-      <created>1774263271137</created>
-      <option name="number" value="00047" />
-      <option name="presentableId" value="LOCAL-00047" />
-      <option name="project" value="LOCAL" />
-      <updated>1774263271137</updated>
-    </task>
-    <task id="LOCAL-00048" summary="typo in line 229">
-      <option name="closed" value="true" />
-      <created>1774263421710</created>
-      <option name="number" value="00048" />
-      <option name="presentableId" value="LOCAL-00048" />
-      <option name="project" value="LOCAL" />
-      <updated>1774263421710</updated>
     </task>
     <task id="LOCAL-00049" summary="dialout and permission fix for directories">
       <option name="closed" value="true" />
@@ -540,7 +522,23 @@
       <option name="project" value="LOCAL" />
       <updated>1774347858178</updated>
     </task>
-    <option name="localTasksCounter" value="96" />
+    <task id="LOCAL-00096" summary="requirement patches">
+      <option name="closed" value="true" />
+      <created>1774353767883</created>
+      <option name="number" value="00096" />
+      <option name="presentableId" value="LOCAL-00096" />
+      <option name="project" value="LOCAL" />
+      <updated>1774353767883</updated>
+    </task>
+    <task id="LOCAL-00097" summary="testing new UID GUID for container build">
+      <option name="closed" value="true" />
+      <created>1774353799771</created>
+      <option name="number" value="00097" />
+      <option name="presentableId" value="LOCAL-00097" />
+      <option name="project" value="LOCAL" />
+      <updated>1774353799771</updated>
+    </task>
+    <option name="localTasksCounter" value="98" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -555,8 +553,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="adding priv and sec commands to podman args" />
-    <MESSAGE value="final dir and dep fixes" />
     <MESSAGE value="removal of chwon of DAT_DIR as not needed" />
     <MESSAGE value="sec and priv for runtime args in podman" />
     <MESSAGE value="chmod added to the data dir" />
@@ -580,7 +576,9 @@
     <MESSAGE value="debug logger fixes for duckdb and new sort by columns" />
     <MESSAGE value="adding switches to device status" />
     <MESSAGE value="chown all dirs" />
-    <option name="LAST_COMMIT_MESSAGE" value="chown all dirs" />
+    <MESSAGE value="requirement patches" />
+    <MESSAGE value="testing new UID GUID for container build" />
+    <option name="LAST_COMMIT_MESSAGE" value="testing new UID GUID for container build" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
