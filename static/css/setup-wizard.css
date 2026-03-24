@@ -1,0 +1,289 @@
+/* ============================================================================
+   Setup Wizard — Coordinator Auto-Detection UI
+   ============================================================================
+   Drop-in file: static/css/setup-wizard.css
+   Load in index.html AFTER styles.css and dark-mode.css
+   ============================================================================ */
+
+/* ── Overlay ─────────────────────────────────────────────────────────────── */
+
+#setupWizardOverlay {
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    background: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transition: opacity 0.4s ease;
+    pointer-events: none;
+}
+
+#setupWizardOverlay.active {
+    opacity: 1;
+    pointer-events: all;
+}
+
+/* ── Card ────────────────────────────────────────────────────────────────── */
+
+.setup-wizard-card {
+    background: var(--bs-body-bg, #fff);
+    color: var(--bs-body-color, #212529);
+    border: 1px solid var(--bs-border-color, #dee2e6);
+    border-radius: 16px;
+    width: 95%;
+    max-width: 640px;
+    max-height: 90vh;
+    overflow-y: auto;
+    box-shadow: 0 24px 80px rgba(0, 0, 0, 0.3);
+    padding: 2rem;
+    position: relative;
+}
+
+.setup-wizard-card h4 {
+    font-weight: 700;
+    margin-bottom: 0.25rem;
+}
+
+.setup-wizard-card .subtitle {
+    color: var(--bs-secondary-color, #6c757d);
+    font-size: 0.9rem;
+    margin-bottom: 1.5rem;
+}
+
+/* ── Progress bar ────────────────────────────────────────────────────────── */
+
+.scan-progress-bar {
+    height: 6px;
+    border-radius: 3px;
+    background: var(--bs-tertiary-bg, #e9ecef);
+    overflow: hidden;
+    margin-bottom: 1rem;
+}
+
+.scan-progress-bar .bar-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #0d6efd, #0dcaf0);
+    border-radius: 3px;
+    transition: width 0.4s ease;
+    width: 0%;
+}
+
+/* Indeterminate animation when scanning */
+.scan-progress-bar.indeterminate .bar-fill {
+    width: 30%;
+    animation: indeterminate 1.5s ease-in-out infinite;
+}
+
+@keyframes indeterminate {
+    0%   { transform: translateX(-100%); }
+    100% { transform: translateX(400%); }
+}
+
+/* ── Log feed ────────────────────────────────────────────────────────────── */
+
+.scan-log {
+    background: var(--bs-tertiary-bg, #f8f9fa);
+    border: 1px solid var(--bs-border-color, #dee2e6);
+    border-radius: 8px;
+    padding: 0.75rem 1rem;
+    max-height: 200px;
+    overflow-y: auto;
+    font-family: 'SFMono-Regular', 'Menlo', 'Consolas', monospace;
+    font-size: 0.78rem;
+    line-height: 1.6;
+    margin-bottom: 1rem;
+}
+
+.scan-log .log-entry {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.scan-log .log-entry.success {
+    color: #198754;
+}
+
+.scan-log .log-entry.error {
+    color: #dc3545;
+}
+
+.scan-log .log-entry.info {
+    color: var(--bs-secondary-color, #6c757d);
+}
+
+/* ── Results cards ───────────────────────────────────────────────────────── */
+
+.adapter-result {
+    background: var(--bs-tertiary-bg, #f8f9fa);
+    border: 2px solid var(--bs-border-color, #dee2e6);
+    border-radius: 12px;
+    padding: 1rem 1.25rem;
+    margin-bottom: 0.75rem;
+    cursor: pointer;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.adapter-result:hover {
+    border-color: #0d6efd;
+}
+
+.adapter-result.selected {
+    border-color: #0d6efd;
+    box-shadow: 0 0 0 3px rgba(13, 110, 253, 0.15);
+}
+
+.adapter-result .adapter-icon {
+    font-size: 1.5rem;
+    margin-right: 0.75rem;
+}
+
+.adapter-result .adapter-name {
+    font-weight: 600;
+    font-size: 0.95rem;
+}
+
+.adapter-result .adapter-detail {
+    font-size: 0.8rem;
+    color: var(--bs-secondary-color, #6c757d);
+}
+
+.adapter-result .adapter-port {
+    font-family: 'SFMono-Regular', 'Menlo', 'Consolas', monospace;
+    font-size: 0.8rem;
+    color: #0d6efd;
+}
+
+.adapter-result .adapter-badge {
+    font-size: 0.7rem;
+    padding: 0.2em 0.55em;
+}
+
+/* ── Port list (pre-scan) ────────────────────────────────────────────────── */
+
+.port-list-item {
+    display: flex;
+    align-items: center;
+    padding: 0.5rem 0.75rem;
+    border-bottom: 1px solid var(--bs-border-color, #dee2e6);
+    font-size: 0.85rem;
+}
+
+.port-list-item:last-child {
+    border-bottom: none;
+}
+
+.port-list-item .port-name {
+    font-family: 'SFMono-Regular', 'Menlo', 'Consolas', monospace;
+    font-weight: 600;
+    min-width: 140px;
+}
+
+.port-list-item .port-desc {
+    color: var(--bs-secondary-color, #6c757d);
+    font-size: 0.8rem;
+}
+
+/* ── No adapters state ───────────────────────────────────────────────────── */
+
+.no-adapters {
+    text-align: center;
+    padding: 2rem 1rem;
+}
+
+.no-adapters i {
+    font-size: 2.5rem;
+    color: var(--bs-warning, #ffc107);
+    margin-bottom: 0.75rem;
+}
+
+/* ── Action buttons ──────────────────────────────────────────────────────── */
+
+.setup-actions {
+    display: flex;
+    gap: 0.5rem;
+    justify-content: flex-end;
+    margin-top: 1.25rem;
+    flex-wrap: wrap;
+}
+
+.setup-actions .btn {
+    min-width: 120px;
+}
+
+/* ── Spinner ─────────────────────────────────────────────────────────────── */
+
+.scan-spinner {
+    display: inline-block;
+    width: 1rem;
+    height: 1rem;
+    border: 2px solid currentColor;
+    border-right-color: transparent;
+    border-radius: 50%;
+    animation: spin 0.75s linear infinite;
+    vertical-align: middle;
+    margin-right: 0.4rem;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+/* ── Dark mode ───────────────────────────────────────────────────────────── */
+
+[data-bs-theme="dark"] .scan-log {
+    background: #1a1d21;
+    border-color: #343a40;
+}
+
+[data-bs-theme="dark"] .adapter-result {
+    background: #1a1d21;
+    border-color: #343a40;
+}
+
+[data-bs-theme="dark"] .adapter-result:hover {
+    border-color: #4dabf7;
+}
+
+[data-bs-theme="dark"] .adapter-result.selected {
+    border-color: #4dabf7;
+    box-shadow: 0 0 0 3px rgba(77, 171, 247, 0.2);
+}
+
+[data-bs-theme="dark"] .scan-log .log-entry.success {
+    color: #51cf66;
+}
+
+[data-bs-theme="dark"] .scan-log .log-entry.error {
+    color: #ff6b6b;
+}
+
+[data-bs-theme="dark"] .adapter-result .adapter-port {
+    color: #4dabf7;
+}
+
+[data-bs-theme="dark"] .scan-progress-bar {
+    background: #343a40;
+}
+
+/* ── Mobile ──────────────────────────────────────────────────────────────── */
+
+@media (max-width: 576px) {
+    .setup-wizard-card {
+        padding: 1.25rem;
+        border-radius: 12px;
+        max-height: 95vh;
+    }
+
+    .setup-actions {
+        flex-direction: column;
+    }
+
+    .setup-actions .btn {
+        width: 100%;
+    }
+}

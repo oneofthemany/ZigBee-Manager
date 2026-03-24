@@ -4,8 +4,15 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="testing new UID GUID for container build">
-      <change beforePath="$PROJECT_DIR$/build.sh" beforeDir="false" afterPath="$PROJECT_DIR$/build.sh" afterDir="false" />
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="more changes to try and get container buikd successfull">
+      <change afterPath="$PROJECT_DIR$/modules/dongle_jedi.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/modules/dongle_jedi_api.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/static/css/setup-wizard.css" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/static/js/setup-wizard.js" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/main.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/modules/test_recovery.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/test_recovery.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/routes/editor_routes.py" beforeDir="false" afterPath="$PROJECT_DIR$/routes/editor_routes.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -145,14 +152,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00049" summary="dialout and permission fix for directories">
-      <option name="closed" value="true" />
-      <created>1774263793212</created>
-      <option name="number" value="00049" />
-      <option name="presentableId" value="LOCAL-00049" />
-      <option name="project" value="LOCAL" />
-      <updated>1774263793212</updated>
     </task>
     <task id="LOCAL-00050" summary="safe pats for VID and PID for dongle detection">
       <option name="closed" value="true" />
@@ -538,7 +537,15 @@
       <option name="project" value="LOCAL" />
       <updated>1774353799771</updated>
     </task>
-    <option name="localTasksCounter" value="98" />
+    <task id="LOCAL-00098" summary="more changes to try and get container buikd successfull">
+      <option name="closed" value="true" />
+      <created>1774355234175</created>
+      <option name="number" value="00098" />
+      <option name="presentableId" value="LOCAL-00098" />
+      <option name="project" value="LOCAL" />
+      <updated>1774355234176</updated>
+    </task>
+    <option name="localTasksCounter" value="99" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -553,7 +560,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="removal of chwon of DAT_DIR as not needed" />
     <MESSAGE value="sec and priv for runtime args in podman" />
     <MESSAGE value="chmod added to the data dir" />
     <MESSAGE value="chown to config and log dirs inside container" />
@@ -578,7 +584,8 @@
     <MESSAGE value="chown all dirs" />
     <MESSAGE value="requirement patches" />
     <MESSAGE value="testing new UID GUID for container build" />
-    <option name="LAST_COMMIT_MESSAGE" value="testing new UID GUID for container build" />
+    <MESSAGE value="more changes to try and get container buikd successfull" />
+    <option name="LAST_COMMIT_MESSAGE" value="more changes to try and get container buikd successfull" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>

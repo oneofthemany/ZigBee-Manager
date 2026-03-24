@@ -49,6 +49,7 @@ from modules.safe_deploy import register_deploy_routes, check_deploy_on_startup
 from modules.system_monitor import SystemMonitor
 from modules.telemetry_collector import TelemetryCollector
 from modules.telemetry_api import register_telemetry_routes
+from modules.dongle_jedi_api import register_setup_routes
 
 # Import route registrations
 from routes import (
@@ -223,10 +224,28 @@ async def lifespan(app: FastAPI):
         await manager.broadcast({"type": "mqtt_message", "payload": message_record})
     mqtt_service.mqtt_explorer.add_callback(mqtt_explorer_callback)
 
+    # Setup wizard routes (must register before Zigbee start check)
+    register_setup_routes(app, ws_manager=manager)
+
     # Start Zigbee
     ensure_network_credentials("./config/config.yaml")
     network_key = get_conf('zigbee', 'network_key', None)
-    asyncio.create_task(zigbee_service.start(network_key=network_key))
+
+    from modules.dongle_jedi import DongleJedi
+
+    setup_status = DongleJedi.needs_setup()
+    if setup_status["needs_setup"]:
+        logger.warning(f"Coordinator setup needed: {setup_status['reason']}")
+        logger.info("Web UI is up — setup wizard will guide the user")
+        await manager.broadcast({
+            "type": "log",
+            "payload": {"level": "WARN",
+                        "message": f"Coordinator not configured ({setup_status['reason']}). Open the web UI to run setup.",
+                        "timestamp": None}
+        })
+    else:
+        await zigbee_service.start(network_key=network_key)
+        logger.info("Zigbee network started")
 
     # Start Matter
     if matter_server:
@@ -416,6 +435,36 @@ register_websocket_routes(app)
 register_zone_routes(app, lambda: zigbee_service.zone_manager, lambda: zigbee_service.devices)
 register_ota_routes(app, lambda: zigbee_service.ota_manager)
 register_automation_routes(app, lambda: zigbee_service.automation)
+
+# ============================================================================
+# POST-SETUP ZIGBEE HOT-START
+# ============================================================================
+
+@app.post("/api/setup/start-zigbee")
+async def start_zigbee_after_setup():
+    """Called by the setup wizard after config is applied — starts Zigbee without a full restart."""
+    global CONFIG
+    try:
+        # Re-read config since the wizard just wrote it
+        CONFIG = load_config()
+
+        # Update the service with new config
+        new_port = get_conf('zigbee', 'port', '/dev/ttyACM0')
+        zigbee_service.port = new_port
+        zigbee_service._config = CONFIG.get('zigbee', {})
+
+        ensure_network_credentials("./config/config.yaml")
+        # Re-read after ensure_network_credentials may have updated it
+        CONFIG = load_config()
+        network_key = get_conf('zigbee', 'network_key', None)
+
+        await zigbee_service.start(network_key=network_key)
+        logger.info(f"Zigbee network started (post-setup) on {new_port}")
+
+        return {"success": True, "message": f"Zigbee network started on {new_port}"}
+    except Exception as e:
+        logger.error(f"Failed to start Zigbee after setup: {e}", exc_info=True)
+        return {"success": False, "error": str(e)}
 
 # ============================================================================
 # ENTRY POINT
