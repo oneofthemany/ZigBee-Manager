@@ -163,6 +163,27 @@
                     extras += ' ' + renderTempMini(device);
                 }
 
+                // Contact sensor status
+                var capList = device.capability_list || [];
+                if (capList.indexOf('contact_sensor') !== -1) {
+                    var isClosed = s.contact === true || s.is_open === false;
+                    var contactLabel = isClosed ? 'CLOSED' : 'OPEN';
+                    var contactClass = isClosed ? 'zbm-contact-closed' : 'zbm-contact-open';
+                    extras += ' <span class="' + contactClass + '" title="Contact: ' + contactLabel + '">' +
+                              '<i class="fas ' + (isClosed ? 'fa-door-closed' : 'fa-door-open') + '"></i> ' +
+                              contactLabel + '</span>';
+                }
+
+                // Motion sensor status
+                if (capList.indexOf('motion_sensor') !== -1 || capList.indexOf('occupancy_sensing') !== -1) {
+                    var motion = s.occupancy === true || s.motion === true || s.presence === true;
+                    var motionLabel = motion ? 'MOTION' : 'CLEAR';
+                    var motionClass = motion ? 'zbm-motion-active' : 'zbm-motion-clear';
+                    extras += ' <span class="' + motionClass + '" title="Motion: ' + motionLabel + '">' +
+                              '<i class="fas ' + (motion ? 'fa-running' : 'fa-shield-alt') + '"></i> ' +
+                              motionLabel + '</span>';
+                }
+
                 // Replace the simple Online/Offline badge with dot + extras
                 var dotClass = isOnline ? 'online' : 'offline';
                 if (isThermostat(device)) {

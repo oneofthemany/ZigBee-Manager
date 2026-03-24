@@ -182,6 +182,10 @@
 .zbm-temp-mini.warm { color: #f59e0b; }
 .zbm-temp-mini.hot { color: #ef4444; }
 .zbm-temp-mini.cold { color: #3b82f6; }
+.zbm-contact-closed { color: #10b981; font-size: 0.7rem; font-weight: 600; }
+.zbm-contact-open { color: #ef4444; font-size: 0.7rem; font-weight: 600; }
+.zbm-motion-active { color: #ef4444; font-size: 0.7rem; font-weight: 600; }
+.zbm-motion-clear { color: #10b981; font-size: 0.7rem; font-weight: 600; }
 
 [data-theme="dark"] .zbm-temp-mini { color: #9ca3af; }
 [data-theme="dark"] .zbm-temp-mini.warm { color: #fbbf24; }
