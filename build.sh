@@ -318,7 +318,7 @@ COPY . .
 
 # Required directories — writable by zigbee user
 RUN mkdir -p /data /app/data/matter /app/data/backups /app/logs /app/config \
- && chown -R zigbee:zigbee /app /data
+ && chown -R zigbee:zigbee /app /data /app/logs /app/config
 
 ENV ZMM_BACKUP_DIR=/app/data/backups
 ENV ZMM_APP_DIR=/app

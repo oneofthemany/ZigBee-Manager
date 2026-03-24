@@ -4,9 +4,8 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="debug logger fixes for duckdb and new sort by columns">
-      <change beforePath="$PROJECT_DIR$/static/css/device-status.css" beforeDir="false" afterPath="$PROJECT_DIR$/static/css/device-status.css" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/static/js/device-status.js" beforeDir="false" afterPath="$PROJECT_DIR$/static/js/device-status.js" afterDir="false" />
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="adding switches to device status">
+      <change beforePath="$PROJECT_DIR$/build.sh" beforeDir="false" afterPath="$PROJECT_DIR$/build.sh" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -146,14 +145,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00045" summary="head -1 bug fix">
-      <option name="closed" value="true" />
-      <created>1774261911385</created>
-      <option name="number" value="00045" />
-      <option name="presentableId" value="LOCAL-00045" />
-      <option name="project" value="LOCAL" />
-      <updated>1774261911385</updated>
     </task>
     <task id="LOCAL-00046" summary="missing fix">
       <option name="closed" value="true" />
@@ -539,7 +530,15 @@
       <option name="project" value="LOCAL" />
       <updated>1774347026556</updated>
     </task>
-    <option name="localTasksCounter" value="94" />
+    <task id="LOCAL-00094" summary="adding switches to device status">
+      <option name="closed" value="true" />
+      <created>1774347435142</created>
+      <option name="number" value="00094" />
+      <option name="presentableId" value="LOCAL-00094" />
+      <option name="project" value="LOCAL" />
+      <updated>1774347435142</updated>
+    </task>
+    <option name="localTasksCounter" value="95" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -554,7 +553,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="libglib2.0-0 \\ added" />
     <MESSAGE value="remove usns arg" />
     <MESSAGE value="adding priv and sec commands to podman args" />
     <MESSAGE value="final dir and dep fixes" />
@@ -579,7 +577,8 @@
     <MESSAGE value="device status column improvements" />
     <MESSAGE value="workspace updated" />
     <MESSAGE value="debug logger fixes for duckdb and new sort by columns" />
-    <option name="LAST_COMMIT_MESSAGE" value="debug logger fixes for duckdb and new sort by columns" />
+    <MESSAGE value="adding switches to device status" />
+    <option name="LAST_COMMIT_MESSAGE" value="adding switches to device status" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
