@@ -4,6 +4,9 @@
  *
  * Monaco Editor-based IDE for editing backend code from the web UI.
  * Monaco is loaded from CDN on first use (no build step needed).
+ *
+ * Features: file tree, open, save, create, delete, validate,
+ * search, backups, test deploy with rollback.
  */
 
 let monacoReady = false;
@@ -13,6 +16,11 @@ let unsavedChanges = false;
 let fileTree = [];
 
 const MONACO_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min';
+
+// Critical files that cannot be deleted
+const CRITICAL_FILES = new Set([
+    'main.py', 'core.py', 'device.py', 'mqtt.py', '__init__.py', 'index.html'
+]);
 
 // ============================================================================
 // INITIALISATION
@@ -36,7 +44,7 @@ export async function initEditor() {
     });
 
     // Check for pending test on init
-        await checkPendingTest();
+    await checkPendingTest();
 }
 
 async function checkPendingTest() {
@@ -60,9 +68,9 @@ function buildEditorHTML() {
     <div class="editor-layout d-flex" style="height: calc(100vh - 180px); min-height: 500px; max-height: calc(100vh - 180px); overflow: hidden;">
         <!-- Sidebar -->
         <div class="editor-sidebar border-end" style="width: 260px; min-width: 200px; overflow-y: auto; background: #1e1e1e;">
-            <!-- Search -->
+            <!-- Search + Create -->
             <div class="p-2 border-bottom" style="background: #252526;">
-                <div class="input-group input-group-sm">
+                <div class="input-group input-group-sm mb-1">
                     <input type="text" class="form-control form-control-sm bg-dark text-light border-secondary"
                            id="editorSearch" placeholder="Search files..."
                            style="font-size: 12px;"
@@ -71,6 +79,9 @@ function buildEditorHTML() {
                         <i class="fas fa-search"></i>
                     </button>
                 </div>
+                <button class="btn btn-sm btn-outline-success w-100" onclick="window.editorCreateFile()" style="font-size: 11px;">
+                    <i class="fas fa-plus me-1"></i> New File
+                </button>
             </div>
             <!-- File tree -->
             <div id="editorFileTree" class="p-1" style="font-size: 12px;"></div>
@@ -86,6 +97,10 @@ function buildEditorHTML() {
                     <button class="btn btn-sm btn-outline-light py-0 px-2" style="font-size: 11px;"
                             onclick="window.editorSave()" title="Save (Ctrl+S)" id="editorSaveBtn" disabled>
                         <i class="fas fa-save"></i>
+                    </button>
+                    <button class="btn btn-sm btn-outline-danger py-0 px-2" style="font-size: 11px;"
+                            onclick="window.editorDeleteCurrent()" title="Delete current file" id="editorDeleteBtn" disabled>
+                        <i class="fas fa-trash"></i>
                     </button>
                     <button class="btn btn-sm btn-outline-danger py-0 px-2" style="font-size: 11px;"
                             onclick="window.editorTestDeploy()" title="Test Deploy (with rollback)" id="editorTestBtn" disabled>
@@ -155,6 +170,70 @@ function buildEditorHTML() {
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body" id="editorBackupsList" style="max-height: 400px; overflow-y: auto; font-size: 12px;">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Create file modal -->
+    <div class="modal fade" id="editorCreateModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content bg-dark text-light">
+                <div class="modal-header border-secondary py-2">
+                    <h6 class="modal-title"><i class="fas fa-plus-circle text-success me-1"></i> Create New File</h6>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label small text-muted">Directory</label>
+                        <select class="form-select form-select-sm bg-dark text-light border-secondary" id="edCreateDir"></select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small text-muted">Filename</label>
+                        <input type="text" class="form-control form-control-sm bg-dark text-light border-secondary"
+                               id="edCreateName" placeholder="e.g., my_module.py" autocomplete="off">
+                        <div class="form-text text-muted" style="font-size:10px;">
+                            Allowed: .py .js .css .html .yaml .yml .json .md .txt .conf .sh
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small text-muted">Initial Content <span class="opacity-50">(optional)</span></label>
+                        <textarea class="form-control form-control-sm bg-dark text-light border-secondary font-monospace"
+                                  id="edCreateContent" rows="6" placeholder="# Leave empty for a blank file"
+                                  style="font-size:12px;"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer border-secondary py-1">
+                    <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-sm btn-success" onclick="window.editorCreateConfirm()">
+                        <i class="fas fa-plus me-1"></i> Create
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Delete confirmation modal -->
+    <div class="modal fade" id="editorDeleteModal" tabindex="-1">
+        <div class="modal-dialog modal-sm">
+            <div class="modal-content bg-dark text-light">
+                <div class="modal-header border-secondary py-2">
+                    <h6 class="modal-title"><i class="fas fa-exclamation-triangle text-danger me-1"></i> Delete File</h6>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="mb-2 small">Are you sure you want to delete:</p>
+                    <p class="fw-bold font-monospace small p-2 rounded" id="edDeletePath"
+                       style="background:#2a2d2e;word-break:break-all;"></p>
+                    <p class="small text-muted mb-0">
+                        <i class="fas fa-info-circle me-1"></i> A backup will be created before deletion.
+                    </p>
+                </div>
+                <div class="modal-footer border-secondary py-1">
+                    <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-sm btn-danger" onclick="window.editorDeleteConfirm()">
+                        <i class="fas fa-trash me-1"></i> Delete
+                    </button>
                 </div>
             </div>
         </div>
@@ -291,13 +370,23 @@ function renderFileTree(tree) {
             }
             const icon = getFileIcon(item.extension);
             const active = currentFile === item.path ? 'background:#37373d;' : '';
-            return `<div class="tree-file py-1 px-2 rounded" style="cursor:pointer;${active}"
-                         onclick="window.editorOpenFile('${item.path}')"
+            const fileName = item.path.split('/').pop();
+            const isCritical = CRITICAL_FILES.has(fileName);
+
+            return `<div class="tree-file d-flex align-items-center py-1 px-2 rounded" style="cursor:pointer;${active}"
                          onmouseover="this.style.background='#2a2d2e'"
                          onmouseout="this.style.background='${currentFile === item.path ? '#37373d' : ''}'">
-                <i class="${icon} fa-fw me-1"></i>
-                <span class="text-light">${item.name}</span>
-                <span class="text-muted ms-1" style="font-size:10px;">${formatSize(item.size)}</span>
+                <div class="flex-grow-1" onclick="window.editorOpenFile('${item.path}')">
+                    <i class="${icon} fa-fw me-1"></i>
+                    <span class="text-light">${item.name}</span>
+                    <span class="text-muted ms-1" style="font-size:10px;">${formatSize(item.size)}</span>
+                </div>
+                ${!isCritical ? `<button class="btn btn-link btn-sm p-0 ms-1 editor-tree-del-btn"
+                         onclick="event.stopPropagation(); window.editorDeleteFile('${escapeAttr(item.path)}')"
+                         title="Delete ${escapeAttr(item.name)}"
+                         style="color:#666;font-size:10px;line-height:1;visibility:hidden;">
+                    <i class="fas fa-times"></i>
+                </button>` : ''}
             </div>`;
         }).join('');
 
@@ -310,10 +399,19 @@ function renderFileTree(tree) {
             <div>${children}</div>
         </div>`;
     }).join('');
+
+    // Show delete buttons on hover (via CSS injection once)
+    if (!document.getElementById('editorTreeHoverStyle')) {
+        const style = document.createElement('style');
+        style.id = 'editorTreeHoverStyle';
+        style.textContent = `.tree-file:hover .editor-tree-del-btn { visibility: visible !important; }
+            .tree-file:hover .editor-tree-del-btn:hover { color: #f44747 !important; }`;
+        document.head.appendChild(style);
+    }
 }
 
 // ============================================================================
-// FILE OPERATIONS
+// FILE OPERATIONS — OPEN
 // ============================================================================
 
 window.editorOpenFile = async function(path) {
@@ -340,6 +438,10 @@ window.editorOpenFile = async function(path) {
         document.getElementById('editorSaveBtn').disabled = false;
         document.getElementById('editorTestBtn').disabled = false;
 
+        // Enable/disable delete button based on critical status
+        const fileName = path.split('/').pop();
+        document.getElementById('editorDeleteBtn').disabled = CRITICAL_FILES.has(fileName);
+
         // Clear previous validation status
         const valStatus = document.getElementById('editorValidationStatus');
         if (valStatus) valStatus.innerHTML = '';
@@ -355,6 +457,167 @@ window.editorOpenFile = async function(path) {
 
     } catch (e) {
         alert('Failed to open file: ' + e.message);
+    }
+};
+
+// ============================================================================
+// FILE OPERATIONS — CREATE
+// ============================================================================
+
+window.editorCreateFile = function() {
+    // Populate directory dropdown from file tree
+    const dirSelect = document.getElementById('edCreateDir');
+    if (dirSelect) {
+        dirSelect.innerHTML = fileTree.map(d => {
+            const val = d.path === '.' ? '' : d.path;
+            const label = d.path === '.' ? '/ (root)' : d.path;
+            return `<option value="${val}">${label}</option>`;
+        }).join('');
+    }
+
+    // Clear previous values
+    const nameInput = document.getElementById('edCreateName');
+    const contentInput = document.getElementById('edCreateContent');
+    if (nameInput) nameInput.value = '';
+    if (contentInput) contentInput.value = '';
+
+    new bootstrap.Modal(document.getElementById('editorCreateModal')).show();
+
+    // Focus filename input after modal animation
+    setTimeout(() => nameInput?.focus(), 300);
+};
+
+window.editorCreateConfirm = async function() {
+    const dir = document.getElementById('edCreateDir')?.value || '';
+    const name = document.getElementById('edCreateName')?.value?.trim();
+    const content = document.getElementById('edCreateContent')?.value || '';
+
+    if (!name) {
+        alert('Please enter a filename.');
+        return;
+    }
+
+    // Validate extension
+    const ext = name.includes('.') ? '.' + name.split('.').pop().toLowerCase() : '';
+    const allowed = new Set(['.py', '.js', '.css', '.html', '.yaml', '.yml', '.json', '.md', '.txt', '.conf', '.sh']);
+    if (!allowed.has(ext)) {
+        alert(`File extension "${ext}" is not allowed.\nAllowed: ${[...allowed].join(', ')}`);
+        return;
+    }
+
+    // Validate filename — no path separators or special chars
+    if (/[\/\\<>:"|?*]/.test(name)) {
+        alert('Filename contains invalid characters.');
+        return;
+    }
+
+    const path = dir ? `${dir}/${name}` : name;
+
+    try {
+        const res = await fetch('/api/editor/create', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ path, content }),
+        });
+        const data = await res.json();
+
+        if (data.success) {
+            bootstrap.Modal.getInstance(document.getElementById('editorCreateModal'))?.hide();
+
+            if (window.showToast) {
+                window.showToast(`Created ${path}`, 'success');
+            }
+
+            // Refresh tree and open the new file
+            await loadFileTree();
+            window.editorOpenFile(path);
+        } else {
+            alert('Create failed: ' + data.error);
+        }
+    } catch (e) {
+        alert('Create error: ' + e.message);
+    }
+};
+
+// ============================================================================
+// FILE OPERATIONS — DELETE
+// ============================================================================
+
+// Track which file the delete modal is targeting
+let pendingDeletePath = null;
+
+window.editorDeleteFile = function(path) {
+    const fileName = path.split('/').pop();
+    if (CRITICAL_FILES.has(fileName)) {
+        alert(`Cannot delete critical file: ${fileName}`);
+        return;
+    }
+
+    pendingDeletePath = path;
+    document.getElementById('edDeletePath').textContent = path;
+    new bootstrap.Modal(document.getElementById('editorDeleteModal')).show();
+};
+
+window.editorDeleteCurrent = function() {
+    if (!currentFile) return;
+    window.editorDeleteFile(currentFile);
+};
+
+window.editorDeleteConfirm = async function() {
+    if (!pendingDeletePath) return;
+    const path = pendingDeletePath;
+
+    try {
+        const res = await fetch(`/api/editor/file?path=${encodeURIComponent(path)}`, {
+            method: 'DELETE',
+        });
+        const data = await res.json();
+
+        if (data.success) {
+            bootstrap.Modal.getInstance(document.getElementById('editorDeleteModal'))?.hide();
+            pendingDeletePath = null;
+
+            if (window.showToast) {
+                window.showToast(`Deleted ${path} (backup created)`, 'info');
+            }
+
+            // If we deleted the currently open file, reset the editor
+            if (currentFile === path) {
+                currentFile = null;
+                unsavedChanges = false;
+
+                if (editorInstance) {
+                    editorInstance.dispose();
+                    editorInstance = null;
+                }
+
+                const wrapper = document.getElementById('monacoWrapper');
+                if (wrapper) wrapper.remove();
+
+                const placeholder = document.getElementById('editorPlaceholder');
+                if (placeholder) placeholder.style.display = '';
+
+                document.getElementById('editorFileName').textContent = 'No file open';
+                document.getElementById('editorLanguage').textContent = '-';
+                document.getElementById('editorFileSize').textContent = '-';
+                document.getElementById('editorSaveBtn').disabled = true;
+                document.getElementById('editorTestBtn').disabled = true;
+                document.getElementById('editorDeleteBtn').disabled = true;
+
+                const valStatus = document.getElementById('editorValidationStatus');
+                if (valStatus) valStatus.innerHTML = '';
+
+                const tabBar = document.getElementById('editorTabBar');
+                if (tabBar) tabBar.innerHTML = '';
+            }
+
+            // Refresh tree
+            await loadFileTree();
+        } else {
+            alert('Delete failed: ' + data.error);
+        }
+    } catch (e) {
+        alert('Delete error: ' + e.message);
     }
 };
 
@@ -497,6 +760,7 @@ window.editorSave = saveCurrentFile;
 // ---- TEST DEPLOY ----
 
 window.editorTestDeploy = async function() {
+    if (typeof window.showDeloreanAnimation === 'function') window.showDeloreanAnimation();
     if (!currentFile || !editorInstance) return;
 
     // Validate first
@@ -511,7 +775,6 @@ window.editorTestDeploy = async function() {
 
     const ext = currentFile.split('.').pop().toLowerCase();
     const isPython = ['py', 'yaml', 'yml'].includes(ext);
-    const actionDesc = isPython ? 'restart the service' : 'reload the page';
 
     if (!confirm(
         `Test Deploy: ${currentFile}\n\n` +
@@ -539,14 +802,10 @@ window.editorTestDeploy = async function() {
         }
 
         if (data.action === 'restart') {
-            // Python file — trigger restart, page will reload
-            state.isRestarting = true;
+            if (typeof state !== 'undefined') state.isRestarting = true;
             await fetch('/api/editor/test-restart', { method: 'POST' });
-            // Service will restart — page will disconnect and reconnect
         } else {
-            // Frontend file — show confirmation banner, trigger reload
             showTestRecoveryBanner('pending', data.timeout);
-            // Reload after brief delay to show the banner
             setTimeout(() => {
                 window.location.reload();
             }, 1500);
@@ -566,7 +825,6 @@ window.editorTestConfirm = async function() {
         const data = await res.json();
         if (data.success) {
             hideTestRecoveryBanner();
-            // Brief success indicator
             const banner = document.getElementById('testRecoveryBanner');
             if (banner) {
                 banner.innerHTML = `
@@ -595,7 +853,7 @@ window.editorTestRollback = async function() {
             hideTestRecoveryBanner();
             alert('Rolled back: ' + data.message);
             if (data.message && data.message.includes('restart')) {
-                // Service restarting — wait for reconnect
+                // Service restarting
             } else {
                 window.location.reload();
             }
@@ -650,7 +908,6 @@ function showTestRecoveryBanner(status, timeout) {
         const countdownEl = document.getElementById('testCountdown');
         if (countdownEl) countdownEl.textContent = remaining;
 
-        // Flash red in last 30 seconds
         const bar = document.getElementById('testProgressBar');
         if (bar) {
             const pct = (remaining / (timeout || 120)) * 100;
@@ -885,6 +1142,10 @@ function formatSize(bytes) {
 
 function escapeHtml(str) {
     return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function escapeAttr(str) {
+    return str.replace(/'/g, "\\'").replace(/"/g, '&quot;');
 }
 
 window.checkPendingTest = checkPendingTest;

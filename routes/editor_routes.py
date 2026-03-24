@@ -484,91 +484,230 @@ def _validate_yaml(content: str) -> list:
 
 
 def _validate_javascript(content: str) -> list:
-    """Basic JavaScript validation — bracket/brace matching and common issues."""
-    import re
-
+    """
+    JavaScript validation — bracket/brace/paren matching with proper handling of:
+      - Template literals with ${...} expressions (nested)
+      - Regex literals /.../ (including character classes [...])
+      - Single-line // and multi-line /* */ comments
+      - String escapes in all string types
+      - Spread syntax [...x]
+      - Optional chaining ?.( and ?.[
+    """
     errors = []
     lines = content.splitlines()
+    chars = list(content)
+    n = len(chars)
 
-    # Track bracket/brace/paren balance
-    stack = []  # (char, line, col)
-    openers = {'(': ')', '[': ']', '{': '}'}
-    closers = {')': '(', ']': '[', '}': '{'}
+    # We work on the flat character stream for accurate parsing,
+    # but track line/col for error reporting.
+    # Build a line/col map for each char index.
+    line_of = []
+    col_of = []
+    current_line = 1
+    current_col = 1
+    for ch in chars:
+        line_of.append(current_line)
+        col_of.append(current_col)
+        if ch == '\n':
+            current_line += 1
+            current_col = 1
+        else:
+            current_col += 1
 
-    in_string = False
-    string_char = None
-    in_line_comment = False
-    in_block_comment = False
+    stack = []              # (char, line, col)
+    template_depth = []     # stack of brace-depth when entering ${...}
+    i = 0
 
-    for i, line in enumerate(lines, 1):
-        in_line_comment = False
-        j = 0
-        while j < len(line):
-            c = line[j]
-            prev = line[j-1] if j > 0 else ''
+    def peek(offset=1):
+        pos = i + offset
+        return chars[pos] if pos < n else ''
 
-            # Track string state
-            if not in_block_comment and not in_line_comment:
-                if not in_string and c in ('"', "'", '`'):
-                    in_string = True
-                    string_char = c
-                elif in_string and c == string_char and prev != '\\':
-                    in_string = False
+    def _could_be_regex():
+        """
+        Heuristic: a '/' starts a regex if the previous meaningful token is one of:
+          - start of input
+        - an operator or punctuation that cannot end an expression
+          ( , ; = [ ! & | ? : { } ~ ^ % + - * / > < return typeof void delete
+          instanceof in new throw case
+        We scan backwards from current position skipping whitespace/newlines.
+        """
+        j = i - 1
+        while j >= 0 and chars[j] in (' ', '\t', '\n', '\r'):
+            j -= 1
+        if j < 0:
+            return True
+        c = chars[j]
+        # These characters before / always mean regex
+        if c in ('=', '(', '[', '{', '}', ';', ',', '!', '&', '|',
+                 '?', ':', '~', '^', '%', '+', '-', '*', '<', '>',
+                 '\n'):
+            return True
+        # Check for keyword endings: return, typeof, void, delete, etc.
+        # Look for a word boundary
+        if c.isalpha():
+            word_end = j
+            while j >= 0 and (chars[j].isalpha() or chars[j] == '_'):
+                j -= 1
+            word = ''.join(chars[j + 1:word_end + 1])
+            if word in ('return', 'typeof', 'void', 'delete', 'instanceof',
+                        'in', 'new', 'throw', 'case', 'yield', 'await',
+                        'of', 'else'):
+                return True
+        return False
 
-            # Track comment state
-            if not in_string and not in_block_comment:
-                if j + 1 < len(line) and line[j:j+2] == '//':
-                    in_line_comment = True
+    while i < n:
+        c = chars[i]
+
+        # ── Single-line comment ──
+        if c == '/' and peek() == '/':
+            # Skip to end of line
+            while i < n and chars[i] != '\n':
+                i += 1
+            continue
+
+        # ── Multi-line comment ──
+        if c == '/' and peek() == '*':
+            i += 2
+            while i < n:
+                if chars[i] == '*' and peek() == '/':
+                    i += 2
                     break
-                if j + 1 < len(line) and line[j:j+2] == '/*':
-                    in_block_comment = True
-                    j += 2
+                i += 1
+            continue
+
+        # ── Single/double quoted strings ──
+        if c in ('"', "'"):
+            quote = c
+            i += 1
+            while i < n:
+                if chars[i] == '\\':
+                    i += 2  # skip escape
                     continue
+                if chars[i] == quote:
+                    i += 1
+                    break
+                if chars[i] == '\n':
+                    # Unterminated string (single-line)
+                    break
+                i += 1
+            continue
 
-            if in_block_comment:
-                if j + 1 < len(line) and line[j:j+2] == '*/':
-                    in_block_comment = False
-                    j += 2
+        # ── Template literal ──
+        if c == '`':
+            i += 1
+            while i < n:
+                if chars[i] == '\\':
+                    i += 2
                     continue
-                j += 1
-                continue
+                if chars[i] == '`':
+                    i += 1
+                    break
+                if chars[i] == '$' and peek() == '{':
+                    # Enter template expression
+                    # Record current stack depth so we know when the
+                    # matching } returns us to the template
+                    template_depth.append(len(stack))
+                    stack.append(('{', line_of[i], col_of[i]))
+                    i += 2  # skip ${
+                    break  # return to main loop to parse the expression
+                i += 1
+            continue
 
-            # Track brackets (only outside strings/comments)
-            if not in_string and not in_line_comment:
-                if c in openers:
-                    stack.append((c, i, j + 1))
-                elif c in closers:
-                    if stack and stack[-1][0] == closers[c]:
-                        stack.pop()
-                    else:
-                        expected = openers[stack[-1][0]] if stack else 'nothing'
-                        errors.append({
-                            "line": i, "column": j + 1,
-                            "message": f"Unexpected '{c}' — expected '{expected}'",
-                            "severity": "error",
-                        })
+        # ── Regex literal ──
+        if c == '/' and _could_be_regex():
+            i += 1  # skip opening /
+            in_char_class = False
+            while i < n:
+                rc = chars[i]
+                if rc == '\\':
+                    i += 2  # skip escaped char in regex
+                    continue
+                if rc == '[':
+                    in_char_class = True
+                elif rc == ']':
+                    in_char_class = False
+                elif rc == '/' and not in_char_class:
+                    i += 1
+                    # Skip regex flags (g, i, m, s, u, y, d, v)
+                    while i < n and chars[i].isalpha():
+                        i += 1
+                    break
+                elif rc == '\n':
+                    # Unterminated regex
+                    break
+                i += 1
+            continue
 
-            j += 1
+        # ── Bracket tracking ──
+        if c in ('(', '[', '{'):
+            stack.append((c, line_of[i], col_of[i]))
+            i += 1
+            continue
 
-        # Check for common issues
-        stripped = line.strip()
-        if '==' in stripped and '===' not in stripped and not stripped.startswith('//'):
-            # Skip if inside a string or comment (rough check)
-            if not in_string:
-                idx = line.index('==')
+        if c in (')', ']', '}'):
+            expected_opener = {')': '(', ']': '[', '}': '{'}[c]
+
+            if stack and stack[-1][0] == expected_opener:
+                stack.pop()
+
+                # If closing } and we are inside a template expression,
+                # check if this } returns us to the template literal
+                if c == '}' and template_depth and len(stack) == template_depth[-1]:
+                    template_depth.pop()
+                    # Resume parsing inside the template literal
+                    i += 1
+                    while i < n:
+                        if chars[i] == '\\':
+                            i += 2
+                            continue
+                        if chars[i] == '`':
+                            i += 1
+                            break
+                        if chars[i] == '$' and peek() == '{':
+                            template_depth.append(len(stack))
+                            stack.append(('{', line_of[i], col_of[i]))
+                            i += 2
+                            break
+                        i += 1
+                    continue
+            elif stack:
+                match_map = {'(': ')', '[': ']', '{': '}'}
+                expected = match_map.get(stack[-1][0], '?')
                 errors.append({
-                    "line": i, "column": idx + 1,
-                    "message": "Use === instead of == for strict equality",
-                    "severity": "info",
+                    "line": line_of[i], "column": col_of[i],
+                    "message": f"Unexpected '{c}' — expected '{expected}'",
+                    "severity": "error",
                 })
+            else:
+                errors.append({
+                    "line": line_of[i], "column": col_of[i],
+                    "message": f"Unexpected '{c}' — no matching opening bracket",
+                    "severity": "error",
+                })
+            i += 1
+            continue
+
+        i += 1
 
     # Report unclosed brackets
-    for char, line, col in stack:
+    for char, ln, col in stack:
         errors.append({
-            "line": line, "column": col,
+            "line": ln, "column": col,
             "message": f"Unclosed '{char}'",
             "severity": "error",
         })
+
+    # ── Phase 2: line-level warnings ──
+    for idx, line in enumerate(lines, 1):
+        stripped = line.rstrip()
+
+        # Trailing whitespace
+        if stripped != line and stripped:
+            errors.append({
+                "line": idx, "column": len(stripped) + 1,
+                "message": "Trailing whitespace",
+                "severity": "warning",
+            })
 
     return errors
 
