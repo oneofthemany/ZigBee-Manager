@@ -119,7 +119,9 @@ find_free_port() {
     local port=$1
     while port_in_use "$port"; do
         ((port++))
-        [[ $port -gt 65535 ]] && die "No free ports found."
+        if [[ $port -gt 65535 ]]; then
+            die "No free ports found."
+        fi
     done
     echo "$port"
 }
@@ -145,7 +147,9 @@ check_deps() {
     for cmd in git curl; do
         command -v "$cmd" &>/dev/null || missing+=("$cmd")
     done
-    [[ ${#missing[@]} -gt 0 ]] && die "Missing required tools: ${missing[*]}"
+    if [[ ${#missing[@]} -gt 0 ]]; then
+        die "Missing required tools: ${missing[*]}"
+    fi
 }
 
 # =============================================================================
@@ -193,10 +197,10 @@ detect_usb_coordinator() {
     # Also check raw /dev/ttyACM* and /dev/ttyUSB* if nothing found by-id
     if [[ ${#found_devices[@]} -eq 0 ]]; then
         for dev in /dev/ttyACM0 /dev/ttyACM1 /dev/ttyUSB0 /dev/ttyUSB1; do
-            [[ -c "$dev" ]] && {
+            if [[ -c "$dev" ]]; then
                 found_devices+=("$dev")
                 found_labels+=("$dev")
-            }
+            fi
         done
     fi
 
@@ -249,7 +253,10 @@ _prompt_manual_usb() {
     warn "Available serial devices:"
     local has_devs=false
     for dev in /dev/ttyUSB* /dev/ttyACM*; do
-        [[ -c "$dev" ]] && { echo "    $dev"; has_devs=true; }
+        if [[ -c "$dev" ]]; then
+            echo "    $dev"
+            has_devs=true
+        fi
     done
     $has_devs || echo "    (none found)"
     echo
@@ -591,7 +598,9 @@ detect_runtime
 fetch_repo
 
 # Step 3: USB coordinator
-[[ -z "${USB_DEVICE:-}" ]] && detect_usb_coordinator
+if [[ -z "${USB_DEVICE:-}" ]]; then
+    detect_usb_coordinator
+fi
 
 # Step 4: Ports
 HOST_PORT=$(pick_host_port "$PREFERRED_PORT")
@@ -613,7 +622,9 @@ prepare_data_dirs
 run_container "$HOST_PORT" "$HOST_MATTER_PORT"
 
 # Step 8: Auto-start
-[[ "$INSTALL_AUTOSTART" == true ]] && install_autostart
+if [[ "$INSTALL_AUTOSTART" == true ]]; then
+    install_autostart
+fi
 
 # =============================================================================
 # SUMMARY
@@ -625,8 +636,9 @@ echo -e "${BOLD}=====================================================${NC}"
 echo
 echo -e "  ${BOLD}Web Interface:${NC}  https://$(hostname -I 2>/dev/null | awk '{print $1}'):${HOST_PORT}"
 echo -e "  ${BOLD}Matter Port:${NC}    ${HOST_MATTER_PORT}"
-[[ -n "${USB_DEVICE:-}" ]] && \
-echo -e "  ${BOLD}Zigbee USB:${NC}     ${USB_DEVICE}"
+if [[ -n "${USB_DEVICE:-}" ]]; then
+    echo -e "  ${BOLD}Zigbee USB:${NC}     ${USB_DEVICE}"
+fi
 echo -e "  ${BOLD}Config:${NC}         ${DATA_DIR}/config/config.yaml"
 echo -e "  ${BOLD}Logs:${NC}           ${RUNTIME} logs -f ${CONTAINER_NAME}"
 echo -e "  ${BOLD}Data:${NC}           ${DATA_DIR}/"
