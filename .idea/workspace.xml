@@ -4,10 +4,7 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="xml push">
-      <change beforePath="$PROJECT_DIR$/handlers/general.py" beforeDir="false" afterPath="$PROJECT_DIR$/handlers/general.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/static/js/modal/control.js" beforeDir="false" afterPath="$PROJECT_DIR$/static/js/modal/control.js" afterDir="false" />
-    </list>
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="xml push" />
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -427,7 +424,31 @@
       <option name="project" value="LOCAL" />
       <updated>1774203998398</updated>
     </task>
-    <option name="localTasksCounter" value="44" />
+    <task id="LOCAL-00044" summary="add capabilties attr to is_contact_sensor">
+      <option name="closed" value="true" />
+      <created>1774204864935</created>
+      <option name="number" value="00044" />
+      <option name="presentableId" value="LOCAL-00044" />
+      <option name="project" value="LOCAL" />
+      <updated>1774204864935</updated>
+    </task>
+    <task id="LOCAL-00045" summary="fix for contact sensor and updates to provide a comprehensive capability list inside updateControlValues">
+      <option name="closed" value="true" />
+      <created>1774204940514</created>
+      <option name="number" value="00045" />
+      <option name="presentableId" value="LOCAL-00045" />
+      <option name="project" value="LOCAL" />
+      <updated>1774204940514</updated>
+    </task>
+    <task id="LOCAL-00046" summary="xml push">
+      <option name="closed" value="true" />
+      <created>1774204956469</created>
+      <option name="number" value="00046" />
+      <option name="presentableId" value="LOCAL-00046" />
+      <option name="project" value="LOCAL" />
+      <updated>1774204956469</updated>
+    </task>
+    <option name="localTasksCounter" value="47" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -442,8 +463,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="improved to cater for new ai elements and container creation for ollama" />
-    <MESSAGE value="new ai and safe deploy" />
     <MESSAGE value="initial commit of safe deploy" />
     <MESSAGE value="kill orphans added to remove swap bug" />
     <MESSAGE value="duckdb added for system telemetry persistence" />
@@ -466,6 +485,8 @@
     <MESSAGE value="bug fix for contact sensors and better initialisation for devices" />
     <MESSAGE value="contact sensor fix" />
     <MESSAGE value="tuple fix for report config" />
+    <MESSAGE value="add capabilties attr to is_contact_sensor" />
+    <MESSAGE value="fix for contact sensor and updates to provide a comprehensive capability list inside updateControlValues" />
     <MESSAGE value="xml push" />
     <option name="LAST_COMMIT_MESSAGE" value="xml push" />
   </component>
