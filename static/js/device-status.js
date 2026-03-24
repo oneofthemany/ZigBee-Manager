@@ -106,6 +106,76 @@
         });
     }
 
+
+
+    // ----------------------------------------------------------
+    // 5b. ON/OFF STATUS BADGES (multi-EP aware)
+    // ----------------------------------------------------------
+
+    function getOnOffEndpoints(device) {
+        if (!device.capabilities || !Array.isArray(device.capabilities)) return [];
+
+        var capList = device.capability_list || [];
+        // Skip pure sensor devices
+        if (capList.indexOf('contact_sensor') !== -1 && capList.indexOf('switch') === -1 && capList.indexOf('light') === -1) return [];
+        if (capList.indexOf('motion_sensor') !== -1 && capList.indexOf('switch') === -1 && capList.indexOf('light') === -1) return [];
+
+        var eps = [];
+        device.capabilities.forEach(function(ep) {
+            // Must have OnOff (0x0006) in INPUT clusters
+            var hasOnOffInput = (ep.inputs || []).some(function(c) { return c.id === 0x0006; });
+            if (!hasOnOffInput) return;
+
+            // Skip sensor-typed endpoints
+            if (ep.component_type === 'sensor') return;
+
+            eps.push(ep.id);
+        });
+
+        return eps;
+    }
+
+    function renderOnOffStatus(device) {
+        // Skip thermostats — they have their own indicators
+        if (isThermostat(device)) return '';
+
+        var eps = getOnOffEndpoints(device);
+        if (eps.length === 0) return '';
+
+        var s = device.state || {};
+        var html = '';
+        var multiEp = eps.length > 1;
+
+        eps.forEach(function(epId) {
+            // Resolve on state: try ep-specific key first, then global for EP1
+            var isOn;
+            if (s['on_' + epId] !== undefined) {
+                isOn = !!s['on_' + epId];
+            } else if (epId === 1 && s.on !== undefined) {
+                isOn = !!s.on;
+            } else {
+                // Check string state as fallback
+                var stateKey = s['state_' + epId] || (epId === 1 ? s.state : undefined);
+                if (stateKey !== undefined) {
+                    isOn = String(stateKey).toUpperCase() === 'ON';
+                } else {
+                    return; // No state data for this EP
+                }
+            }
+
+            var cls = isOn ? 'on' : 'off';
+            var icon = isOn ? 'fa-toggle-on' : 'fa-toggle-off';
+            var label = isOn ? 'ON' : 'OFF';
+            var epLabel = multiEp ? 'EP' + epId + ' ' : '';
+            var title = epLabel + (isOn ? 'On' : 'Off');
+
+            html += '<span class="zbm-onoff-badge ' + cls + '" title="' + title + '">' +
+                    '<i class="fas ' + icon + '"></i> ' + epLabel + label + '</span> ';
+        });
+
+        return html;
+    }
+
     // ----------------------------------------------------------
     // 6. ENHANCE TABLE ROWS
     // ----------------------------------------------------------
@@ -161,6 +231,12 @@
                 // Temperature sensors (not thermostats) — show temp
                 if (!isThermostat(device) && (s.temperature !== undefined || s.local_temperature !== undefined)) {
                     extras += ' ' + renderTempMini(device);
+                }
+
+                // On/Off status (multi-EP aware)
+                var onOffHtml = renderOnOffStatus(device);
+                if (onOffHtml) {
+                    extras += ' ' + onOffHtml;
                 }
 
                 // Contact sensor status

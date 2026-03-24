@@ -4,10 +4,9 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="workspace updated">
-      <change beforePath="$PROJECT_DIR$/routes/system_routes.py" beforeDir="false" afterPath="$PROJECT_DIR$/routes/system_routes.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/static/index.html" beforeDir="false" afterPath="$PROJECT_DIR$/static/index.html" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/static/js/logging.js" beforeDir="false" afterPath="$PROJECT_DIR$/static/js/logging.js" afterDir="false" />
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="debug logger fixes for duckdb and new sort by columns">
+      <change beforePath="$PROJECT_DIR$/static/css/device-status.css" beforeDir="false" afterPath="$PROJECT_DIR$/static/css/device-status.css" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/static/js/device-status.js" beforeDir="false" afterPath="$PROJECT_DIR$/static/js/device-status.js" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -147,14 +146,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00044" summary="new build script for automated install from repo">
-      <option name="closed" value="true" />
-      <created>1774261622924</created>
-      <option name="number" value="00044" />
-      <option name="presentableId" value="LOCAL-00044" />
-      <option name="project" value="LOCAL" />
-      <updated>1774261622924</updated>
     </task>
     <task id="LOCAL-00045" summary="head -1 bug fix">
       <option name="closed" value="true" />
@@ -540,7 +531,15 @@
       <option name="project" value="LOCAL" />
       <updated>1774345190456</updated>
     </task>
-    <option name="localTasksCounter" value="93" />
+    <task id="LOCAL-00093" summary="debug logger fixes for duckdb and new sort by columns">
+      <option name="closed" value="true" />
+      <created>1774347026556</created>
+      <option name="number" value="00093" />
+      <option name="presentableId" value="LOCAL-00093" />
+      <option name="project" value="LOCAL" />
+      <updated>1774347026556</updated>
+    </task>
+    <option name="localTasksCounter" value="94" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -555,7 +554,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="APP_DIR reinstated due to removal in error" />
     <MESSAGE value="libglib2.0-0 \\ added" />
     <MESSAGE value="remove usns arg" />
     <MESSAGE value="adding priv and sec commands to podman args" />
@@ -580,7 +578,8 @@
     <MESSAGE value="swapping payload around for contact sensors in HA" />
     <MESSAGE value="device status column improvements" />
     <MESSAGE value="workspace updated" />
-    <option name="LAST_COMMIT_MESSAGE" value="workspace updated" />
+    <MESSAGE value="debug logger fixes for duckdb and new sort by columns" />
+    <option name="LAST_COMMIT_MESSAGE" value="debug logger fixes for duckdb and new sort by columns" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
