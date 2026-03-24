@@ -4,8 +4,10 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="adding switches to device status">
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="chown all dirs">
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/build.sh" beforeDir="false" afterPath="$PROJECT_DIR$/build.sh" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/requirements.txt" beforeDir="false" afterPath="$PROJECT_DIR$/requirements.txt" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -145,14 +147,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00046" summary="missing fix">
-      <option name="closed" value="true" />
-      <created>1774263149950</created>
-      <option name="number" value="00046" />
-      <option name="presentableId" value="LOCAL-00046" />
-      <option name="project" value="LOCAL" />
-      <updated>1774263149950</updated>
     </task>
     <task id="LOCAL-00047" summary="zigpy fix">
       <option name="closed" value="true" />
@@ -538,7 +532,15 @@
       <option name="project" value="LOCAL" />
       <updated>1774347435142</updated>
     </task>
-    <option name="localTasksCounter" value="95" />
+    <task id="LOCAL-00095" summary="chown all dirs">
+      <option name="closed" value="true" />
+      <created>1774347858178</created>
+      <option name="number" value="00095" />
+      <option name="presentableId" value="LOCAL-00095" />
+      <option name="project" value="LOCAL" />
+      <updated>1774347858178</updated>
+    </task>
+    <option name="localTasksCounter" value="96" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -553,7 +555,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="remove usns arg" />
     <MESSAGE value="adding priv and sec commands to podman args" />
     <MESSAGE value="final dir and dep fixes" />
     <MESSAGE value="removal of chwon of DAT_DIR as not needed" />
@@ -578,7 +579,8 @@
     <MESSAGE value="workspace updated" />
     <MESSAGE value="debug logger fixes for duckdb and new sort by columns" />
     <MESSAGE value="adding switches to device status" />
-    <option name="LAST_COMMIT_MESSAGE" value="adding switches to device status" />
+    <MESSAGE value="chown all dirs" />
+    <option name="LAST_COMMIT_MESSAGE" value="chown all dirs" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>

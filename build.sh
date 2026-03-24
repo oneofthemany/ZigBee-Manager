@@ -5,9 +5,9 @@
 # Internal port: 8000 (fixed). External port: auto-detected.
 #
 # Device access strategy:
-#   Podman rootless + --device + --group-add <host dialout GID>
-#   This gives the container process the host's dialout GID so it can
-#   open /dev/ttyACM0 etc. without running as root.
+#   Build: bake host UID:GID into image (--build-arg HOST_UID/HOST_GID)
+#   Run:   --group-add <dialout GID> + --security-opt label=disable
+#   No --userns keep-id, no --privileged, no UID remapping headaches.
 # =============================================================================
 
 set -euo pipefail
@@ -274,11 +274,11 @@ _prompt_manual_usb() {
 # CONTAINERFILE
 # =============================================================================
 write_containerfile() {
-    # We receive DIALOUT_GID as a build-arg so the in-container user gets
-    # the same GID as the host dialout group.
     cat > "$APP_DIR/Containerfile" << 'DOCKERFILE'
 FROM python:3.11-slim
 
+ARG HOST_UID=1000
+ARG HOST_GID=1000
 ARG HOST_DIALOUT_GID=20
 
 # System deps
@@ -294,16 +294,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libnl-route-3-200 \
     && rm -rf /var/lib/apt/lists/*
 
-# Create a group with the HOST's dialout GID inside the container.
-# If the GID already exists (e.g. staff=20 on Debian), just reuse it.
-RUN if getent group "$HOST_DIALOUT_GID" >/dev/null 2>&1; then \
-        SERIAL_GROUP=$(getent group "$HOST_DIALOUT_GID" | cut -d: -f1); \
-    else \
+# Create app user with the HOST's exact UID:GID + dialout group membership.
+# This means volumes owned by the host user are writable without remapping,
+# and --group-add at runtime grants serial device access.
+RUN groupadd -g "$HOST_GID" -o appgroup \
+ && if ! getent group "$HOST_DIALOUT_GID" >/dev/null 2>&1; then \
         groupadd -g "$HOST_DIALOUT_GID" hostdialout; \
-        SERIAL_GROUP=hostdialout; \
     fi \
- && groupadd -f zigbee \
- && useradd -r -g zigbee -G "$SERIAL_GROUP" -d /app -s /bin/bash zigbee
+ && SERIAL_GROUP=$(getent group "$HOST_DIALOUT_GID" | cut -d: -f1) \
+ && useradd -u "$HOST_UID" -g "$HOST_GID" -G "$SERIAL_GROUP" \
+        -d /app -s /bin/bash -o appuser
 
 WORKDIR /app
 
@@ -316,14 +316,16 @@ RUN pip install --no-cache-dir --upgrade pip \
 # Application source
 COPY . .
 
-# Required directories — writable by zigbee user
+# Required directories (includes CHIP SDK credentials path for Matter PAA certs)
 RUN mkdir -p /data /app/data/matter /app/data/backups /app/logs /app/config \
- && chown -R zigbee:zigbee /app /data /app/logs /app/config
+        /usr/local/lib/python3.11/site-packages/credentials/development/paa-root-certs \
+ && chown -R ${HOST_UID}:${HOST_GID} /app /data \
+        /usr/local/lib/python3.11/site-packages/credentials
 
 ENV ZMM_BACKUP_DIR=/app/data/backups
 ENV ZMM_APP_DIR=/app
 
-USER zigbee
+USER appuser
 
 EXPOSE 8000 5580
 
@@ -340,7 +342,11 @@ DOCKERFILE
 # =============================================================================
 build_image() {
     info "Building image ${BOLD}${IMAGE_NAME}${NC} ..."
-    local build_args=()
+    info "  UID:GID = ${HOST_UID}:${HOST_GID}, Dialout GID = ${DIALOUT_GID:-?}"
+    local build_args=(
+        --build-arg "HOST_UID=${HOST_UID}"
+        --build-arg "HOST_GID=${HOST_GID}"
+    )
 
     if [[ -n "${DIALOUT_GID:-}" ]]; then
         build_args+=(--build-arg "HOST_DIALOUT_GID=${DIALOUT_GID}")
@@ -422,25 +428,11 @@ run_container() {
         fi
     fi
 
-    # ── Podman-specific flags ──
-    if [[ "$RUNTIME" == "podman" ]]; then
-        # keep-id: map host UID/GID into container so volumes are writable
-        run_args+=(--userns keep-id)
-
-        # Pass the host dialout GID so the container process can open
-        # the serial device. This is the KEY flag for device access.
-        if [[ -n "${DIALOUT_GID:-}" ]]; then
-            run_args+=(--group-add "${DIALOUT_GID}")
-        fi
+    # ── Device access: --group-add for dialout, disable SELinux label ──
+    if [[ -n "${DIALOUT_GID:-}" ]]; then
+        run_args+=(--group-add "${DIALOUT_GID}")
     fi
-
-    # ── Docker-specific flags ──
-    if [[ "$RUNTIME" == "docker" ]]; then
-        # Docker: --group-add with the group name or GID
-        if [[ -n "${DIALOUT_GID:-}" ]]; then
-            run_args+=(--group-add "${DIALOUT_GID}")
-        fi
-    fi
+    run_args+=(--security-opt label=disable)
 
     info "Starting container '${CONTAINER_NAME}' ..."
     "$RUNTIME" run "${run_args[@]}" "${IMAGE_NAME}:latest"
@@ -543,6 +535,7 @@ ${BOLD}Usage:${NC} $0 [OPTIONS]
 ${BOLD}Options:${NC}
   --port   PORT      Preferred host port  (default: ${INTERNAL_PORT})
   --usb    DEVICE    Zigbee USB device    (default: auto-detect)
+  --uid    UID:GID   Container user ID    (default: current user $(id -u):$(id -g))
   --dir    PATH      App clone directory  (default: ${APP_DIR})
   --data   PATH      Persistent data dir  (default: ${DATA_DIR})
   --branch NAME      Git branch           (default: ${REPO_BRANCH})
@@ -564,11 +557,14 @@ EOF
 PREFERRED_PORT=$INTERNAL_PORT
 INSTALL_AUTOSTART=true
 FORCE_REBUILD=false
+HOST_UID=$(id -u)
+HOST_GID=$(id -g)
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --port)         PREFERRED_PORT="$2";    shift 2 ;;
         --usb)          USB_DEVICE="$2";        shift 2 ;;
+        --uid)          HOST_UID="${2%%:*}"; HOST_GID="${2##*:}"; shift 2 ;;
         --dir)          APP_DIR="$2";           shift 2 ;;
         --data)         DATA_DIR="$2";          shift 2 ;;
         --branch)       REPO_BRANCH="$2";       shift 2 ;;
@@ -643,6 +639,7 @@ echo -e "  ${BOLD}Config:${NC}         ${DATA_DIR}/config/config.yaml"
 echo -e "  ${BOLD}Logs:${NC}           ${RUNTIME} logs -f ${CONTAINER_NAME}"
 echo -e "  ${BOLD}Data:${NC}           ${DATA_DIR}/"
 echo -e "  ${BOLD}Runtime:${NC}        ${RUNTIME}"
+echo -e "  ${BOLD}Container UID:${NC}  ${HOST_UID}:${HOST_GID}"
 echo
 echo -e "  ${BOLD}Commands:${NC}"
 echo -e "    ${RUNTIME} logs -f ${CONTAINER_NAME}        # Follow logs"
