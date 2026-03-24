@@ -4,11 +4,13 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="if then fix for [] elements">
-      <change afterPath="$PROJECT_DIR$/handlers/poll_control.py" afterDir="false" />
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="poll control instated to fix lazy devices dropping from network">
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/core/service.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/service.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/device.py" beforeDir="false" afterPath="$PROJECT_DIR$/device.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/handlers/security.py" beforeDir="false" afterPath="$PROJECT_DIR$/handlers/security.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/handlers/fast_path.py" beforeDir="false" afterPath="$PROJECT_DIR$/handlers/fast_path.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/handlers/general.py" beforeDir="false" afterPath="$PROJECT_DIR$/handlers/general.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/static/css/device-status.css" beforeDir="false" afterPath="$PROJECT_DIR$/static/css/device-status.css" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/static/js/device-status.js" beforeDir="false" afterPath="$PROJECT_DIR$/static/js/device-status.js" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -148,14 +150,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00039" summary="adding in boot guard to service">
-      <option name="closed" value="true" />
-      <created>1774021006328</created>
-      <option name="number" value="00039" />
-      <option name="presentableId" value="LOCAL-00039" />
-      <option name="project" value="LOCAL" />
-      <updated>1774021006328</updated>
     </task>
     <task id="LOCAL-00040" summary="bug fix for contact sensors and better initialisation for devices">
       <option name="closed" value="true" />
@@ -541,7 +535,15 @@
       <option name="project" value="LOCAL" />
       <updated>1774342418540</updated>
     </task>
-    <option name="localTasksCounter" value="88" />
+    <task id="LOCAL-00088" summary="poll control instated to fix lazy devices dropping from network">
+      <option name="closed" value="true" />
+      <created>1774342838395</created>
+      <option name="number" value="00088" />
+      <option name="presentableId" value="LOCAL-00088" />
+      <option name="project" value="LOCAL" />
+      <updated>1774342838395</updated>
+    </task>
+    <option name="localTasksCounter" value="89" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -556,7 +558,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="syntax error line 129 fix" />
     <MESSAGE value="patch selected device to config.yaml" />
     <MESSAGE value="BACKUP directory changed for container intro" />
     <MESSAGE value="dir fixes" />
@@ -581,7 +582,8 @@
     <MESSAGE value="updated to handle auto chip detect" />
     <MESSAGE value="rolled back" />
     <MESSAGE value="if then fix for [] elements" />
-    <option name="LAST_COMMIT_MESSAGE" value="if then fix for [] elements" />
+    <MESSAGE value="poll control instated to fix lazy devices dropping from network" />
+    <option name="LAST_COMMIT_MESSAGE" value="poll control instated to fix lazy devices dropping from network" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
