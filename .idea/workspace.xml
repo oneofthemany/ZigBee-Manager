@@ -4,13 +4,10 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="poll control instated to fix lazy devices dropping from network">
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/core/service.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/service.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/handlers/fast_path.py" beforeDir="false" afterPath="$PROJECT_DIR$/handlers/fast_path.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/handlers/general.py" beforeDir="false" afterPath="$PROJECT_DIR$/handlers/general.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/static/css/device-status.css" beforeDir="false" afterPath="$PROJECT_DIR$/static/css/device-status.css" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/static/js/device-status.js" beforeDir="false" afterPath="$PROJECT_DIR$/static/js/device-status.js" afterDir="false" />
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="workspace updated">
+      <change beforePath="$PROJECT_DIR$/routes/system_routes.py" beforeDir="false" afterPath="$PROJECT_DIR$/routes/system_routes.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/static/index.html" beforeDir="false" afterPath="$PROJECT_DIR$/static/index.html" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/static/js/logging.js" beforeDir="false" afterPath="$PROJECT_DIR$/static/js/logging.js" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -150,38 +147,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00040" summary="bug fix for contact sensors and better initialisation for devices">
-      <option name="closed" value="true" />
-      <created>1774203854105</created>
-      <option name="number" value="00040" />
-      <option name="presentableId" value="LOCAL-00040" />
-      <option name="project" value="LOCAL" />
-      <updated>1774203854105</updated>
-    </task>
-    <task id="LOCAL-00041" summary="contact sensor fix">
-      <option name="closed" value="true" />
-      <created>1774203872393</created>
-      <option name="number" value="00041" />
-      <option name="presentableId" value="LOCAL-00041" />
-      <option name="project" value="LOCAL" />
-      <updated>1774203872393</updated>
-    </task>
-    <task id="LOCAL-00042" summary="tuple fix for report config">
-      <option name="closed" value="true" />
-      <created>1774203983854</created>
-      <option name="number" value="00042" />
-      <option name="presentableId" value="LOCAL-00042" />
-      <option name="project" value="LOCAL" />
-      <updated>1774203983854</updated>
-    </task>
-    <task id="LOCAL-00043" summary="xml push">
-      <option name="closed" value="true" />
-      <created>1774203998398</created>
-      <option name="number" value="00043" />
-      <option name="presentableId" value="LOCAL-00043" />
-      <option name="project" value="LOCAL" />
-      <updated>1774203998398</updated>
     </task>
     <task id="LOCAL-00044" summary="new build script for automated install from repo">
       <option name="closed" value="true" />
@@ -543,7 +508,39 @@
       <option name="project" value="LOCAL" />
       <updated>1774342838395</updated>
     </task>
-    <option name="localTasksCounter" value="89" />
+    <task id="LOCAL-00089" summary="zigpy's internal cluster dispatch does not reliably reach handlers for Report Attributes - fixed">
+      <option name="closed" value="true" />
+      <created>1774345112773</created>
+      <option name="number" value="00089" />
+      <option name="presentableId" value="LOCAL-00089" />
+      <option name="project" value="LOCAL" />
+      <updated>1774345112773</updated>
+    </task>
+    <task id="LOCAL-00090" summary="swapping payload around for contact sensors in HA">
+      <option name="closed" value="true" />
+      <created>1774345145302</created>
+      <option name="number" value="00090" />
+      <option name="presentableId" value="LOCAL-00090" />
+      <option name="project" value="LOCAL" />
+      <updated>1774345145302</updated>
+    </task>
+    <task id="LOCAL-00091" summary="device status column improvements">
+      <option name="closed" value="true" />
+      <created>1774345174931</created>
+      <option name="number" value="00091" />
+      <option name="presentableId" value="LOCAL-00091" />
+      <option name="project" value="LOCAL" />
+      <updated>1774345174931</updated>
+    </task>
+    <task id="LOCAL-00092" summary="workspace updated">
+      <option name="closed" value="true" />
+      <created>1774345190456</created>
+      <option name="number" value="00092" />
+      <option name="presentableId" value="LOCAL-00092" />
+      <option name="project" value="LOCAL" />
+      <updated>1774345190456</updated>
+    </task>
+    <option name="localTasksCounter" value="93" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -558,10 +555,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="patch selected device to config.yaml" />
-    <MESSAGE value="BACKUP directory changed for container intro" />
-    <MESSAGE value="dir fixes" />
-    <MESSAGE value="dir fixes for backups inside container" />
     <MESSAGE value="APP_DIR reinstated due to removal in error" />
     <MESSAGE value="libglib2.0-0 \\ added" />
     <MESSAGE value="remove usns arg" />
@@ -583,7 +576,11 @@
     <MESSAGE value="rolled back" />
     <MESSAGE value="if then fix for [] elements" />
     <MESSAGE value="poll control instated to fix lazy devices dropping from network" />
-    <option name="LAST_COMMIT_MESSAGE" value="poll control instated to fix lazy devices dropping from network" />
+    <MESSAGE value="zigpy's internal cluster dispatch does not reliably reach handlers for Report Attributes - fixed" />
+    <MESSAGE value="swapping payload around for contact sensors in HA" />
+    <MESSAGE value="device status column improvements" />
+    <MESSAGE value="workspace updated" />
+    <option name="LAST_COMMIT_MESSAGE" value="workspace updated" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
