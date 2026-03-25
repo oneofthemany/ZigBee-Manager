@@ -4,9 +4,8 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="kill orphan pid fix for container restart">
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="userns arg added for podman container build">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/build.sh" beforeDir="false" afterPath="$PROJECT_DIR$/build.sh" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -146,14 +145,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00063" summary="adding priv and sec commands to podman args">
-      <option name="closed" value="true" />
-      <created>1774272050216</created>
-      <option name="number" value="00063" />
-      <option name="presentableId" value="LOCAL-00063" />
-      <option name="project" value="LOCAL" />
-      <updated>1774272050216</updated>
     </task>
     <task id="LOCAL-00064" summary="adding priv and sec commands to podman args">
       <option name="closed" value="true" />
@@ -539,7 +530,15 @@
       <option name="project" value="LOCAL" />
       <updated>1774442803922</updated>
     </task>
-    <option name="localTasksCounter" value="112" />
+    <task id="LOCAL-00112" summary="userns arg added for podman container build">
+      <option name="closed" value="true" />
+      <created>1774443250839</created>
+      <option name="number" value="00112" />
+      <option name="presentableId" value="LOCAL-00112" />
+      <option name="project" value="LOCAL" />
+      <updated>1774443250839</updated>
+    </task>
+    <option name="localTasksCounter" value="113" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -554,7 +553,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="rolled back" />
     <MESSAGE value="if then fix for [] elements" />
     <MESSAGE value="poll control instated to fix lazy devices dropping from network" />
     <MESSAGE value="zigpy's internal cluster dispatch does not reliably reach handlers for Report Attributes - fixed" />
@@ -579,7 +577,8 @@
     <MESSAGE value="setup wizard patch - WIP" />
     <MESSAGE value="setup wizard finalised" />
     <MESSAGE value="kill orphan pid fix for container restart" />
-    <option name="LAST_COMMIT_MESSAGE" value="kill orphan pid fix for container restart" />
+    <MESSAGE value="userns arg added for podman container build" />
+    <option name="LAST_COMMIT_MESSAGE" value="userns arg added for podman container build" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>

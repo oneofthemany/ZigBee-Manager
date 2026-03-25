@@ -512,7 +512,7 @@ run_container() {
 
         if [[ "$RUNTIME" == "podman" && -n "${DEVICE_MOUNT_PATH:-}" ]]; then
             # Podman rootless: use the bind-mounted device path
-            # Maps /mnt/devices/ttyACM0 on host → /dev/ttyACM0 inside container
+            # Maps /mnt/devices/ttyACM0 - USB0 on host → /dev/ttyACM0 -USB0 inside container
             run_args+=(--device "${DEVICE_MOUNT_PATH}:${real_dev}")
             ok "Using bind-mounted device: ${DEVICE_MOUNT_PATH} → ${real_dev}"
 
