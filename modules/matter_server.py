@@ -124,6 +124,26 @@ class MatterServerManager:
 
     async def _kill_orphans(self):
         """Kill any leftover matter-server processes from previous runs."""
+        pid_file = os.path.join(self.storage_path, "matter-server.pid")
+
+        # Check PID file from previous run
+        if os.path.exists(pid_file):
+            try:
+                old_pid = int(open(pid_file).read().strip())
+                os.kill(old_pid, signal.SIGTERM)
+                logger.warning(f"Killed previous matter-server from PID file: {old_pid}")
+                await asyncio.sleep(2)
+                try:
+                    os.kill(old_pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+            except (ProcessLookupError, ValueError, OSError):
+                pass
+            try:
+                os.remove(pid_file)
+            except FileNotFoundError:
+                pass
+
         import subprocess
         killed = 0
         my_pid = os.getpid()
@@ -207,7 +227,12 @@ class MatterServerManager:
             )
 
             self._running = True
-            logger.info(f"✅ Matter server started (PID {self._process.pid}) on port {self.port}")
+            logger.info(f"Matter server started (PID {self._process.pid})")
+
+            # Write PID file for orphan cleanup on next start
+            pid_file = os.path.join(self.storage_path, "matter-server.pid")
+            with open(pid_file, 'w') as f:
+                f.write(str(self._process.pid))
 
             # Start log reader + health monitor
             self._monitor_task = asyncio.create_task(self._monitor())
@@ -275,6 +300,13 @@ class MatterServerManager:
         self._shutdown = True
         self._running = False
 
+        # Remove PID file
+        pid_file = os.path.join(self.storage_path, "matter-server.pid")
+        try:
+            os.remove(pid_file)
+        except FileNotFoundError:
+            pass
+
         if self._monitor_task:
             self._monitor_task.cancel()
             try:
@@ -285,7 +317,6 @@ class MatterServerManager:
         if self._process and self._process.returncode is None:
             logger.info(f"Stopping Matter server (PID {self._process.pid})...")
             try:
-                # Send SIGTERM to the process group
                 os.killpg(os.getpgid(self._process.pid), signal.SIGTERM)
                 try:
                     await asyncio.wait_for(self._process.wait(), timeout=10)
@@ -295,7 +326,7 @@ class MatterServerManager:
                     os.killpg(os.getpgid(self._process.pid), signal.SIGKILL)
                     await self._process.wait()
             except ProcessLookupError:
-                pass  # Already dead
+                pass
             except Exception as e:
                 logger.error(f"Error stopping Matter server: {e}")
 

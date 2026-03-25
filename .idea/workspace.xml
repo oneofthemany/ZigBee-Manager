@@ -4,16 +4,8 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="setup wizard patch - WIP">
-      <change afterPath="$PROJECT_DIR$/static/js/setup-jedi.js" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/core/config_builder.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/config_builder.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/core/service.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/service.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/main.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/static/css/setup-wizard.css" beforeDir="false" afterPath="$PROJECT_DIR$/static/css/setup-wizard.css" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/static/index.html" beforeDir="false" afterPath="$PROJECT_DIR$/static/index.html" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/static/js/setup-wizard.js" beforeDir="false" afterPath="$PROJECT_DIR$/static/js/setup-wizard.js" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/static/js/websocket.js" beforeDir="false" afterPath="$PROJECT_DIR$/static/js/websocket.js" afterDir="false" />
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="setup wizard finalised">
+      <change beforePath="$PROJECT_DIR$/modules/matter_server.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/matter_server.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -153,14 +145,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00061" summary="remove usns arg">
-      <option name="closed" value="true" />
-      <created>1774271558948</created>
-      <option name="number" value="00061" />
-      <option name="presentableId" value="LOCAL-00061" />
-      <option name="project" value="LOCAL" />
-      <updated>1774271558949</updated>
     </task>
     <task id="LOCAL-00062" summary="remove usns arg">
       <option name="closed" value="true" />
@@ -546,7 +530,15 @@
       <option name="project" value="LOCAL" />
       <updated>1774436842105</updated>
     </task>
-    <option name="localTasksCounter" value="110" />
+    <task id="LOCAL-00110" summary="setup wizard finalised">
+      <option name="closed" value="true" />
+      <created>1774442358391</created>
+      <option name="number" value="00110" />
+      <option name="presentableId" value="LOCAL-00110" />
+      <option name="project" value="LOCAL" />
+      <updated>1774442358391</updated>
+    </task>
+    <option name="localTasksCounter" value="111" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -561,7 +553,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="moved to root user to debug whey device wont attach to rootless container" />
     <MESSAGE value="updated to handle auto chip detect" />
     <MESSAGE value="rolled back" />
     <MESSAGE value="if then fix for [] elements" />
@@ -586,7 +577,8 @@
     <MESSAGE value="adding in dongle jedi core" />
     <MESSAGE value="None patch fix for flow control" />
     <MESSAGE value="setup wizard patch - WIP" />
-    <option name="LAST_COMMIT_MESSAGE" value="setup wizard patch - WIP" />
+    <MESSAGE value="setup wizard finalised" />
+    <option name="LAST_COMMIT_MESSAGE" value="setup wizard finalised" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
