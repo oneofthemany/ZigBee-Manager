@@ -4,7 +4,10 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="improved service for teardown and startup" />
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="workspace">
+      <change afterPath="$PROJECT_DIR$/modules/dongle_jedi_core.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+    </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -143,14 +146,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00057" summary="dir fixes for backups inside container">
-      <option name="closed" value="true" />
-      <created>1774266762782</created>
-      <option name="number" value="00057" />
-      <option name="presentableId" value="LOCAL-00057" />
-      <option name="project" value="LOCAL" />
-      <updated>1774266762782</updated>
     </task>
     <task id="LOCAL-00058" summary="APP_DIR reinstated due to removal in error">
       <option name="closed" value="true" />
@@ -536,7 +531,15 @@
       <option name="project" value="LOCAL" />
       <updated>1774432065241</updated>
     </task>
-    <option name="localTasksCounter" value="106" />
+    <task id="LOCAL-00106" summary="workspace">
+      <option name="closed" value="true" />
+      <created>1774432512408</created>
+      <option name="number" value="00106" />
+      <option name="presentableId" value="LOCAL-00106" />
+      <option name="project" value="LOCAL" />
+      <updated>1774432512408</updated>
+    </task>
+    <option name="localTasksCounter" value="107" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -551,7 +554,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="/data added to chown for matter server" />
     <MESSAGE value="commented out priv to test access to device" />
     <MESSAGE value="priv to true" />
     <MESSAGE value="space removed" />
@@ -576,7 +578,8 @@
     <MESSAGE value="project updates" />
     <MESSAGE value="new rootless patch - testing" />
     <MESSAGE value="improved service for teardown and startup" />
-    <option name="LAST_COMMIT_MESSAGE" value="improved service for teardown and startup" />
+    <MESSAGE value="workspace" />
+    <option name="LAST_COMMIT_MESSAGE" value="workspace" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
