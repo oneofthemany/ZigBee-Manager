@@ -4,7 +4,7 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="new rootless patch - testing">
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="improved service for teardown and startup">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/build.sh" beforeDir="false" afterPath="$PROJECT_DIR$/build.sh" afterDir="false" />
     </list>
@@ -146,14 +146,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00055" summary="dir fixes">
-      <option name="closed" value="true" />
-      <created>1774265673483</created>
-      <option name="number" value="00055" />
-      <option name="presentableId" value="LOCAL-00055" />
-      <option name="project" value="LOCAL" />
-      <updated>1774265673483</updated>
     </task>
     <task id="LOCAL-00056" summary="dir fixes">
       <option name="closed" value="true" />
@@ -539,7 +531,15 @@
       <option name="project" value="LOCAL" />
       <updated>1774430697439</updated>
     </task>
-    <option name="localTasksCounter" value="104" />
+    <task id="LOCAL-00104" summary="improved service for teardown and startup">
+      <option name="closed" value="true" />
+      <created>1774432058191</created>
+      <option name="number" value="00104" />
+      <option name="presentableId" value="LOCAL-00104" />
+      <option name="project" value="LOCAL" />
+      <updated>1774432058191</updated>
+    </task>
+    <option name="localTasksCounter" value="105" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -554,7 +554,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="chmod after dir creation - duh" />
     <MESSAGE value="/data added to chown for matter server" />
     <MESSAGE value="commented out priv to test access to device" />
     <MESSAGE value="priv to true" />
@@ -579,7 +578,8 @@
     <MESSAGE value="hook config builder in to the dongle jedi" />
     <MESSAGE value="project updates" />
     <MESSAGE value="new rootless patch - testing" />
-    <option name="LAST_COMMIT_MESSAGE" value="new rootless patch - testing" />
+    <MESSAGE value="improved service for teardown and startup" />
+    <option name="LAST_COMMIT_MESSAGE" value="improved service for teardown and startup" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
