@@ -4,8 +4,8 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="folder dir &gt; /app for new container build">
-      <change beforePath="$PROJECT_DIR$/core/config_builder.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/config_builder.py" afterDir="false" />
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="hook config builder in to the dongle jedi">
+      <change beforePath="$PROJECT_DIR$/modules/matter_server.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/matter_server.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -145,14 +145,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00052" summary="syntax error line 129 fix">
-      <option name="closed" value="true" />
-      <created>1774264584207</created>
-      <option name="number" value="00052" />
-      <option name="presentableId" value="LOCAL-00052" />
-      <option name="project" value="LOCAL" />
-      <updated>1774264584207</updated>
     </task>
     <task id="LOCAL-00053" summary="patch selected device to config.yaml">
       <option name="closed" value="true" />
@@ -538,7 +530,15 @@
       <option name="project" value="LOCAL" />
       <updated>1774384814493</updated>
     </task>
-    <option name="localTasksCounter" value="101" />
+    <task id="LOCAL-00101" summary="hook config builder in to the dongle jedi">
+      <option name="closed" value="true" />
+      <created>1774385391770</created>
+      <option name="number" value="00101" />
+      <option name="presentableId" value="LOCAL-00101" />
+      <option name="project" value="LOCAL" />
+      <updated>1774385391771</updated>
+    </task>
+    <option name="localTasksCounter" value="102" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -553,7 +553,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="chown to config and log dirs inside container" />
     <MESSAGE value="typo in dir chown" />
     <MESSAGE value="space added" />
     <MESSAGE value="chmod after dir creation - duh" />
@@ -578,7 +577,8 @@
     <MESSAGE value="more changes to try and get container buikd successfull" />
     <MESSAGE value="new setup wizard with dongle jedi" />
     <MESSAGE value="folder dir &gt; /app for new container build" />
-    <option name="LAST_COMMIT_MESSAGE" value="folder dir &gt; /app for new container build" />
+    <MESSAGE value="hook config builder in to the dongle jedi" />
+    <option name="LAST_COMMIT_MESSAGE" value="hook config builder in to the dongle jedi" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
