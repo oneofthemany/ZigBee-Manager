@@ -407,6 +407,76 @@ prepare_data_dirs() {
 }
 
 # =============================================================================
+# DEVICE BIND-MOUNT (Podman rootless workaround)
+# =============================================================================
+# Rootless Podman can't access /dev/ device nodes directly via --device.
+# Workaround: bind-mount the device into /mnt/devices/ with correct ownership,
+# then pass the bind-mounted path to --device instead:
+# https://github.com/containers/podman/discussions/22379
+# =============================================================================
+DEVICE_MOUNT_DIR="/mnt/devices"
+
+prepare_device_mount() {
+    # Only needed for Podman (Docker doesn't have this issue)
+    if [[ "$RUNTIME" != "podman" ]]; then
+        return 0
+    fi
+
+    if [[ -z "${USB_DEVICE:-}" ]]; then
+        return 0
+    fi
+
+    local real_dev
+    real_dev=$(readlink -f "$USB_DEVICE")
+    local dev_basename
+    dev_basename=$(basename "$real_dev")
+    local mount_path="${DEVICE_MOUNT_DIR}/${dev_basename}"
+
+    info "Setting up device bind-mount for rootless Podman..."
+
+    # Create the mount directory if it doesn't exist
+    if [[ ! -d "$DEVICE_MOUNT_DIR" ]]; then
+        info "Creating ${DEVICE_MOUNT_DIR} ..."
+        sudo mkdir -p "$DEVICE_MOUNT_DIR"
+        sudo chown root:root "$DEVICE_MOUNT_DIR"
+        sudo chmod 755 "$DEVICE_MOUNT_DIR"
+    fi
+
+    # Clean up any stale mount at this path
+    if mountpoint -q "$mount_path" 2>/dev/null; then
+        info "Removing stale bind-mount at ${mount_path} ..."
+        sudo umount "$mount_path"
+    fi
+
+    # Create the mount-point file (touch, not mkdir — it's a device node)
+    if [[ ! -e "$mount_path" ]]; then
+        sudo touch "$mount_path"
+    fi
+
+    # Bind-mount the real device node
+    sudo mount --bind "$real_dev" "$mount_path"
+
+    # Set ownership so the rootless Podman user can access it
+    sudo chown "$(id -u):${DIALOUT_GID:-$(id -g)}" "$mount_path"
+
+    # Store the mapped path for run_container to use
+    DEVICE_MOUNT_PATH="$mount_path"
+
+    ok "Device bind-mounted: ${real_dev} → ${mount_path}"
+}
+
+# =============================================================================
+# TEARDOWN CLEANUP
+# =============================================================================
+cleanup_device_mount() {
+    if [[ -n "${DEVICE_MOUNT_PATH:-}" ]] && mountpoint -q "$DEVICE_MOUNT_PATH" 2>/dev/null; then
+        info "Unmounting device bind-mount: ${DEVICE_MOUNT_PATH}"
+        sudo umount "$DEVICE_MOUNT_PATH"
+        sudo rm -f "$DEVICE_MOUNT_PATH"
+    fi
+}
+
+# =============================================================================
 # RUN CONTAINER
 # =============================================================================
 run_container() {
@@ -432,15 +502,25 @@ run_container() {
 
     # ── USB device passthrough ──
     if [[ -n "${USB_DEVICE:-}" ]]; then
-        # Always pass the real device node (resolve symlinks)
         local real_dev
         real_dev=$(readlink -f "$USB_DEVICE")
-        run_args+=(--device "${real_dev}:${real_dev}")
 
-        # If the original path was a symlink (e.g. /dev/serial/by-id/...),
-        # also pass that so configs referencing it still work
-        if [[ "$USB_DEVICE" != "$real_dev" ]]; then
-            run_args+=(--device "${USB_DEVICE}:${USB_DEVICE}")
+        if [[ "$RUNTIME" == "podman" && -n "${DEVICE_MOUNT_PATH:-}" ]]; then
+            # Podman rootless: use the bind-mounted device path
+            # Maps /mnt/devices/ttyACM0 on host → /dev/ttyACM0 inside container
+            run_args+=(--device "${DEVICE_MOUNT_PATH}:${real_dev}")
+            ok "Using bind-mounted device: ${DEVICE_MOUNT_PATH} → ${real_dev}"
+
+            # If the original was a symlink, also map it inside the container
+            if [[ "$USB_DEVICE" != "$real_dev" ]]; then
+                run_args+=(--device "${DEVICE_MOUNT_PATH}:${USB_DEVICE}")
+            fi
+        else
+            # Docker or fallback: pass device nodes directly
+            run_args+=(--device "${real_dev}:${real_dev}")
+            if [[ "$USB_DEVICE" != "$real_dev" ]]; then
+                run_args+=(--device "${USB_DEVICE}:${USB_DEVICE}")
+            fi
         fi
     fi
 
@@ -501,6 +581,8 @@ RestartSec=10
 ExecStartPre=-/usr/bin/podman rm -f ${CONTAINER_NAME}
 ExecStart=/usr/bin/podman start -a ${CONTAINER_NAME}
 ExecStop=/usr/bin/podman stop -t 15 ${CONTAINER_NAME}
+
+ExecStopPost=/bin/bash -c 'mountpoint -q /mnt/devices/ttyACM0 && sudo umount /mnt/devices/ttyACM0 && rm -f /mnt/devices/ttyACM0 || true'
 
 [Install]
 WantedBy=default.target
@@ -627,13 +709,17 @@ else
     info "Image exists — skipping build (use --rebuild to force)."
 fi
 
-# Step 6: Data + config
+# Step 6: Prepare data dirs + device mount
 prepare_data_dirs
 
-# Step 7: Run
+# Step 7: Bind-mount device for rootless Podman
+prepare_device_mount
+
+
+# Step 8: Run
 run_container "$HOST_PORT" "$HOST_MATTER_PORT"
 
-# Step 8: Auto-start
+# Step 9: Auto-start
 if [[ "$INSTALL_AUTOSTART" == true ]]; then
     install_autostart
 fi
