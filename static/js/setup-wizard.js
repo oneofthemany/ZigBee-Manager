@@ -38,7 +38,7 @@
             broker_port: 1883,
             username: '',
             password: '',
-            base_topic: 'zigbee_manager',
+            base_topic: 'zigbee_matter_manager',
             discovery_prefix: 'homeassistant',
         },
     };
