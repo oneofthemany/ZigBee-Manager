@@ -375,7 +375,7 @@ async def lifespan(app: FastAPI):
 
 
     # Safe Deploy
-    register_deploy_routes(app, service_name="zigbee_manager")
+    register_deploy_routes(app, service_name="zigbee_matter_manager")
     logger.info("Safe deploy routes registered")
 
     # Check if we're recovering from a deploy
@@ -384,7 +384,7 @@ async def lifespan(app: FastAPI):
     yield  # Application runs here
 
     # Shutdown
-    logger.info("Shutting down Zigbee Gateway...")
+    logger.info("Shutting down Zigbee Matter Manager...")
 
     # 1. monitors and telemetry first
     system_monitor.stop()
@@ -393,6 +393,8 @@ async def lifespan(app: FastAPI):
     close_telemetry_db()
 
     # 2. services
+    if zigbee_service.multipan and zigbee_service.multipan.is_running:
+        await zigbee_service.multipan.stop()
     await zigbee_service.stop()
     await mqtt_service.stop()
     if hasattr(zigbee_service, 'spectrum_monitor'):
@@ -480,7 +482,7 @@ async def start_services_after_setup():
             mqtt_service.port = get_conf('mqtt', 'broker_port', 1883)
             mqtt_service.username = get_conf('mqtt', 'username')
             mqtt_service.password = get_conf('mqtt', 'password')
-            mqtt_service.base_topic = get_conf('mqtt', 'base_topic', 'zigbee_manager')
+            mqtt_service.base_topic = get_conf('mqtt', 'base_topic', 'zigbee_matter_manager')
 
             await mqtt_service.stop()
             await mqtt_service.start()

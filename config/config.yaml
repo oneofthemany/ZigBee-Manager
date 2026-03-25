@@ -37,6 +37,23 @@ matter:
   # enabled: false
   # server_url: ws://localhost:5580/ws
 
+# # MultiPAN RCP (auto-detected — only add to override defaults)
+# multipan:
+#   cpcd:
+#     # serial_port: /dev/ttyACM0  # auto-detected from zigbee.port
+#     baudrate: 460800
+#     flow_control: hardware
+#     # config_file: /usr/local/etc/cpcd.conf  # use system config if exists
+#   zigbeed:
+#     ezsp_port: 9999
+#     # pty_path: /tmp/zigbeed_socket
+#     # config_file: /usr/local/etc/zigbeed.conf
+#   otbr:
+#     enabled: true
+#     thread_interface: wpan0
+#     backbone_interface: eth0
+#     nat64: false
+
 ai:
   provider: ollama
   model: llama3.1:8b-instruct-q4_K_M

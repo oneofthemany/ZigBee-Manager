@@ -165,6 +165,7 @@ class ConfigBuilderMixin:
                 "radio_type": radio_type,
                 "baudrate": baud,
                 "flow_control": flow,
+                "adapter_family": family,
             }
 
         except ImportError:

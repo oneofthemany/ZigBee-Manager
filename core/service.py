@@ -50,6 +50,7 @@ from modules.device_ban import get_ban_manager
 from modules.touchlink import create_touchlink_manager, TouchlinkManager
 from modules.automation import AutomationEngine
 from modules.ota import OTAManager, build_ota_config
+from modules.multipan import MultiPanManager
 
 # Import mixins
 from core.config_builder import ConfigBuilderMixin
@@ -122,6 +123,7 @@ class ZigbeeService(
 
         self.join_history = []
         self._config = config
+        self.multipan: Optional['MultiPanManager'] = None
 
         # Pairing state
         self.pairing_expiration = 0
@@ -296,6 +298,56 @@ class ZigbeeService(
 
         # Probe radio type + serial parameters (protocol-level handshake)
         probe_result = await self._probe_radio_type(progress_cb=probe_progress_cb)
+
+        # ================================================================
+        # MULTIPAN INTERCEPT — if Jedi detected RCP firmware, start the
+        # CPC daemon stack and redirect bellows to the zigbeed socket.
+        # ================================================================
+        adapter_family = probe_result.get("adapter_family", "")
+        if adapter_family == "Silicon Labs CPC Multi-PAN (RCP)":
+            logger.info(
+                "MultiPAN RCP firmware detected — starting CPC stack..."
+            )
+            try:
+                from modules.multipan import MultiPanManager
+
+                multipan_config = self._config.get("multipan", {})
+                self.multipan = MultiPanManager(
+                    zigbee_config=self._config,
+                    multipan_config=multipan_config,
+                    event_emitter=self._emit,
+                )
+
+                if await self.multipan.start(serial_port=self.port):
+                    # Override port — bellows will connect to zigbeed's socket
+                    # instead of the serial port (which cpcd now owns)
+                    original_port = self.port
+                    self.port = self.multipan.ezsp_socket
+                    logger.info(
+                        f"MultiPAN active: {original_port} → {self.port}"
+                    )
+
+                    # Re-probe: socket path → returns EZSP with no serial params
+                    probe_result = await self._probe_radio_type()
+                else:
+                    logger.error(
+                        "MultiPAN stack failed to start — "
+                        "falling back to direct serial (may fail if "
+                        "dongle has RCP firmware)"
+                    )
+                    self.multipan = None
+
+            except ImportError:
+                logger.warning(
+                    "multipan module not available — "
+                    "cannot use MultiPAN RCP firmware. "
+                    "Install cpcd/zigbeed or flash NCP firmware."
+                )
+            except Exception as e:
+                logger.error(f"MultiPAN startup error: {e}")
+                self.multipan = None
+
+
         radio_type = probe_result["radio_type"]
         logger.info(
             f"✅ Detected radio: {radio_type} @ "
@@ -474,6 +526,12 @@ class ZigbeeService(
         if self.app:
             await self.app.shutdown()
             logger.info("Zigbee network stopped")
+
+        # Stop MultiPAN stack AFTER bellows has disconnected
+        # (reverse order: otbr → socat → zigbeed → cpcd)
+        if self.multipan and self.multipan.is_running:
+            await self.multipan.stop()
+            self.multipan = None
 
     # =========================================================================
     # ZIGPY LISTENER INTERFACE

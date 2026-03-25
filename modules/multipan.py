@@ -1,0 +1,663 @@
+"""
+MultiPAN RCP Manager
+=====================
+Orchestrates Silicon Labs CPC stack daemons (cpcd, zigbeed, socat, otbr-agent)
+as managed subprocesses for concurrent Zigbee + Thread on a single RCP radio.
+
+Follows the same managed-subprocess pattern as EmbeddedMatterServer.
+
+Startup order is critical:
+  1. cpcd       — owns serial port, speaks CPC to RCP firmware
+  2. zigbeed    — connects to cpcd, runs EmberZNet stack host-side
+  3. socat      — bridges zigbeed's PTY to a TCP socket for bellows
+  4. otbr-agent — connects to cpcd, runs OpenThread stack + border routing
+
+bellows/zigpy then connects to the socat TCP socket (socket://localhost:{port}).
+
+IMPORTANT: This module does NOT touch the existing Zigbee startup path.
+When MultiPAN is active, the only visible change to core.py is that
+self.port becomes "socket://localhost:9999" instead of "/dev/ttyACM0".
+Everything downstream — probe_radio_type(), _build_ezsp_config(),
+ControllerApplication.new() — works unchanged because they already
+handle socket paths.
+
+Integration point: core/service.py ZigbeeService.start()
+  - Dongle Jedi detects CPC_MULTIPAN firmware
+  - _probe_with_jedi() returns probe result with adapter_family
+  - start() launches MultiPanManager BEFORE building bellows config
+  - self.port is overridden to the zigbeed EZSP socket
+  - Rest of startup proceeds unchanged
+"""
+import asyncio
+import logging
+import os
+import signal
+import shutil
+import tempfile
+from pathlib import Path
+from typing import Optional, Dict, Callable
+
+logger = logging.getLogger("multipan")
+
+
+# =========================================================================
+# MANAGED DAEMON — generic subprocess wrapper
+# =========================================================================
+
+class ManagedDaemon:
+    """
+    Generic managed subprocess wrapper.
+    Handles start, stop, log streaming, health monitoring, and auto-restart.
+
+    Follows the same pattern as EmbeddedMatterServer's subprocess management.
+    """
+
+    def __init__(
+            self,
+            name: str,
+            command: list,
+            ready_marker: Optional[str] = None,
+            ready_timeout: float = 30.0,
+            max_restarts: int = 5,
+            restart_base_delay: float = 5.0,
+            env: Optional[dict] = None,
+    ):
+        self.name = name
+        self.command = command
+        self.ready_marker = ready_marker
+        self.ready_timeout = ready_timeout
+        self.max_restarts = max_restarts
+        self.restart_base_delay = restart_base_delay
+        self.env = env
+
+        self._process: Optional[asyncio.subprocess.Process] = None
+        self._monitor_task: Optional[asyncio.Task] = None
+        self._running = False
+        self._shutdown = False
+        self._restart_count = 0
+        self._ready_event = asyncio.Event()
+
+    @property
+    def is_running(self) -> bool:
+        return self._running and self._process is not None and self._process.returncode is None
+
+    @property
+    def pid(self) -> Optional[int]:
+        if self._process and self._process.returncode is None:
+            return self._process.pid
+        return None
+
+    async def start(self) -> bool:
+        """Start the daemon. Returns True when process is running (and optionally ready)."""
+        if self.is_running:
+            logger.warning(f"[{self.name}] Already running (PID {self.pid})")
+            return True
+
+        self._shutdown = False
+        self._restart_count = 0
+        self._ready_event.clear()
+        return await self._spawn()
+
+    async def _spawn(self) -> bool:
+        """Spawn the subprocess."""
+        # Cancel any existing monitor to prevent double-monitoring
+        if self._monitor_task and not self._monitor_task.done():
+            self._monitor_task.cancel()
+            try:
+                await self._monitor_task
+            except asyncio.CancelledError:
+                pass
+
+        logger.info(f"[{self.name}] Starting: {' '.join(self.command)}")
+
+        try:
+            # Build environment
+            proc_env = os.environ.copy()
+            if self.env:
+                proc_env.update(self.env)
+
+            self._process = await asyncio.create_subprocess_exec(
+                *self.command,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.STDOUT,
+                preexec_fn=os.setpgrp,
+                env=proc_env,
+            )
+            self._running = True
+            logger.info(f"[{self.name}] Started (PID {self._process.pid})")
+
+            # Start log reader + monitor
+            self._monitor_task = asyncio.create_task(self._monitor())
+
+            # Wait for ready marker or brief stability check
+            if self.ready_marker:
+                try:
+                    await asyncio.wait_for(
+                        self._ready_event.wait(),
+                        timeout=self.ready_timeout
+                    )
+                    logger.info(f"[{self.name}] Ready")
+                except asyncio.TimeoutError:
+                    logger.warning(
+                        f"[{self.name}] Ready marker '{self.ready_marker}' not seen "
+                        f"within {self.ready_timeout}s — proceeding anyway"
+                    )
+            else:
+                # Brief stability check — did it crash immediately?
+                await asyncio.sleep(2)
+                if self._process.returncode is not None:
+                    logger.error(
+                        f"[{self.name}] Exited immediately with code "
+                        f"{self._process.returncode}"
+                    )
+                    self._running = False
+                    return False
+
+            return True
+
+        except FileNotFoundError:
+            logger.error(
+                f"[{self.name}] Binary not found: {self.command[0]}. "
+                f"Install with: sudo apt-get install {self.command[0]}"
+            )
+            self._running = False
+            return False
+        except Exception as e:
+            logger.error(f"[{self.name}] Failed to start: {e}")
+            self._running = False
+            return False
+
+    async def _monitor(self):
+        """Stream stdout to logger and handle restarts on crash."""
+        try:
+            while self._process and self._process.stdout:
+                line = await self._process.stdout.readline()
+                if not line:
+                    break
+                text = line.decode("utf-8", errors="replace").rstrip()
+                if text:
+                    # Check for ready marker
+                    if self.ready_marker and self.ready_marker in text:
+                        self._ready_event.set()
+
+                    # Route to appropriate log level
+                    text_upper = text.upper()
+                    if "ERROR" in text_upper or "CRITICAL" in text_upper:
+                        logger.error(f"[{self.name}] {text}")
+                    elif "WARN" in text_upper:
+                        logger.warning(f"[{self.name}] {text}")
+                    elif "DEBUG" in text_upper:
+                        logger.debug(f"[{self.name}] {text}")
+                    else:
+                        logger.info(f"[{self.name}] {text}")
+
+            # Process ended — wait for exit code
+            if self._process:
+                returncode = await self._process.wait()
+                logger.warning(f"[{self.name}] Exited with code {returncode}")
+
+            self._running = False
+
+            # Auto-restart (unless we're shutting down)
+            if not self._shutdown and self._restart_count < self.max_restarts:
+                self._restart_count += 1
+                delay = min(
+                    self.restart_base_delay * self._restart_count,
+                    30.0
+                )
+                logger.info(
+                    f"[{self.name}] Restarting in {delay:.0f}s "
+                    f"(attempt {self._restart_count}/{self.max_restarts})"
+                )
+                await asyncio.sleep(delay)
+                if not self._shutdown:
+                    self._ready_event.clear()
+                    await self._spawn()
+            elif not self._shutdown:
+                logger.error(
+                    f"[{self.name}] Exceeded max restarts "
+                    f"({self.max_restarts}), giving up"
+                )
+
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            logger.error(f"[{self.name}] Monitor error: {e}")
+            self._running = False
+
+    async def stop(self):
+        """Stop the daemon gracefully: SIGTERM → timeout → SIGKILL."""
+        self._shutdown = True
+        self._running = False
+
+        if self._monitor_task and not self._monitor_task.done():
+            self._monitor_task.cancel()
+            try:
+                await self._monitor_task
+            except asyncio.CancelledError:
+                pass
+
+        if self._process and self._process.returncode is None:
+            logger.info(f"[{self.name}] Stopping (PID {self._process.pid})...")
+            try:
+                os.killpg(os.getpgid(self._process.pid), signal.SIGTERM)
+                try:
+                    await asyncio.wait_for(self._process.wait(), timeout=10)
+                    logger.info(f"[{self.name}] Stopped gracefully")
+                except asyncio.TimeoutError:
+                    logger.warning(f"[{self.name}] SIGTERM timeout, sending SIGKILL")
+                    os.killpg(os.getpgid(self._process.pid), signal.SIGKILL)
+                    await self._process.wait()
+            except ProcessLookupError:
+                pass  # Already dead
+            except Exception as e:
+                logger.error(f"[{self.name}] Error stopping: {e}")
+
+        self._process = None
+
+    def get_status(self) -> dict:
+        return {
+            "name": self.name,
+            "running": self.is_running,
+            "pid": self.pid,
+            "restart_count": self._restart_count,
+        }
+
+
+# =========================================================================
+# MULTIPAN MANAGER — orchestrates cpcd + zigbeed + socat + otbr-agent
+# =========================================================================
+
+class MultiPanManager:
+    """
+    Orchestrates cpcd + zigbeed + socat + otbr-agent for MultiPAN RCP.
+
+    Manages daemon lifecycle in correct dependency order and provides
+    a single EZSP socket URL for bellows/zigpy to connect to.
+
+    IMPORTANT: This class does not modify the Zigbee startup path.
+    It only provides the socket URL — the existing _probe_radio_type()
+    and _build_ezsp_config() handle socket paths transparently.
+    """
+
+    def __init__(
+            self,
+            zigbee_config: dict,
+            multipan_config: Optional[dict] = None,
+            event_emitter: Optional[Callable] = None,
+    ):
+        # multipan section from config.yaml, or auto-generated defaults
+        self._config = multipan_config or {}
+        self._zigbee_config = zigbee_config
+        self._emit = event_emitter
+        self._daemons: Dict[str, ManagedDaemon] = {}
+        self._running = False
+        self._generated_config_dir: Optional[str] = None
+
+        # Sub-configs with defaults
+        self._cpcd_config = self._config.get("cpcd", {})
+        self._zigbeed_config = self._config.get("zigbeed", {})
+        self._otbr_config = self._config.get("otbr", {})
+
+    @property
+    def ezsp_socket(self) -> str:
+        """The socket URL for bellows/zigpy to connect to zigbeed via socat."""
+        port = self._zigbeed_config.get("ezsp_port", 9999)
+        return f"socket://127.0.0.1:{port}"
+
+    @property
+    def is_running(self) -> bool:
+        return self._running
+
+    # =========================================================================
+    # PREREQUISITE CHECKS
+    # =========================================================================
+
+    @staticmethod
+    def is_cpcd_available() -> bool:
+        return shutil.which("cpcd") is not None
+
+    @staticmethod
+    def is_zigbeed_available() -> bool:
+        return shutil.which("zigbeed") is not None
+
+    @staticmethod
+    def is_socat_available() -> bool:
+        return shutil.which("socat") is not None
+
+    @staticmethod
+    def is_otbr_available() -> bool:
+        return shutil.which("otbr-agent") is not None
+
+    def check_prerequisites(self) -> dict:
+        """Check all required binaries are installed."""
+        cpcd = self.is_cpcd_available()
+        zigbeed = self.is_zigbeed_available()
+        socat = self.is_socat_available()
+        otbr = self.is_otbr_available()
+
+        return {
+            "cpcd": cpcd,
+            "zigbeed": zigbeed,
+            "socat": socat,
+            "otbr_agent": otbr,
+            "core_available": cpcd and zigbeed and socat,
+            "all_available": cpcd and zigbeed and socat and otbr,
+        }
+
+    # =========================================================================
+    # CONFIG FILE GENERATION
+    # =========================================================================
+
+    def _ensure_config_dir(self) -> str:
+        """Create a temporary directory for generated config files."""
+        if not self._generated_config_dir:
+            self._generated_config_dir = tempfile.mkdtemp(prefix="multipan_")
+            logger.info(f"Generated config dir: {self._generated_config_dir}")
+        return self._generated_config_dir
+
+    def _generate_cpcd_config(self, serial_port: str) -> str:
+        """
+        Generate a cpcd.conf if the system one doesn't exist.
+
+        cpcd needs a config file — it doesn't accept serial port via CLI
+        in all versions. We generate a minimal one.
+        """
+        system_config = self._cpcd_config.get("config_file", "/usr/local/etc/cpcd.conf")
+        if os.path.exists(system_config):
+            logger.info(f"[cpcd] Using existing config: {system_config}")
+            return system_config
+
+        baudrate = self._cpcd_config.get("baudrate", 460800)
+        flow_control = self._cpcd_config.get("flow_control", "hardware")
+
+        # Map our flow control naming to cpcd's
+        fc_map = {"hardware": "true", "software": "false", "none": "false"}
+        fc_value = fc_map.get(str(flow_control).lower(), "true")
+
+        config_dir = self._ensure_config_dir()
+        config_path = os.path.join(config_dir, "cpcd.conf")
+
+        config_content = f"""\
+# Auto-generated by ZigBee Matter Manager MultiPAN
+# Serial port configuration for CPC daemon
+uart_device_file: {serial_port}
+uart_device_baud: {baudrate}
+uart_hardflow: {fc_value}
+# Disable CPC security for simplicity (binding step not needed)
+disable_encryption: true
+# Socket paths for client connections
+socket_folder: /tmp
+"""
+
+        with open(config_path, "w") as f:
+            f.write(config_content)
+
+        logger.info(f"[cpcd] Generated config at {config_path}")
+        return config_path
+
+    # =========================================================================
+    # COMMAND BUILDERS
+    # =========================================================================
+
+    def _build_cpcd_command(self, serial_port: str) -> list:
+        """Build cpcd command with config file."""
+        config_path = self._generate_cpcd_config(serial_port)
+        return ["cpcd", "-c", config_path]
+
+    def _build_zigbeed_command(self) -> list:
+        """Build zigbeed command."""
+        config_file = self._zigbeed_config.get(
+            "config_file", "/usr/local/etc/zigbeed.conf"
+        )
+        cmd = ["zigbeed"]
+        if os.path.exists(config_file):
+            cmd.extend(["-c", config_file])
+        return cmd
+
+    def _build_socat_command(self) -> list:
+        """
+        Build socat command to bridge zigbeed's PTY to a TCP socket.
+
+        zigbeed exposes its EZSP interface on a PTY (pseudo-terminal).
+        socat bridges that to a TCP port that bellows can connect to.
+        This is the standard approach used by SiLabs' own Docker images.
+
+        The PTY path is typically /tmp/zigbeed_socket or created by zigbeed.
+        socat creates a TCP listener on the configured port.
+        """
+        ezsp_port = self._zigbeed_config.get("ezsp_port", 9999)
+        pty_path = self._zigbeed_config.get("pty_path", "/tmp/zigbeed_socket")
+
+        return [
+            "socat",
+            f"TCP-LISTEN:{ezsp_port},reuseaddr,fork",
+            f"UNIX-CONNECT:{pty_path}",
+        ]
+
+    def _build_otbr_command(self) -> list:
+        """
+        Build otbr-agent command.
+
+        For Multi-PAN RCP, the radio URL must include iid=2 and iid-list=0.
+        This tells otbr-agent which Spinel Interface ID to use — Zigbee
+        gets IID 1 (managed by zigbeed), Thread gets IID 2.
+        """
+        thread_iface = self._otbr_config.get("thread_interface", "wpan0")
+        backbone_iface = self._otbr_config.get("backbone_interface", "eth0")
+        nat64 = self._otbr_config.get("nat64", False)
+
+        # Multi-PAN RCP radio URL with correct IID
+        radio_url = "spinel+cpc://cpcd_0?iid=2&iid-list=0"
+
+        cmd = [
+            "otbr-agent",
+            "-I", thread_iface,
+            "-B", backbone_iface,
+            f"--radio-url={radio_url}",
+        ]
+
+        if not nat64:
+            cmd.append("--disable-nat64")
+
+        return cmd
+
+    # =========================================================================
+    # LIFECYCLE
+    # =========================================================================
+
+    async def start(self, serial_port: Optional[str] = None) -> bool:
+        """
+        Start the MultiPAN stack in dependency order.
+
+        Args:
+            serial_port: Override serial port (e.g. from Dongle Jedi result).
+                         Falls back to cpcd config, then /dev/ttyACM0.
+
+        Returns True when cpcd + zigbeed + socat are running and the EZSP
+        socket is ready for bellows to connect.
+        """
+        # Resolve serial port
+        port = (
+                serial_port
+                or self._cpcd_config.get("serial_port")
+                or self._zigbee_config.get("port", "/dev/ttyACM0")
+        )
+
+        prereqs = self.check_prerequisites()
+        if not prereqs["core_available"]:
+            missing = []
+            if not prereqs["cpcd"]:
+                missing.append("cpcd")
+            if not prereqs["zigbeed"]:
+                missing.append("zigbeed")
+            if not prereqs["socat"]:
+                missing.append("socat")
+            logger.error(
+                f"MultiPAN prerequisites not met. Missing: {', '.join(missing)}. "
+                f"Install with: sudo apt-get install {' '.join(missing)}"
+            )
+            return False
+
+        logger.info(f"Starting MultiPAN RCP stack on {port}...")
+
+        if self._emit:
+            try:
+                await self._emit("log", {
+                    "level": "INFO",
+                    "message": f"Starting MultiPAN RCP stack on {port}...",
+                    "ieee": None,
+                })
+            except Exception:
+                pass
+
+        # ── 1. cpcd — must be first, owns serial port ──────────────────
+        cpcd = ManagedDaemon(
+            name="cpcd",
+            command=self._build_cpcd_command(port),
+            ready_marker="Daemon is ready",
+            ready_timeout=15.0,
+        )
+        self._daemons["cpcd"] = cpcd
+
+        if not await cpcd.start():
+            logger.error("Failed to start cpcd — cannot proceed with MultiPAN")
+            return False
+
+        # Brief settle time for CPC endpoints to initialise
+        await asyncio.sleep(1)
+
+        # ── 2. zigbeed — connects to cpcd, runs EmberZNet ─────────────
+        zigbeed = ManagedDaemon(
+            name="zigbeed",
+            command=self._build_zigbeed_command(),
+            ready_marker="EZSP",  # zigbeed logs EZSP version on startup
+            ready_timeout=20.0,
+        )
+        self._daemons["zigbeed"] = zigbeed
+
+        if not await zigbeed.start():
+            logger.error("Failed to start zigbeed — stopping cpcd")
+            await cpcd.stop()
+            return False
+
+        # Brief settle for zigbeed to create its socket
+        await asyncio.sleep(1)
+
+        # ── 3. socat — bridges zigbeed PTY to TCP for bellows ──────────
+        socat = ManagedDaemon(
+            name="socat",
+            command=self._build_socat_command(),
+            ready_timeout=5.0,
+        )
+        self._daemons["socat"] = socat
+
+        if not await socat.start():
+            logger.error("Failed to start socat — stopping zigbeed + cpcd")
+            await zigbeed.stop()
+            await cpcd.stop()
+            return False
+
+        # Verify the TCP socket is actually accepting connections
+        ezsp_port = self._zigbeed_config.get("ezsp_port", 9999)
+        if not await self._wait_for_tcp_socket("127.0.0.1", ezsp_port, timeout=10):
+            logger.error(
+                f"EZSP socket not responding on port {ezsp_port} — "
+                f"zigbeed/socat may have failed silently"
+            )
+            await self._stop_all()
+            return False
+
+        # ── 4. otbr-agent — Thread support (optional, non-blocking) ────
+        otbr_enabled = self._otbr_config.get("enabled", True)
+        if otbr_enabled and self.is_otbr_available():
+            otbr = ManagedDaemon(
+                name="otbr-agent",
+                command=self._build_otbr_command(),
+                ready_marker="Thread interface is up",
+                ready_timeout=30.0,
+            )
+            self._daemons["otbr-agent"] = otbr
+
+            if not await otbr.start():
+                logger.warning(
+                    "Failed to start otbr-agent — Thread will not be available, "
+                    "but Zigbee will still work via MultiPAN"
+                )
+                # Don't fail the whole stack for optional Thread support
+        elif not otbr_enabled:
+            logger.info("OTBR not enabled in config — Thread support disabled")
+        elif not self.is_otbr_available():
+            logger.info("otbr-agent not installed — Thread support unavailable")
+
+        self._running = True
+        logger.info(
+            f"MultiPAN stack started — EZSP socket: {self.ezsp_socket}"
+        )
+
+        if self._emit:
+            try:
+                await self._emit("log", {
+                    "level": "INFO",
+                    "message": f"MultiPAN RCP active — EZSP: {self.ezsp_socket}",
+                    "ieee": None,
+                })
+            except Exception:
+                pass
+
+        return True
+
+    async def _wait_for_tcp_socket(
+            self, host: str, port: int, timeout: float = 10
+    ) -> bool:
+        """Wait for a TCP socket to accept connections."""
+        deadline = asyncio.get_event_loop().time() + timeout
+        while asyncio.get_event_loop().time() < deadline:
+            try:
+                reader, writer = await asyncio.wait_for(
+                    asyncio.open_connection(host, port),
+                    timeout=2.0,
+                )
+                writer.close()
+                await writer.wait_closed()
+                logger.info(f"EZSP socket accepting connections on {host}:{port}")
+                return True
+            except (ConnectionRefusedError, asyncio.TimeoutError, OSError):
+                await asyncio.sleep(0.5)
+        return False
+
+    async def stop(self):
+        """Stop all daemons in reverse dependency order."""
+        logger.info("Stopping MultiPAN RCP stack...")
+        await self._stop_all()
+        logger.info("MultiPAN RCP stack stopped")
+
+    async def _stop_all(self):
+        """Stop all daemons in reverse order."""
+        self._running = False
+        for name in reversed(list(self._daemons.keys())):
+            daemon = self._daemons[name]
+            if daemon.is_running:
+                await daemon.stop()
+        self._daemons.clear()
+
+        # Clean up generated configs
+        if self._generated_config_dir and os.path.exists(self._generated_config_dir):
+            try:
+                shutil.rmtree(self._generated_config_dir)
+            except Exception:
+                pass
+            self._generated_config_dir = None
+
+    def get_status(self) -> dict:
+        """Return status for API/UI."""
+        return {
+            "enabled": True,
+            "running": self._running,
+            "ezsp_socket": self.ezsp_socket if self._running else None,
+            "prerequisites": self.check_prerequisites(),
+            "daemons": {
+                name: daemon.get_status()
+                for name, daemon in self._daemons.items()
+            },
+        }
