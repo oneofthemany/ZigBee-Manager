@@ -829,23 +829,216 @@
     }
 
     async function finish() {
-        hide();
+        const el = getContent();
 
-        try {
-            const res = await fetch('/api/setup/start-zigbee', { method: 'POST' });
-            const data = await res.json();
-            if (data.success) {
-                if (typeof window.alert === 'function') {
-                    // Will use toast if toasts.js is loaded
-                    window.alert('Zigbee network starting...');
-                }
-            }
-        } catch (e) {
-            console.warn('Failed to hot-start Zigbee:', e);
+        // Get the Jedi bee HTML (from setup-jedi.js)
+        const beeHTML = typeof window.getJediBeeHTML === 'function'
+            ? window.getJediBeeHTML()
+            : '<div style="text-align:center;padding:2rem;"><i class="fas fa-satellite-dish fa-2x text-primary fa-pulse"></i></div>';
+
+        el.innerHTML = `
+            ${beeHTML}
+
+            <div class="scan-progress-bar mb-3">
+                <div class="scan-progress-fill" id="setupStartupProgress" style="width: 5%"></div>
+            </div>
+
+            <!-- MQTT status card -->
+            <div class="summary-section mb-3" id="startupMqttCard" style="display:none;">
+                <div class="summary-header">
+                    <i class="fas fa-network-wired me-1"></i> MQTT
+                    <span id="startupMqttBadge" class="badge bg-secondary ms-2">Pending</span>
+                </div>
+                <div class="summary-body small" id="startupMqttBody">
+                    Waiting...
+                </div>
+            </div>
+
+            <!-- Dongle Jedi probe card -->
+            <div class="summary-section mb-3" id="startupProbeCard" style="display:none;">
+                <div class="summary-header">
+                    <i class="fas fa-microchip me-1"></i> Coordinator Probe
+                    <span id="startupProbeBadge" class="badge bg-secondary ms-2">Pending</span>
+                </div>
+                <div class="summary-body p-0">
+                    <div id="startupProbeLog" class="scan-log p-2"
+                         style="max-height:200px; overflow-y:auto; font-size:0.78rem; margin:0;">
+                    </div>
+                </div>
+            </div>
+        `;
+
+        // Start the Jedi bee animation
+        let cleanupBee = null;
+        if (typeof window.startJediBeeAnimation === 'function') {
+            cleanupBee = window.startJediBeeAnimation();
         }
 
-        // Reload after a moment to pick up new state
-        setTimeout(() => location.reload(), 3000);
+        const progressEl = document.getElementById('setupStartupProgress');
+        const mqttCard = document.getElementById('startupMqttCard');
+        const mqttBadge = document.getElementById('startupMqttBadge');
+        const mqttBody = document.getElementById('startupMqttBody');
+        const probeCard = document.getElementById('startupProbeCard');
+        const probeBadge = document.getElementById('startupProbeBadge');
+        const probeLog = document.getElementById('startupProbeLog');
+        const beeText = document.getElementById('jediBeeText');
+
+        function setProgress(pct) {
+            if (progressEl) progressEl.style.width = `${pct}%`;
+        }
+
+        function setBeeText(msg) {
+            if (beeText) {
+                beeText.style.opacity = '0';
+                setTimeout(() => {
+                    beeText.textContent = msg;
+                    beeText.style.opacity = '0.8';
+                }, 300);
+            }
+        }
+
+        function addProbeLog(text, type) {
+            if (!probeLog) return;
+            const cls = type === 'success' ? 'text-success fw-semibold'
+                      : type === 'error' ? 'text-danger'
+                      : type === 'highlight' ? 'text-primary'
+                      : 'text-muted';
+            probeLog.innerHTML += `<div class="${cls}">${text}</div>`;
+            probeLog.scrollTop = probeLog.scrollHeight;
+        }
+
+        // Listen for WebSocket events during startup
+        const origHandler = window._onWsMessage;
+
+        window._onWsMessage = function(data) {
+            switch (data.type) {
+
+                case 'setup_phase':
+                    const p = data.payload || {};
+
+                    if (p.phase === 'mqtt') {
+                        mqttCard.style.display = 'block';
+                        mqttBadge.className = 'badge bg-info ms-2';
+                        mqttBadge.textContent = 'Connecting...';
+                        mqttBody.textContent = 'Connecting to broker...';
+                        setProgress(15);
+                        setBeeText('Reaching out through the Force...');
+
+                    } else if (p.phase === 'mqtt_done') {
+                        if (p.success) {
+                            mqttBadge.className = 'badge bg-success ms-2';
+                            mqttBadge.textContent = 'Connected';
+                        } else {
+                            mqttBadge.className = 'badge bg-warning ms-2';
+                            mqttBadge.textContent = 'Warning';
+                        }
+                        mqttBody.textContent = p.message || 'Done';
+                        setProgress(25);
+
+                    } else if (p.phase === 'zigbee_probe') {
+                        probeCard.style.display = 'block';
+                        probeBadge.className = 'badge bg-info ms-2';
+                        probeBadge.textContent = 'Scanning...';
+                        setProgress(30);
+                        setBeeText('The Force is strong with this coordinator...');
+                        addProbeLog(p.message || 'Starting probe...', 'info');
+                    }
+                    break;
+
+                case 'setup_probe_progress':
+                    const pp = data.payload || {};
+                    const msg = pp.message || '';
+
+                    let logType = 'info';
+                    if (msg.includes('✅') || msg.includes('DETECTED') || msg.includes('Confirmed'))
+                        logType = 'success';
+                    else if (msg.includes('✗') || msg.includes('Error') || msg.includes('failed'))
+                        logType = 'error';
+                    else if (msg.includes('✓') || msg.includes('EZSP') || msg.includes('ZNP') ||
+                             msg.includes('RSTACK') || msg.includes('Firmware'))
+                        logType = 'highlight';
+
+                    addProbeLog(msg, logType);
+
+                    if (pp.progress_pct) {
+                        setProgress(30 + (pp.progress_pct * 0.6));
+                    }
+
+                    // Update bee text for key phases
+                    if (pp.phase === 'probing') {
+                        setBeeText('Sensing the Zigbee network...');
+                    } else if (pp.phase === 'flow_verify') {
+                        setBeeText('Verifying communication channels...');
+                    } else if (pp.phase === 'interrogation') {
+                        setBeeText('Reading the adapter\'s midichlorians...');
+                    } else if (pp.phase === 'complete') {
+                        probeBadge.className = 'badge bg-success ms-2';
+                        probeBadge.textContent = 'Detected';
+                        setProgress(92);
+                        setBeeText('The Force is with you!');
+                    }
+                    break;
+
+                case 'setup_complete':
+                    setProgress(100);
+                    setBeeText('May the Force be with you, always.');
+
+                    probeBadge.className = 'badge bg-success ms-2';
+                    probeBadge.textContent = 'Running';
+
+                    window._onWsMessage = origHandler;
+                    if (cleanupBee) cleanupBee();
+
+                    setTimeout(() => {
+                        hide();
+                        location.reload();
+                    }, 2500);
+                    return;
+
+                case 'setup_error':
+                    setProgress(100);
+                    setBeeText('I sense a disturbance in the Force...');
+
+                    probeBadge.className = 'badge bg-danger ms-2';
+                    probeBadge.textContent = 'Error';
+                    addProbeLog('Error: ' + (data.payload?.error || 'Unknown'), 'error');
+
+                    el.innerHTML += `
+                        <div class="setup-actions mt-3">
+                            <button class="btn btn-outline-danger" onclick="location.reload()">
+                                <i class="fas fa-redo me-1"></i> Reload & Retry
+                            </button>
+                        </div>
+                    `;
+                    window._onWsMessage = origHandler;
+                    if (cleanupBee) cleanupBee();
+                    return;
+
+                default:
+                    if (typeof origHandler === 'function') origHandler(data);
+            }
+        };
+
+        // Fire the request
+        setProgress(10);
+        setBeeText('Preparing the Jedi mind trick...');
+
+        try {
+            const res = await fetch('/api/setup/start-services', { method: 'POST' });
+            const data = await res.json();
+
+            if (!data.success) {
+                setBeeText('Something went wrong...');
+                addProbeLog('Error: ' + (data.error || 'Unknown'), 'error');
+                window._onWsMessage = origHandler;
+                if (cleanupBee) cleanupBee();
+            }
+        } catch (e) {
+            setBeeText('Lost connection to the Force...');
+            addProbeLog('Network error: ' + e.message, 'error');
+            window._onWsMessage = origHandler;
+            if (cleanupBee) cleanupBee();
+        }
     }
 
     // =====================================================================

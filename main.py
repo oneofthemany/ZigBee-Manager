@@ -212,53 +212,54 @@ async def lifespan(app: FastAPI):
         "payload": {"level": "INFO", "message": "System Starting...", "timestamp": None}
     })
 
-    # Start MQTT (skip if disabled — standalone mode)
-    if mqtt_enabled:
-        try:
-            await mqtt_service.start()
-            logger.info("MQTT connected")
-        except Exception as e:
-            logger.warning(f"MQTT connection failed: {e}")
-    else:
-        logger.info("MQTT disabled (standalone mode)")
-
-    # MQTT Explorer
-    if mqtt_enabled:
-        mqtt_service.mqtt_explorer = MQTTExplorer(mqtt_service, max_messages=1000)
-        logger.info("MQTT Explorer initialized")
-
-        async def mqtt_explorer_callback(message_record):
-            await manager.broadcast({"type": "mqtt_message", "payload": message_record})
-        mqtt_service.mqtt_explorer.add_callback(mqtt_explorer_callback)
-    else:
-        logger.info("MQTT Explorer skipped (standalone mode)")
-
-    async def mqtt_explorer_callback(message_record):
-        await manager.broadcast({"type": "mqtt_message", "payload": message_record})
-    mqtt_service.mqtt_explorer.add_callback(mqtt_explorer_callback)
-
     # Setup wizard routes (must register before Zigbee start check)
     register_setup_routes(app, ws_manager=manager)
 
-    # Start Zigbee
-    ensure_network_credentials("./config/config.yaml")
-    network_key = get_conf('zigbee', 'network_key', None)
-
+    # Check if setup is needed BEFORE starting MQTT or Zigbee
     from modules.dongle_jedi import DongleJedi
-
     setup_status = DongleJedi.needs_setup()
+
+    mqtt_enabled = get_conf('mqtt', 'enabled', True)
+
     if setup_status["needs_setup"]:
-        logger.warning(f"Coordinator setup needed: {setup_status['reason']}")
+        logger.warning(f"Setup needed: {setup_status['reason']}")
         logger.info("Web UI is up — setup wizard will guide the user")
         await manager.broadcast({
             "type": "log",
-            "payload": {"level": "WARN",
-                        "message": f"Coordinator not configured ({setup_status['reason']}). Open the web UI to run setup.",
-                        "timestamp": None}
+            "payload": {
+                "level": "WARN",
+                "message": f"Setup needed ({setup_status['reason']}). Open the web UI.",
+                "timestamp": None,
+            }
         })
     else:
+        mqtt_enabled = get_conf('mqtt', 'enabled', True)
+
+        if mqtt_enabled:
+            try:
+                await mqtt_service.start()
+                logger.info("MQTT connected")
+            except Exception as e:
+                logger.warning(f"MQTT connection failed: {e}")
+
+            mqtt_service.mqtt_explorer = MQTTExplorer(mqtt_service, max_messages=1000)
+            async def mqtt_explorer_callback(message_record):
+                await manager.broadcast({"type": "mqtt_message", "payload": message_record})
+            mqtt_service.mqtt_explorer.add_callback(mqtt_explorer_callback)
+            logger.info("MQTT Explorer initialized")
+        else:
+            logger.info("MQTT disabled (standalone mode)")
+
+        # Start Zigbee
+        ensure_network_credentials("./config/config.yaml")
+        network_key = get_conf('zigbee', 'network_key', None)
         await zigbee_service.start(network_key=network_key)
         logger.info("Zigbee network started")
+
+        # Wire group callback
+        if mqtt_enabled:
+            mqtt_service.group_command_callback = zigbee_service.group_manager.handle_mqtt_group_command
+            logger.info("Wired GroupManager callback to MQTT Service")
 
     # Start Matter
     if matter_server:
@@ -452,33 +453,100 @@ register_ota_routes(app, lambda: zigbee_service.ota_manager)
 register_automation_routes(app, lambda: zigbee_service.automation)
 
 # ============================================================================
-# POST-SETUP ZIGBEE HOT-START
+# POST-SETUP ZIGBEE HOT-START SERVICES
 # ============================================================================
 
-@app.post("/api/setup/start-zigbee")
-async def start_zigbee_after_setup():
-    """Called by the setup wizard after config is applied — starts Zigbee without a full restart."""
+@app.post("/api/setup/start-services")
+async def start_services_after_setup():
+    """
+    Called by the setup wizard after all config is applied.
+    Starts MQTT (if enabled) and Zigbee, streaming probe progress via WS.
+    """
     global CONFIG
-    try:
-        # Re-read config since the wizard just wrote it
-        CONFIG = load_config()
 
-        # Update the service with new config
+    try:
+        # Re-read config
+        CONFIG = load_config()
+        mqtt_enabled = get_conf('mqtt', 'enabled', True)
+
+        # ── Step 1: MQTT ──
+        await manager.broadcast({
+            "type": "setup_phase",
+            "payload": {"phase": "mqtt", "message": "Configuring MQTT..."}
+        })
+
+        if mqtt_enabled:
+            mqtt_service.broker = get_conf('mqtt', 'broker_host', 'localhost')
+            mqtt_service.port = get_conf('mqtt', 'broker_port', 1883)
+            mqtt_service.username = get_conf('mqtt', 'username')
+            mqtt_service.password = get_conf('mqtt', 'password')
+            mqtt_service.base_topic = get_conf('mqtt', 'base_topic', 'zigbee_manager')
+
+            await mqtt_service.stop()
+            await mqtt_service.start()
+
+            mqtt_service.mqtt_explorer = MQTTExplorer(mqtt_service, max_messages=1000)
+            async def mqtt_explorer_callback(message_record):
+                await manager.broadcast({"type": "mqtt_message", "payload": message_record})
+            mqtt_service.mqtt_explorer.add_callback(mqtt_explorer_callback)
+
+            await manager.broadcast({
+                "type": "setup_phase",
+                "payload": {
+                    "phase": "mqtt_done",
+                    "message": f"MQTT connected to {mqtt_service.broker}",
+                    "success": mqtt_service.connected,
+                }
+            })
+        else:
+            await manager.broadcast({
+                "type": "setup_phase",
+                "payload": {"phase": "mqtt_done", "message": "MQTT disabled (standalone)", "success": True}
+            })
+
+        # ── Step 2: Zigbee with live probe progress ──
+        await manager.broadcast({
+            "type": "setup_phase",
+            "payload": {"phase": "zigbee_probe", "message": "Detecting Zigbee coordinator..."}
+        })
+
         new_port = get_conf('zigbee', 'port', '/dev/ttyACM0')
         zigbee_service.port = new_port
         zigbee_service._config = CONFIG.get('zigbee', {})
 
         ensure_network_credentials("./config/config.yaml")
-        # Re-read after ensure_network_credentials may have updated it
         CONFIG = load_config()
         network_key = get_conf('zigbee', 'network_key', None)
 
-        await zigbee_service.start(network_key=network_key)
-        logger.info(f"Zigbee network started (post-setup) on {new_port}")
+        # Progress callback that broadcasts Dongle Jedi events to frontend
+        async def probe_progress(progress):
+            await manager.broadcast({
+                "type": "setup_probe_progress",
+                "payload": progress.to_dict(),
+            })
 
-        return {"success": True, "message": f"Zigbee network started on {new_port}"}
+        await zigbee_service.start(
+            network_key=network_key,
+            probe_progress_cb=probe_progress,
+        )
+
+        # Wire group callback
+        if mqtt_enabled:
+            mqtt_service.group_command_callback = zigbee_service.group_manager.handle_mqtt_group_command
+
+        await manager.broadcast({
+            "type": "setup_complete",
+            "payload": {"message": "All services started successfully"}
+        })
+
+        return {"success": True, "message": f"Services started on {new_port}"}
+
     except Exception as e:
-        logger.error(f"Failed to start Zigbee after setup: {e}", exc_info=True)
+        logger.error(f"Failed to start services: {e}", exc_info=True)
+        await manager.broadcast({
+            "type": "setup_error",
+            "payload": {"error": str(e)}
+        })
         return {"success": False, "error": str(e)}
 
 # ============================================================================

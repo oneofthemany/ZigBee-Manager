@@ -45,7 +45,8 @@ class ConfigBuilderMixin:
     # RADIO PROBING — uses Dongle Jedi serial interrogator
     # =====================================================================
 
-    async def _probe_radio_type(self) -> dict:
+    async def _probe_radio_type(self, progress_cb=None) -> dict:
+
         """
         Detect radio type AND working serial parameters.
 
@@ -67,7 +68,7 @@ class ConfigBuilderMixin:
             return {"radio_type": "EZSP", "baudrate": 0, "flow_control": "none"}
 
         # ── Auto-detect using Dongle Jedi ──
-        return await self._probe_with_jedi()
+        return await self._probe_with_jedi(progress_cb=progress_cb)
 
     def _explicit_radio_result(self, radio_type: str) -> dict:
         """Build probe result for explicitly configured radio type."""
@@ -91,7 +92,7 @@ class ConfigBuilderMixin:
             "flow_control": defaults["flow_control"] if is_auto_flow else raw_flow,
         }
 
-    async def _probe_with_jedi(self) -> dict:
+    async def _probe_with_jedi(self, progress_cb=None) -> dict:
         """
         Use Dongle Jedi to probe the serial port.
 
@@ -107,9 +108,14 @@ class ConfigBuilderMixin:
 
             jedi = DongleJedi()
 
-            # Progress callback logs to our logger
+            # Progress callback: log + optional external broadcast
             async def log_progress(progress):
                 logger.info(f"  [Jedi] {progress.message}")
+                if progress_cb:
+                    try:
+                        await progress_cb(progress)
+                    except Exception:
+                        pass  # Don't let broadcast errors kill the probe
 
             results = await jedi.scan_async(
                 port=self.port,

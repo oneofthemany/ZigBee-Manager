@@ -283,7 +283,7 @@ class ZigbeeService(
     # START / STOP
     # =========================================================================
 
-    async def start(self, network_key=None):
+    async def start(self, network_key=None, probe_progress_cb=None):
         """Start the Zigbee network with enhanced resilience."""
         # Backwards compatibility migration
         if 'ezsp_config' in self._config and 'ezsp' not in self._config:
@@ -295,7 +295,7 @@ class ZigbeeService(
             }
 
         # Probe radio type + serial parameters (protocol-level handshake)
-        probe_result = await self._probe_radio_type()
+        probe_result = await self._probe_radio_type(progress_cb=probe_progress_cb)
         radio_type = probe_result["radio_type"]
         logger.info(
             f"✅ Detected radio: {radio_type} @ "

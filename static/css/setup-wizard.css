@@ -1,8 +1,11 @@
 /* ============================================================================
-   Setup Wizard — Multi-Step First-Run UI
-   ============================================================================*/
+   Setup Wizard - Multi-Step First-Run UI
+   ============================================================================
+   Drop-in replacement: static/css/setup-wizard.css
+   Load in index.html AFTER styles.css and dark-mode.css
+   ============================================================================ */
 
-/* ── Overlay ─────────────────────────────────────────────────────────────── */
+/* -- Overlay ---------------------------------------------------------------- */
 
 #setupWizardOverlay {
     position: fixed;
@@ -24,12 +27,12 @@
     pointer-events: all;
 }
 
-/* ── Card ────────────────────────────────────────────────────────────────── */
+/* -- Card ------------------------------------------------------------------- */
 
 .setup-wizard-card {
-    background: var(--bs-body-bg, #fff);
-    color: var(--bs-body-color, #212529);
-    border: 1px solid var(--bs-border-color, #dee2e6);
+    background: #fff;
+    color: #212529;
+    border: 1px solid #dee2e6;
     border-radius: 16px;
     width: 95%;
     max-width: 640px;
@@ -46,12 +49,12 @@
 }
 
 .setup-wizard-card .subtitle {
-    color: var(--bs-secondary-color, #6c757d);
+    color: #6c757d;
     font-size: 0.9rem;
     margin-bottom: 1.5rem;
 }
 
-/* ── Step Indicator ──────────────────────────────────────────────────────── */
+/* -- Step Indicator --------------------------------------------------------- */
 
 .setup-steps {
     display: flex;
@@ -59,6 +62,7 @@
     justify-content: center;
     gap: 0;
     padding: 0 1rem;
+    margin-bottom: 1.5rem;
 }
 
 .setup-step {
@@ -76,7 +80,7 @@
     left: calc(50% + 16px);
     width: calc(100% - 32px);
     height: 2px;
-    background: var(--bs-border-color, #dee2e6);
+    background: #dee2e6;
     z-index: 0;
 }
 
@@ -98,8 +102,8 @@
 }
 
 .setup-step.pending .step-dot {
-    background: var(--bs-border-color, #dee2e6);
-    color: var(--bs-secondary-color, #6c757d);
+    background: #dee2e6;
+    color: #6c757d;
 }
 
 .setup-step.active .step-dot {
@@ -117,24 +121,19 @@
     font-size: 0.7rem;
     font-weight: 600;
     margin-top: 4px;
-    color: var(--bs-secondary-color, #6c757d);
+    color: #6c757d;
     text-transform: uppercase;
     letter-spacing: 0.03em;
 }
 
-.setup-step.active .step-label {
-    color: #0d6efd;
-}
+.setup-step.active .step-label { color: #0d6efd; }
+.setup-step.completed .step-label { color: #198754; }
 
-.setup-step.completed .step-label {
-    color: #198754;
-}
-
-/* ── Progress bar ────────────────────────────────────────────────────────── */
+/* -- Progress bar ----------------------------------------------------------- */
 
 .scan-progress-bar {
     height: 6px;
-    background: var(--bs-border-color, #dee2e6);
+    background: #dee2e6;
     border-radius: 3px;
     overflow: hidden;
 }
@@ -146,16 +145,16 @@
     transition: width 0.5s ease;
 }
 
-/* ── Scan log ────────────────────────────────────────────────────────────── */
+/* -- Scan log --------------------------------------------------------------- */
 
 .scan-log {
-    background: var(--bs-tertiary-bg, #f8f9fa);
+    background: #f8f9fa;
     font-family: 'SFMono-Regular', 'Menlo', 'Consolas', monospace;
     font-size: 0.78rem;
     line-height: 1.6;
 }
 
-/* ── Spinner ─────────────────────────────────────────────────────────────── */
+/* -- Spinner ---------------------------------------------------------------- */
 
 .scan-spinner {
     display: inline-block;
@@ -172,7 +171,7 @@
     to { transform: rotate(360deg); }
 }
 
-/* ── Adapter results ─────────────────────────────────────────────────────── */
+/* -- Adapter results -------------------------------------------------------- */
 
 .adapter-results {
     display: flex;
@@ -181,36 +180,23 @@
 }
 
 .adapter-result {
-    border: 2px solid var(--bs-border-color, #dee2e6);
+    border: 2px solid #dee2e6;
     border-radius: 10px;
     padding: 0.75rem 1rem;
     cursor: pointer;
     transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
-.adapter-result:hover {
-    border-color: #0d6efd;
-}
+.adapter-result:hover { border-color: #0d6efd; }
 
 .adapter-result.selected {
     border-color: #0d6efd;
     box-shadow: 0 0 0 3px rgba(13, 110, 253, 0.15);
 }
 
-.adapter-result .adapter-icon {
-    font-size: 1.5rem;
-    margin-right: 0.75rem;
-}
-
-.adapter-result .adapter-name {
-    font-weight: 600;
-    font-size: 0.95rem;
-}
-
-.adapter-result .adapter-detail {
-    font-size: 0.8rem;
-    color: var(--bs-secondary-color, #6c757d);
-}
+.adapter-result .adapter-icon { font-size: 1.5rem; margin-right: 0.75rem; }
+.adapter-result .adapter-name { font-weight: 600; font-size: 0.95rem; }
+.adapter-result .adapter-detail { font-size: 0.8rem; color: #6c757d; }
 
 .adapter-result .adapter-port {
     font-family: 'SFMono-Regular', 'Menlo', 'Consolas', monospace;
@@ -218,12 +204,9 @@
     color: #0d6efd;
 }
 
-.adapter-result .adapter-badge {
-    font-size: 0.7rem;
-    padding: 0.2em 0.55em;
-}
+.adapter-result .adapter-badge { font-size: 0.7rem; padding: 0.2em 0.55em; }
 
-/* ── Integration mode options ────────────────────────────────────────────── */
+/* -- Integration mode options ----------------------------------------------- */
 
 .integration-options {
     display: flex;
@@ -232,75 +215,58 @@
 }
 
 .integration-option {
-    border: 2px solid var(--bs-border-color, #dee2e6);
+    border: 2px solid #dee2e6;
     border-radius: 10px;
     padding: 1rem 1.25rem;
     cursor: pointer;
     transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
-.integration-option:hover {
-    border-color: #0d6efd;
-}
+.integration-option:hover { border-color: #0d6efd; }
 
 .integration-option.selected {
     border-color: #0d6efd;
     box-shadow: 0 0 0 3px rgba(13, 110, 253, 0.15);
 }
 
-.integration-icon {
-    font-size: 1.5rem;
-    margin-right: 0.75rem;
-    margin-top: 0.1rem;
-}
+.integration-icon { font-size: 1.5rem; margin-right: 0.75rem; margin-top: 0.1rem; }
+.integration-check { font-size: 1.2rem; margin-left: 0.5rem; margin-top: 0.1rem; }
 
-.integration-check {
-    font-size: 1.2rem;
-    margin-left: 0.5rem;
-    margin-top: 0.1rem;
-}
-
-/* ── Summary sections ────────────────────────────────────────────────────── */
+/* -- Summary sections ------------------------------------------------------- */
 
 .summary-section {
-    border: 1px solid var(--bs-border-color, #dee2e6);
+    border: 1px solid #dee2e6;
     border-radius: 8px;
     overflow: hidden;
 }
 
 .summary-header {
-    background: var(--bs-tertiary-bg, #f8f9fa);
+    background: #f8f9fa;
     padding: 0.5rem 0.75rem;
     font-weight: 600;
     font-size: 0.85rem;
-    border-bottom: 1px solid var(--bs-border-color, #dee2e6);
+    border-bottom: 1px solid #dee2e6;
 }
 
-.summary-body {
-    padding: 0.5rem 0.75rem;
-}
+.summary-body { padding: 0.5rem 0.75rem; }
 
-.summary-body .row {
-    padding: 0.2rem 0;
-}
+.summary-body .row { padding: 0.2rem 0; }
 
 .summary-body .row:not(:last-child) {
-    border-bottom: 1px solid var(--bs-border-color-translucent, rgba(0,0,0,0.05));
+    border-bottom: 1px solid rgba(0, 0, 0, 0.05);
 }
 
-/* ── Port list (pre-scan) ────────────────────────────────────────────────── */
+/* -- Port list -------------------------------------------------------------- */
 
 .port-list-item {
     display: flex;
     align-items: center;
     padding: 0.5rem 0.75rem;
-    border-bottom: 1px solid var(--bs-border-color, #dee2e6);
+    border-bottom: 1px solid #dee2e6;
     font-size: 0.85rem;
 }
 
-.port-list-item:last-child {
-    border-bottom: none;
-}
+.port-list-item:last-child { border-bottom: none; }
 
 .port-list-item .port-name {
     font-family: 'SFMono-Regular', 'Menlo', 'Consolas', monospace;
@@ -308,57 +274,222 @@
     min-width: 140px;
 }
 
-.port-list-item .port-desc {
-    color: var(--bs-secondary-color, #6c757d);
-    font-size: 0.8rem;
-}
+.port-list-item .port-desc { color: #6c757d; font-size: 0.8rem; }
 
-/* ── No adapters state ───────────────────────────────────────────────────── */
+/* -- No adapters ------------------------------------------------------------ */
 
-.no-adapters {
-    text-align: center;
-    padding: 2rem 1rem;
-}
+.no-adapters { text-align: center; padding: 2rem 1rem; }
+.no-adapters i { font-size: 2.5rem; color: #ffc107; margin-bottom: 0.75rem; }
 
-.no-adapters i {
-    font-size: 2.5rem;
-    color: var(--bs-warning, #ffc107);
-    margin-bottom: 0.75rem;
-}
-
-/* ── Action buttons ──────────────────────────────────────────────────────── */
+/* -- Action buttons --------------------------------------------------------- */
 
 .setup-actions {
     display: flex;
     gap: 0.5rem;
     justify-content: flex-end;
     padding-top: 0.75rem;
-    border-top: 1px solid var(--bs-border-color, #dee2e6);
+    border-top: 1px solid #dee2e6;
 }
 
-/* ── Dark mode ───────────────────────────────────────────────────────────── */
 
-[data-bs-theme="dark"] .scan-log {
-    background: var(--bs-tertiary-bg, #2b3035);
+/* =========================================================================
+   DARK MODE — uses [data-theme="dark"] to match dark-mode.css
+   ========================================================================= */
+
+[data-theme="dark"] #setupWizardOverlay {
+    background: rgba(0, 0, 0, 0.75);
 }
 
-[data-bs-theme="dark"] .summary-header {
-    background: var(--bs-tertiary-bg, #2b3035);
+[data-theme="dark"] .setup-wizard-card {
+    background: var(--bg-surface, #1a1b23);
+    color: var(--text-primary, #e5e7eb);
+    border-color: var(--border-color, #374151);
+    box-shadow: 0 24px 80px rgba(0, 0, 0, 0.6);
 }
 
-[data-bs-theme="dark"] .adapter-result,
-[data-bs-theme="dark"] .integration-option {
-    border-color: var(--bs-border-color, #495057);
+[data-theme="dark"] .setup-wizard-card .subtitle {
+    color: var(--text-muted, #9ca3af);
 }
 
-[data-bs-theme="dark"] .adapter-result:hover,
-[data-bs-theme="dark"] .integration-option:hover,
-[data-bs-theme="dark"] .adapter-result.selected,
-[data-bs-theme="dark"] .integration-option.selected {
+/* Step indicator */
+[data-theme="dark"] .setup-step.pending .step-dot {
+    background: var(--border-color, #374151);
+    color: var(--text-muted, #9ca3af);
+}
+
+[data-theme="dark"] .setup-step:not(:last-child)::after {
+    background: var(--border-color, #374151);
+}
+
+[data-theme="dark"] .step-label {
+    color: var(--text-muted, #9ca3af);
+}
+
+/* Progress bar */
+[data-theme="dark"] .scan-progress-bar {
+    background: var(--border-color, #374151);
+}
+
+/* Scan log */
+[data-theme="dark"] .scan-log {
+    background: var(--bg-surface-sunken, #111827);
+    color: var(--text-secondary, #d1d5db);
+}
+
+/* Adapter results */
+[data-theme="dark"] .adapter-result {
+    border-color: var(--border-color, #374151);
+    background: var(--bg-surface, #1a1b23);
+}
+
+[data-theme="dark"] .adapter-result:hover,
+[data-theme="dark"] .adapter-result.selected {
     border-color: #0d6efd;
 }
 
-/* ── Mobile ──────────────────────────────────────────────────────────────── */
+[data-theme="dark"] .adapter-result .adapter-detail {
+    color: var(--text-muted, #9ca3af);
+}
+
+[data-theme="dark"] .adapter-result .adapter-port {
+    color: #60a5fa;
+}
+
+/* Integration options */
+[data-theme="dark"] .integration-option {
+    border-color: var(--border-color, #374151);
+    background: var(--bg-surface, #1a1b23);
+}
+
+[data-theme="dark"] .integration-option:hover,
+[data-theme="dark"] .integration-option.selected {
+    border-color: #0d6efd;
+}
+
+[data-theme="dark"] .integration-option .small.text-muted {
+    color: var(--text-muted, #9ca3af) !important;
+}
+
+/* Summary sections */
+[data-theme="dark"] .summary-section {
+    border-color: var(--border-color, #374151);
+}
+
+[data-theme="dark"] .summary-header {
+    background: var(--bg-card-header, #111827);
+    border-bottom-color: var(--border-color, #374151);
+    color: var(--text-primary, #e5e7eb);
+}
+
+[data-theme="dark"] .summary-body {
+    background: var(--bg-surface, #1a1b23);
+    color: var(--text-primary, #e5e7eb);
+}
+
+[data-theme="dark"] .summary-body .row:not(:last-child) {
+    border-bottom-color: rgba(255, 255, 255, 0.06);
+}
+
+[data-theme="dark"] .summary-body .text-muted {
+    color: var(--text-muted, #9ca3af) !important;
+}
+
+/* Port list */
+[data-theme="dark"] .port-list-item {
+    border-bottom-color: var(--border-color, #374151);
+    color: var(--text-primary, #e5e7eb);
+}
+
+[data-theme="dark"] .port-list-item .port-desc {
+    color: var(--text-muted, #9ca3af);
+}
+
+/* Forms inside wizard */
+[data-theme="dark"] .setup-wizard-card .form-control,
+[data-theme="dark"] .setup-wizard-card .form-select {
+    background-color: var(--bg-input, #0f1117) !important;
+    border-color: var(--border-color, #374151) !important;
+    color: var(--text-primary, #e5e7eb) !important;
+}
+
+[data-theme="dark"] .setup-wizard-card .form-control:focus,
+[data-theme="dark"] .setup-wizard-card .form-select:focus {
+    border-color: #4d8fea !important;
+    box-shadow: 0 0 0 0.2rem rgba(77, 143, 234, 0.25) !important;
+}
+
+[data-theme="dark"] .setup-wizard-card .form-label {
+    color: var(--text-primary, #e5e7eb) !important;
+}
+
+[data-theme="dark"] .setup-wizard-card .form-text {
+    color: var(--text-muted, #9ca3af) !important;
+}
+
+/* Alerts inside wizard */
+[data-theme="dark"] .setup-wizard-card .alert-info {
+    background-color: rgba(56, 189, 248, 0.12) !important;
+    border-color: rgba(56, 189, 248, 0.2) !important;
+    color: #7dd3fc !important;
+}
+
+[data-theme="dark"] .setup-wizard-card .alert-success {
+    background-color: rgba(34, 197, 94, 0.12) !important;
+    border-color: rgba(34, 197, 94, 0.2) !important;
+    color: #4ade80 !important;
+}
+
+[data-theme="dark"] .setup-wizard-card .alert-warning {
+    background-color: rgba(234, 179, 8, 0.12) !important;
+    border-color: rgba(234, 179, 8, 0.2) !important;
+    color: #fbbf24 !important;
+}
+
+[data-theme="dark"] .setup-wizard-card .alert-danger {
+    background-color: rgba(239, 68, 68, 0.12) !important;
+    border-color: rgba(239, 68, 68, 0.2) !important;
+    color: #f87171 !important;
+}
+
+/* Badges */
+[data-theme="dark"] .setup-wizard-card .badge.bg-light {
+    background-color: var(--badge-light-bg, #374151) !important;
+    color: var(--badge-light-text, #e5e7eb) !important;
+}
+
+[data-theme="dark"] .setup-wizard-card .badge.bg-light.text-dark {
+    color: var(--badge-light-text, #e5e7eb) !important;
+}
+
+/* Action buttons border */
+[data-theme="dark"] .setup-actions {
+    border-top-color: var(--border-color, #374151);
+}
+
+[data-theme="dark"] .setup-wizard-card .btn-outline-secondary {
+    color: var(--text-secondary, #d1d5db) !important;
+    border-color: var(--border-color, #374151) !important;
+}
+
+[data-theme="dark"] .setup-wizard-card .btn-outline-secondary:hover {
+    background-color: var(--bg-surface-raised, #1f2937) !important;
+    color: var(--text-primary, #e5e7eb) !important;
+}
+
+/* Code elements */
+[data-theme="dark"] .setup-wizard-card code {
+    color: #f0abfc;
+}
+
+/* No-adapters state */
+[data-theme="dark"] .no-adapters i {
+    color: #fbbf24;
+}
+
+
+/* =========================================================================
+   MOBILE
+   ========================================================================= */
 
 @media (max-width: 576px) {
     .setup-wizard-card {
@@ -366,25 +497,9 @@
         border-radius: 12px;
     }
 
-    .setup-steps {
-        padding: 0;
-    }
-
-    .step-label {
-        font-size: 0.6rem;
-    }
-
-    .step-dot {
-        width: 24px;
-        height: 24px;
-        font-size: 0.65rem;
-    }
-
-    .setup-actions {
-        flex-wrap: wrap;
-    }
-
-    .integration-icon {
-        font-size: 1.2rem;
-    }
+    .setup-steps { padding: 0; }
+    .step-label { font-size: 0.6rem; }
+    .step-dot { width: 24px; height: 24px; font-size: 0.65rem; }
+    .setup-actions { flex-wrap: wrap; }
+    .integration-icon { font-size: 1.2rem; }
 }

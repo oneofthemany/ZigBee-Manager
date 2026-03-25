@@ -4,13 +4,16 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="None patch fix for flow control">
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="setup wizard patch - WIP">
+      <change afterPath="$PROJECT_DIR$/static/js/setup-jedi.js" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/core/config_builder.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/config_builder.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/core/service.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/service.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/main.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/modules/dongle_jedi.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/dongle_jedi.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/modules/dongle_jedi_api.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/dongle_jedi_api.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/static/css/setup-wizard.css" beforeDir="false" afterPath="$PROJECT_DIR$/static/css/setup-wizard.css" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/static/index.html" beforeDir="false" afterPath="$PROJECT_DIR$/static/index.html" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/static/js/setup-wizard.js" beforeDir="false" afterPath="$PROJECT_DIR$/static/js/setup-wizard.js" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/static/js/websocket.js" beforeDir="false" afterPath="$PROJECT_DIR$/static/js/websocket.js" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -150,14 +153,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00060" summary="libglib2.0-0 \\ added">
-      <option name="closed" value="true" />
-      <created>1774270749317</created>
-      <option name="number" value="00060" />
-      <option name="presentableId" value="LOCAL-00060" />
-      <option name="project" value="LOCAL" />
-      <updated>1774270749317</updated>
     </task>
     <task id="LOCAL-00061" summary="remove usns arg">
       <option name="closed" value="true" />
@@ -543,7 +538,15 @@
       <option name="project" value="LOCAL" />
       <updated>1774435517821</updated>
     </task>
-    <option name="localTasksCounter" value="109" />
+    <task id="LOCAL-00109" summary="setup wizard patch - WIP">
+      <option name="closed" value="true" />
+      <created>1774436842105</created>
+      <option name="number" value="00109" />
+      <option name="presentableId" value="LOCAL-00109" />
+      <option name="project" value="LOCAL" />
+      <updated>1774436842105</updated>
+    </task>
+    <option name="localTasksCounter" value="110" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -558,7 +561,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="space removed" />
     <MESSAGE value="moved to root user to debug whey device wont attach to rootless container" />
     <MESSAGE value="updated to handle auto chip detect" />
     <MESSAGE value="rolled back" />
@@ -583,7 +585,8 @@
     <MESSAGE value="workspace" />
     <MESSAGE value="adding in dongle jedi core" />
     <MESSAGE value="None patch fix for flow control" />
-    <option name="LAST_COMMIT_MESSAGE" value="None patch fix for flow control" />
+    <MESSAGE value="setup wizard patch - WIP" />
+    <option name="LAST_COMMIT_MESSAGE" value="setup wizard patch - WIP" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
