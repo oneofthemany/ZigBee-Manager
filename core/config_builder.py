@@ -29,8 +29,8 @@ FAMILY_TO_RADIO = {
 FAMILY_TO_FLOW_KEY = {
     "rtscts": "hardware",
     "xonxoff": "software",
-    "none": "none",
-    "": "none",
+    "none": None,
+    "": None,
 }
 
 
@@ -74,8 +74,8 @@ class ConfigBuilderMixin:
         section_map = {"EZSP": "ezsp", "ZNP": "znp", "DECONZ": "deconz"}
         defaults_map = {
             "EZSP":   {"baudrate": 115200, "flow_control": "software"},
-            "ZNP":    {"baudrate": 115200, "flow_control": "none"},
-            "DECONZ": {"baudrate": 38400,  "flow_control": "none"},
+            "ZNP":    {"baudrate": 115200, "flow_control": None},
+            "DECONZ": {"baudrate": 38400,  "flow_control": None},
         }
         section = self._config.get(section_map[radio_type], {})
         defaults = defaults_map[radio_type]
@@ -239,6 +239,9 @@ class ConfigBuilderMixin:
             f"{section_key.upper()} serial: "
             f"baudrate={final_baud}, flow_control={final_flow}"
         )
+        if final_flow == "none":
+            final_flow = None
+
         return final_baud, final_flow
 
     # =====================================================================
@@ -285,7 +288,7 @@ class ConfigBuilderMixin:
         """Build ZNP config from zigbee.znp section + probe results."""
         baud, _ = self._resolve_serial_params(
             "znp", detected,
-            default_baud=115200, default_flow="none",
+            default_baud=115200, default_flow=None,
         )
 
         ota_config = build_ota_config(self._config)

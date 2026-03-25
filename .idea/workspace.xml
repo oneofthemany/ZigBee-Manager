@@ -4,9 +4,9 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="workspace">
-      <change afterPath="$PROJECT_DIR$/modules/dongle_jedi_core.py" afterDir="false" />
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="adding in dongle jedi core">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/core/config_builder.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/config_builder.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -146,14 +146,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00058" summary="APP_DIR reinstated due to removal in error">
-      <option name="closed" value="true" />
-      <created>1774270071502</created>
-      <option name="number" value="00058" />
-      <option name="presentableId" value="LOCAL-00058" />
-      <option name="project" value="LOCAL" />
-      <updated>1774270071503</updated>
     </task>
     <task id="LOCAL-00059" summary="APP_DIR reinstated due to removal in error">
       <option name="closed" value="true" />
@@ -539,7 +531,15 @@
       <option name="project" value="LOCAL" />
       <updated>1774432512408</updated>
     </task>
-    <option name="localTasksCounter" value="107" />
+    <task id="LOCAL-00107" summary="adding in dongle jedi core">
+      <option name="closed" value="true" />
+      <created>1774433115239</created>
+      <option name="number" value="00107" />
+      <option name="presentableId" value="LOCAL-00107" />
+      <option name="project" value="LOCAL" />
+      <updated>1774433115239</updated>
+    </task>
+    <option name="localTasksCounter" value="108" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -554,7 +554,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="commented out priv to test access to device" />
     <MESSAGE value="priv to true" />
     <MESSAGE value="space removed" />
     <MESSAGE value="moved to root user to debug whey device wont attach to rootless container" />
@@ -579,7 +578,8 @@
     <MESSAGE value="new rootless patch - testing" />
     <MESSAGE value="improved service for teardown and startup" />
     <MESSAGE value="workspace" />
-    <option name="LAST_COMMIT_MESSAGE" value="workspace" />
+    <MESSAGE value="adding in dongle jedi core" />
+    <option name="LAST_COMMIT_MESSAGE" value="adding in dongle jedi core" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
