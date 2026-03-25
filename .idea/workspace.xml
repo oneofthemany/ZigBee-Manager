@@ -4,8 +4,9 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="setup wizard finalised">
-      <change beforePath="$PROJECT_DIR$/modules/matter_server.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/matter_server.py" afterDir="false" />
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="kill orphan pid fix for container restart">
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/build.sh" beforeDir="false" afterPath="$PROJECT_DIR$/build.sh" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -145,14 +146,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00062" summary="remove usns arg">
-      <option name="closed" value="true" />
-      <created>1774271563824</created>
-      <option name="number" value="00062" />
-      <option name="presentableId" value="LOCAL-00062" />
-      <option name="project" value="LOCAL" />
-      <updated>1774271563825</updated>
     </task>
     <task id="LOCAL-00063" summary="adding priv and sec commands to podman args">
       <option name="closed" value="true" />
@@ -538,7 +531,15 @@
       <option name="project" value="LOCAL" />
       <updated>1774442358391</updated>
     </task>
-    <option name="localTasksCounter" value="111" />
+    <task id="LOCAL-00111" summary="kill orphan pid fix for container restart">
+      <option name="closed" value="true" />
+      <created>1774442803922</created>
+      <option name="number" value="00111" />
+      <option name="presentableId" value="LOCAL-00111" />
+      <option name="project" value="LOCAL" />
+      <updated>1774442803922</updated>
+    </task>
+    <option name="localTasksCounter" value="112" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -553,7 +554,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="updated to handle auto chip detect" />
     <MESSAGE value="rolled back" />
     <MESSAGE value="if then fix for [] elements" />
     <MESSAGE value="poll control instated to fix lazy devices dropping from network" />
@@ -578,7 +578,8 @@
     <MESSAGE value="None patch fix for flow control" />
     <MESSAGE value="setup wizard patch - WIP" />
     <MESSAGE value="setup wizard finalised" />
-    <option name="LAST_COMMIT_MESSAGE" value="setup wizard finalised" />
+    <MESSAGE value="kill orphan pid fix for container restart" />
+    <option name="LAST_COMMIT_MESSAGE" value="kill orphan pid fix for container restart" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>

@@ -500,6 +500,11 @@ run_container() {
         --volume "${DATA_DIR}/logs:/app/logs"
     )
 
+    # ── UID mapping: keep host UID inside container (Podman only) ──
+    if [[ "$RUNTIME" == "podman" ]]; then
+        run_args+=(--userns=keep-id)
+    fi
+
     # ── USB device passthrough ──
     if [[ -n "${USB_DEVICE:-}" ]]; then
         local real_dev
