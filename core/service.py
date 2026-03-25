@@ -318,7 +318,7 @@ class ZigbeeService(
                     event_emitter=self._emit,
                 )
 
-                if await self.multipan.start(serial_port=self.port):
+                if await self.multipan.start(serial_port=self.port, jedi_result=probe_result):
                     # Override port — bellows will connect to zigbeed's socket
                     # instead of the serial port (which cpcd now owns)
                     original_port = self.port
