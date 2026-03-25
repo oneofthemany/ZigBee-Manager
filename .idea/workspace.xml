@@ -4,9 +4,9 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="updated topic to be in line with new application capabilty">
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="improving start spectrum to mitigate disablement due to length CPC scans">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/main.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/build.sh" beforeDir="false" afterPath="$PROJECT_DIR$/build.sh" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -146,14 +146,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00068" summary="sec and priv for runtime args in podman">
-      <option name="closed" value="true" />
-      <created>1774276656276</created>
-      <option name="number" value="00068" />
-      <option name="presentableId" value="LOCAL-00068" />
-      <option name="project" value="LOCAL" />
-      <updated>1774276656276</updated>
     </task>
     <task id="LOCAL-00069" summary="chmod added to the data dir">
       <option name="closed" value="true" />
@@ -539,7 +531,15 @@
       <option name="project" value="LOCAL" />
       <updated>1774454412557</updated>
     </task>
-    <option name="localTasksCounter" value="117" />
+    <task id="LOCAL-00117" summary="improving start spectrum to mitigate disablement due to length CPC scans">
+      <option name="closed" value="true" />
+      <created>1774454764725</created>
+      <option name="number" value="00117" />
+      <option name="presentableId" value="LOCAL-00117" />
+      <option name="project" value="LOCAL" />
+      <updated>1774454764725</updated>
+    </task>
+    <option name="localTasksCounter" value="118" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -554,7 +554,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="swapping payload around for contact sensors in HA" />
     <MESSAGE value="device status column improvements" />
     <MESSAGE value="workspace updated" />
     <MESSAGE value="debug logger fixes for duckdb and new sort by columns" />
@@ -579,7 +578,8 @@
     <MESSAGE value="minor descriptive text added for runtime mount path" />
     <MESSAGE value="multepan phase 1 test" />
     <MESSAGE value="updated topic to be in line with new application capabilty" />
-    <option name="LAST_COMMIT_MESSAGE" value="updated topic to be in line with new application capabilty" />
+    <MESSAGE value="improving start spectrum to mitigate disablement due to length CPC scans" />
+    <option name="LAST_COMMIT_MESSAGE" value="improving start spectrum to mitigate disablement due to length CPC scans" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>

@@ -275,7 +275,8 @@ _prompt_manual_usb() {
 # =============================================================================
 write_containerfile() {
     cat > "$APP_DIR/Containerfile" << 'DOCKERFILE'
-FROM python:3.11-slim
+# 1. PINNED TO DEBIAN BOOKWORM
+FROM python:3.11-slim-bookworm
 
 ARG HOST_UID=1000
 ARG HOST_GID=1000
@@ -289,14 +290,28 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libssl-dev \
         logrotate \
         curl \
+        wget \
+        unzip \
+        jq \
         libglib2.0-0 \
         libnl-3-200 \
         libnl-route-3-200 \
+        socat \
     && rm -rf /var/lib/apt/lists/*
 
+# Fetch and install Silicon Labs packages matching Bookworm
+RUN DOWNLOAD_URL=$(curl -s https://api.github.com/repos/SiliconLabs/simplicity_sdk/releases/latest | jq -r '.assets[] | select(.name=="debian-bookworm.zip") | .browser_download_url') \
+    && wget "$DOWNLOAD_URL" -O debian-bookworm.zip \
+    && unzip debian-bookworm.zip -d /tmp/silabs \
+    && ARCH=$(dpkg --print-architecture) \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends \
+        /tmp/silabs/debian-bookworm/deb/libcpc3_*_${ARCH}.deb \
+        /tmp/silabs/debian-bookworm/deb/cpcd_*_${ARCH}.deb \
+        /tmp/silabs/debian-bookworm/deb/zigbeed_*_${ARCH}.deb \
+    && rm -rf /tmp/silabs debian-bookworm.zip /var/lib/apt/lists/*
+
 # Create app user with the HOST's exact UID:GID + dialout group membership.
-# This means volumes owned by the host user are writable without remapping,
-# and --group-add at runtime grants serial device access.
 RUN groupadd -g "$HOST_GID" -o appgroup \
  && if ! getent group "$HOST_DIALOUT_GID" >/dev/null 2>&1; then \
         groupadd -g "$HOST_DIALOUT_GID" hostdialout; \
@@ -316,7 +331,7 @@ RUN pip install --no-cache-dir --upgrade pip \
 # Application source
 COPY . .
 
-# Required directories (includes CHIP SDK credentials path for Matter PAA certs)
+# Required directories
 RUN mkdir -p /data /app/data/matter /app/data/backups /app/logs /app/config \
         /usr/local/lib/python3.11/site-packages/credentials/development/paa-root-certs \
  && chown -R ${HOST_UID}:${HOST_GID} /app /data /app/data /app/logs /app/config \
