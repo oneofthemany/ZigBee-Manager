@@ -4,7 +4,10 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="multepan phase 1 test" />
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="updated topic to be in line with new application capabilty">
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/main.py" afterDir="false" />
+    </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -143,14 +146,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00067" summary="removal of chwon of DAT_DIR as not needed">
-      <option name="closed" value="true" />
-      <created>1774276551570</created>
-      <option name="number" value="00067" />
-      <option name="presentableId" value="LOCAL-00067" />
-      <option name="project" value="LOCAL" />
-      <updated>1774276551570</updated>
     </task>
     <task id="LOCAL-00068" summary="sec and priv for runtime args in podman">
       <option name="closed" value="true" />
@@ -536,7 +531,15 @@
       <option name="project" value="LOCAL" />
       <updated>1774453785413</updated>
     </task>
-    <option name="localTasksCounter" value="116" />
+    <task id="LOCAL-00116" summary="updated topic to be in line with new application capabilty">
+      <option name="closed" value="true" />
+      <created>1774454412557</created>
+      <option name="number" value="00116" />
+      <option name="presentableId" value="LOCAL-00116" />
+      <option name="project" value="LOCAL" />
+      <updated>1774454412557</updated>
+    </task>
+    <option name="localTasksCounter" value="117" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -551,7 +554,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="zigpy's internal cluster dispatch does not reliably reach handlers for Report Attributes - fixed" />
     <MESSAGE value="swapping payload around for contact sensors in HA" />
     <MESSAGE value="device status column improvements" />
     <MESSAGE value="workspace updated" />
@@ -576,7 +578,8 @@
     <MESSAGE value="userns arg added for podman container build" />
     <MESSAGE value="minor descriptive text added for runtime mount path" />
     <MESSAGE value="multepan phase 1 test" />
-    <option name="LAST_COMMIT_MESSAGE" value="multepan phase 1 test" />
+    <MESSAGE value="updated topic to be in line with new application capabilty" />
+    <option name="LAST_COMMIT_MESSAGE" value="updated topic to be in line with new application capabilty" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>

@@ -287,25 +287,52 @@ async def lifespan(app: FastAPI):
 
         async def _start_spectrum_monitor(svc):
             """Wait for radio, probe energy_scan support, then start."""
-            for _ in range(30):
+            # MultiPAN startup takes longer — CPC stack adds 40-70s
+            # before bellows can connect. Extend patience accordingly.
+            is_multipan = getattr(svc, 'multipan', None) is not None
+            max_wait = 300 if is_multipan else 150  # 5min vs 2.5min
+            poll_interval = 5
+            max_polls = max_wait // poll_interval
+
+            if is_multipan:
+                logger.info(
+                    f"Spectrum monitor: MultiPAN detected, "
+                    f"extending radio wait to {max_wait}s"
+                )
+
+            for i in range(max_polls):
                 if svc.app:
-                    # Probe whether the coordinator supports energy_scan
                     try:
                         result = await svc.app.energy_scan(
                             channels=range(11, 12), count=1, duration_exp=2
                         )
                         if result:
                             svc.spectrum_monitor.start()
-                            logger.info(f"Spectrum monitor started (interval={spectrum_interval}s)")
+                            logger.info(
+                                f"Spectrum monitor started "
+                                f"(interval={spectrum_interval}s, "
+                                f"waited {i * poll_interval}s for radio)"
+                            )
                         else:
-                            logger.warning("Spectrum monitor: energy_scan returned empty — disabled")
+                            logger.warning(
+                                "Spectrum monitor: energy_scan returned empty — disabled"
+                            )
                     except NotImplementedError:
-                        logger.warning("Spectrum monitor: energy_scan not supported by this coordinator — disabled")
+                        logger.warning(
+                            "Spectrum monitor: energy_scan not supported "
+                            "by this coordinator — disabled"
+                        )
                     except Exception as e:
-                        logger.warning(f"Spectrum monitor: energy_scan probe failed ({e}) — disabled")
+                        logger.warning(
+                            f"Spectrum monitor: energy_scan probe failed "
+                            f"({e}) — disabled"
+                        )
                     return
-                await asyncio.sleep(5)
-            logger.warning("Spectrum monitor: radio never ready after 150s — disabled")
+                await asyncio.sleep(poll_interval)
+
+            logger.warning(
+                f"Spectrum monitor: radio never ready after {max_wait}s — disabled"
+            )
 
         asyncio.create_task(_start_spectrum_monitor(zigbee_service))
 
