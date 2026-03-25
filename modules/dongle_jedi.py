@@ -420,6 +420,70 @@ class DongleJedi:
         logger.info(f"Config updated: port={result['port']}, radio={radio_type}, baud={baud}, flow={flow}")
         return zigbee
 
+
+    @staticmethod
+    def apply_integration_config(
+            mode: str,
+            mqtt_settings: dict = None,
+            config_path: str = "./config/config.yaml",
+    ) -> dict:
+        """
+        Write integration mode and MQTT settings to config.yaml.
+
+        Args:
+            mode: 'standalone' or 'homeassistant'
+            mqtt_settings: MQTT broker config (only used for homeassistant mode)
+            config_path: Path to config.yaml
+
+        Returns:
+            Updated mqtt config section.
+        """
+        import yaml
+
+        if not os.path.exists(config_path):
+            config = {}
+        else:
+            with open(config_path, "r") as f:
+                config = yaml.safe_load(f) or {}
+
+        mqtt = config.setdefault("mqtt", {})
+
+        if mode == "standalone":
+            mqtt["enabled"] = False
+            # Clear broker details so they don't cause confusion
+            mqtt.pop("broker_host", None)
+            mqtt.pop("broker_port", None)
+            mqtt.pop("username", None)
+            mqtt.pop("password", None)
+            logger.info("Integration mode: standalone (MQTT disabled)")
+
+        elif mode == "homeassistant":
+            mqtt["enabled"] = True
+            if mqtt_settings:
+                if mqtt_settings.get("broker_host"):
+                    mqtt["broker_host"] = mqtt_settings["broker_host"]
+                if mqtt_settings.get("broker_port"):
+                    mqtt["broker_port"] = int(mqtt_settings["broker_port"])
+                if mqtt_settings.get("username"):
+                    mqtt["username"] = mqtt_settings["username"]
+                if mqtt_settings.get("password"):
+                    mqtt["password"] = mqtt_settings["password"]
+                if mqtt_settings.get("base_topic"):
+                    mqtt["base_topic"] = mqtt_settings["base_topic"]
+                if mqtt_settings.get("discovery_prefix"):
+                    mqtt["discovery_prefix"] = mqtt_settings["discovery_prefix"]
+
+            logger.info(
+                f"Integration mode: Home Assistant "
+                f"(MQTT → {mqtt.get('broker_host', '?')}:{mqtt.get('broker_port', 1883)})"
+            )
+
+        # Write back
+        with open(config_path, "w") as f:
+            yaml.dump(config, f, default_flow_style=False, sort_keys=False)
+
+        return mqtt
+
     # ------------------------------------------------------------------
     # Check if setup is needed
     # ------------------------------------------------------------------
@@ -427,12 +491,14 @@ class DongleJedi:
     @staticmethod
     def needs_setup(config_path: str = "./config/config.yaml") -> dict:
         """
-        Check whether the coordinator setup wizard should be shown.
+        Check whether the setup wizard should be shown.
+
+        Now checks BOTH coordinator AND integration/MQTT configuration.
 
         Returns dict with:
             needs_setup: bool
-            reason: str  (why setup is needed)
-            current_port: str  (current configured port, if any)
+            reason: str
+            current_port: str
         """
         import yaml
 
@@ -449,23 +515,15 @@ class DongleJedi:
         zigbee = config.get("zigbee", {})
         port = zigbee.get("port", "")
 
-        # No port configured
-        if not port or port in ("", "/dev/ttyUSB0", "/dev/ttyACM0"):
-            # Check if the default port actually exists
-            if port and os.path.exists(port):
-                return {
-                    "needs_setup": False,
-                    "reason": "default_port_exists",
-                    "current_port": port,
-                }
-            if not port:
-                return {
-                    "needs_setup": True,
-                    "reason": "no_port_configured",
-                    "current_port": "",
-                }
+        # ── Check 1: Coordinator port ──
+        if not port:
+            return {
+                "needs_setup": True,
+                "reason": "no_port_configured",
+                "current_port": "",
+            }
 
-        # Port is configured but doesn't exist on the filesystem
+        # Port configured but doesn't exist
         if not port.startswith("socket://") and not os.path.exists(port):
             return {
                 "needs_setup": True,
@@ -473,7 +531,17 @@ class DongleJedi:
                 "current_port": port,
             }
 
-        # Port exists — no setup needed
+        # ── Check 2: Integration mode configured? ──
+        # If mqtt section has no 'enabled' key, setup hasn't been run
+        mqtt_conf = config.get("mqtt", {})
+        if "enabled" not in mqtt_conf:
+            return {
+                "needs_setup": True,
+                "reason": "mqtt_not_configured",
+                "current_port": port,
+            }
+
+        # All configured
         return {
             "needs_setup": False,
             "reason": "configured",

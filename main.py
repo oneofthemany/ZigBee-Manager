@@ -131,6 +131,9 @@ mqtt_service = MQTTService(
     log_callback=None
 )
 
+mqtt_enabled = get_conf('mqtt', 'enabled', True)  # Default True for backward compat
+
+
 zigbee_service = ZigbeeService(
     port=get_conf('zigbee', 'port', '/dev/ttyACM0'),
     mqtt_client=mqtt_service,
@@ -209,16 +212,26 @@ async def lifespan(app: FastAPI):
         "payload": {"level": "INFO", "message": "System Starting...", "timestamp": None}
     })
 
-    # Start MQTT
-    try:
-        await mqtt_service.start()
-        logger.info("MQTT connected")
-    except Exception as e:
-        logger.warning(f"MQTT connection failed: {e}")
+    # Start MQTT (skip if disabled — standalone mode)
+    if mqtt_enabled:
+        try:
+            await mqtt_service.start()
+            logger.info("MQTT connected")
+        except Exception as e:
+            logger.warning(f"MQTT connection failed: {e}")
+    else:
+        logger.info("MQTT disabled (standalone mode)")
 
     # MQTT Explorer
-    mqtt_service.mqtt_explorer = MQTTExplorer(mqtt_service, max_messages=1000)
-    logger.info("MQTT Explorer initialized")
+    if mqtt_enabled:
+        mqtt_service.mqtt_explorer = MQTTExplorer(mqtt_service, max_messages=1000)
+        logger.info("MQTT Explorer initialized")
+
+        async def mqtt_explorer_callback(message_record):
+            await manager.broadcast({"type": "mqtt_message", "payload": message_record})
+        mqtt_service.mqtt_explorer.add_callback(mqtt_explorer_callback)
+    else:
+        logger.info("MQTT Explorer skipped (standalone mode)")
 
     async def mqtt_explorer_callback(message_record):
         await manager.broadcast({"type": "mqtt_message", "payload": message_record})
@@ -300,7 +313,9 @@ async def lifespan(app: FastAPI):
     if hasattr(zigbee_service, 'group_manager'):
         logger.info("Group manager initialized")
 
-    mqtt_service.group_command_callback = zigbee_service.group_manager.handle_mqtt_group_command
+    if mqtt_enabled:
+        mqtt_service.group_command_callback = zigbee_service.group_manager.handle_mqtt_group_command
+        logger.info("Wired GroupManager callback to MQTT Service")
     logger.info("Wired GroupManager callback to MQTT Service")
 
     # ── System Monitor & Telemetry ──

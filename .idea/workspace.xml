@@ -4,9 +4,13 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="adding in dongle jedi core">
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="None patch fix for flow control">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/core/config_builder.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/config_builder.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/main.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/modules/dongle_jedi.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/dongle_jedi.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/modules/dongle_jedi_api.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/dongle_jedi_api.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/static/css/setup-wizard.css" beforeDir="false" afterPath="$PROJECT_DIR$/static/css/setup-wizard.css" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/static/js/setup-wizard.js" beforeDir="false" afterPath="$PROJECT_DIR$/static/js/setup-wizard.js" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -146,14 +150,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00059" summary="APP_DIR reinstated due to removal in error">
-      <option name="closed" value="true" />
-      <created>1774270396854</created>
-      <option name="number" value="00059" />
-      <option name="presentableId" value="LOCAL-00059" />
-      <option name="project" value="LOCAL" />
-      <updated>1774270396854</updated>
     </task>
     <task id="LOCAL-00060" summary="libglib2.0-0 \\ added">
       <option name="closed" value="true" />
@@ -539,7 +535,15 @@
       <option name="project" value="LOCAL" />
       <updated>1774433115239</updated>
     </task>
-    <option name="localTasksCounter" value="108" />
+    <task id="LOCAL-00108" summary="None patch fix for flow control">
+      <option name="closed" value="true" />
+      <created>1774435517820</created>
+      <option name="number" value="00108" />
+      <option name="presentableId" value="LOCAL-00108" />
+      <option name="project" value="LOCAL" />
+      <updated>1774435517821</updated>
+    </task>
+    <option name="localTasksCounter" value="109" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -554,7 +558,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="priv to true" />
     <MESSAGE value="space removed" />
     <MESSAGE value="moved to root user to debug whey device wont attach to rootless container" />
     <MESSAGE value="updated to handle auto chip detect" />
@@ -579,7 +582,8 @@
     <MESSAGE value="improved service for teardown and startup" />
     <MESSAGE value="workspace" />
     <MESSAGE value="adding in dongle jedi core" />
-    <option name="LAST_COMMIT_MESSAGE" value="adding in dongle jedi core" />
+    <MESSAGE value="None patch fix for flow control" />
+    <option name="LAST_COMMIT_MESSAGE" value="None patch fix for flow control" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>

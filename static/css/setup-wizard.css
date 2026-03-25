@@ -1,9 +1,6 @@
 /* ============================================================================
-   Setup Wizard — Coordinator Auto-Detection UI
-   ============================================================================
-   Drop-in file: static/css/setup-wizard.css
-   Load in index.html AFTER styles.css and dark-mode.css
-   ============================================================================ */
+   Setup Wizard — Multi-Step First-Run UI
+   ============================================================================*/
 
 /* ── Overlay ─────────────────────────────────────────────────────────────── */
 
@@ -54,76 +51,139 @@
     margin-bottom: 1.5rem;
 }
 
+/* ── Step Indicator ──────────────────────────────────────────────────────── */
+
+.setup-steps {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0;
+    padding: 0 1rem;
+}
+
+.setup-step {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    position: relative;
+    flex: 1;
+}
+
+.setup-step:not(:last-child)::after {
+    content: '';
+    position: absolute;
+    top: 14px;
+    left: calc(50% + 16px);
+    width: calc(100% - 32px);
+    height: 2px;
+    background: var(--bs-border-color, #dee2e6);
+    z-index: 0;
+}
+
+.setup-step.completed:not(:last-child)::after {
+    background: #198754;
+}
+
+.step-dot {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.75rem;
+    font-weight: 700;
+    z-index: 1;
+    transition: all 0.3s ease;
+}
+
+.setup-step.pending .step-dot {
+    background: var(--bs-border-color, #dee2e6);
+    color: var(--bs-secondary-color, #6c757d);
+}
+
+.setup-step.active .step-dot {
+    background: #0d6efd;
+    color: #fff;
+    box-shadow: 0 0 0 4px rgba(13, 110, 253, 0.2);
+}
+
+.setup-step.completed .step-dot {
+    background: #198754;
+    color: #fff;
+}
+
+.step-label {
+    font-size: 0.7rem;
+    font-weight: 600;
+    margin-top: 4px;
+    color: var(--bs-secondary-color, #6c757d);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+.setup-step.active .step-label {
+    color: #0d6efd;
+}
+
+.setup-step.completed .step-label {
+    color: #198754;
+}
+
 /* ── Progress bar ────────────────────────────────────────────────────────── */
 
 .scan-progress-bar {
     height: 6px;
+    background: var(--bs-border-color, #dee2e6);
     border-radius: 3px;
-    background: var(--bs-tertiary-bg, #e9ecef);
     overflow: hidden;
-    margin-bottom: 1rem;
 }
 
-.scan-progress-bar .bar-fill {
+.scan-progress-fill {
     height: 100%;
     background: linear-gradient(90deg, #0d6efd, #0dcaf0);
     border-radius: 3px;
-    transition: width 0.4s ease;
-    width: 0%;
+    transition: width 0.5s ease;
 }
 
-/* Indeterminate animation when scanning */
-.scan-progress-bar.indeterminate .bar-fill {
-    width: 30%;
-    animation: indeterminate 1.5s ease-in-out infinite;
-}
-
-@keyframes indeterminate {
-    0%   { transform: translateX(-100%); }
-    100% { transform: translateX(400%); }
-}
-
-/* ── Log feed ────────────────────────────────────────────────────────────── */
+/* ── Scan log ────────────────────────────────────────────────────────────── */
 
 .scan-log {
     background: var(--bs-tertiary-bg, #f8f9fa);
-    border: 1px solid var(--bs-border-color, #dee2e6);
-    border-radius: 8px;
-    padding: 0.75rem 1rem;
-    max-height: 200px;
-    overflow-y: auto;
     font-family: 'SFMono-Regular', 'Menlo', 'Consolas', monospace;
     font-size: 0.78rem;
     line-height: 1.6;
-    margin-bottom: 1rem;
 }
 
-.scan-log .log-entry {
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+/* ── Spinner ─────────────────────────────────────────────────────────────── */
+
+.scan-spinner {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    border: 2px solid currentColor;
+    border-right-color: transparent;
+    border-radius: 50%;
+    animation: setupSpin 0.8s linear infinite;
+    vertical-align: middle;
 }
 
-.scan-log .log-entry.success {
-    color: #198754;
+@keyframes setupSpin {
+    to { transform: rotate(360deg); }
 }
 
-.scan-log .log-entry.error {
-    color: #dc3545;
-}
+/* ── Adapter results ─────────────────────────────────────────────────────── */
 
-.scan-log .log-entry.info {
-    color: var(--bs-secondary-color, #6c757d);
+.adapter-results {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
 }
-
-/* ── Results cards ───────────────────────────────────────────────────────── */
 
 .adapter-result {
-    background: var(--bs-tertiary-bg, #f8f9fa);
     border: 2px solid var(--bs-border-color, #dee2e6);
-    border-radius: 12px;
-    padding: 1rem 1.25rem;
-    margin-bottom: 0.75rem;
+    border-radius: 10px;
+    padding: 0.75rem 1rem;
     cursor: pointer;
     transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
@@ -161,6 +221,71 @@
 .adapter-result .adapter-badge {
     font-size: 0.7rem;
     padding: 0.2em 0.55em;
+}
+
+/* ── Integration mode options ────────────────────────────────────────────── */
+
+.integration-options {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.integration-option {
+    border: 2px solid var(--bs-border-color, #dee2e6);
+    border-radius: 10px;
+    padding: 1rem 1.25rem;
+    cursor: pointer;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.integration-option:hover {
+    border-color: #0d6efd;
+}
+
+.integration-option.selected {
+    border-color: #0d6efd;
+    box-shadow: 0 0 0 3px rgba(13, 110, 253, 0.15);
+}
+
+.integration-icon {
+    font-size: 1.5rem;
+    margin-right: 0.75rem;
+    margin-top: 0.1rem;
+}
+
+.integration-check {
+    font-size: 1.2rem;
+    margin-left: 0.5rem;
+    margin-top: 0.1rem;
+}
+
+/* ── Summary sections ────────────────────────────────────────────────────── */
+
+.summary-section {
+    border: 1px solid var(--bs-border-color, #dee2e6);
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.summary-header {
+    background: var(--bs-tertiary-bg, #f8f9fa);
+    padding: 0.5rem 0.75rem;
+    font-weight: 600;
+    font-size: 0.85rem;
+    border-bottom: 1px solid var(--bs-border-color, #dee2e6);
+}
+
+.summary-body {
+    padding: 0.5rem 0.75rem;
+}
+
+.summary-body .row {
+    padding: 0.2rem 0;
+}
+
+.summary-body .row:not(:last-child) {
+    border-bottom: 1px solid var(--bs-border-color-translucent, rgba(0,0,0,0.05));
 }
 
 /* ── Port list (pre-scan) ────────────────────────────────────────────────── */
@@ -207,67 +332,30 @@
     display: flex;
     gap: 0.5rem;
     justify-content: flex-end;
-    margin-top: 1.25rem;
-    flex-wrap: wrap;
-}
-
-.setup-actions .btn {
-    min-width: 120px;
-}
-
-/* ── Spinner ─────────────────────────────────────────────────────────────── */
-
-.scan-spinner {
-    display: inline-block;
-    width: 1rem;
-    height: 1rem;
-    border: 2px solid currentColor;
-    border-right-color: transparent;
-    border-radius: 50%;
-    animation: spin 0.75s linear infinite;
-    vertical-align: middle;
-    margin-right: 0.4rem;
-}
-
-@keyframes spin {
-    to { transform: rotate(360deg); }
+    padding-top: 0.75rem;
+    border-top: 1px solid var(--bs-border-color, #dee2e6);
 }
 
 /* ── Dark mode ───────────────────────────────────────────────────────────── */
 
 [data-bs-theme="dark"] .scan-log {
-    background: #1a1d21;
-    border-color: #343a40;
+    background: var(--bs-tertiary-bg, #2b3035);
 }
 
-[data-bs-theme="dark"] .adapter-result {
-    background: #1a1d21;
-    border-color: #343a40;
+[data-bs-theme="dark"] .summary-header {
+    background: var(--bs-tertiary-bg, #2b3035);
 }
 
-[data-bs-theme="dark"] .adapter-result:hover {
-    border-color: #4dabf7;
+[data-bs-theme="dark"] .adapter-result,
+[data-bs-theme="dark"] .integration-option {
+    border-color: var(--bs-border-color, #495057);
 }
 
-[data-bs-theme="dark"] .adapter-result.selected {
-    border-color: #4dabf7;
-    box-shadow: 0 0 0 3px rgba(77, 171, 247, 0.2);
-}
-
-[data-bs-theme="dark"] .scan-log .log-entry.success {
-    color: #51cf66;
-}
-
-[data-bs-theme="dark"] .scan-log .log-entry.error {
-    color: #ff6b6b;
-}
-
-[data-bs-theme="dark"] .adapter-result .adapter-port {
-    color: #4dabf7;
-}
-
-[data-bs-theme="dark"] .scan-progress-bar {
-    background: #343a40;
+[data-bs-theme="dark"] .adapter-result:hover,
+[data-bs-theme="dark"] .integration-option:hover,
+[data-bs-theme="dark"] .adapter-result.selected,
+[data-bs-theme="dark"] .integration-option.selected {
+    border-color: #0d6efd;
 }
 
 /* ── Mobile ──────────────────────────────────────────────────────────────── */
@@ -276,14 +364,27 @@
     .setup-wizard-card {
         padding: 1.25rem;
         border-radius: 12px;
-        max-height: 95vh;
+    }
+
+    .setup-steps {
+        padding: 0;
+    }
+
+    .step-label {
+        font-size: 0.6rem;
+    }
+
+    .step-dot {
+        width: 24px;
+        height: 24px;
+        font-size: 0.65rem;
     }
 
     .setup-actions {
-        flex-direction: column;
+        flex-wrap: wrap;
     }
 
-    .setup-actions .btn {
-        width: 100%;
+    .integration-icon {
+        font-size: 1.2rem;
     }
 }

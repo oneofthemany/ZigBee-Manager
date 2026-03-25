@@ -185,6 +185,84 @@ async def skip_setup():
 # Registration
 # ---------------------------------------------------------------------------
 
+class IntegrationRequest(BaseModel):
+    """Request to set integration mode and MQTT config."""
+    mode: str = Field(..., description="'standalone' or 'homeassistant'")
+    mqtt: Optional[dict] = None
+
+
+@router.post("/apply-integration")
+async def apply_integration(request: IntegrationRequest):
+    """
+    Apply integration mode (standalone/HA) and MQTT settings.
+    Called as step 2 of the setup wizard after coordinator config.
+    """
+    try:
+        updated = DongleJedi.apply_integration_config(
+            mode=request.mode,
+            mqtt_settings=request.mqtt,
+        )
+        return {
+            "success": True,
+            "message": f"Integration mode set to {request.mode}",
+            "config": updated,
+        }
+    except Exception as e:
+        logger.error(f"Failed to apply integration config: {e}", exc_info=True)
+        raise HTTPException(500, f"Failed to save integration config: {e}")
+
+
+class MqttTestRequest(BaseModel):
+    """MQTT connection test parameters."""
+    broker_host: str = ""
+    broker_port: int = 1883
+    username: str = ""
+    password: str = ""
+    base_topic: str = ""
+    discovery_prefix: str = ""
+
+
+@router.post("/test-mqtt")
+async def test_mqtt_connection(request: MqttTestRequest):
+    """
+    Test MQTT broker connectivity.
+    Attempts a quick connect/disconnect to validate credentials.
+    """
+    if not request.broker_host:
+        return {"success": False, "error": "No broker host specified"}
+
+    try:
+        from aiomqtt import Client
+
+        client = Client(
+            hostname=request.broker_host,
+            port=request.broker_port,
+            username=request.username or None,
+            password=request.password or None,
+            clean_session=True,
+            keepalive=10,
+        )
+
+        # Try to connect and immediately disconnect
+        await client.__aenter__()
+        await client.__aexit__(None, None, None)
+
+        return {"success": True, "message": "Connected successfully"}
+
+    except ImportError:
+        return {"success": False, "error": "aiomqtt not installed"}
+    except Exception as e:
+        error_msg = str(e)
+        # Clean up common error messages
+        if "Not authorized" in error_msg or "135" in error_msg:
+            error_msg = "Authentication failed — check username and password"
+        elif "Connection refused" in error_msg:
+            error_msg = f"Connection refused at {request.broker_host}:{request.broker_port}"
+        elif "Name or service not known" in error_msg or "getaddrinfo" in error_msg:
+            error_msg = f"Cannot resolve hostname: {request.broker_host}"
+
+        return {"success": False, "error": error_msg}
+
 def register_setup_routes(app: FastAPI, ws_manager=None):
     """
     Register setup wizard API routes.
