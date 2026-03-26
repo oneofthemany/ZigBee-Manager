@@ -373,6 +373,8 @@ class MultiPanManager:
             logger.info(f"[cpcd] Using existing config: {system_config}")
             return system_config
 
+        jedi = self._jedi_result or {}
+
         baudrate = (
                 jedi.get("baudrate") or jedi.get("baud_rate")
                 or self._cpcd_config.get("baudrate")

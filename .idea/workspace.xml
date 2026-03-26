@@ -4,7 +4,7 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="adding debug for probe result" />
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="workspace sommit" />
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -143,14 +143,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00078" summary="commented out priv to test access to device">
-      <option name="closed" value="true" />
-      <created>1774280270750</created>
-      <option name="number" value="00078" />
-      <option name="presentableId" value="LOCAL-00078" />
-      <option name="project" value="LOCAL" />
-      <updated>1774280270750</updated>
     </task>
     <task id="LOCAL-00079" summary="commented out priv to test access to device">
       <option name="closed" value="true" />
@@ -536,7 +528,15 @@
       <option name="project" value="LOCAL" />
       <updated>1774521062506</updated>
     </task>
-    <option name="localTasksCounter" value="127" />
+    <task id="LOCAL-00127" summary="workspace sommit">
+      <option name="closed" value="true" />
+      <created>1774521210599</created>
+      <option name="number" value="00127" />
+      <option name="presentableId" value="LOCAL-00127" />
+      <option name="project" value="LOCAL" />
+      <updated>1774521210599</updated>
+    </task>
+    <option name="localTasksCounter" value="128" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -551,7 +551,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="new setup wizard with dongle jedi" />
     <MESSAGE value="folder dir &gt; /app for new container build" />
     <MESSAGE value="hook config builder in to the dongle jedi" />
     <MESSAGE value="project updates" />
@@ -576,7 +575,8 @@
     <MESSAGE value="rolled back as reset was not the issue" />
     <MESSAGE value="rolled back service teardown due to coding error and application failure" />
     <MESSAGE value="adding debug for probe result" />
-    <option name="LAST_COMMIT_MESSAGE" value="adding debug for probe result" />
+    <MESSAGE value="workspace sommit" />
+    <option name="LAST_COMMIT_MESSAGE" value="workspace sommit" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
