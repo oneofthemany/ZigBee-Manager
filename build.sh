@@ -582,6 +582,7 @@ install_autostart() {
         # Podman: generate a user-level systemd unit (no sudo needed)
         local unit_dir="$HOME/.config/systemd/user"
         mkdir -p "$unit_dir"
+        local unit_file="$unit_dir/container-${CONTAINER_NAME}.service"
 
         info "Generating podman systemd unit..."
         # Generate the unit file
@@ -589,17 +590,38 @@ install_autostart() {
             --name "$CONTAINER_NAME" \
             --restart-policy=always \
             --new \
-            > "$unit_dir/container-${CONTAINER_NAME}.service" 2>/dev/null
+            > "$unit_file" 2>/dev/null
 
-        # Inject device bind-mount setup before ExecStart
+        # Inject robust device bind-mount handling
         if [[ -n "${DEVICE_MOUNT_PATH:-}" ]]; then
             local real_dev
             real_dev=$(readlink -f "$USB_DEVICE")
-            sed -i "/^ExecStart=/i ExecStartPre=/bin/bash -c 'mountpoint -q ${DEVICE_MOUNT_PATH} || (sudo mkdir -p ${DEVICE_MOUNT_DIR} \&\& sudo touch ${DEVICE_MOUNT_PATH} \&\& sudo mount --bind ${real_dev} ${DEVICE_MOUNT_PATH} \&\& sudo chown %u ${DEVICE_MOUNT_PATH})'" \
-                "$unit_dir/container-${CONTAINER_NAME}.service"
+
+            # Build the ExecStartPre script:
+            #   1. Unmount any stale bind mount from previous run
+            #   2. Wait up to 10s for the device to appear (USB replug)
+            #   3. Create mount point and bind mount
+            local start_pre
+            start_pre="ExecStartPre=/bin/bash -c '"
+            start_pre+="sudo umount ${DEVICE_MOUNT_PATH} 2>/dev/null; "
+            start_pre+="sudo mkdir -p ${DEVICE_MOUNT_DIR}; "
+            start_pre+="for i in 1 2 3 4 5; do "
+            start_pre+="  [ -e ${real_dev} ] \&\& break; "
+            start_pre+="  echo \"Waiting for ${real_dev}... (\\$i)\"; sleep 2; "
+            start_pre+="done; "
+            start_pre+="[ -e ${real_dev} ] || { echo \"Device ${real_dev} not found after 10s\"; exit 1; }; "
+            start_pre+="sudo touch ${DEVICE_MOUNT_PATH}; "
+            start_pre+="sudo mount --bind ${real_dev} ${DEVICE_MOUNT_PATH}; "
+            start_pre+="sudo chown %u ${DEVICE_MOUNT_PATH}'"
+
+            sed -i "/^ExecStart=/i ${start_pre}" "$unit_file"
+
+            # Add cleanup on stop — unmount bind mount so replug works cleanly
+            sed -i "/^ExecStopPost=/a ExecStopPost=/bin/bash -c 'sudo umount ${DEVICE_MOUNT_PATH} 2>/dev/null; true'" \
+                "$unit_file"
         fi || {
             # Older podman: write manually
-            cat > "$unit_dir/container-${CONTAINER_NAME}.service" << UNIT
+            cat > "$unit_file" << UNIT
 [Unit]
 Description=Zigbee Matter Manager Container
 After=network.target
@@ -607,12 +629,11 @@ After=network.target
 [Service]
 Restart=always
 RestartSec=10
-ExecStartPre=/bin/bash -c 'mountpoint -q /mnt/devices/ttyUSB0 || (sudo touch /mnt/devices/ttyUSB0 && sudo mount --bind /dev/ttyUSB0 /mnt/devices/ttyUSB0 && sudo chown %u /mnt/devices/ttyUSB0)'
+ExecStartPre=/bin/bash -c 'sudo umount /mnt/devices/ttyUSB0 2>/dev/null; sudo mkdir -p /mnt/devices; for i in 1 2 3 4 5; do [ -e /dev/ttyUSB0 ] && break; echo "Waiting for /dev/ttyUSB0... (\$i)"; sleep 2; done; [ -e /dev/ttyUSB0 ] || exit 1; sudo touch /mnt/devices/ttyUSB0; sudo mount --bind /dev/ttyUSB0 /mnt/devices/ttyUSB0; sudo chown %u /mnt/devices/ttyUSB0'
 ExecStartPre=-/usr/bin/podman rm -f ${CONTAINER_NAME}
 ExecStart=/usr/bin/podman start -a ${CONTAINER_NAME}
 ExecStop=/usr/bin/podman stop -t 15 ${CONTAINER_NAME}
-
-ExecStopPost=/bin/bash -c 'mountpoint -q /mnt/devices/ttyUSB0 && sudo umount /mnt/devices/ttyUSB0 && rm -f /mnt/devices/ttyUSB0 || true'
+ExecStopPost=/bin/bash -c '/usr/bin/podman rm -f --ignore ${CONTAINER_NAME} 2>/dev/null; sudo umount /mnt/devices/ttyUSB0 2>/dev/null; true'
 
 [Install]
 WantedBy=default.target
