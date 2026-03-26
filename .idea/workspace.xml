@@ -4,7 +4,9 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="service teardown improvements" />
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="rolled back as reset was not the issue">
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+    </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -143,14 +145,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00075" summary="chmod after dir creation - duh">
-      <option name="closed" value="true" />
-      <created>1774279066715</created>
-      <option name="number" value="00075" />
-      <option name="presentableId" value="LOCAL-00075" />
-      <option name="project" value="LOCAL" />
-      <updated>1774279066715</updated>
     </task>
     <task id="LOCAL-00076" summary="/data added to chown for matter server">
       <option name="closed" value="true" />
@@ -536,7 +530,15 @@
       <option name="project" value="LOCAL" />
       <updated>1774518175913</updated>
     </task>
-    <option name="localTasksCounter" value="124" />
+    <task id="LOCAL-00124" summary="rolled back as reset was not the issue">
+      <option name="closed" value="true" />
+      <created>1774518706149</created>
+      <option name="number" value="00124" />
+      <option name="presentableId" value="LOCAL-00124" />
+      <option name="project" value="LOCAL" />
+      <updated>1774518706149</updated>
+    </task>
+    <option name="localTasksCounter" value="125" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -551,7 +553,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="requirement patches" />
     <MESSAGE value="testing new UID GUID for container build" />
     <MESSAGE value="more changes to try and get container buikd successfull" />
     <MESSAGE value="new setup wizard with dongle jedi" />
@@ -576,7 +577,8 @@
     <MESSAGE value="baudrate fix" />
     <MESSAGE value="multipan fixes" />
     <MESSAGE value="service teardown improvements" />
-    <option name="LAST_COMMIT_MESSAGE" value="service teardown improvements" />
+    <MESSAGE value="rolled back as reset was not the issue" />
+    <option name="LAST_COMMIT_MESSAGE" value="rolled back as reset was not the issue" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
