@@ -4,8 +4,9 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="rolled back as reset was not the issue">
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="rolled back service teardown due to coding error and application failure">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/modules/multipan.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/multipan.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -145,14 +146,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00076" summary="/data added to chown for matter server">
-      <option name="closed" value="true" />
-      <created>1774279389514</created>
-      <option name="number" value="00076" />
-      <option name="presentableId" value="LOCAL-00076" />
-      <option name="project" value="LOCAL" />
-      <updated>1774279389514</updated>
     </task>
     <task id="LOCAL-00077" summary="commented out priv to test access to device">
       <option name="closed" value="true" />
@@ -538,7 +531,15 @@
       <option name="project" value="LOCAL" />
       <updated>1774518706149</updated>
     </task>
-    <option name="localTasksCounter" value="125" />
+    <task id="LOCAL-00125" summary="rolled back service teardown due to coding error and application failure">
+      <option name="closed" value="true" />
+      <created>1774520277516</created>
+      <option name="number" value="00125" />
+      <option name="presentableId" value="LOCAL-00125" />
+      <option name="project" value="LOCAL" />
+      <updated>1774520277516</updated>
+    </task>
+    <option name="localTasksCounter" value="126" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -553,7 +554,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="testing new UID GUID for container build" />
     <MESSAGE value="more changes to try and get container buikd successfull" />
     <MESSAGE value="new setup wizard with dongle jedi" />
     <MESSAGE value="folder dir &gt; /app for new container build" />
@@ -578,7 +578,8 @@
     <MESSAGE value="multipan fixes" />
     <MESSAGE value="service teardown improvements" />
     <MESSAGE value="rolled back as reset was not the issue" />
-    <option name="LAST_COMMIT_MESSAGE" value="rolled back as reset was not the issue" />
+    <MESSAGE value="rolled back service teardown due to coding error and application failure" />
+    <option name="LAST_COMMIT_MESSAGE" value="rolled back service teardown due to coding error and application failure" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>

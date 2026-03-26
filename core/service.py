@@ -308,6 +308,9 @@ class ZigbeeService(
             logger.info(
                 "MultiPAN RCP firmware detected — starting CPC stack..."
             )
+            logger.info(
+                "DEBUG probe_result: {probe_result}"
+            )
             try:
                 from modules.multipan import MultiPanManager
 
