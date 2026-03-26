@@ -4,10 +4,8 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="update container to run slim bookworm">
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="new multipan updates - WIP">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/core/service.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/service.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/modules/multipan.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/multipan.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -147,14 +145,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00070" summary="chmod added to the data dir">
-      <option name="closed" value="true" />
-      <created>1774277286128</created>
-      <option name="number" value="00070" />
-      <option name="presentableId" value="LOCAL-00070" />
-      <option name="project" value="LOCAL" />
-      <updated>1774277286128</updated>
     </task>
     <task id="LOCAL-00071" summary="chown to config and log dirs inside container">
       <option name="closed" value="true" />
@@ -540,7 +530,15 @@
       <option name="project" value="LOCAL" />
       <updated>1774458044673</updated>
     </task>
-    <option name="localTasksCounter" value="119" />
+    <task id="LOCAL-00119" summary="new multipan updates - WIP">
+      <option name="closed" value="true" />
+      <created>1774463707155</created>
+      <option name="number" value="00119" />
+      <option name="presentableId" value="LOCAL-00119" />
+      <option name="project" value="LOCAL" />
+      <updated>1774463707155</updated>
+    </task>
+    <option name="localTasksCounter" value="120" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -555,7 +553,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="workspace updated" />
     <MESSAGE value="debug logger fixes for duckdb and new sort by columns" />
     <MESSAGE value="adding switches to device status" />
     <MESSAGE value="chown all dirs" />
@@ -580,7 +577,8 @@
     <MESSAGE value="updated topic to be in line with new application capabilty" />
     <MESSAGE value="improving start spectrum to mitigate disablement due to length CPC scans" />
     <MESSAGE value="update container to run slim bookworm" />
-    <option name="LAST_COMMIT_MESSAGE" value="update container to run slim bookworm" />
+    <MESSAGE value="new multipan updates - WIP" />
+    <option name="LAST_COMMIT_MESSAGE" value="new multipan updates - WIP" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
