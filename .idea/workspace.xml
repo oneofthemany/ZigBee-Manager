@@ -4,12 +4,7 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="baudrate fix">
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/build.sh" beforeDir="false" afterPath="$PROJECT_DIR$/build.sh" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/core/config_builder.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/config_builder.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/modules/multipan.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/multipan.py" afterDir="false" />
-    </list>
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="service teardown improvements" />
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -148,22 +143,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00073" summary="typo in dir chown">
-      <option name="closed" value="true" />
-      <created>1774278290256</created>
-      <option name="number" value="00073" />
-      <option name="presentableId" value="LOCAL-00073" />
-      <option name="project" value="LOCAL" />
-      <updated>1774278290256</updated>
-    </task>
-    <task id="LOCAL-00074" summary="space added">
-      <option name="closed" value="true" />
-      <created>1774278603850</created>
-      <option name="number" value="00074" />
-      <option name="presentableId" value="LOCAL-00074" />
-      <option name="project" value="LOCAL" />
-      <updated>1774278603850</updated>
     </task>
     <task id="LOCAL-00075" summary="chmod after dir creation - duh">
       <option name="closed" value="true" />
@@ -541,7 +520,23 @@
       <option name="project" value="LOCAL" />
       <updated>1774515588343</updated>
     </task>
-    <option name="localTasksCounter" value="122" />
+    <task id="LOCAL-00122" summary="multipan fixes">
+      <option name="closed" value="true" />
+      <created>1774518157208</created>
+      <option name="number" value="00122" />
+      <option name="presentableId" value="LOCAL-00122" />
+      <option name="project" value="LOCAL" />
+      <updated>1774518157208</updated>
+    </task>
+    <task id="LOCAL-00123" summary="service teardown improvements">
+      <option name="closed" value="true" />
+      <created>1774518175913</created>
+      <option name="number" value="00123" />
+      <option name="presentableId" value="LOCAL-00123" />
+      <option name="project" value="LOCAL" />
+      <updated>1774518175913</updated>
+    </task>
+    <option name="localTasksCounter" value="124" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -556,8 +551,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="adding switches to device status" />
-    <MESSAGE value="chown all dirs" />
     <MESSAGE value="requirement patches" />
     <MESSAGE value="testing new UID GUID for container build" />
     <MESSAGE value="more changes to try and get container buikd successfull" />
@@ -581,7 +574,9 @@
     <MESSAGE value="update container to run slim bookworm" />
     <MESSAGE value="new multipan updates - WIP" />
     <MESSAGE value="baudrate fix" />
-    <option name="LAST_COMMIT_MESSAGE" value="baudrate fix" />
+    <MESSAGE value="multipan fixes" />
+    <MESSAGE value="service teardown improvements" />
+    <option name="LAST_COMMIT_MESSAGE" value="service teardown improvements" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>

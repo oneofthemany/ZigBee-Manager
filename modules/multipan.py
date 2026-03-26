@@ -482,34 +482,6 @@ disable_encryption: true
     # LIFECYCLE
     # =========================================================================
 
-    @staticmethod
-    def _reset_dongle(port: str):
-        """
-        RTS hardware reset into application mode.
-
-        RTS = reset pin, DTR = boot mode pin on CP210x/CH340 bridges.
-        DTR must be de-asserted (False) so the chip boots into the
-        application, not the Gecko Bootloader.
-        """
-        import serial as _serial
-        import time as _time
-        try:
-            ser = _serial.Serial()
-            ser.port = port
-            ser.baudrate = 115200
-            ser.dtr = False
-            ser.rts = False
-            ser.open()
-            ser.dtr = False       # Boot pin high → application mode
-            ser.rts = True        # Assert reset
-            _time.sleep(0.1)
-            ser.rts = False       # Release reset → boots into app
-            _time.sleep(1.0)      # Full second for firmware init
-            ser.close()
-            logger.info(f"RTS reset completed on {port}")
-        except Exception as e:
-            logger.warning(f"RTS reset on {port} failed: {e}")
-
     async def start(
             self,
             serial_port: Optional[str] = None,
@@ -565,9 +537,6 @@ disable_encryption: true
                 })
             except Exception:
                 pass
-
-        # ── 0. RTS reset — Jedi probing may leave CPC dirty ──
-        self._reset_dongle(port)
 
         # ── 1. cpcd — must be first, owns serial port ──────────────────
         cpcd = ManagedDaemon(
