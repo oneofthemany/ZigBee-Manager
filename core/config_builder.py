@@ -92,15 +92,35 @@ class ConfigBuilderMixin:
             "flow_control": defaults["flow_control"] if is_auto_flow else raw_flow,
         }
 
-    async def _probe_with_jedi(self, progress_cb=None) -> dict:
-        """
-        Use Dongle Jedi to probe the serial port.
+    @staticmethod
+    def _rts_reset(port: str):
+        """RTS pin reset — boots EFR32 into clean application state."""
+        try:
+            import serial as _serial
+            ser = _serial.Serial()
+            ser.port = port
+            ser.baudrate = 115200
+            ser.dtr = False
+            ser.rts = False
+            ser.open()
+            ser.rts = True
+            import time as _time
+            _time.sleep(0.1)
+            ser.rts = False
+            _time.sleep(0.8)
+            ser.close()
+            logging.getLogger("core.config").info(f"RTS reset on {port} — dongle ready")
+        except Exception as e:
+            logging.getLogger("core.config").debug(f"RTS reset on {port} skipped: {e}")
 
-        DongleJedi runs the blocking serial interrogator in a thread pool.
-        It sends actual EZSP/ZNP/deCONZ protocol frames and returns the
-        adapter family, working baud rate, and flow control.
-        """
+    async def _probe_with_jedi(self, progress_cb=None) -> dict:
         logger.info(f"Auto-detecting radio on {self.port} using Dongle Jedi...")
+
+        # RTS reset — ensure dongle is in a clean state before probing.
+        # Prior cpcd crash or interrupted Jedi scan can leave CPC dirty.
+        if not self._is_socket_path():
+            self._rts_reset(self.port)
+
         t0 = time.monotonic()
 
         try:
