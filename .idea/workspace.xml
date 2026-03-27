@@ -4,7 +4,9 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="workspace update" />
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="new dynamic device - WIP test">
+      <change beforePath="$PROJECT_DIR$/build.sh" beforeDir="false" afterPath="$PROJECT_DIR$/build.sh" afterDir="false" />
+    </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -143,22 +145,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00081" summary="space removed">
-      <option name="closed" value="true" />
-      <created>1774286947554</created>
-      <option name="number" value="00081" />
-      <option name="presentableId" value="LOCAL-00081" />
-      <option name="project" value="LOCAL" />
-      <updated>1774286947554</updated>
-    </task>
-    <task id="LOCAL-00082" summary="moved to root user to debug whey device wont attach to rootless container">
-      <option name="closed" value="true" />
-      <created>1774287505273</created>
-      <option name="number" value="00082" />
-      <option name="presentableId" value="LOCAL-00082" />
-      <option name="project" value="LOCAL" />
-      <updated>1774287505273</updated>
     </task>
     <task id="LOCAL-00083" summary="updated to handle auto chip detect">
       <option name="closed" value="true" />
@@ -536,7 +522,23 @@
       <option name="project" value="LOCAL" />
       <updated>1774608081238</updated>
     </task>
-    <option name="localTasksCounter" value="130" />
+    <task id="LOCAL-00130" summary="rolled back">
+      <option name="closed" value="true" />
+      <created>1774609126619</created>
+      <option name="number" value="00130" />
+      <option name="presentableId" value="LOCAL-00130" />
+      <option name="project" value="LOCAL" />
+      <updated>1774609126619</updated>
+    </task>
+    <task id="LOCAL-00131" summary="new dynamic device - WIP test">
+      <option name="closed" value="true" />
+      <created>1774609284577</created>
+      <option name="number" value="00131" />
+      <option name="presentableId" value="LOCAL-00131" />
+      <option name="project" value="LOCAL" />
+      <updated>1774609284577</updated>
+    </task>
+    <option name="localTasksCounter" value="132" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -551,8 +553,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="project updates" />
-    <MESSAGE value="new rootless patch - testing" />
     <MESSAGE value="improved service for teardown and startup" />
     <MESSAGE value="workspace" />
     <MESSAGE value="adding in dongle jedi core" />
@@ -576,7 +576,9 @@
     <MESSAGE value="workspace sommit" />
     <MESSAGE value="missing jedi declaration in cpcd config" />
     <MESSAGE value="workspace update" />
-    <option name="LAST_COMMIT_MESSAGE" value="workspace update" />
+    <MESSAGE value="rolled back" />
+    <MESSAGE value="new dynamic device - WIP test" />
+    <option name="LAST_COMMIT_MESSAGE" value="new dynamic device - WIP test" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>

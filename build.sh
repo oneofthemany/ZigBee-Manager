@@ -578,64 +578,19 @@ install_autostart() {
         return
     fi
 
-    # Write device-detect helper (bakes DATA_DIR path at install time)
-    local detect_script="/usr/local/bin/zmm-detect-device.sh"
-    local config_file="${DATA_DIR}/config/config.yaml"
-
-    sudo tee "$detect_script" > /dev/null << SCRIPT
-#!/bin/bash
-# Auto-detects first available Zigbee/Matter serial device and patches config.yaml
-set -e
-CONFIG="${config_file}"
-DEVICE=""
-
-for dev in /dev/ttyUSB* /dev/ttyACM*; do
-    if [[ -c "\$dev" ]]; then
-        DEVICE="\$dev"
-        break
-    fi
-done
-
-if [[ -z "\$DEVICE" ]]; then
-    echo "zmm-detect-device: ERROR — no serial device found in /dev/ttyUSB* or /dev/ttyACM*" >&2
-    exit 1
-fi
-
-echo "zmm-detect-device: using \$DEVICE"
-
-if [[ -f "\$CONFIG" ]]; then
-    sed -i "s|port:.*|port: \$DEVICE|g" "\$CONFIG"
-    echo "zmm-detect-device: config.yaml patched with \$DEVICE"
-fi
-SCRIPT
-    sudo chmod +x "$detect_script"
-    ok "Device detect script written: ${detect_script}"
-
-    local unit_file
-    local runtime_bin
-    runtime_bin=$(command -v "$RUNTIME")
-
     if [[ "$RUNTIME" == "podman" ]]; then
-        # Root Podman → system-level unit using 'podman run' (not 'podman start')
-        # so the container is always recreated fresh — no stale device state.
-        unit_file="/etc/systemd/system/container-${CONTAINER_NAME}.service"
+        local unit_dir="$HOME/.config/systemd/user"
+        mkdir -p "$unit_dir"
 
-        local run_flags=(
-            --detach
-            --name "${CONTAINER_NAME}"
-            --publish "${HOST_PORT}:${INTERNAL_PORT}"
-            --publish "${HOST_MATTER_PORT}:${MATTER_INTERNAL_PORT}"
-            --volume "${DATA_DIR}/config:/app/config"
-            --volume "${DATA_DIR}/data:/app/data"
-            --volume "${DATA_DIR}/logs:/app/logs"
-            --privileged
-            --security-opt label=disable
-        )
-        if [[ -n "${DIALOUT_GID:-}" ]]; then
-            run_flags+=(--group-add "${DIALOUT_GID}")
-        fi
+        info "Generating podman systemd unit..."
 
-        sudo tee "$unit_file" > /dev/null << UNIT
+        "$RUNTIME" generate systemd \
+            --name "$CONTAINER_NAME" \
+            --restart-policy=always \
+            --new \
+            > "$unit_dir/container-${CONTAINER_NAME}.service" 2>/dev/null || {
+
+            cat > "$unit_dir/container-${CONTAINER_NAME}.service" << UNIT
 [Unit]
 Description=Zigbee Matter Manager Container
 After=network.target
@@ -643,23 +598,26 @@ After=network.target
 [Service]
 Restart=always
 RestartSec=10
-ExecStartPre=${detect_script}
-ExecStartPre=-${runtime_bin} rm -f ${CONTAINER_NAME}
-ExecStart=${runtime_bin} run ${run_flags[*]} ${IMAGE_NAME}:latest
-ExecStop=${runtime_bin} stop -t 15 ${CONTAINER_NAME}
+ExecStartPre=-/usr/bin/podman rm -f ${CONTAINER_NAME}
+ExecStart=/usr/bin/podman start -a ${CONTAINER_NAME}
+ExecStop=/usr/bin/podman stop -t 15 ${CONTAINER_NAME}
 
 [Install]
-WantedBy=multi-user.target
+WantedBy=default.target
 UNIT
+        }
 
-        sudo systemctl daemon-reload
-        sudo systemctl enable "container-${CONTAINER_NAME}.service"
-        ok "Root Podman system unit installed: container-${CONTAINER_NAME}.service"
+        systemctl --user daemon-reload
+        systemctl --user enable "container-${CONTAINER_NAME}.service"
 
+        if command -v loginctl &>/dev/null; then
+            loginctl enable-linger "$USER" 2>/dev/null || true
+        fi
+
+        ok "Podman user systemd unit enabled."
+        info "The container will start automatically at boot."
     else
-        # Docker: system-level unit
-        unit_file="/etc/systemd/system/${CONTAINER_NAME}.service"
-
+        local unit_file="/etc/systemd/system/${CONTAINER_NAME}.service"
         sudo tee "$unit_file" > /dev/null << UNIT
 [Unit]
 Description=Zigbee Matter Manager Container
@@ -669,20 +627,16 @@ Requires=docker.service
 [Service]
 Restart=always
 RestartSec=10
-ExecStartPre=${detect_script}
-ExecStart=${runtime_bin} start -a ${CONTAINER_NAME}
-ExecStop=${runtime_bin} stop -t 15 ${CONTAINER_NAME}
+ExecStart=/usr/bin/docker start -a ${CONTAINER_NAME}
+ExecStop=/usr/bin/docker stop -t 15 ${CONTAINER_NAME}
 
 [Install]
 WantedBy=multi-user.target
 UNIT
-
         sudo systemctl daemon-reload
         sudo systemctl enable "${CONTAINER_NAME}.service"
-        ok "Docker systemd unit installed."
+        ok "Docker systemd unit enabled."
     fi
-
-    info "The container will start automatically at boot."
 }
 
 # =============================================================================
@@ -796,7 +750,9 @@ echo -e "${BOLD}=====================================================${NC}"
 echo
 echo -e "  ${BOLD}Web Interface:${NC}  https://$(hostname -I 2>/dev/null | awk '{print $1}'):${HOST_PORT}"
 echo -e "  ${BOLD}Matter Port:${NC}    ${HOST_MATTER_PORT}"
-run_args+=(--privileged)
+if [[ -n "${USB_DEVICE:-}" ]]; then
+    echo -e "  ${BOLD}Zigbee USB:${NC}     ${USB_DEVICE}"
+fi
 echo -e "  ${BOLD}Config:${NC}         ${DATA_DIR}/config/config.yaml"
 echo -e "  ${BOLD}Logs:${NC}           ${RUNTIME} logs -f ${CONTAINER_NAME}"
 echo -e "  ${BOLD}Data:${NC}           ${DATA_DIR}/"
