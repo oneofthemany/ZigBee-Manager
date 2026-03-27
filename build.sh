@@ -581,16 +581,16 @@ install_autostart() {
     if [[ "$RUNTIME" == "podman" ]]; then
         local unit_dir="$HOME/.config/systemd/user"
         mkdir -p "$unit_dir"
+        local unit_file="$unit_dir/container-${CONTAINER_NAME}.service"
 
         info "Generating podman systemd unit..."
-
         "$RUNTIME" generate systemd \
             --name "$CONTAINER_NAME" \
             --restart-policy=always \
             --new \
-            > "$unit_dir/container-${CONTAINER_NAME}.service" 2>/dev/null || {
+            > "$unit_file" 2>/dev/null || {
 
-            cat > "$unit_dir/container-${CONTAINER_NAME}.service" << UNIT
+            cat > "$unit_file" << UNIT
 [Unit]
 Description=Zigbee Matter Manager Container
 After=network.target
@@ -606,6 +606,13 @@ ExecStop=/usr/bin/podman stop -t 15 ${CONTAINER_NAME}
 WantedBy=default.target
 UNIT
         }
+
+        # Remove any --device flags injected from the old container snapshot
+        # and replace with --privileged
+        sed -i 's|--device [^ ]* \\||g' "$unit_file"
+        sed -i 's|--security-opt label=disable|--privileged \\\n        --security-opt label=disable|' "$unit_file"
+
+        ok "Patched unit: --device removed, --privileged injected."
 
         systemctl --user daemon-reload
         systemctl --user enable "container-${CONTAINER_NAME}.service"
@@ -766,3 +773,7 @@ echo -e "    ${RUNTIME} stop ${CONTAINER_NAME}           # Stop"
 echo -e "    ${RUNTIME} start ${CONTAINER_NAME}          # Start"
 echo -e "    ${RUNTIME} rm -f ${CONTAINER_NAME}          # Remove"
 echo
+echo -e "${BOLD}=====================================================${NC}"
+echo -e "${GREEN}${BOLD}  !!! IMPORTANT NOTICE !!!${NC}"
+echo -e "${BOLD}=====================================================${NC}"
+echo -e "    To rebuild container "
