@@ -635,6 +635,11 @@ chmod 660 "\$MOUNT_PATH"
 echo "zmm-remount: \$DEVICE → \$MOUNT_PATH OK"
 SCRIPT
         sudo chmod +x "$pre_script"
+
+        # Allow script to run without password prompt from systemd user unit
+        echo "$USER ALL=(ALL) NOPASSWD: ${pre_script}" \
+            | sudo tee /etc/sudoers.d/zmm-remount > /dev/null
+        sudo chmod 440 /etc/sudoers.d/zmm-remount
         ok "Device remount script written: ${pre_script}"
 
         info "Generating podman systemd unit..."
@@ -661,8 +666,11 @@ WantedBy=default.target
 UNIT
         }
 
+        local bash_bin
+        bash_bin=$(which bash)
+
         # Inject ExecStartPre remount before the first ExecStart line
-        sed -i "/^ExecStart=/i ExecStartPre=sudo ${pre_script}" \
+        sed -i "/^ExecStart=/i ExecStartPre=${bash_bin} ${pre_script}" \
             "$unit_dir/container-${CONTAINER_NAME}.service"
 
         systemctl --user daemon-reload

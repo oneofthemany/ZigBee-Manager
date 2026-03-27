@@ -4,7 +4,7 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="roll back due to permission issues in container">
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="teardown notice added">
       <change beforePath="$PROJECT_DIR$/build.sh" beforeDir="false" afterPath="$PROJECT_DIR$/build.sh" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -145,22 +145,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00088" summary="poll control instated to fix lazy devices dropping from network">
-      <option name="closed" value="true" />
-      <created>1774342838395</created>
-      <option name="number" value="00088" />
-      <option name="presentableId" value="LOCAL-00088" />
-      <option name="project" value="LOCAL" />
-      <updated>1774342838395</updated>
-    </task>
-    <task id="LOCAL-00089" summary="zigpy's internal cluster dispatch does not reliably reach handlers for Report Attributes - fixed">
-      <option name="closed" value="true" />
-      <created>1774345112773</created>
-      <option name="number" value="00089" />
-      <option name="presentableId" value="LOCAL-00089" />
-      <option name="project" value="LOCAL" />
-      <updated>1774345112773</updated>
     </task>
     <task id="LOCAL-00090" summary="swapping payload around for contact sensors in HA">
       <option name="closed" value="true" />
@@ -538,7 +522,23 @@
       <option name="project" value="LOCAL" />
       <updated>1774612520889</updated>
     </task>
-    <option name="localTasksCounter" value="137" />
+    <task id="LOCAL-00137" summary="final attempt at survivability fo container when dongle removed">
+      <option name="closed" value="true" />
+      <created>1774613763940</created>
+      <option name="number" value="00137" />
+      <option name="presentableId" value="LOCAL-00137" />
+      <option name="project" value="LOCAL" />
+      <updated>1774613763940</updated>
+    </task>
+    <task id="LOCAL-00138" summary="teardown notice added">
+      <option name="closed" value="true" />
+      <created>1774614425315</created>
+      <option name="number" value="00138" />
+      <option name="presentableId" value="LOCAL-00138" />
+      <option name="project" value="LOCAL" />
+      <updated>1774614425315</updated>
+    </task>
+    <option name="localTasksCounter" value="139" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -553,8 +553,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="setup wizard finalised" />
-    <MESSAGE value="kill orphan pid fix for container restart" />
     <MESSAGE value="userns arg added for podman container build" />
     <MESSAGE value="minor descriptive text added for runtime mount path" />
     <MESSAGE value="multepan phase 1 test" />
@@ -578,7 +576,9 @@
     <MESSAGE value="removed as no longer required" />
     <MESSAGE value="final commit - --priv added to ensure container survivability" />
     <MESSAGE value="roll back due to permission issues in container" />
-    <option name="LAST_COMMIT_MESSAGE" value="roll back due to permission issues in container" />
+    <MESSAGE value="final attempt at survivability fo container when dongle removed" />
+    <MESSAGE value="teardown notice added" />
+    <option name="LAST_COMMIT_MESSAGE" value="teardown notice added" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
