@@ -579,18 +579,27 @@ install_autostart() {
     fi
 
     if [[ "$RUNTIME" == "podman" ]]; then
+        # Podman: generate a user-level systemd unit (no sudo needed)
         local unit_dir="$HOME/.config/systemd/user"
         mkdir -p "$unit_dir"
-        local unit_file="$unit_dir/container-${CONTAINER_NAME}.service"
 
         info "Generating podman systemd unit..."
+        # Generate the unit file
         "$RUNTIME" generate systemd \
             --name "$CONTAINER_NAME" \
             --restart-policy=always \
             --new \
-            > "$unit_file" 2>/dev/null || {
+            > "$unit_dir/container-${CONTAINER_NAME}.service" 2>/dev/null
 
-            cat > "$unit_file" << UNIT
+        # Inject device bind-mount setup before ExecStart
+        if [[ -n "${DEVICE_MOUNT_PATH:-}" ]]; then
+            local real_dev
+            real_dev=$(readlink -f "$USB_DEVICE")
+            sed -i "/^ExecStart=/i ExecStartPre=/bin/bash -c 'mountpoint -q ${DEVICE_MOUNT_PATH} || (sudo mkdir -p ${DEVICE_MOUNT_DIR} \&\& sudo touch ${DEVICE_MOUNT_PATH} \&\& sudo mount --bind ${real_dev} ${DEVICE_MOUNT_PATH} \&\& sudo chown %u ${DEVICE_MOUNT_PATH})'" \
+                "$unit_dir/container-${CONTAINER_NAME}.service"
+        fi || {
+            # Older podman: write manually
+            cat > "$unit_dir/container-${CONTAINER_NAME}.service" << UNIT
 [Unit]
 Description=Zigbee Matter Manager Container
 After=network.target
@@ -598,25 +607,22 @@ After=network.target
 [Service]
 Restart=always
 RestartSec=10
+ExecStartPre=/bin/bash -c 'mountpoint -q /mnt/devices/ttyUSB0 || (sudo touch /mnt/devices/ttyUSB0 && sudo mount --bind /dev/ttyUSB0 /mnt/devices/ttyUSB0 && sudo chown %u /mnt/devices/ttyUSB0)'
 ExecStartPre=-/usr/bin/podman rm -f ${CONTAINER_NAME}
 ExecStart=/usr/bin/podman start -a ${CONTAINER_NAME}
 ExecStop=/usr/bin/podman stop -t 15 ${CONTAINER_NAME}
+
+ExecStopPost=/bin/bash -c 'mountpoint -q /mnt/devices/ttyUSB0 && sudo umount /mnt/devices/ttyUSB0 && rm -f /mnt/devices/ttyUSB0 || true'
 
 [Install]
 WantedBy=default.target
 UNIT
         }
 
-        # Remove any --device flags injected from the old container snapshot
-        # and replace with --privileged
-        sed -i 's|--device [^ ]* \\||g' "$unit_file"
-        sed -i 's|--security-opt label=disable|--privileged \\\n        --security-opt label=disable|' "$unit_file"
-
-        ok "Patched unit: --device removed, --privileged injected."
-
         systemctl --user daemon-reload
         systemctl --user enable "container-${CONTAINER_NAME}.service"
 
+        # Enable lingering so user units start at boot (not just at login)
         if command -v loginctl &>/dev/null; then
             loginctl enable-linger "$USER" 2>/dev/null || true
         fi
@@ -624,6 +630,7 @@ UNIT
         ok "Podman user systemd unit enabled."
         info "The container will start automatically at boot."
     else
+        # Docker: system-level unit
         local unit_file="/etc/systemd/system/${CONTAINER_NAME}.service"
         sudo tee "$unit_file" > /dev/null << UNIT
 [Unit]
@@ -773,7 +780,3 @@ echo -e "    ${RUNTIME} stop ${CONTAINER_NAME}           # Stop"
 echo -e "    ${RUNTIME} start ${CONTAINER_NAME}          # Start"
 echo -e "    ${RUNTIME} rm -f ${CONTAINER_NAME}          # Remove"
 echo
-echo -e "${BOLD}=====================================================${NC}"
-echo -e "${GREEN}${BOLD}  !!! IMPORTANT NOTICE !!!${NC}"
-echo -e "${BOLD}=====================================================${NC}"
-echo -e "    To rebuild container "
