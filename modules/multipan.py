@@ -61,6 +61,7 @@ class ManagedDaemon:
             ready_markers: list[str] | None = None,
             fatal_markers: list[str] | None = None,
             restart_on_fatal: bool = False,
+            require_ready: bool = False,
     ):
         self.name = name
         self.command = command
@@ -80,6 +81,7 @@ class ManagedDaemon:
         self._fatal_regexes = [re.compile(p, re.IGNORECASE) for p in (fatal_markers or [])]
         self._fatal_seen = False
         self.restart_on_fatal = restart_on_fatal
+        self.require_ready = require_ready
 
         self._process: asyncio.subprocess.Process | None = None
         self._monitor_task: asyncio.Task | None = None
@@ -149,6 +151,13 @@ class ManagedDaemon:
                     )
                     logger.info(f"[{self.name}] Ready")
                 except asyncio.TimeoutError:
+                    if self.require_ready:
+                        logger.error(
+                            f"[{self.name}] Ready marker '{self.ready_marker}' not seen "
+                            f"within {self.ready_timeout}s — aborting"
+                        )
+                        self._running = False
+                        return False
                     logger.warning(
                         f"[{self.name}] Ready marker '{self.ready_marker}' not seen "
                         f"within {self.ready_timeout}s — proceeding anyway"
@@ -448,7 +457,7 @@ uart_device_file: {serial_port}
 uart_device_baud: {baudrate}
 uart_hardflow: {fc_value}
 disable_encryption: true
-reset_sequence: false
+reset_sequence: true
 """
 
         with open(config_path, "w") as f:
@@ -592,7 +601,8 @@ reset_sequence: false
             name="cpcd",
             command=self._build_cpcd_command(port),
             ready_marker="Daemon is ready",
-            ready_timeout=15.0,
+            ready_timeout=30.0,
+            require_ready=True,
         )
         self._daemons["cpcd"] = cpcd
 

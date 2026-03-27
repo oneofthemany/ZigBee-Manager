@@ -726,6 +726,9 @@ class CPCMultiPANProbe:
             print(" timeout")
 
         # --- Capabilities ---
+        # PROP_CAPABILITIES is a CPC transport-layer register (encryption,
+        # flow-control, GPIO-reset etc.) — NOT a protocol-capability register.
+        # Display raw hex only to avoid misleading Zigbee/Thread/Matter labels.
         print("  │ Query capabilities...", end="", flush=True)
         frame = cls._build_prop_get(cls.PROP_CAPABILITIES)
         resp = safe_write_read(ser, frame, read_len=128, delay=0.3)
@@ -734,29 +737,10 @@ class CPCMultiPANProbe:
             if hdlc_frames and hdlc_frames[0]["payload"]:
                 payload = hdlc_frames[0]["payload"]
                 cap_data = payload[2:] if len(payload) >= 3 else payload
-                raw_caps = int.from_bytes(cap_data[:4], "little") if cap_data else 0
-                print(f" │ Capabilities raw=0x{raw_caps:08X}")
-                cap_names = []
-                if raw_caps & 0x01: cap_names.append("Zigbee")
-                if raw_caps & 0x02: cap_names.append("Thread")
-                if raw_caps & 0x04: cap_names.append("BLE")
-                if raw_caps & 0x08: cap_names.append("Matter")
-                info.extra["Capabilities"] = ", ".join(cap_names) if cap_names else f"0x{raw_caps:08X}"
-                print(f" │ Query capabilities... {info.extra['Capabilities'] or 'empty'}")
-
                 if cap_data:
-                    caps = int.from_bytes(cap_data[:min(4, len(cap_data))], "little")
-                    cap_names = []
-                    if caps & 0x01:
-                        cap_names.append("Zigbee")
-                    if caps & 0x02:
-                        cap_names.append("Thread")
-                    if caps & 0x04:
-                        cap_names.append("BLE")
-                    if caps & 0x08:
-                        cap_names.append("Matter")
-                    info.extra["Capabilities"] = ", ".join(cap_names) if cap_names else f"0x{caps:08X}"
-                    print(f" {info.extra['Capabilities']}")
+                    raw_caps = int.from_bytes(cap_data[:min(4, len(cap_data))], "little")
+                    info.extra["Capabilities"] = f"0x{raw_caps:08X}"
+                    print(f" raw=0x{raw_caps:08X}")
                 else:
                     print(" empty")
             else:

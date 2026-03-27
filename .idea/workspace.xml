@@ -4,8 +4,10 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="updated to show location of teardown script and changed text to red">
-      <change beforePath="$PROJECT_DIR$/static/css/setup-wizard.css" beforeDir="false" afterPath="$PROJECT_DIR$/static/css/setup-wizard.css" afterDir="false" />
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="-n added for no passwd">
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/modules/dongle_jedi_core.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/dongle_jedi_core.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/modules/multipan.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/multipan.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -145,30 +147,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00092" summary="workspace updated">
-      <option name="closed" value="true" />
-      <created>1774345190456</created>
-      <option name="number" value="00092" />
-      <option name="presentableId" value="LOCAL-00092" />
-      <option name="project" value="LOCAL" />
-      <updated>1774345190456</updated>
-    </task>
-    <task id="LOCAL-00093" summary="debug logger fixes for duckdb and new sort by columns">
-      <option name="closed" value="true" />
-      <created>1774347026556</created>
-      <option name="number" value="00093" />
-      <option name="presentableId" value="LOCAL-00093" />
-      <option name="project" value="LOCAL" />
-      <updated>1774347026556</updated>
-    </task>
-    <task id="LOCAL-00094" summary="adding switches to device status">
-      <option name="closed" value="true" />
-      <created>1774347435142</created>
-      <option name="number" value="00094" />
-      <option name="presentableId" value="LOCAL-00094" />
-      <option name="project" value="LOCAL" />
-      <updated>1774347435142</updated>
     </task>
     <task id="LOCAL-00095" summary="chown all dirs">
       <option name="closed" value="true" />
@@ -538,7 +516,31 @@
       <option name="project" value="LOCAL" />
       <updated>1774615992902</updated>
     </task>
-    <option name="localTasksCounter" value="141" />
+    <task id="LOCAL-00141" summary="dark mode fix for beetxt">
+      <option name="closed" value="true" />
+      <created>1774617284512</created>
+      <option name="number" value="00141" />
+      <option name="presentableId" value="LOCAL-00141" />
+      <option name="project" value="LOCAL" />
+      <updated>1774617284512</updated>
+    </task>
+    <task id="LOCAL-00142" summary="sudo fix for umount of conatiner">
+      <option name="closed" value="true" />
+      <created>1774617430960</created>
+      <option name="number" value="00142" />
+      <option name="presentableId" value="LOCAL-00142" />
+      <option name="project" value="LOCAL" />
+      <updated>1774617430960</updated>
+    </task>
+    <task id="LOCAL-00143" summary="-n added for no passwd">
+      <option name="closed" value="true" />
+      <created>1774617755595</created>
+      <option name="number" value="00143" />
+      <option name="presentableId" value="LOCAL-00143" />
+      <option name="project" value="LOCAL" />
+      <updated>1774617755595</updated>
+    </task>
+    <option name="localTasksCounter" value="144" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -553,9 +555,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="multepan phase 1 test" />
-    <MESSAGE value="updated topic to be in line with new application capabilty" />
-    <MESSAGE value="improving start spectrum to mitigate disablement due to length CPC scans" />
     <MESSAGE value="update container to run slim bookworm" />
     <MESSAGE value="new multipan updates - WIP" />
     <MESSAGE value="baudrate fix" />
@@ -578,7 +577,10 @@
     <MESSAGE value="teardown notice added" />
     <MESSAGE value="adding no passwd to file and updating service to use bash to run the pre_script" />
     <MESSAGE value="updated to show location of teardown script and changed text to red" />
-    <option name="LAST_COMMIT_MESSAGE" value="updated to show location of teardown script and changed text to red" />
+    <MESSAGE value="dark mode fix for beetxt" />
+    <MESSAGE value="sudo fix for umount of conatiner" />
+    <MESSAGE value="-n added for no passwd" />
+    <option name="LAST_COMMIT_MESSAGE" value="-n added for no passwd" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
