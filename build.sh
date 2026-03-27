@@ -579,26 +579,71 @@ install_autostart() {
     fi
 
     if [[ "$RUNTIME" == "podman" ]]; then
-        # Podman: generate a user-level systemd unit (no sudo needed)
         local unit_dir="$HOME/.config/systemd/user"
         mkdir -p "$unit_dir"
 
+        # Write the ExecStartPre helper script
+        local pre_script="/usr/local/bin/zmm-remount-device.sh"
+        local mount_path="/mnt/devices/ttyUSB0"
+        local invoking_uid
+        invoking_uid=$(id -u)
+        local invoking_gid
+        invoking_gid="${DIALOUT_GID:-$(id -g)}"
+
+        sudo tee "$pre_script" > /dev/null << SCRIPT
+#!/bin/bash
+# Recreates the bind mount at the fixed path the container was built with.
+# Scans for any /dev/ttyUSB* or /dev/ttyACM* and mounts the first found
+# at /mnt/devices/ttyUSB0 — the path baked into the container config.
+set -e
+
+MOUNT_PATH="${mount_path}"
+MOUNT_DIR="\$(dirname \$MOUNT_PATH)"
+DEVICE=""
+
+for dev in /dev/ttyUSB* /dev/ttyACM*; do
+    if [[ -c "\$dev" ]]; then
+        DEVICE="\$dev"
+        break
+    fi
+done
+
+if [[ -z "\$DEVICE" ]]; then
+    echo "zmm-remount: ERROR — no serial device found" >&2
+    exit 1
+fi
+
+echo "zmm-remount: found \$DEVICE"
+
+# Tear down stale mount if present
+if mountpoint -q "\$MOUNT_PATH" 2>/dev/null; then
+    echo "zmm-remount: unmounting stale \$MOUNT_PATH"
+    umount "\$MOUNT_PATH"
+fi
+
+# Ensure mount dir and mount point file exist
+mkdir -p "\$MOUNT_DIR"
+touch "\$MOUNT_PATH"
+
+# Bind-mount the found device at the fixed path
+mount --bind "\$DEVICE" "\$MOUNT_PATH"
+
+# Set ownership so rootless Podman can access it
+chown ${invoking_uid}:${invoking_gid} "\$MOUNT_PATH"
+chmod 660 "\$MOUNT_PATH"
+
+echo "zmm-remount: \$DEVICE → \$MOUNT_PATH OK"
+SCRIPT
+        sudo chmod +x "$pre_script"
+        ok "Device remount script written: ${pre_script}"
+
         info "Generating podman systemd unit..."
-        # Generate the unit file
         "$RUNTIME" generate systemd \
             --name "$CONTAINER_NAME" \
             --restart-policy=always \
             --new \
-            > "$unit_dir/container-${CONTAINER_NAME}.service" 2>/dev/null
+            > "$unit_dir/container-${CONTAINER_NAME}.service" 2>/dev/null || {
 
-        # Inject device bind-mount setup before ExecStart
-        if [[ -n "${DEVICE_MOUNT_PATH:-}" ]]; then
-            local real_dev
-            real_dev=$(readlink -f "$USB_DEVICE")
-            sed -i "/^ExecStart=/i ExecStartPre=/bin/bash -c 'mountpoint -q ${DEVICE_MOUNT_PATH} || (sudo mkdir -p ${DEVICE_MOUNT_DIR} \&\& sudo touch ${DEVICE_MOUNT_PATH} \&\& sudo mount --bind ${real_dev} ${DEVICE_MOUNT_PATH} \&\& sudo chown %u ${DEVICE_MOUNT_PATH})'" \
-                "$unit_dir/container-${CONTAINER_NAME}.service"
-        fi || {
-            # Older podman: write manually
             cat > "$unit_dir/container-${CONTAINER_NAME}.service" << UNIT
 [Unit]
 Description=Zigbee Matter Manager Container
@@ -607,22 +652,22 @@ After=network.target
 [Service]
 Restart=always
 RestartSec=10
-ExecStartPre=/bin/bash -c 'mountpoint -q /mnt/devices/ttyUSB0 || (sudo touch /mnt/devices/ttyUSB0 && sudo mount --bind /dev/ttyUSB0 /mnt/devices/ttyUSB0 && sudo chown %u /mnt/devices/ttyUSB0)'
 ExecStartPre=-/usr/bin/podman rm -f ${CONTAINER_NAME}
 ExecStart=/usr/bin/podman start -a ${CONTAINER_NAME}
 ExecStop=/usr/bin/podman stop -t 15 ${CONTAINER_NAME}
-
-ExecStopPost=/bin/bash -c 'mountpoint -q /mnt/devices/ttyUSB0 && sudo umount /mnt/devices/ttyUSB0 && rm -f /mnt/devices/ttyUSB0 || true'
 
 [Install]
 WantedBy=default.target
 UNIT
         }
 
+        # Inject ExecStartPre remount before the first ExecStart line
+        sed -i "/^ExecStart=/i ExecStartPre=sudo ${pre_script}" \
+            "$unit_dir/container-${CONTAINER_NAME}.service"
+
         systemctl --user daemon-reload
         systemctl --user enable "container-${CONTAINER_NAME}.service"
 
-        # Enable lingering so user units start at boot (not just at login)
         if command -v loginctl &>/dev/null; then
             loginctl enable-linger "$USER" 2>/dev/null || true
         fi
@@ -630,7 +675,6 @@ UNIT
         ok "Podman user systemd unit enabled."
         info "The container will start automatically at boot."
     else
-        # Docker: system-level unit
         local unit_file="/etc/systemd/system/${CONTAINER_NAME}.service"
         sudo tee "$unit_file" > /dev/null << UNIT
 [Unit]

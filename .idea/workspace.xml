@@ -4,7 +4,9 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="final commit - --priv added to ensure container survivability" />
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="roll back due to permission issues in container">
+      <change beforePath="$PROJECT_DIR$/build.sh" beforeDir="false" afterPath="$PROJECT_DIR$/build.sh" afterDir="false" />
+    </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -143,14 +145,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00087" summary="if then fix for [] elements">
-      <option name="closed" value="true" />
-      <created>1774342418539</created>
-      <option name="number" value="00087" />
-      <option name="presentableId" value="LOCAL-00087" />
-      <option name="project" value="LOCAL" />
-      <updated>1774342418540</updated>
     </task>
     <task id="LOCAL-00088" summary="poll control instated to fix lazy devices dropping from network">
       <option name="closed" value="true" />
@@ -536,7 +530,15 @@
       <option name="project" value="LOCAL" />
       <updated>1774611723317</updated>
     </task>
-    <option name="localTasksCounter" value="136" />
+    <task id="LOCAL-00136" summary="roll back due to permission issues in container">
+      <option name="closed" value="true" />
+      <created>1774612520889</created>
+      <option name="number" value="00136" />
+      <option name="presentableId" value="LOCAL-00136" />
+      <option name="project" value="LOCAL" />
+      <updated>1774612520889</updated>
+    </task>
+    <option name="localTasksCounter" value="137" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -551,7 +553,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="setup wizard patch - WIP" />
     <MESSAGE value="setup wizard finalised" />
     <MESSAGE value="kill orphan pid fix for container restart" />
     <MESSAGE value="userns arg added for podman container build" />
@@ -576,7 +577,8 @@
     <MESSAGE value="new teardown/rebuild container for when device is unplugged" />
     <MESSAGE value="removed as no longer required" />
     <MESSAGE value="final commit - --priv added to ensure container survivability" />
-    <option name="LAST_COMMIT_MESSAGE" value="final commit - --priv added to ensure container survivability" />
+    <MESSAGE value="roll back due to permission issues in container" />
+    <option name="LAST_COMMIT_MESSAGE" value="roll back due to permission issues in container" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
