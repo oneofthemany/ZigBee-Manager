@@ -670,7 +670,7 @@ UNIT
         bash_bin=$(which bash)
 
         # Inject ExecStartPre remount before the first ExecStart line
-        sed -i "/^ExecStart=/i ExecStartPre=sudo ${bash_bin} ${pre_script}" \
+        sed -i "/^ExecStart=/i ExecStartPre=sudo -n ${bash_bin} ${pre_script}" \
             "$unit_dir/container-${CONTAINER_NAME}.service"
 
         systemctl --user daemon-reload
