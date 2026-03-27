@@ -584,21 +584,36 @@ install_autostart() {
         mkdir -p "$unit_dir"
 
         info "Generating podman systemd unit..."
-        # Generate the unit file
-        "$RUNTIME" generate systemd \
+
+        # Try to generate the unit file with the --new flag (fixes USB reconnects)
+        if "$RUNTIME" generate systemd \
             --name "$CONTAINER_NAME" \
             --restart-policy=always \
             --new \
-            > "$unit_dir/container-${CONTAINER_NAME}.service" 2>/dev/null
+            > "$unit_dir/container-${CONTAINER_NAME}.service" 2>/dev/null; then
 
-        # Inject device bind-mount setup before ExecStart
-        if [[ -n "${DEVICE_MOUNT_PATH:-}" ]]; then
-            local real_dev
-            real_dev=$(readlink -f "$USB_DEVICE")
-            sed -i "/^ExecStart=/i ExecStartPre=/bin/bash -c 'mountpoint -q ${DEVICE_MOUNT_PATH} || (sudo mkdir -p ${DEVICE_MOUNT_DIR} \&\& sudo touch ${DEVICE_MOUNT_PATH} \&\& sudo mount --bind ${real_dev} ${DEVICE_MOUNT_PATH} \&\& sudo chown %u ${DEVICE_MOUNT_PATH})'" \
-                "$unit_dir/container-${CONTAINER_NAME}.service"
-        fi || {
-            # Older podman: write manually
+            # Inject dynamic device bind-mount setup before ExecStart if used.
+            # This loops through all possible USB and ACM nodes and mounts the first active one.
+            if [[ -n "${DEVICE_MOUNT_PATH:-}" ]]; then
+                local fallback_script='for dev in /dev/ttyUSB* /dev/ttyACM*; do if [ -e "$$dev" ]; then mountpoint -q '"${DEVICE_MOUNT_PATH}"' || (sudo mkdir -p '"${DEVICE_MOUNT_DIR:-/mnt/devices}"' && sudo touch '"${DEVICE_MOUNT_PATH}"' && sudo mount --bind "$$dev" '"${DEVICE_MOUNT_PATH}"' && sudo chown %u '"${DEVICE_MOUNT_PATH}"'); break; fi; done'
+
+                sed -i "/^ExecStart=/i ExecStartPre=/bin/bash -c '${fallback_script}'" \
+                    "$unit_dir/container-${CONTAINER_NAME}.service"
+            fi
+        else
+            warn "Podman generate systemd --new failed. Writing manual unit fallback..."
+
+            # Older podman: write manually using dynamic variables
+            local dev_name
+            dev_name=$(basename "${USB_DEVICE:-ttyUSB0}")
+            local mnt_path="/mnt/devices/${dev_name}"
+
+            # Dynamic device scan logic
+            local fallback_script='for dev in /dev/ttyUSB* /dev/ttyACM*; do if [ -e "$$dev" ]; then mountpoint -q '"${mnt_path}"' || (sudo mkdir -p /mnt/devices && sudo touch '"${mnt_path}"' && sudo mount --bind "$$dev" '"${mnt_path}"' && sudo chown %u '"${mnt_path}"'); break; fi; done'
+
+            local pre_mount="ExecStartPre=/bin/bash -c '${fallback_script}'"
+            local post_umount="ExecStopPost=/bin/bash -c 'mountpoint -q ${mnt_path} && sudo umount ${mnt_path} && rm -f ${mnt_path} || true'"
+
             cat > "$unit_dir/container-${CONTAINER_NAME}.service" << UNIT
 [Unit]
 Description=Zigbee Matter Manager Container
@@ -607,17 +622,15 @@ After=network.target
 [Service]
 Restart=always
 RestartSec=10
-ExecStartPre=/bin/bash -c 'mountpoint -q /mnt/devices/ttyUSB0 || (sudo touch /mnt/devices/ttyUSB0 && sudo mount --bind /dev/ttyUSB0 /mnt/devices/ttyUSB0 && sudo chown %u /mnt/devices/ttyUSB0)'
-ExecStartPre=-/usr/bin/podman rm -f ${CONTAINER_NAME}
+${pre_mount}
 ExecStart=/usr/bin/podman start -a ${CONTAINER_NAME}
 ExecStop=/usr/bin/podman stop -t 15 ${CONTAINER_NAME}
-
-ExecStopPost=/bin/bash -c 'mountpoint -q /mnt/devices/ttyUSB0 && sudo umount /mnt/devices/ttyUSB0 && rm -f /mnt/devices/ttyUSB0 || true'
+${post_umount}
 
 [Install]
 WantedBy=default.target
 UNIT
-        }
+        fi
 
         systemctl --user daemon-reload
         systemctl --user enable "container-${CONTAINER_NAME}.service"
@@ -632,6 +645,18 @@ UNIT
     else
         # Docker: system-level unit
         local unit_file="/etc/systemd/system/${CONTAINER_NAME}.service"
+        info "Generating docker systemd unit..."
+
+        local dev_name
+        dev_name=$(basename "${USB_DEVICE:-ttyUSB0}")
+        local mnt_path="/mnt/devices/${dev_name}"
+
+        # Dynamic device scan logic for Docker
+        local fallback_script='for dev in /dev/ttyUSB* /dev/ttyACM*; do if [ -e "$$dev" ]; then mountpoint -q '"${mnt_path}"' || (mkdir -p /mnt/devices && touch '"${mnt_path}"' && mount --bind "$$dev" '"${mnt_path}"' && chown 1000:1000 '"${mnt_path}"'); break; fi; done'
+
+        local pre_mount="ExecStartPre=/bin/bash -c '${fallback_script}'"
+        local post_umount="ExecStopPost=/bin/bash -c 'mountpoint -q ${mnt_path} && umount ${mnt_path} && rm -f ${mnt_path} || true'"
+
         sudo tee "$unit_file" > /dev/null << UNIT
 [Unit]
 Description=Zigbee Matter Manager Container
@@ -641,8 +666,10 @@ Requires=docker.service
 [Service]
 Restart=always
 RestartSec=10
+${pre_mount}
 ExecStart=/usr/bin/docker start -a ${CONTAINER_NAME}
 ExecStop=/usr/bin/docker stop -t 15 ${CONTAINER_NAME}
+${post_umount}
 
 [Install]
 WantedBy=multi-user.target
