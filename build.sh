@@ -635,6 +635,7 @@ chmod 660 "\$MOUNT_PATH"
 echo "zmm-remount: \$DEVICE → \$MOUNT_PATH OK"
 SCRIPT
         sudo chmod +x "$pre_script"
+        bash_bin=$(which bash)
 
         # Allow script to run without password prompt from systemd user unit
         sudo tee /etc/sudoers.d/zmm-remount > /dev/null << EOF
