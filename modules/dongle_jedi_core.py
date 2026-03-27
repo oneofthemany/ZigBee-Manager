@@ -734,6 +734,16 @@ class CPCMultiPANProbe:
             if hdlc_frames and hdlc_frames[0]["payload"]:
                 payload = hdlc_frames[0]["payload"]
                 cap_data = payload[2:] if len(payload) >= 3 else payload
+                raw_caps = int.from_bytes(cap_data[:4], "little") if cap_data else 0
+                print(f" │ Capabilities raw=0x{raw_caps:08X}")
+                cap_names = []
+                if raw_caps & 0x01: cap_names.append("Zigbee")
+                if raw_caps & 0x02: cap_names.append("Thread")
+                if raw_caps & 0x04: cap_names.append("BLE")
+                if raw_caps & 0x08: cap_names.append("Matter")
+                info.extra["Capabilities"] = ", ".join(cap_names) if cap_names else f"0x{raw_caps:08X}"
+                print(f" │ Query capabilities... {info.extra['Capabilities'] or 'empty'}")
+
                 if cap_data:
                     caps = int.from_bytes(cap_data[:min(4, len(cap_data))], "little")
                     cap_names = []
