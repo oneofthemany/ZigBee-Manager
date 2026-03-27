@@ -330,6 +330,12 @@
     background: var(--border-color, #374151);
 }
 
+/* text */
+[data-theme="dark"] #jediBeeText {
+    color: var(--text-muted, #9ca3af) !important;
+    text-shadow: 0 0 8px var(--bg-surface, #1a1b23) !important;
+}
+
 /* Scan log */
 [data-theme="dark"] .scan-log {
     background: var(--bg-surface-sunken, #111827);

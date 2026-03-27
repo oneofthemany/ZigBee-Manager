@@ -4,8 +4,8 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="teardown notice added">
-      <change beforePath="$PROJECT_DIR$/build.sh" beforeDir="false" afterPath="$PROJECT_DIR$/build.sh" afterDir="false" />
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="updated to show location of teardown script and changed text to red">
+      <change beforePath="$PROJECT_DIR$/static/css/setup-wizard.css" beforeDir="false" afterPath="$PROJECT_DIR$/static/css/setup-wizard.css" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -145,22 +145,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00090" summary="swapping payload around for contact sensors in HA">
-      <option name="closed" value="true" />
-      <created>1774345145302</created>
-      <option name="number" value="00090" />
-      <option name="presentableId" value="LOCAL-00090" />
-      <option name="project" value="LOCAL" />
-      <updated>1774345145302</updated>
-    </task>
-    <task id="LOCAL-00091" summary="device status column improvements">
-      <option name="closed" value="true" />
-      <created>1774345174931</created>
-      <option name="number" value="00091" />
-      <option name="presentableId" value="LOCAL-00091" />
-      <option name="project" value="LOCAL" />
-      <updated>1774345174931</updated>
     </task>
     <task id="LOCAL-00092" summary="workspace updated">
       <option name="closed" value="true" />
@@ -538,7 +522,23 @@
       <option name="project" value="LOCAL" />
       <updated>1774614425315</updated>
     </task>
-    <option name="localTasksCounter" value="139" />
+    <task id="LOCAL-00139" summary="adding no passwd to file and updating service to use bash to run the pre_script">
+      <option name="closed" value="true" />
+      <created>1774615658536</created>
+      <option name="number" value="00139" />
+      <option name="presentableId" value="LOCAL-00139" />
+      <option name="project" value="LOCAL" />
+      <updated>1774615658536</updated>
+    </task>
+    <task id="LOCAL-00140" summary="updated to show location of teardown script and changed text to red">
+      <option name="closed" value="true" />
+      <created>1774615992902</created>
+      <option name="number" value="00140" />
+      <option name="presentableId" value="LOCAL-00140" />
+      <option name="project" value="LOCAL" />
+      <updated>1774615992902</updated>
+    </task>
+    <option name="localTasksCounter" value="141" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -553,8 +553,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="userns arg added for podman container build" />
-    <MESSAGE value="minor descriptive text added for runtime mount path" />
     <MESSAGE value="multepan phase 1 test" />
     <MESSAGE value="updated topic to be in line with new application capabilty" />
     <MESSAGE value="improving start spectrum to mitigate disablement due to length CPC scans" />
@@ -578,7 +576,9 @@
     <MESSAGE value="roll back due to permission issues in container" />
     <MESSAGE value="final attempt at survivability fo container when dongle removed" />
     <MESSAGE value="teardown notice added" />
-    <option name="LAST_COMMIT_MESSAGE" value="teardown notice added" />
+    <MESSAGE value="adding no passwd to file and updating service to use bash to run the pre_script" />
+    <MESSAGE value="updated to show location of teardown script and changed text to red" />
+    <option name="LAST_COMMIT_MESSAGE" value="updated to show location of teardown script and changed text to red" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
