@@ -4,8 +4,8 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="new dynamic device - WIP test">
-      <change beforePath="$PROJECT_DIR$/build.sh" beforeDir="false" afterPath="$PROJECT_DIR$/build.sh" afterDir="false" />
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="removing teardown dead weight">
+      <change afterPath="$PROJECT_DIR$/teardown.sh" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -145,14 +145,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00083" summary="updated to handle auto chip detect">
-      <option name="closed" value="true" />
-      <created>1774293895243</created>
-      <option name="number" value="00083" />
-      <option name="presentableId" value="LOCAL-00083" />
-      <option name="project" value="LOCAL" />
-      <updated>1774293895244</updated>
     </task>
     <task id="LOCAL-00084" summary="updated to handle auto chip detect">
       <option name="closed" value="true" />
@@ -538,7 +530,15 @@
       <option name="project" value="LOCAL" />
       <updated>1774609284577</updated>
     </task>
-    <option name="localTasksCounter" value="132" />
+    <task id="LOCAL-00132" summary="removing teardown dead weight">
+      <option name="closed" value="true" />
+      <created>1774610542448</created>
+      <option name="number" value="00132" />
+      <option name="presentableId" value="LOCAL-00132" />
+      <option name="project" value="LOCAL" />
+      <updated>1774610542449</updated>
+    </task>
+    <option name="localTasksCounter" value="133" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -553,7 +553,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="improved service for teardown and startup" />
     <MESSAGE value="workspace" />
     <MESSAGE value="adding in dongle jedi core" />
     <MESSAGE value="None patch fix for flow control" />
@@ -578,7 +577,8 @@
     <MESSAGE value="workspace update" />
     <MESSAGE value="rolled back" />
     <MESSAGE value="new dynamic device - WIP test" />
-    <option name="LAST_COMMIT_MESSAGE" value="new dynamic device - WIP test" />
+    <MESSAGE value="removing teardown dead weight" />
+    <option name="LAST_COMMIT_MESSAGE" value="removing teardown dead weight" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
