@@ -4,11 +4,7 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="missing jedi declaration in cpcd config">
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/modules/dongle_jedi_core.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/dongle_jedi_core.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/modules/multipan.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/multipan.py" afterDir="false" />
-    </list>
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="workspace update" />
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -147,14 +143,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00080" summary="priv to true">
-      <option name="closed" value="true" />
-      <created>1774286416595</created>
-      <option name="number" value="00080" />
-      <option name="presentableId" value="LOCAL-00080" />
-      <option name="project" value="LOCAL" />
-      <updated>1774286416595</updated>
     </task>
     <task id="LOCAL-00081" summary="space removed">
       <option name="closed" value="true" />
@@ -540,7 +528,15 @@
       <option name="project" value="LOCAL" />
       <updated>1774521765171</updated>
     </task>
-    <option name="localTasksCounter" value="129" />
+    <task id="LOCAL-00129" summary="workspace update">
+      <option name="closed" value="true" />
+      <created>1774608081238</created>
+      <option name="number" value="00129" />
+      <option name="presentableId" value="LOCAL-00129" />
+      <option name="project" value="LOCAL" />
+      <updated>1774608081238</updated>
+    </task>
+    <option name="localTasksCounter" value="130" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -555,7 +551,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="hook config builder in to the dongle jedi" />
     <MESSAGE value="project updates" />
     <MESSAGE value="new rootless patch - testing" />
     <MESSAGE value="improved service for teardown and startup" />
@@ -580,7 +575,8 @@
     <MESSAGE value="adding debug for probe result" />
     <MESSAGE value="workspace sommit" />
     <MESSAGE value="missing jedi declaration in cpcd config" />
-    <option name="LAST_COMMIT_MESSAGE" value="missing jedi declaration in cpcd config" />
+    <MESSAGE value="workspace update" />
+    <option name="LAST_COMMIT_MESSAGE" value="workspace update" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
