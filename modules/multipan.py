@@ -156,7 +156,7 @@ class ManagedDaemon:
                             f"[{self.name}] Ready marker '{self.ready_marker}' not seen "
                             f"within {self.ready_timeout}s — aborting"
                         )
-                        self._running = False
+                        await self.stop()
                         return False
                     logger.warning(
                         f"[{self.name}] Ready marker '{self.ready_marker}' not seen "
@@ -608,6 +608,7 @@ reset_sequence: true
 
         if not await cpcd.start():
             logger.error("Failed to start cpcd — cannot proceed with MultiPAN")
+            await self._stop_all()
             return False
 
         # Brief settle time for CPC endpoints to initialise

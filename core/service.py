@@ -336,6 +336,7 @@ class ZigbeeService(
                         "falling back to direct serial (may fail if "
                         "dongle has RCP firmware)"
                     )
+                    await self.multipan.stop()
                     self.multipan = None
 
             except ImportError:

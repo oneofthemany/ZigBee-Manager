@@ -4,8 +4,9 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="updates to mulitpan detection">
-      <change beforePath="$PROJECT_DIR$/build.sh" beforeDir="false" afterPath="$PROJECT_DIR$/build.sh" afterDir="false" />
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="which bash added">
+      <change beforePath="$PROJECT_DIR$/core/service.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/service.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/modules/multipan.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/multipan.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -145,14 +146,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00096" summary="requirement patches">
-      <option name="closed" value="true" />
-      <created>1774353767883</created>
-      <option name="number" value="00096" />
-      <option name="presentableId" value="LOCAL-00096" />
-      <option name="project" value="LOCAL" />
-      <updated>1774353767883</updated>
     </task>
     <task id="LOCAL-00097" summary="testing new UID GUID for container build">
       <option name="closed" value="true" />
@@ -538,7 +531,15 @@
       <option name="project" value="LOCAL" />
       <updated>1774637852996</updated>
     </task>
-    <option name="localTasksCounter" value="145" />
+    <task id="LOCAL-00145" summary="which bash added">
+      <option name="closed" value="true" />
+      <created>1774638109942</created>
+      <option name="number" value="00145" />
+      <option name="presentableId" value="LOCAL-00145" />
+      <option name="project" value="LOCAL" />
+      <updated>1774638109942</updated>
+    </task>
+    <option name="localTasksCounter" value="146" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -553,7 +554,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="new multipan updates - WIP" />
     <MESSAGE value="baudrate fix" />
     <MESSAGE value="multipan fixes" />
     <MESSAGE value="service teardown improvements" />
@@ -578,7 +578,8 @@
     <MESSAGE value="sudo fix for umount of conatiner" />
     <MESSAGE value="-n added for no passwd" />
     <MESSAGE value="updates to mulitpan detection" />
-    <option name="LAST_COMMIT_MESSAGE" value="updates to mulitpan detection" />
+    <MESSAGE value="which bash added" />
+    <option name="LAST_COMMIT_MESSAGE" value="which bash added" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
