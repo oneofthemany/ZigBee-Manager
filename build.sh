@@ -824,3 +824,9 @@ echo -e "    ${RUNTIME} stop ${CONTAINER_NAME}           # Stop"
 echo -e "    ${RUNTIME} start ${CONTAINER_NAME}          # Start"
 echo -e "    ${RUNTIME} rm -f ${CONTAINER_NAME}          # Remove"
 echo
+echo
+echo -e "${BOLD}=====================================================${NC}"
+echo -e "${GREEN}${BOLD}  !!! NOTICE !!! ${NC}"
+echo -e "${BOLD}=====================================================${NC}"
+echo
+echo -e "Should you wish to rebuild the container please use the teardown.sh script"
