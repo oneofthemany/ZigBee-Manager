@@ -44,23 +44,23 @@ logger = logging.getLogger("multipan")
 # MANAGED DAEMON — generic subprocess wrapper
 # =========================================================================
 
+# multipan.py
+import re
+
 class ManagedDaemon:
-    """
-    Generic managed subprocess wrapper.
-    Handles start, stop, log streaming, health monitoring, and auto-restart.
-
-    Follows the same pattern as EmbeddedMatterServer's subprocess management.
-    """
-
     def __init__(
             self,
             name: str,
             command: list,
-            ready_marker: Optional[str] = None,
+            ready_marker: str | None = None,
             ready_timeout: float = 30.0,
             max_restarts: int = 5,
             restart_base_delay: float = 5.0,
-            env: Optional[dict] = None,
+            env: dict | None = None,
+            *,
+            ready_markers: list[str] | None = None,
+            fatal_markers: list[str] | None = None,
+            restart_on_fatal: bool = False,
     ):
         self.name = name
         self.command = command
@@ -70,8 +70,19 @@ class ManagedDaemon:
         self.restart_base_delay = restart_base_delay
         self.env = env
 
-        self._process: Optional[asyncio.subprocess.Process] = None
-        self._monitor_task: Optional[asyncio.Task] = None
+        # multi-ready & fatal support
+        # Normalize ready markers as plain strings (case-sensitive match by default)
+        self._ready_markers = set(ready_markers or [])
+        if ready_marker:
+            self._ready_markers.add(ready_marker)
+
+        # Compile fatal markers as case-insensitive regexes for flexibility
+        self._fatal_regexes = [re.compile(p, re.IGNORECASE) for p in (fatal_markers or [])]
+        self._fatal_seen = False
+        self.restart_on_fatal = restart_on_fatal
+
+        self._process: asyncio.subprocess.Process | None = None
+        self._monitor_task: asyncio.Task | None = None
         self._running = False
         self._shutdown = False
         self._restart_count = 0
@@ -168,28 +179,47 @@ class ManagedDaemon:
             return False
 
     async def _monitor(self):
-        """Stream stdout to logger and handle restarts on crash."""
+        """Stream stdout to logger and handle restarts on crash/fatal markers."""
         try:
             while self._process and self._process.stdout:
                 line = await self._process.stdout.readline()
                 if not line:
                     break
-                text = line.decode("utf-8", errors="replace").rstrip()
-                if text:
-                    # Check for ready marker
-                    if self.ready_marker and self.ready_marker in text:
-                        self._ready_event.set()
 
-                    # Route to appropriate log level
-                    text_upper = text.upper()
-                    if "ERROR" in text_upper or "CRITICAL" in text_upper:
-                        logger.error(f"[{self.name}] {text}")
-                    elif "WARN" in text_upper:
-                        logger.warning(f"[{self.name}] {text}")
-                    elif "DEBUG" in text_upper:
-                        logger.debug(f"[{self.name}] {text}")
-                    else:
-                        logger.info(f"[{self.name}] {text}")
+                text = line.decode("utf-8", errors="replace").rstrip()
+                if not text:
+                    continue
+
+                # 1) Check for any ready marker (support multiple)
+                if self._ready_markers:
+                    for marker in self._ready_markers:
+                        if marker and marker in text:
+                            self._ready_event.set()
+                            break
+
+                # 2) Fatal marker detection (regex, case-insensitive)
+                if self._fatal_regexes and any(rx.search(text) for rx in self._fatal_regexes):
+                    logger.error(f"[{self.name}] Fatal: {text}")
+                    self._fatal_seen = True
+                    # Terminate the process and stop monitoring immediately
+                    try:
+                        if self._process and self._process.returncode is None:
+                            self._process.terminate()
+                    except Exception:
+                        pass
+                    # No more streaming; let the restart logic decide
+                    break
+
+                # 3) Route to appropriate log level
+                text_upper = text.upper()
+                if "ERROR" in text_upper or "CRITICAL" in text_upper:
+                    logger.error(f"[{self.name}] {text}")
+                elif "WARN" in text_upper:
+                    logger.warning(f"[{self.name}] {text}")
+                elif "DEBUG" in text_upper:
+                    logger.debug(f"[{self.name}] {text}")
+                else:
+                    logger.info(f"[{self.name}] {text}")
 
             # Process ended — wait for exit code
             if self._process:
@@ -198,13 +228,19 @@ class ManagedDaemon:
 
             self._running = False
 
-            # Auto-restart (unless we're shutting down)
-            if not self._shutdown and self._restart_count < self.max_restarts:
+            # 4) Decide about restart
+            if self._shutdown:
+                return
+
+            # If we saw a fatal marker and restarts are disabled for fatal, bail out
+            if self._fatal_seen and not self.restart_on_fatal:
+                logger.error(f"[{self.name}] Fatal condition encountered — not restarting")
+                return
+
+            # Regular bounded backoff restart path
+            if self._restart_count < self.max_restarts:
                 self._restart_count += 1
-                delay = min(
-                    self.restart_base_delay * self._restart_count,
-                    30.0
-                )
+                delay = min(self.restart_base_delay * self._restart_count, 30.0)
                 logger.info(
                     f"[{self.name}] Restarting in {delay:.0f}s "
                     f"(attempt {self._restart_count}/{self.max_restarts})"
@@ -212,11 +248,11 @@ class ManagedDaemon:
                 await asyncio.sleep(delay)
                 if not self._shutdown:
                     self._ready_event.clear()
+                    self._fatal_seen = False  # reset fatal flag before respawn
                     await self._spawn()
-            elif not self._shutdown:
+            else:
                 logger.error(
-                    f"[{self.name}] Exceeded max restarts "
-                    f"({self.max_restarts}), giving up"
+                    f"[{self.name}] Exceeded max restarts ({self.max_restarts}), giving up"
                 )
 
         except asyncio.CancelledError:
@@ -352,6 +388,15 @@ class MultiPanManager:
     # CONFIG FILE GENERATION
     # =========================================================================
 
+    async def _wait_for_file(self, path: str, timeout: float = 20.0) -> bool:
+        """Wait until a file/socket path exists."""
+        deadline = asyncio.get_event_loop().time() + timeout
+        while asyncio.get_event_loop().time() < deadline:
+            if os.path.exists(path):
+                return True
+            await asyncio.sleep(0.5)
+        return False
+
     def _ensure_config_dir(self) -> str:
         """Create a temporary directory for generated config files."""
         if not self._generated_config_dir:
@@ -403,6 +448,7 @@ uart_device_file: {serial_port}
 uart_device_baud: {baudrate}
 uart_hardflow: {fc_value}
 disable_encryption: true
+reset_sequence: false
 """
 
         with open(config_path, "w") as f:
@@ -434,23 +480,21 @@ disable_encryption: true
         return cmd
 
     def _build_socat_command(self) -> list:
-        """
-        Build socat command to bridge zigbeed's PTY to a TCP socket.
+        """Create a PTY for zigbeed and bridge it to a TCP listener.
 
-        zigbeed exposes its EZSP interface on a PTY (pseudo-terminal).
-        socat bridges that to a TCP port that bellows can connect to.
-        This is the standard approach used by SiLabs' own Docker images.
-
-        The PTY path is typically /tmp/zigbeed_socket or created by zigbeed.
-        socat creates a TCP listener on the configured port.
+        zigbeed will open the PTY path (ezsp-interface in zigbeed.conf).
+        Our app connects to TCP 127.0.0.1:<ezsp_port>.
         """
         ezsp_port = self._zigbeed_config.get("ezsp_port", 9999)
-        pty_path = self._zigbeed_config.get("pty_path", "/tmp/zigbeed_socket")
+        # IMPORTANT: use the same path zigbeed.conf uses
+        pty_path = self._zigbeed_config.get("pty_path", "/tmp/ttyZigbeeNCP")
 
+        # Create PTY and listen on TCP. Either direction is fine; this variant
+        # creates the PTY first and then listens on TCP:
         return [
             "socat",
+            f"PTY,link={pty_path},raw,echo=0,mode=660",
             f"TCP-LISTEN:{ezsp_port},reuseaddr,fork",
-            f"UNIX-CONNECT:{pty_path}",
         ]
 
     def _build_otbr_command(self) -> list:
@@ -541,6 +585,9 @@ disable_encryption: true
                 pass
 
         # ── 1. cpcd — must be first, owns serial port ──────────────────
+        # Wait for CPC idle timeout after Jedi probing
+        logger.info("Waiting for CPC state machine to reset...")
+        await asyncio.sleep(5)
         cpcd = ManagedDaemon(
             name="cpcd",
             command=self._build_cpcd_command(port),
@@ -556,45 +603,43 @@ disable_encryption: true
         # Brief settle time for CPC endpoints to initialise
         await asyncio.sleep(1)
 
-        # ── 2. zigbeed — connects to cpcd, runs EmberZNet ─────────────
-        zigbeed = ManagedDaemon(
-            name="zigbeed",
-            command=self._build_zigbeed_command(),
-            ready_marker="EZSP",  # zigbeed logs EZSP version on startup
-            ready_timeout=20.0,
-        )
-        self._daemons["zigbeed"] = zigbeed
-
-        if not await zigbeed.start():
-            logger.error("Failed to start zigbeed — stopping cpcd")
-            await cpcd.stop()
-            return False
-
-        # Brief settle for zigbeed to create its socket
-        await asyncio.sleep(1)
-
-        # ── 3. socat — bridges zigbeed PTY to TCP for bellows ──────────
+        # 2) socat — create the PTY your zigbeed.conf references
         socat = ManagedDaemon(
             name="socat",
             command=self._build_socat_command(),
             ready_timeout=5.0,
         )
         self._daemons["socat"] = socat
-
         if not await socat.start():
-            logger.error("Failed to start socat — stopping zigbeed + cpcd")
-            await zigbeed.stop()
+            logger.error("Failed to start socat — stopping cpcd")
             await cpcd.stop()
             return False
 
-        # Verify the TCP socket is actually accepting connections
-        ezsp_port = self._zigbeed_config.get("ezsp_port", 9999)
-        if not await self._wait_for_tcp_socket("127.0.0.1", ezsp_port, timeout=10):
-            logger.error(
-                f"EZSP socket not responding on port {ezsp_port} — "
-                f"zigbeed/socat may have failed silently"
-            )
-            await self._stop_all()
+        # Wait for PTY file (taken from zigbeed.conf or config)
+        pty_path = self._zigbeed_config.get("pty_path", "/tmp/ttyZigbeeNCP")
+        if not await self._wait_for_file(pty_path, timeout=10):
+            logger.error(f"socat did not create PTY '{pty_path}' — aborting MultiPAN start")
+            await socat.stop()
+            await cpcd.stop()
+            return False
+
+        # 3) zigbeed
+        zigbeed = ManagedDaemon(
+            name="zigbeed",
+            command=self._build_zigbeed_command(),
+            ready_markers=["EZSP"],
+            ready_timeout=30.0,
+            fatal_markers=[
+                r"CPC endpoint open failed",
+                r"Init\(\) at .*spinel_driver\.cpp",
+            ],
+            restart_on_fatal=False,
+        )
+        self._daemons["zigbeed"] = zigbeed
+        if not await zigbeed.start():
+            logger.error("Failed to start zigbeed — stopping socat + cpcd")
+            await socat.stop()
+            await cpcd.stop()
             return False
 
         # ── 4. otbr-agent — Thread support (optional, non-blocking) ────
