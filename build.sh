@@ -637,8 +637,9 @@ SCRIPT
         sudo chmod +x "$pre_script"
 
         # Allow script to run without password prompt from systemd user unit
-        echo "$USER ALL=(ALL) NOPASSWD: ${bash_bin} ${pre_script}" \
-            | sudo tee /etc/sudoers.d/zmm-remount > /dev/null
+        sudo tee /etc/sudoers.d/zmm-remount > /dev/null << EOF
+                $USER ALL=(ALL) NOPASSWD: $bash_bin $pre_script
+EOF
         sudo chmod 440 /etc/sudoers.d/zmm-remount
         ok "Device remount script written: ${pre_script}"
 

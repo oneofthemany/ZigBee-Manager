@@ -584,7 +584,7 @@
     <breakpoint-manager>
       <breakpoints>
         <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
-          <url>file://$PROJECT_DIR$/../ZigBee-Manager/main.py</url>
+          <url>file://$PROJECT_DIR$/main.py</url>
           <line>15</line>
           <option name="timeStamp" value="1" />
         </line-breakpoint>
