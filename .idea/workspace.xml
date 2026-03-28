@@ -4,7 +4,7 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="reset sequence to false">
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="adding baud rate to the RTS  reset">
       <change beforePath="$PROJECT_DIR$/modules/multipan.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/multipan.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -145,22 +145,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00111" summary="kill orphan pid fix for container restart">
-      <option name="closed" value="true" />
-      <created>1774442803922</created>
-      <option name="number" value="00111" />
-      <option name="presentableId" value="LOCAL-00111" />
-      <option name="project" value="LOCAL" />
-      <updated>1774442803922</updated>
-    </task>
-    <task id="LOCAL-00112" summary="userns arg added for podman container build">
-      <option name="closed" value="true" />
-      <created>1774443250839</created>
-      <option name="number" value="00112" />
-      <option name="presentableId" value="LOCAL-00112" />
-      <option name="project" value="LOCAL" />
-      <updated>1774443250839</updated>
     </task>
     <task id="LOCAL-00113" summary="minor descriptive text added for runtime mount path">
       <option name="closed" value="true" />
@@ -538,7 +522,23 @@
       <option name="project" value="LOCAL" />
       <updated>1774727751106</updated>
     </task>
-    <option name="localTasksCounter" value="160" />
+    <task id="LOCAL-00160" summary="reset block added ahead of cpcd in start()">
+      <option name="closed" value="true" />
+      <created>1774728398377</created>
+      <option name="number" value="00160" />
+      <option name="presentableId" value="LOCAL-00160" />
+      <option name="project" value="LOCAL" />
+      <updated>1774728398377</updated>
+    </task>
+    <task id="LOCAL-00161" summary="adding baud rate to the RTS  reset">
+      <option name="closed" value="true" />
+      <created>1774728725757</created>
+      <option name="number" value="00161" />
+      <option name="presentableId" value="LOCAL-00161" />
+      <option name="project" value="LOCAL" />
+      <updated>1774728725757</updated>
+    </task>
+    <option name="localTasksCounter" value="162" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -553,8 +553,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="removed as no longer required" />
-    <MESSAGE value="final commit - --priv added to ensure container survivability" />
     <MESSAGE value="roll back due to permission issues in container" />
     <MESSAGE value="final attempt at survivability fo container when dongle removed" />
     <MESSAGE value="teardown notice added" />
@@ -578,7 +576,9 @@
     <MESSAGE value="more deps for dev" />
     <MESSAGE value="PTYTCPBridge to correct MultiPanManager init" />
     <MESSAGE value="reset sequence to false" />
-    <option name="LAST_COMMIT_MESSAGE" value="reset sequence to false" />
+    <MESSAGE value="reset block added ahead of cpcd in start()" />
+    <MESSAGE value="adding baud rate to the RTS  reset" />
+    <option name="LAST_COMMIT_MESSAGE" value="adding baud rate to the RTS  reset" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>

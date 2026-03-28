@@ -542,33 +542,43 @@ reset_sequence: false
     # =========================================================================
 
     @staticmethod
-    def _reset_serial_state(port: str, baudrate: int = 230400) -> bool:
+    def _reset_serial_state(port: str, baudrate: int = 115200) -> bool:
         """
-        Reset the serial port state to clear dirty CPC state from Jedi probing.
+        Reset the MG24 chip via RTS-only toggle, keeping DTR deasserted.
 
-        Uses serial break + buffer flush instead of USB device reset.
-        USB reset causes device re-enumeration which breaks bind-mounted
-        device paths in rootless Podman containers.
+        On CP210x-based dongles (Sonoff MG24):
+          - RTS → RESETn (active low)
+          - DTR → PB01 (boot pin — asserted during reset = bootloader)
+
+        We toggle RTS only so the chip resets into application mode.
         """
         import serial as pyserial
+        import time
 
         try:
             ser = pyserial.Serial(port, baudrate, timeout=1)
-            # Send break to reset UART framing on the MG24
-            ser.send_break(duration=0.25)
+
+            # Ensure boot pin is NOT asserted
+            ser.dtr = False
+            time.sleep(0.05)
+
+            # Assert reset
+            ser.rts = True
+            time.sleep(0.1)
+
+            # Release reset — chip boots into application firmware
+            ser.rts = False
+            time.sleep(1.5)
+
+            # Flush boot garbage
             ser.reset_input_buffer()
             ser.reset_output_buffer()
-            # Brief pause then close cleanly
-            import time
-            time.sleep(0.5)
-            ser.dtr = False
-            ser.rts = False
-            time.sleep(0.1)
+
             ser.close()
-            logger.info(f"Serial state reset completed for {port}")
+            logger.info(f"Chip reset (RTS-only) completed for {port}")
             return True
         except Exception as e:
-            logger.warning(f"Serial state reset failed: {e}")
+            logger.warning(f"Chip reset failed: {e}")
             return False
 
     # =========================================================================
