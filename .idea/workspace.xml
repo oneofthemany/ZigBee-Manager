@@ -4,7 +4,8 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="cpc clean up fixes">
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="moved _usb_reset_serial_device above lifecycle">
+      <change beforePath="$PROJECT_DIR$/build.sh" beforeDir="false" afterPath="$PROJECT_DIR$/build.sh" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/modules/multipan.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/multipan.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -145,14 +146,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00098" summary="more changes to try and get container buikd successfull">
-      <option name="closed" value="true" />
-      <created>1774355234175</created>
-      <option name="number" value="00098" />
-      <option name="presentableId" value="LOCAL-00098" />
-      <option name="project" value="LOCAL" />
-      <updated>1774355234176</updated>
     </task>
     <task id="LOCAL-00099" summary="new setup wizard with dongle jedi">
       <option name="closed" value="true" />
@@ -538,7 +531,15 @@
       <option name="project" value="LOCAL" />
       <updated>1774692944108</updated>
     </task>
-    <option name="localTasksCounter" value="147" />
+    <task id="LOCAL-00147" summary="moved _usb_reset_serial_device above lifecycle">
+      <option name="closed" value="true" />
+      <created>1774693556881</created>
+      <option name="number" value="00147" />
+      <option name="presentableId" value="LOCAL-00147" />
+      <option name="project" value="LOCAL" />
+      <updated>1774693556881</updated>
+    </task>
+    <option name="localTasksCounter" value="148" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -553,7 +554,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="multipan fixes" />
     <MESSAGE value="service teardown improvements" />
     <MESSAGE value="rolled back as reset was not the issue" />
     <MESSAGE value="rolled back service teardown due to coding error and application failure" />
@@ -578,7 +578,8 @@
     <MESSAGE value="updates to mulitpan detection" />
     <MESSAGE value="which bash added" />
     <MESSAGE value="cpc clean up fixes" />
-    <option name="LAST_COMMIT_MESSAGE" value="cpc clean up fixes" />
+    <MESSAGE value="moved _usb_reset_serial_device above lifecycle" />
+    <option name="LAST_COMMIT_MESSAGE" value="moved _usb_reset_serial_device above lifecycle" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>

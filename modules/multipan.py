@@ -645,19 +645,35 @@ reset_sequence: false
                 pass
 
         # ── 1. cpcd — must be first, owns serial port ──────────────────
-        # Jedi's CPC probe (SABM/property-get/DISC frames) leaves the
-        # dongle's CPC state machine dirty.
+        # Jedi's CPC probe leaves the dongle's CPC state machine dirty.
+        # USB reset forces the chip back to a clean state.
         logger.info("Resetting USB device to clear CPC state from Jedi probe...")
         if self._usb_reset_serial_device(port):
             logger.info("USB reset successful — waiting for re-enumeration...")
             await asyncio.sleep(3)
-            # Verify device is back
             if not await self._wait_for_file(port, timeout=10):
                 logger.error(f"Serial port {port} did not reappear after USB reset")
                 return False
         else:
             logger.warning("USB reset not available — falling back to idle wait")
             await asyncio.sleep(10)
+
+        cpcd = ManagedDaemon(
+            name="cpcd",
+            command=self._build_cpcd_command(port),
+            ready_marker="Daemon is ready",
+            ready_timeout=30.0,
+            require_ready=True,
+        )
+        self._daemons["cpcd"] = cpcd
+
+        if not await cpcd.start():
+            logger.error("Failed to start cpcd — cannot proceed with MultiPAN")
+            await self._stop_all()
+            return False
+
+        # Brief settle time for CPC endpoints to initialise
+        await asyncio.sleep(1)
 
         # 2) socat — create the PTY your zigbeed.conf references
         socat = ManagedDaemon(
