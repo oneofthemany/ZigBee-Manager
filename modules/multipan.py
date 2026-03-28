@@ -633,6 +633,13 @@ reset_sequence: false
 
         # Reset chip via RTS-only (avoids bootloader entry from DTR+RTS)
         logger.info("Resetting chip via RTS-only toggle...")
+        jedi = jedi_result or {}
+        baud = int(
+            jedi.get("baudrate")
+            or jedi.get("baud_rate")
+            or self._cpcd_config.get("baudrate")
+            or 115200
+        )
         self._reset_serial_state(port, baudrate=baud)
         await asyncio.sleep(2)
 
