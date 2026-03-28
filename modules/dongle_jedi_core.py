@@ -1750,41 +1750,48 @@ class ZigbeeInterrogator:
                 break
 
         # ── USB product string pre-detection for CPC/RCP devices ──
-        # Known RCP firmware dongles are identified by USB product string
-        # WITHOUT sending any CPC frames. This keeps the dongle's CPC state
-        # machine clean so cpcd can connect immediately.
         if _usb_info and _usb_info.product:
             product_lower = _usb_info.product.lower()
-            is_rcp_dongle = (
+            is_mg24_dongle = (
                     "mg24" in product_lower
                     or ("multipan" in product_lower.replace("-", "").replace(" ", ""))
                     or ("rcp" in product_lower and "sonoff" in (_usb_info.manufacturer or "").lower())
             )
-            if is_rcp_dongle:
-                print("  ⚡ USB product string identifies CPC/RCP device — skipping wire probe")
-                vid_pid = f"{_usb_info.vid:04X}:{_usb_info.pid:04X}" if _usb_info.vid and _usb_info.pid else ""
-                mfg = (_usb_info.manufacturer or "").lower()
-                chip = "MG24" if "mg24" in product_lower else "MG21" if "mg21" in product_lower else ""
-                if "sonoff" in product_lower or "sonoff" in mfg:
-                    board = f"SONOFF Zigbee Dongle {chip} (Multi-PAN)".strip()
-                elif "skyconnect" in product_lower or "nabu" in mfg:
-                    board = "Nabu Casa SkyConnect (Multi-PAN)"
+            if is_mg24_dongle:
+                # MG24 could be running EZSP (stock) or MultiPAN RCP.
+                # Quick EZSP probe — if it responds, it's NCP firmware, not RCP.
+                # EZSP probe is safe for CPC state (wrong protocol = no response).
+                print("  ⚡ MG24 detected — quick EZSP check before assuming MultiPAN...")
+                ezsp_ser = self._try_probe(port, 115200, FlowControl.NONE, EZSPProbe, "EZSP")
+                if ezsp_ser:
+                    ezsp_ser.close()
+                    print("  → EZSP responded — running NCP firmware, not MultiPAN")
+                    # Fall through to normal probe flow
                 else:
-                    board = f"{_usb_info.manufacturer or ''} {_usb_info.product} (Multi-PAN RCP)".strip()
+                    print("  → No EZSP response — assuming MultiPAN RCP firmware")
+                    vid_pid = f"{_usb_info.vid:04X}:{_usb_info.pid:04X}" if _usb_info.vid and _usb_info.pid else ""
+                    mfg = (_usb_info.manufacturer or "").lower()
+                    chip = "MG24" if "mg24" in product_lower else "MG21" if "mg21" in product_lower else ""
+                    if "sonoff" in product_lower or "sonoff" in mfg:
+                        board = f"SONOFF Zigbee Dongle {chip} (Multi-PAN)".strip()
+                    elif "skyconnect" in product_lower or "nabu" in mfg:
+                        board = "Nabu Casa SkyConnect (Multi-PAN)"
+                    else:
+                        board = f"{_usb_info.manufacturer or ''} {_usb_info.product} (Multi-PAN RCP)".strip()
 
-                info = AdapterInfo(
-                    port=port,
-                    baud_rate=115200,
-                    flow_control=FlowControl.NONE,
-                    adapter_family=AdapterFamily.CPC_MULTIPAN,
-                    firmware_version="CPC (detected via USB descriptor)",
-                    hardware_id=vid_pid,
-                    board_name=board,
-                )
-                info.extra["Firmware Type"] = "Multi-PAN RCP (not NCP/EZSP)"
-                info.extra["Detection Method"] = "USB product string (no wire probe)"
-                self.results.append(info)
-                return info
+                    info = AdapterInfo(
+                        port=port,
+                        baud_rate=115200,
+                        flow_control=FlowControl.NONE,
+                        adapter_family=AdapterFamily.CPC_MULTIPAN,
+                        firmware_version="CPC (detected via USB descriptor)",
+                        hardware_id=vid_pid,
+                        board_name=board,
+                    )
+                    info.extra["Firmware Type"] = "Multi-PAN RCP (not NCP/EZSP)"
+                    info.extra["Detection Method"] = "USB product string + EZSP negative probe"
+                    self.results.append(info)
+                    return info
 
         # ── Determine probe order based on USB hints ──
         likely = candidate.get("likely_family") if candidate else None

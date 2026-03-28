@@ -4,9 +4,8 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="serial break fix">
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="baud rate fixes - multipan">
       <change beforePath="$PROJECT_DIR$/modules/dongle_jedi_core.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/dongle_jedi_core.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/modules/multipan.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/multipan.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -146,14 +145,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00102" summary="project updates">
-      <option name="closed" value="true" />
-      <created>1774428829021</created>
-      <option name="number" value="00102" />
-      <option name="presentableId" value="LOCAL-00102" />
-      <option name="project" value="LOCAL" />
-      <updated>1774428829022</updated>
     </task>
     <task id="LOCAL-00103" summary="new rootless patch - testing">
       <option name="closed" value="true" />
@@ -539,7 +530,15 @@
       <option name="project" value="LOCAL" />
       <updated>1774696152053</updated>
     </task>
-    <option name="localTasksCounter" value="151" />
+    <task id="LOCAL-00151" summary="baud rate fixes - multipan">
+      <option name="closed" value="true" />
+      <created>1774700356737</created>
+      <option name="number" value="00151" />
+      <option name="presentableId" value="LOCAL-00151" />
+      <option name="project" value="LOCAL" />
+      <updated>1774700356737</updated>
+    </task>
+    <option name="localTasksCounter" value="152" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -554,7 +553,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="adding debug for probe result" />
     <MESSAGE value="workspace sommit" />
     <MESSAGE value="missing jedi declaration in cpcd config" />
     <MESSAGE value="workspace update" />
@@ -579,7 +577,8 @@
     <MESSAGE value="adding /dev/bus/usd to runtime args for container for cpcd support" />
     <MESSAGE value="further improvements for cpcd" />
     <MESSAGE value="serial break fix" />
-    <option name="LAST_COMMIT_MESSAGE" value="serial break fix" />
+    <MESSAGE value="baud rate fixes - multipan" />
+    <option name="LAST_COMMIT_MESSAGE" value="baud rate fixes - multipan" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
