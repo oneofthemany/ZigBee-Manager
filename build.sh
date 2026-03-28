@@ -544,6 +544,12 @@ run_container() {
         fi
     fi
 
+    # ── USB bus access for USBDEVFS_RESET (MultiPAN CPC state cleanup) ──
+    if [[ -d /dev/bus/usb ]]; then
+        run_args+=(-v /dev/bus/usb:/dev/bus/usb)
+        ok "Mounted /dev/bus/usb for USB device reset support"
+    fi
+
     # ── Device access: --group-add for dialout, disable SELinux label ──
     if [[ -n "${DIALOUT_GID:-}" ]]; then
         run_args+=(--group-add "${DIALOUT_GID}")
