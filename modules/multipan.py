@@ -461,7 +461,7 @@ uart_device_file: {serial_port}
 uart_device_baud: {baudrate}
 uart_hardflow: {fc_value}
 disable_encryption: true
-reset_sequence: true
+reset_sequence: false
 """
 
         with open(config_path, "w") as f:
