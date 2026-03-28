@@ -37,6 +37,8 @@ import tempfile
 from pathlib import Path
 from typing import Optional, Dict, Callable
 
+from modules.pty_bridge import PTYTCPBridge
+
 logger = logging.getLogger("multipan")
 
 
@@ -89,6 +91,7 @@ class ManagedDaemon:
         self._shutdown = False
         self._restart_count = 0
         self._ready_event = asyncio.Event()
+        self._pty_bridge: Optional[PTYTCPBridge] = None
 
     @property
     def is_running(self) -> bool:
@@ -389,7 +392,7 @@ class MultiPanManager:
             "zigbeed": zigbeed,
             "socat": socat,
             "otbr_agent": otbr,
-            "core_available": cpcd and zigbeed and socat,
+            "core_available": cpcd and zigbeed,
             "all_available": cpcd and zigbeed and socat and otbr,
         }
 
@@ -649,24 +652,16 @@ reset_sequence: true
         # Brief settle time for CPC endpoints to initialise
         await asyncio.sleep(1)
 
-        # 2) socat — create the PTY your zigbeed.conf references
-        socat = ManagedDaemon(
-            name="socat",
-            command=self._build_socat_command(),
-            ready_timeout=5.0,
-        )
-        self._daemons["socat"] = socat
-        if not await socat.start():
-            logger.error("Failed to start socat — stopping cpcd")
-            await cpcd.stop()
-            return False
-
-        # Wait for PTY file (taken from zigbeed.conf or config)
+        # 2) PTY↔TCP bridge — replaces socat, in-process
         pty_path = self._zigbeed_config.get("pty_path", "/tmp/ttyZigbeeNCP")
-        if not await self._wait_for_file(pty_path, timeout=10):
-            logger.error(f"socat did not create PTY '{pty_path}' — aborting MultiPAN start")
-            await socat.stop()
-            await cpcd.stop()
+        ezsp_port = self._zigbeed_config.get("ezsp_port", 9999)
+        self._pty_bridge = PTYTCPBridge(
+            pty_path=pty_path,
+            tcp_port=ezsp_port,
+        )
+        if not await self._pty_bridge.start():
+            logger.error("Failed to start PTY-TCP bridge — stopping cpcd")
+            await self._stop_all()
             return False
 
         # 3) zigbeed
@@ -683,9 +678,8 @@ reset_sequence: true
         )
         self._daemons["zigbeed"] = zigbeed
         if not await zigbeed.start():
-            logger.error("Failed to start zigbeed — stopping socat + cpcd")
-            await socat.stop()
-            await cpcd.stop()
+            logger.error("Failed to start zigbeed — stopping bridge + cpcd")
+            await self._stop_all()
             return False
 
         # ── 4. otbr-agent — Thread support (optional, non-blocking) ────
@@ -754,6 +748,10 @@ reset_sequence: true
 
     async def _stop_all(self):
         """Stop all daemons in reverse order."""
+        # Stop PTY bridge first (it's in-process, not a daemon)
+        if self._pty_bridge:
+            await self._pty_bridge.stop()
+            self._pty_bridge = None
         self._running = False
         for name in reversed(list(self._daemons.keys())):
             daemon = self._daemons[name]
@@ -770,12 +768,12 @@ reset_sequence: true
             self._generated_config_dir = None
 
     def get_status(self) -> dict:
-        """Return status for API/UI."""
         return {
             "enabled": True,
             "running": self._running,
             "ezsp_socket": self.ezsp_socket if self._running else None,
             "prerequisites": self.check_prerequisites(),
+            "bridge": self._pty_bridge.get_status() if self._pty_bridge else None,
             "daemons": {
                 name: daemon.get_status()
                 for name, daemon in self._daemons.items()
