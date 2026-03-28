@@ -100,6 +100,53 @@ class ManagedDaemon:
             return self._process.pid
         return None
 
+    @staticmethod
+    def _usb_reset_serial_device(port: str) -> bool:
+        """
+        Reset the USB device backing a serial port via USBDEVFS_RESET ioctl.
+
+        This forces the dongle's CPC state machine back to idle after
+        DongleJedi probing sends SABM/DISC/property-get frames that leave
+        it in an indeterminate state. Requires --privileged container.
+        """
+        import fcntl
+
+        USBDEVFS_RESET = 0x5514
+        dev_name = os.path.basename(port)
+
+        try:
+            real_device = os.path.realpath(f"/sys/class/tty/{dev_name}/device")
+            usb_dir = real_device
+            while usb_dir and usb_dir != '/':
+                busnum_path = os.path.join(usb_dir, "busnum")
+                devnum_path = os.path.join(usb_dir, "devnum")
+                if os.path.exists(busnum_path) and os.path.exists(devnum_path):
+                    with open(busnum_path) as f:
+                        busnum = int(f.read().strip())
+                    with open(devnum_path) as f:
+                        devnum = int(f.read().strip())
+
+                    usb_dev_path = f"/dev/bus/usb/{busnum:03d}/{devnum:03d}"
+                    logger.debug(f"USB reset: {port} → {usb_dev_path}")
+                    fd = os.open(usb_dev_path, os.O_WRONLY)
+                    try:
+                        fcntl.ioctl(fd, USBDEVFS_RESET, 0)
+                    finally:
+                        os.close(fd)
+                    logger.info(f"USB device reset completed for {port}")
+                    return True
+                usb_dir = os.path.dirname(usb_dir)
+
+            logger.warning(f"Could not find USB device for {port}")
+            return False
+
+        except PermissionError:
+            logger.warning("USB reset requires --privileged container")
+            return False
+        except Exception as e:
+            logger.warning(f"USB reset failed: {e}")
+            return False
+
     async def start(self) -> bool:
         """Start the daemon. Returns True when process is running (and optionally ready)."""
         if self.is_running:
@@ -457,7 +504,7 @@ uart_device_file: {serial_port}
 uart_device_baud: {baudrate}
 uart_hardflow: {fc_value}
 disable_encryption: true
-reset_sequence: true
+reset_sequence: false
 """
 
         with open(config_path, "w") as f:
@@ -594,25 +641,19 @@ reset_sequence: true
                 pass
 
         # ── 1. cpcd — must be first, owns serial port ──────────────────
-        # Wait for CPC idle timeout after Jedi probing
-        logger.info("Waiting for CPC state machine to reset...")
-        await asyncio.sleep(5)
-        cpcd = ManagedDaemon(
-            name="cpcd",
-            command=self._build_cpcd_command(port),
-            ready_marker="Daemon is ready",
-            ready_timeout=30.0,
-            require_ready=True,
-        )
-        self._daemons["cpcd"] = cpcd
-
-        if not await cpcd.start():
-            logger.error("Failed to start cpcd — cannot proceed with MultiPAN")
-            await self._stop_all()
-            return False
-
-        # Brief settle time for CPC endpoints to initialise
-        await asyncio.sleep(1)
+        # Jedi's CPC probe (SABM/property-get/DISC frames) leaves the
+        # dongle's CPC state machine dirty.
+        logger.info("Resetting USB device to clear CPC state from Jedi probe...")
+        if self._usb_reset_serial_device(port):
+            logger.info("USB reset successful — waiting for re-enumeration...")
+            await asyncio.sleep(3)
+            # Verify device is back
+            if not await self._wait_for_file(port, timeout=10):
+                logger.error(f"Serial port {port} did not reappear after USB reset")
+                return False
+        else:
+            logger.warning("USB reset not available — falling back to idle wait")
+            await asyncio.sleep(10)
 
         # 2) socat — create the PTY your zigbeed.conf references
         socat = ManagedDaemon(
