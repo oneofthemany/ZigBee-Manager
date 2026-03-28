@@ -461,7 +461,7 @@ uart_device_file: {serial_port}
 uart_device_baud: {baudrate}
 uart_hardflow: {fc_value}
 disable_encryption: true
-reset_sequence: false
+reset_sequence: true
 """
 
         with open(config_path, "w") as f:
@@ -544,42 +544,41 @@ reset_sequence: false
     @staticmethod
     def _reset_serial_state(port: str, baudrate: int = 115200) -> bool:
         """
-        Reset the MG24 chip via RTS-only toggle, keeping DTR deasserted.
+        Ensure the MG24 is in application mode, not Gecko Bootloader.
 
-        On CP210x-based dongles (Sonoff MG24):
-          - RTS → RESETn (active low)
-          - DTR → PB01 (boot pin — asserted during reset = bootloader)
-
-        We toggle RTS only so the chip resets into application mode.
+        If cpcd's reset_sequence puts the chip into bootloader (DTR+RTS),
+        sending '2' (the bootloader "run" command) boots the application.
+        Safe to send even if already in application mode (ignored as garbage).
         """
         import serial as pyserial
         import time
 
         try:
             ser = pyserial.Serial(port, baudrate, timeout=1)
+            ser.reset_input_buffer()
 
-            # Ensure boot pin is NOT asserted
-            ser.dtr = False
-            time.sleep(0.05)
+            # Send Gecko Bootloader "run" command to exit bootloader
+            # Command '2' = boot into application firmware
+            # Harmless if chip is already running application (CPC ignores it)
+            ser.write(b"2\r\n")
+            time.sleep(0.5)
 
-            # Assert reset
-            ser.rts = True
-            time.sleep(0.1)
-
-            # Release reset — chip boots into application firmware
-            ser.rts = False
+            # Also try sending a newline to trigger bootloader menu
+            # then "2" to select run — covers both menu and direct mode
+            ser.write(b"\n")
+            time.sleep(0.3)
+            ser.write(b"2\r\n")
             time.sleep(1.5)
 
-            # Flush boot garbage
             ser.reset_input_buffer()
             ser.reset_output_buffer()
-
             ser.close()
-            logger.info(f"Chip reset (RTS-only) completed for {port}")
+            logger.info(f"Bootloader exit command sent for {port}")
             return True
         except Exception as e:
-            logger.warning(f"Chip reset failed: {e}")
+            logger.warning(f"Bootloader exit failed: {e}")
             return False
+
 
     # =========================================================================
     # LIFECYCLE
