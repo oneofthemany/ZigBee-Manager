@@ -605,10 +605,22 @@ class CPCMultiPANProbe:
                             j += 1
 
                     # header(4) + hcs(2) + fcs(2) = 8 minimum
-                    if len(unstuffed) >= 6:
+                    if len(unstuffed) >= 8:
                         address = unstuffed[0]
                         length = struct.unpack("<H", unstuffed[1:3])[0]
                         control = unstuffed[3]
+
+                        # Validate HCS — reject baud-rate mismatch garbage
+                        header = bytes(unstuffed[0:4])
+                        expected_hcs = cls._crc16_ccitt(header)
+                        actual_hcs = struct.unpack("<H", unstuffed[4:6])[0]
+                        if expected_hcs != actual_hcs:
+                            logging.debug(
+                                "CPC: HCS mismatch (expected %04X, got %04X) — "
+                                "likely wrong baud rate", expected_hcs, actual_hcs
+                            )
+                            i += 1
+                            continue
 
                         # Payload is everything between HCS(4:6) and FCS(-2)
                         payload_len = min(length, len(unstuffed) - 8)
@@ -1213,7 +1225,7 @@ class ZigbeeInterrogator:
         "ezsp": [(460800, FlowControl.NONE), (115200, FlowControl.NONE),
                  (115200, FlowControl.RTSCTS), (57600, FlowControl.NONE),
                  (57600, FlowControl.RTSCTS)],
-        "cpc": [(460800, FlowControl.NONE), (115200, FlowControl.NONE),
+        "cpc": [(115200, FlowControl.NONE), (460800, FlowControl.NONE),
                 (230400, FlowControl.NONE)],
         "conbee": [(115200, FlowControl.NONE), (38400, FlowControl.NONE)],
         "zstack": [(115200, FlowControl.NONE), (115200, FlowControl.RTSCTS),
@@ -1722,6 +1734,7 @@ class ZigbeeInterrogator:
         print(f"{'─' * 60}")
 
         # Show any additional USB info from pyserial
+        _usb_info = None
         for p in serial.tools.list_ports.comports():
             if p.device == port:
                 desc_parts = []
@@ -1733,7 +1746,45 @@ class ZigbeeInterrogator:
                     desc_parts.append(f"Serial: {p.serial_number}")
                 if desc_parts:
                     print(f"  Detail : {' | '.join(desc_parts)}")
+                _usb_info = p
                 break
+
+        # ── USB product string pre-detection for CPC/RCP devices ──
+        # Known RCP firmware dongles are identified by USB product string
+        # WITHOUT sending any CPC frames. This keeps the dongle's CPC state
+        # machine clean so cpcd can connect immediately.
+        if _usb_info and _usb_info.product:
+            product_lower = _usb_info.product.lower()
+            is_rcp_dongle = (
+                    "mg24" in product_lower
+                    or ("multipan" in product_lower.replace("-", "").replace(" ", ""))
+                    or ("rcp" in product_lower and "sonoff" in (_usb_info.manufacturer or "").lower())
+            )
+            if is_rcp_dongle:
+                print("  ⚡ USB product string identifies CPC/RCP device — skipping wire probe")
+                vid_pid = f"{_usb_info.vid:04X}:{_usb_info.pid:04X}" if _usb_info.vid and _usb_info.pid else ""
+                mfg = (_usb_info.manufacturer or "").lower()
+                chip = "MG24" if "mg24" in product_lower else "MG21" if "mg21" in product_lower else ""
+                if "sonoff" in product_lower or "sonoff" in mfg:
+                    board = f"SONOFF Zigbee Dongle {chip} (Multi-PAN)".strip()
+                elif "skyconnect" in product_lower or "nabu" in mfg:
+                    board = "Nabu Casa SkyConnect (Multi-PAN)"
+                else:
+                    board = f"{_usb_info.manufacturer or ''} {_usb_info.product} (Multi-PAN RCP)".strip()
+
+                info = AdapterInfo(
+                    port=port,
+                    baud_rate=115200,
+                    flow_control=FlowControl.NONE,
+                    adapter_family=AdapterFamily.CPC_MULTIPAN,
+                    firmware_version="CPC (detected via USB descriptor)",
+                    hardware_id=vid_pid,
+                    board_name=board,
+                )
+                info.extra["Firmware Type"] = "Multi-PAN RCP (not NCP/EZSP)"
+                info.extra["Detection Method"] = "USB product string (no wire probe)"
+                self.results.append(info)
+                return info
 
         # ── Determine probe order based on USB hints ──
         likely = candidate.get("likely_family") if candidate else None

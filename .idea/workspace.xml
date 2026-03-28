@@ -4,8 +4,8 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="further improvements for cpcd">
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="serial break fix">
+      <change beforePath="$PROJECT_DIR$/modules/dongle_jedi_core.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/dongle_jedi_core.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/modules/multipan.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/multipan.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -146,14 +146,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00101" summary="hook config builder in to the dongle jedi">
-      <option name="closed" value="true" />
-      <created>1774385391770</created>
-      <option name="number" value="00101" />
-      <option name="presentableId" value="LOCAL-00101" />
-      <option name="project" value="LOCAL" />
-      <updated>1774385391771</updated>
     </task>
     <task id="LOCAL-00102" summary="project updates">
       <option name="closed" value="true" />
@@ -539,7 +531,15 @@
       <option name="project" value="LOCAL" />
       <updated>1774694432428</updated>
     </task>
-    <option name="localTasksCounter" value="150" />
+    <task id="LOCAL-00150" summary="serial break fix">
+      <option name="closed" value="true" />
+      <created>1774696152053</created>
+      <option name="number" value="00150" />
+      <option name="presentableId" value="LOCAL-00150" />
+      <option name="project" value="LOCAL" />
+      <updated>1774696152053</updated>
+    </task>
+    <option name="localTasksCounter" value="151" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -554,7 +554,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="rolled back service teardown due to coding error and application failure" />
     <MESSAGE value="adding debug for probe result" />
     <MESSAGE value="workspace sommit" />
     <MESSAGE value="missing jedi declaration in cpcd config" />
@@ -579,7 +578,8 @@
     <MESSAGE value="moved _usb_reset_serial_device above lifecycle" />
     <MESSAGE value="adding /dev/bus/usd to runtime args for container for cpcd support" />
     <MESSAGE value="further improvements for cpcd" />
-    <option name="LAST_COMMIT_MESSAGE" value="further improvements for cpcd" />
+    <MESSAGE value="serial break fix" />
+    <option name="LAST_COMMIT_MESSAGE" value="serial break fix" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>

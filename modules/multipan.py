@@ -432,7 +432,7 @@ class MultiPanManager:
         baudrate = (
                 jedi.get("baudrate") or jedi.get("baud_rate")
                 or self._cpcd_config.get("baudrate")
-                or 460800
+                or 115200
         )
 
         flow_control = (
@@ -457,7 +457,7 @@ uart_device_file: {serial_port}
 uart_device_baud: {baudrate}
 uart_hardflow: {fc_value}
 disable_encryption: true
-reset_sequence: false
+reset_sequence: true
 """
 
         with open(config_path, "w") as f:
@@ -628,17 +628,26 @@ reset_sequence: false
                 pass
 
         # ── 1. cpcd — must be first, owns serial port ──────────────────
-        # Jedi's CPC probe leaves the dongle's CPC state machine dirty.
-        # Serial break + flush clears UART state without USB re-enumeration
-        logger.info("Resetting serial state to clear CPC state from Jedi probe...")
-        baud = int(
-            (jedi_result or {}).get("baudrate")
-            or (jedi_result or {}).get("baud_rate")
-            or self._cpcd_config.get("baudrate")
-            or 230400
+        # No serial reset needed — USB pre-detection in Dongle Jedi
+        # avoids CPC wire probing, so the state machine is already clean.
+        await asyncio.sleep(1)
+
+        cpcd = ManagedDaemon(
+            name="cpcd",
+            command=self._build_cpcd_command(port),
+            ready_marker="Daemon startup was successful",
+            ready_timeout=30.0,
+            require_ready=True,
         )
-        self._reset_serial_state(port, baudrate=baud)
-        await asyncio.sleep(3)
+        self._daemons["cpcd"] = cpcd
+
+        if not await cpcd.start():
+            logger.error("Failed to start cpcd — cannot proceed with MultiPAN")
+            await self._stop_all()
+            return False
+
+        # Brief settle time for CPC endpoints to initialise
+        await asyncio.sleep(1)
 
         # 2) socat — create the PTY your zigbeed.conf references
         socat = ManagedDaemon(
