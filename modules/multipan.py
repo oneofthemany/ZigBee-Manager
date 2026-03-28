@@ -91,7 +91,6 @@ class ManagedDaemon:
         self._shutdown = False
         self._restart_count = 0
         self._ready_event = asyncio.Event()
-        self._pty_bridge: Optional[PTYTCPBridge] = None
 
     @property
     def is_running(self) -> bool:
@@ -349,6 +348,8 @@ class MultiPanManager:
 
         # Dongle Jedi probe result (set by start())
         self._jedi_result: Optional[dict] = None
+
+        self._pty_bridge: Optional['PTYTCPBridge'] = None
 
     @property
     def ezsp_socket(self) -> str:
