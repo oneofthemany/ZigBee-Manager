@@ -4,9 +4,7 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="socat removal from new pty bridge">
-      <change beforePath="$PROJECT_DIR$/build.sh" beforeDir="false" afterPath="$PROJECT_DIR$/build.sh" afterDir="false" />
-    </list>
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="more deps for dev" />
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -145,14 +143,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00107" summary="adding in dongle jedi core">
-      <option name="closed" value="true" />
-      <created>1774433115239</created>
-      <option name="number" value="00107" />
-      <option name="presentableId" value="LOCAL-00107" />
-      <option name="project" value="LOCAL" />
-      <updated>1774433115239</updated>
     </task>
     <task id="LOCAL-00108" summary="None patch fix for flow control">
       <option name="closed" value="true" />
@@ -538,7 +528,15 @@
       <option name="project" value="LOCAL" />
       <updated>1774702053958</updated>
     </task>
-    <option name="localTasksCounter" value="156" />
+    <task id="LOCAL-00156" summary="more deps for dev">
+      <option name="closed" value="true" />
+      <created>1774725775101</created>
+      <option name="number" value="00156" />
+      <option name="presentableId" value="LOCAL-00156" />
+      <option name="project" value="LOCAL" />
+      <updated>1774725775101</updated>
+    </task>
+    <option name="localTasksCounter" value="157" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -553,7 +551,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="new dynamic device - WIP test" />
     <MESSAGE value="removing teardown dead weight" />
     <MESSAGE value="new teardown/rebuild container for when device is unplugged" />
     <MESSAGE value="removed as no longer required" />
@@ -578,7 +575,8 @@
     <MESSAGE value="watchdog fix for multipan" />
     <MESSAGE value="minor tweaks to cater for recent findings" />
     <MESSAGE value="socat removal from new pty bridge" />
-    <option name="LAST_COMMIT_MESSAGE" value="socat removal from new pty bridge" />
+    <MESSAGE value="more deps for dev" />
+    <option name="LAST_COMMIT_MESSAGE" value="more deps for dev" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
