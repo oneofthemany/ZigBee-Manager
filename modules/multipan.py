@@ -534,54 +534,37 @@ reset_sequence: false
         return cmd
 
     # =========================================================================
-    # USB RESET
+    # SERIAL RESET
     # =========================================================================
 
     @staticmethod
-    def _usb_reset_serial_device(port: str) -> bool:
+    def _reset_serial_state(port: str, baudrate: int = 230400) -> bool:
         """
-        Reset the USB device backing a serial port via USBDEVFS_RESET ioctl.
+        Reset the serial port state to clear dirty CPC state from Jedi probing.
 
-        This forces the dongle's CPC state machine back to idle after
-        DongleJedi probing sends SABM/DISC/property-get frames that leave
-        it in an indeterminate state. Requires --privileged container.
+        Uses serial break + buffer flush instead of USB device reset.
+        USB reset causes device re-enumeration which breaks bind-mounted
+        device paths in rootless Podman containers.
         """
-        import fcntl
-
-        USBDEVFS_RESET = 0x5514
-        dev_name = os.path.basename(port)
+        import serial as pyserial
 
         try:
-            real_device = os.path.realpath(f"/sys/class/tty/{dev_name}/device")
-            usb_dir = real_device
-            while usb_dir and usb_dir != '/':
-                busnum_path = os.path.join(usb_dir, "busnum")
-                devnum_path = os.path.join(usb_dir, "devnum")
-                if os.path.exists(busnum_path) and os.path.exists(devnum_path):
-                    with open(busnum_path) as f:
-                        busnum = int(f.read().strip())
-                    with open(devnum_path) as f:
-                        devnum = int(f.read().strip())
-
-                    usb_dev_path = f"/dev/bus/usb/{busnum:03d}/{devnum:03d}"
-                    logger.debug(f"USB reset: {port} → {usb_dev_path}")
-                    fd = os.open(usb_dev_path, os.O_WRONLY)
-                    try:
-                        fcntl.ioctl(fd, USBDEVFS_RESET, 0)
-                    finally:
-                        os.close(fd)
-                    logger.info(f"USB device reset completed for {port}")
-                    return True
-                usb_dir = os.path.dirname(usb_dir)
-
-            logger.warning(f"Could not find USB device for {port}")
-            return False
-
-        except PermissionError:
-            logger.warning("USB reset requires --privileged container")
-            return False
+            ser = pyserial.Serial(port, baudrate, timeout=1)
+            # Send break to reset UART framing on the MG24
+            ser.send_break(duration=0.25)
+            ser.reset_input_buffer()
+            ser.reset_output_buffer()
+            # Brief pause then close cleanly
+            import time
+            time.sleep(0.5)
+            ser.dtr = False
+            ser.rts = False
+            time.sleep(0.1)
+            ser.close()
+            logger.info(f"Serial state reset completed for {port}")
+            return True
         except Exception as e:
-            logger.warning(f"USB reset failed: {e}")
+            logger.warning(f"Serial state reset failed: {e}")
             return False
 
     # =========================================================================
@@ -646,34 +629,16 @@ reset_sequence: false
 
         # ── 1. cpcd — must be first, owns serial port ──────────────────
         # Jedi's CPC probe leaves the dongle's CPC state machine dirty.
-        # USB reset forces the chip back to a clean state.
-        logger.info("Resetting USB device to clear CPC state from Jedi probe...")
-        if self._usb_reset_serial_device(port):
-            logger.info("USB reset successful — waiting for re-enumeration...")
-            await asyncio.sleep(3)
-            if not await self._wait_for_file(port, timeout=10):
-                logger.error(f"Serial port {port} did not reappear after USB reset")
-                return False
-        else:
-            logger.warning("USB reset not available — falling back to idle wait")
-            await asyncio.sleep(10)
-
-        cpcd = ManagedDaemon(
-            name="cpcd",
-            command=self._build_cpcd_command(port),
-            ready_marker="Daemon is ready",
-            ready_timeout=30.0,
-            require_ready=True,
+        # Serial break + flush clears UART state without USB re-enumeration
+        logger.info("Resetting serial state to clear CPC state from Jedi probe...")
+        baud = int(
+            (jedi_result or {}).get("baudrate")
+            or (jedi_result or {}).get("baud_rate")
+            or self._cpcd_config.get("baudrate")
+            or 230400
         )
-        self._daemons["cpcd"] = cpcd
-
-        if not await cpcd.start():
-            logger.error("Failed to start cpcd — cannot proceed with MultiPAN")
-            await self._stop_all()
-            return False
-
-        # Brief settle time for CPC endpoints to initialise
-        await asyncio.sleep(1)
+        self._reset_serial_state(port, baudrate=baud)
+        await asyncio.sleep(3)
 
         # 2) socat — create the PTY your zigbeed.conf references
         socat = ManagedDaemon(
