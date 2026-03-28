@@ -4,9 +4,8 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="minor tweaks to cater for recent findings">
-      <change afterPath="$PROJECT_DIR$/modules/pty_bridge.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/modules/multipan.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/multipan.py" afterDir="false" />
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="socat removal from new pty bridge">
+      <change beforePath="$PROJECT_DIR$/build.sh" beforeDir="false" afterPath="$PROJECT_DIR$/build.sh" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -146,14 +145,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00106" summary="workspace">
-      <option name="closed" value="true" />
-      <created>1774432512408</created>
-      <option name="number" value="00106" />
-      <option name="presentableId" value="LOCAL-00106" />
-      <option name="project" value="LOCAL" />
-      <updated>1774432512408</updated>
     </task>
     <task id="LOCAL-00107" summary="adding in dongle jedi core">
       <option name="closed" value="true" />
@@ -539,7 +530,15 @@
       <option name="project" value="LOCAL" />
       <updated>1774700987469</updated>
     </task>
-    <option name="localTasksCounter" value="155" />
+    <task id="LOCAL-00155" summary="socat removal from new pty bridge">
+      <option name="closed" value="true" />
+      <created>1774702053958</created>
+      <option name="number" value="00155" />
+      <option name="presentableId" value="LOCAL-00155" />
+      <option name="project" value="LOCAL" />
+      <updated>1774702053958</updated>
+    </task>
+    <option name="localTasksCounter" value="156" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -554,7 +553,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="rolled back" />
     <MESSAGE value="new dynamic device - WIP test" />
     <MESSAGE value="removing teardown dead weight" />
     <MESSAGE value="new teardown/rebuild container for when device is unplugged" />
@@ -579,7 +577,8 @@
     <MESSAGE value="improvements to USB product string pre-detection for CPC/RCP devices with NCP quirk fw detection" />
     <MESSAGE value="watchdog fix for multipan" />
     <MESSAGE value="minor tweaks to cater for recent findings" />
-    <option name="LAST_COMMIT_MESSAGE" value="minor tweaks to cater for recent findings" />
+    <MESSAGE value="socat removal from new pty bridge" />
+    <option name="LAST_COMMIT_MESSAGE" value="socat removal from new pty bridge" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>

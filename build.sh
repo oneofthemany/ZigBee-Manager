@@ -297,6 +297,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libnl-3-200 \
         libnl-route-3-200 \
         socat \
+        procps \
+        strace \
+        iproute2 \
+
     && rm -rf /var/lib/apt/lists/*
 
 # Fetch and install Silicon Labs packages matching Bookworm
