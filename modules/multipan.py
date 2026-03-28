@@ -631,11 +631,14 @@ reset_sequence: false
             except Exception:
                 pass
 
+        # Reset chip via RTS-only (avoids bootloader entry from DTR+RTS)
+        logger.info("Resetting chip via RTS-only toggle...")
+        self._reset_serial_state(port, baudrate=baud)
+        await asyncio.sleep(2)
+
         # ── 1. cpcd — must be first, owns serial port ──────────────────
         # No serial reset needed — USB pre-detection in Dongle Jedi
         # avoids CPC wire probing, so the state machine is already clean.
-        await asyncio.sleep(1)
-
         cpcd = ManagedDaemon(
             name="cpcd",
             command=self._build_cpcd_command(port),

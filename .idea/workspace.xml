@@ -4,7 +4,7 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="PTYTCPBridge to correct MultiPanManager init">
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="reset sequence to false">
       <change beforePath="$PROJECT_DIR$/modules/multipan.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/multipan.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -145,14 +145,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00110" summary="setup wizard finalised">
-      <option name="closed" value="true" />
-      <created>1774442358391</created>
-      <option name="number" value="00110" />
-      <option name="presentableId" value="LOCAL-00110" />
-      <option name="project" value="LOCAL" />
-      <updated>1774442358391</updated>
     </task>
     <task id="LOCAL-00111" summary="kill orphan pid fix for container restart">
       <option name="closed" value="true" />
@@ -538,7 +530,15 @@
       <option name="project" value="LOCAL" />
       <updated>1774726595979</updated>
     </task>
-    <option name="localTasksCounter" value="159" />
+    <task id="LOCAL-00159" summary="reset sequence to false">
+      <option name="closed" value="true" />
+      <created>1774727751106</created>
+      <option name="number" value="00159" />
+      <option name="presentableId" value="LOCAL-00159" />
+      <option name="project" value="LOCAL" />
+      <updated>1774727751106</updated>
+    </task>
+    <option name="localTasksCounter" value="160" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -553,7 +553,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="new teardown/rebuild container for when device is unplugged" />
     <MESSAGE value="removed as no longer required" />
     <MESSAGE value="final commit - --priv added to ensure container survivability" />
     <MESSAGE value="roll back due to permission issues in container" />
@@ -578,7 +577,8 @@
     <MESSAGE value="socat removal from new pty bridge" />
     <MESSAGE value="more deps for dev" />
     <MESSAGE value="PTYTCPBridge to correct MultiPanManager init" />
-    <option name="LAST_COMMIT_MESSAGE" value="PTYTCPBridge to correct MultiPanManager init" />
+    <MESSAGE value="reset sequence to false" />
+    <option name="LAST_COMMIT_MESSAGE" value="reset sequence to false" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
