@@ -113,7 +113,7 @@ MultiPAN activates automatically — no configuration is needed for default setu
 multipan:
   cpcd:
     # serial_port auto-detected from zigbee.port
-    baudrate: 460800
+    baudrate: 115200
     flow_control: hardware
   zigbeed:
     ezsp_port: 9999       # TCP port for bellows connection
@@ -149,7 +149,7 @@ sudo systemctl stop cpcd  # If installed as a system service
 
 ### zigbeed won't start: "CPC endpoint not available"
 
-cpcd hasn't fully initialised. The MultiPanManager waits 1 second after cpcd starts, but on slow systems this may not be enough. Check cpcd logs for "Daemon is ready".
+cpcd hasn't fully initialised. The MultiPanManager waits 1 second after cpcd starts, but on slow systems this may not be enough. Check cpcd logs for "Daemon startup was successful".
 
 ### bellows can't connect to socket
 
