@@ -4,23 +4,22 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="reset_sequence to true and _reset_serial_state fix">
-      <change afterPath="$PROJECT_DIR$/modules/rust/deploy.sh" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/modules/rust/layout.md" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/modules/rust/zmm_cpc/Cargo.toml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/modules/rust/zmm_cpc/cross/aarch64.toml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/modules/rust/zmm_cpc/cross/x86.toml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/modules/rust/zmm_cpc/pyproject.toml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/modules/rust/zmm_cpc/src/cpc_frame.rs" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/modules/rust/zmm_cpc/src/endpoint.rs" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/modules/rust/zmm_cpc/src/hdlc.rs" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/modules/rust/zmm_cpc/src/lib.rs" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/modules/rust/zmm_cpc/src/py_bindings.rs" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/modules/rust/zmm_cpc/src/router.rs" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/modules/rust/zmm_cpc/src/serial_io.rs" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/modules/rust/zmm_cpc/src/tdm.rs" afterDir="false" />
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="replace ptybridge and cpcd">
+      <change afterPath="$PROJECT_DIR$/modules/tpm/zmm_cpc/cross/x86.toml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/modules/multipan.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/multipan.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/modules/rust/deploy.sh" beforeDir="false" afterPath="$PROJECT_DIR$/modules/tpm/deploy.sh" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/modules/rust/layout.md" beforeDir="false" afterPath="$PROJECT_DIR$/modules/tpm/layout.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/modules/rust/zmm_cpc/Cargo.toml" beforeDir="false" afterPath="$PROJECT_DIR$/modules/tpm/zmm_cpc/Cargo.toml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/modules/rust/zmm_cpc/cross/aarch64.toml" beforeDir="false" afterPath="$PROJECT_DIR$/modules/tpm/zmm_cpc/cross/aarch64.toml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/modules/rust/zmm_cpc/pyproject.toml" beforeDir="false" afterPath="$PROJECT_DIR$/modules/tpm/zmm_cpc/pyproject.toml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/modules/rust/zmm_cpc/src/cpc_frame.rs" beforeDir="false" afterPath="$PROJECT_DIR$/modules/tpm/zmm_cpc/src/cpc_frame.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/modules/rust/zmm_cpc/src/endpoint.rs" beforeDir="false" afterPath="$PROJECT_DIR$/modules/tpm/zmm_cpc/src/endpoint.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/modules/rust/zmm_cpc/src/hdlc.rs" beforeDir="false" afterPath="$PROJECT_DIR$/modules/tpm/zmm_cpc/src/hdlc.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/modules/rust/zmm_cpc/src/lib.rs" beforeDir="false" afterPath="$PROJECT_DIR$/modules/tpm/zmm_cpc/src/lib.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/modules/rust/zmm_cpc/src/py_bindings.rs" beforeDir="false" afterPath="$PROJECT_DIR$/modules/tpm/zmm_cpc/src/py_bindings.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/modules/rust/zmm_cpc/src/router.rs" beforeDir="false" afterPath="$PROJECT_DIR$/modules/tpm/zmm_cpc/src/router.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/modules/rust/zmm_cpc/src/serial_io.rs" beforeDir="false" afterPath="$PROJECT_DIR$/modules/tpm/zmm_cpc/src/serial_io.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/modules/rust/zmm_cpc/src/tdm.rs" beforeDir="false" afterPath="$PROJECT_DIR$/modules/tpm/zmm_cpc/src/tdm.rs" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -165,22 +164,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00115" summary="multepan phase 1 test">
-      <option name="closed" value="true" />
-      <created>1774453785413</created>
-      <option name="number" value="00115" />
-      <option name="presentableId" value="LOCAL-00115" />
-      <option name="project" value="LOCAL" />
-      <updated>1774453785413</updated>
-    </task>
-    <task id="LOCAL-00116" summary="updated topic to be in line with new application capabilty">
-      <option name="closed" value="true" />
-      <created>1774454412557</created>
-      <option name="number" value="00116" />
-      <option name="presentableId" value="LOCAL-00116" />
-      <option name="project" value="LOCAL" />
-      <updated>1774454412557</updated>
     </task>
     <task id="LOCAL-00117" summary="improving start spectrum to mitigate disablement due to length CPC scans">
       <option name="closed" value="true" />
@@ -558,7 +541,23 @@
       <option name="project" value="LOCAL" />
       <updated>1774731431156</updated>
     </task>
-    <option name="localTasksCounter" value="164" />
+    <task id="LOCAL-00164" summary="rust tdm to replace cpc - initial commit">
+      <option name="closed" value="true" />
+      <created>1774799384273</created>
+      <option name="number" value="00164" />
+      <option name="presentableId" value="LOCAL-00164" />
+      <option name="project" value="LOCAL" />
+      <updated>1774799384273</updated>
+    </task>
+    <task id="LOCAL-00165" summary="replace ptybridge and cpcd">
+      <option name="closed" value="true" />
+      <created>1774799671065</created>
+      <option name="number" value="00165" />
+      <option name="presentableId" value="LOCAL-00165" />
+      <option name="project" value="LOCAL" />
+      <updated>1774799671066</updated>
+    </task>
+    <option name="localTasksCounter" value="166" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -573,8 +572,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="teardown notice added" />
-    <MESSAGE value="adding no passwd to file and updating service to use bash to run the pre_script" />
     <MESSAGE value="updated to show location of teardown script and changed text to red" />
     <MESSAGE value="dark mode fix for beetxt" />
     <MESSAGE value="sudo fix for umount of conatiner" />
@@ -598,7 +595,9 @@
     <MESSAGE value="adding baud rate to the RTS  reset" />
     <MESSAGE value="_reset_serial_state updated to correct baud" />
     <MESSAGE value="reset_sequence to true and _reset_serial_state fix" />
-    <option name="LAST_COMMIT_MESSAGE" value="reset_sequence to true and _reset_serial_state fix" />
+    <MESSAGE value="rust tdm to replace cpc - initial commit" />
+    <MESSAGE value="replace ptybridge and cpcd" />
+    <option name="LAST_COMMIT_MESSAGE" value="replace ptybridge and cpcd" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
