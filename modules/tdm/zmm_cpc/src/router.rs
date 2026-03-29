@@ -188,7 +188,6 @@ impl<T: TdmGate> RouterBuilder<T> {
             framing_errors: 0,
             ep0_connected: false,
             start_time: Instant::now(),
-            sabm_sent: false,
         }
     }
 }
@@ -211,8 +210,6 @@ pub struct Router<T: TdmGate> {
     ep0_connected: bool,
     /// When the router started — used to time the proactive SABM grace period.
     start_time: Instant,
-    /// Whether we've already sent our proactive SABM burst.
-    sabm_sent: bool,
 }
 
 impl<T: TdmGate> Router<T> {

@@ -16,6 +16,18 @@ startup path is unchanged.
 otbr-agent (Thread) requires Phase 3 — it expects cpcd's Unix
 SOCK_SEQPACKET sockets which zmm_cpc does not yet provide.
 
+Startup sequence:
+  1. _reset_serial_state() — send bootloader exit command via pyserial,
+     ensuring the MG24 is in CPC application mode (not Gecko Bootloader).
+  2. Brief settle (2s) — chip boots into CPC firmware, may send SABMs
+     which buffer in the kernel serial FIFO.
+  3. CpcCore.start() — opens serial port, binds TCP listeners, spawns
+     the Tokio router.  Any buffered SABMs are consumed immediately.
+  4. If the RCP's SABMs were missed, the router's proactive SABM logic
+     kicks in after a 3s grace period — sends SABM on ep0 + registered
+     endpoints, retrying every 2s up to 5 times.  This mirrors cpcd's
+     active handshake behaviour.
+
 Integration point: core/service.py ZigbeeService.start()
   - Dongle Jedi detects CPC_MULTIPAN firmware
   - _probe_with_jedi() returns probe result with adapter_family
@@ -383,89 +395,7 @@ class MultiPanManager:
         return cmd
 
     # =========================================================================
-    # USB RESET — force RCP to re-send SABMs
-    # =========================================================================
-
-    @staticmethod
-    def _usb_reset(port: str) -> bool:
-        """
-        Perform a USB-level device reset via USBDEVFS_RESET ioctl.
-
-        This forces the MG24 to power-cycle at the USB level, causing the
-        CPC firmware to restart and re-send its SABM handshake sequence.
-        Much more reliable than serial-level bootloader commands because
-        it guarantees a clean firmware restart without DTR/RTS side effects.
-
-        Requires /dev/bus/usb to be mounted into the container (build.sh
-        already does this).
-
-        Returns True if reset succeeded, False if it could not be performed
-        (missing sysfs, permissions, etc.) — caller should fall back to
-        serial reset.
-        """
-        import fcntl
-        import glob
-
-        real_port = os.path.realpath(port)
-        dev_name = os.path.basename(real_port)
-
-        # Find the USB device path via sysfs
-        # /sys/class/tty/ttyUSB0/device -> ../../ttyUSB0
-        # Walk up to find the USB device with busnum/devnum
-        sysfs_tty = f"/sys/class/tty/{dev_name}"
-        if not os.path.exists(sysfs_tty):
-            logger.debug(f"USB reset: sysfs path {sysfs_tty} not found")
-            return False
-
-        try:
-            # Walk up the device tree to find the USB device
-            device_path = os.path.realpath(os.path.join(sysfs_tty, "device"))
-            usb_device_path = device_path
-
-            # Walk up until we find busnum and devnum
-            for _ in range(10):
-                busnum_path = os.path.join(usb_device_path, "busnum")
-                devnum_path = os.path.join(usb_device_path, "devnum")
-                if os.path.exists(busnum_path) and os.path.exists(devnum_path):
-                    break
-                usb_device_path = os.path.dirname(usb_device_path)
-            else:
-                logger.debug("USB reset: could not find busnum/devnum in sysfs tree")
-                return False
-
-            with open(busnum_path) as f:
-                busnum = int(f.read().strip())
-            with open(devnum_path) as f:
-                devnum = int(f.read().strip())
-
-            usb_dev_path = f"/dev/bus/usb/{busnum:03d}/{devnum:03d}"
-
-            if not os.path.exists(usb_dev_path):
-                logger.debug(f"USB reset: {usb_dev_path} not found")
-                return False
-
-            # USBDEVFS_RESET ioctl number
-            USBDEVFS_RESET = 0x5514
-
-            logger.info(f"USB reset: resetting {usb_dev_path} (bus {busnum}, dev {devnum})")
-            fd = os.open(usb_dev_path, os.O_WRONLY)
-            try:
-                fcntl.ioctl(fd, USBDEVFS_RESET, 0)
-            finally:
-                os.close(fd)
-
-            logger.info(f"USB reset: {usb_dev_path} reset successfully")
-            return True
-
-        except PermissionError:
-            logger.warning("USB reset: permission denied — /dev/bus/usb may not be mounted")
-            return False
-        except Exception as e:
-            logger.warning(f"USB reset: failed — {e}")
-            return False
-
-    # =========================================================================
-    # SERIAL RESET (fallback if USB reset unavailable)
+    # SERIAL RESET
     # =========================================================================
 
     @staticmethod
@@ -477,24 +407,29 @@ class MultiPanManager:
         sending '2' (the bootloader "run" command) boots the application.
         Safe to send even if already in application mode (ignored as garbage).
 
-        IMPORTANT: We explicitly prevent pyserial from toggling DTR/RTS on
-        close, as that can re-enter the Gecko Bootloader and cause a race
-        with CpcCore's serial open.
+        DTR and RTS are explicitly held low on open and before close to
+        prevent pyserial from accidentally re-entering the Gecko Bootloader.
         """
         import serial as pyserial
         import time
 
         try:
             ser = pyserial.Serial(port, baudrate, timeout=1)
-            ser.reset_input_buffer()
 
-            # Ensure DTR and RTS are deasserted (low) — safe state for MG24
+            # Immediately deassert DTR and RTS — safe state for MG24
             ser.dtr = False
             ser.rts = False
 
+            ser.reset_input_buffer()
+
+            # Send Gecko Bootloader "run" command to exit bootloader
+            # Command '2' = boot into application firmware
+            # Harmless if chip is already running application (CPC ignores it)
             ser.write(b"2\r\n")
             time.sleep(0.5)
 
+            # Also try sending a newline to trigger bootloader menu
+            # then "2" to select run — covers both menu and direct mode
             ser.write(b"\n")
             time.sleep(0.3)
             ser.write(b"2\r\n")
@@ -503,9 +438,8 @@ class MultiPanManager:
             ser.reset_input_buffer()
             ser.reset_output_buffer()
 
-            # Prevent DTR/RTS toggle on close — pyserial's default close()
-            # can briefly assert DTR+RTS which re-enters the Gecko Bootloader
-            # on MG24, causing the RCP to miss its CPC boot window.
+            # Hold DTR/RTS low before close — prevents pyserial's close()
+            # from briefly toggling them, which can re-enter bootloader
             ser.dtr = False
             ser.rts = False
 
@@ -528,11 +462,16 @@ class MultiPanManager:
         """
         Start the MultiPAN stack.
 
-        Strategy: Start CpcCore FIRST (so the serial reader is active and
-        ready to receive frames), THEN trigger a USB-level reset to force
-        the RCP to reboot and send its SABM handshake.  This eliminates
-        the race condition where SABMs arrive while the port is closed
-        between pyserial and CpcCore.
+        Follows the same proven sequence as the old cpcd-based multipan:
+          1. Serial reset — bootloader exit command (identical to old version)
+          2. Brief settle — let CPC firmware boot
+          3. CpcCore opens serial port and begins listening
+
+        The key difference from the old cpcd path is that cpcd had built-in
+        proactive SABM initiation.  CpcCore's Rust router now has the same
+        capability: after a 3s grace period, it sends SABM on ep0 + all
+        registered endpoints, retrying every 2s up to 5 times.  This makes
+        the handshake robust regardless of timing.
 
         Args:
             serial_port: Override serial port (e.g. from Dongle Jedi result).
@@ -572,21 +511,27 @@ class MultiPanManager:
         )
 
         # ── Step 1: Ensure chip is out of bootloader ─────────────────────
-        # Use serial reset to send bootloader exit command.  This is a
-        # best-effort step — if the chip is already in application mode,
-        # the "2\r\n" bytes are harmless CPC garbage (bad CRC, discarded).
-        logger.info("Sending bootloader exit command (pre-flight)...")
+        # Same serial reset as the old working cpcd-based multipan.
+        logger.info("Resetting chip via serial bootloader exit...")
         self._reset_serial_state(port, baudrate=baud)
 
-        # Brief settle — let the chip finish booting into CPC firmware.
-        # The RCP will start sending SABMs here, but we haven't opened
-        # the port yet.  That's OK — we'll force a re-send via USB reset
-        # in Step 3 below.
-        await asyncio.sleep(1)
+        # ── Step 2: Settle — let chip boot into CPC application mode ─────
+        # The MG24 needs ~2s after bootloader exit to start CPC firmware.
+        # During this time the RCP will send its initial SABM burst on
+        # ep0, ep12, ep13.  These frames sit in the kernel's serial FIFO
+        # (4096 bytes — plenty for a few 9-byte U-frames) until someone
+        # opens the port.
+        await asyncio.sleep(2)
 
-        # ── Step 2: Start CpcCore — opens serial, binds TCP ports ────────
-        # CpcCore's serial reader is now active and will capture any
-        # SABM frames that arrive on the wire.
+        # ── Step 3: Start CpcCore ────────────────────────────────────────
+        # Opens serial port, binds TCP listeners, spawns Tokio router.
+        # The router's first action is to drain the serial FIFO — if the
+        # RCP's SABMs are buffered there, they'll be consumed and the
+        # reactive handshake completes immediately.
+        #
+        # If the SABMs were missed (chip booted faster/slower, FIFO was
+        # flushed, etc.), the router's proactive SABM logic activates
+        # after a 3s grace period — same behaviour as cpcd.
         ezsp_port = self._zigbeed_config.get("ezsp_port", 9999)
 
         tcp_endpoints = {12: ezsp_port}
@@ -605,42 +550,14 @@ class MultiPanManager:
             logger.error(f"CpcCore failed to start: {e}")
             return False
 
-        # ── Step 3: Force RCP to re-send SABMs ──────────────────────────
-        # Now that CpcCore is listening, trigger a USB-level reset.
-        # This causes the MG24 to power-cycle and re-run its CPC init
-        # sequence, sending fresh SABM frames that CpcCore will catch.
-        logger.info("Triggering USB reset to force RCP SABM re-handshake...")
-        usb_reset_ok = self._usb_reset(port)
-
-        if not usb_reset_ok:
-            # USB reset not available (no /dev/bus/usb, permissions, etc.)
-            # Fall back to a serial-level RTS toggle to nudge the chip.
-            # This is less reliable but may work on some configurations.
-            logger.warning(
-                "USB reset unavailable — falling back to RTS toggle. "
-                "If handshake fails, ensure /dev/bus/usb is mounted."
-            )
-            # Send a brief break condition to provoke a CPC reset
-            try:
-                import serial as pyserial
-                ser = pyserial.Serial(port, baud, timeout=0.5)
-                ser.dtr = False
-                ser.rts = False
-                # Quick RTS pulse — some MG24 firmware versions use this
-                # as a soft-reset trigger without entering bootloader
-                ser.rts = True
-                await asyncio.sleep(0.05)
-                ser.rts = False
-                ser.close()
-                logger.info("RTS pulse sent as fallback reset")
-            except Exception as e:
-                logger.warning(f"RTS fallback also failed: {e}")
+        logger.info("CpcCore started — awaiting CPC handshake...")
 
         # ── Step 4: Wait for ep12 to reach OPEN ─────────────────────────
-        # The USB reset causes the RCP to reboot (~2-5s) and then send
-        # SABM on ep0, ep12 (and ep13 if Thread firmware).
-        # CpcCore's router will respond with UA automatically.
-        # Give it up to 30s for the full sequence.
+        # Budget breakdown:
+        #   0–3s:   Router listens for RCP's SABM (buffered or live)
+        #   ~3s:    If nothing received, router sends proactive SABM
+        #   3–13s:  Up to 5 SABM retries at 2s intervals
+        #   13–30s: Safety margin
         loop = asyncio.get_event_loop()
         ep12_open = await loop.run_in_executor(
             None,
@@ -652,7 +569,7 @@ class MultiPanManager:
         if not ep12_open:
             logger.error(
                 "CpcCore ep12 did not reach OPEN within 30s — "
-                "RCP may not have sent SABM.  Stopping."
+                "RCP did not respond to SABM.  Stopping."
             )
             self._cpc_core.stop()
             self._cpc_core = None
