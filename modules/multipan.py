@@ -17,16 +17,16 @@ otbr-agent (Thread) requires Phase 3 — it expects cpcd's Unix
 SOCK_SEQPACKET sockets which zmm_cpc does not yet provide.
 
 Startup sequence:
-  1. _reset_serial_state() — send bootloader exit command via pyserial,
-     ensuring the MG24 is in CPC application mode (not Gecko Bootloader).
-  2. Brief settle (2s) — chip boots into CPC firmware, may send SABMs
-     which buffer in the kernel serial FIFO.
-  3. CpcCore.start() — opens serial port, binds TCP listeners, spawns
-     the Tokio router.  Any buffered SABMs are consumed immediately.
-  4. If the RCP's SABMs were missed, the router's proactive SABM logic
-     kicks in after a 3s grace period — sends SABM on ep0 + registered
-     endpoints, retrying every 2s up to 5 times.  This mirrors cpcd's
-     active handshake behaviour.
+  1. RTS reset — toggle RTS to reboot the MG24 chip
+  2. _drain_and_reset_link() — read any stale I-frames the RCP sends
+     from a previous session, acknowledge them with correct N(R) so
+     the RCP stops retransmitting, then send DISC on all endpoints to
+     tear down the old CPC link state, then send SABM on ep0 and wait
+     for UA to confirm the link is clean.
+  3. Close pyserial, brief settle
+  4. CpcCore.start() — opens serial port, binds TCP listeners, spawns
+     the Tokio router.  The RCP is now in a clean state and will
+     respond to SABMs from the router (reactive or proactive).
 
 Integration point: core/service.py ZigbeeService.start()
   - Dongle Jedi detects CPC_MULTIPAN firmware
@@ -40,6 +40,7 @@ import logging
 import os
 import signal
 import shutil
+import struct
 from typing import Optional, Dict, Callable
 
 from zmm_cpc import CpcCore
@@ -296,6 +297,79 @@ class ManagedDaemon:
 
 
 # =========================================================================
+# CPC FRAMING HELPERS (Python-side, for pre-CpcCore link reset)
+# =========================================================================
+
+CPC_FLAG = 0x14
+_U_SABM = 0xEF
+_U_UA   = 0x63
+_U_DISC = 0x43
+
+
+def _cpc_crc16(data: bytes) -> int:
+    """CRC-16 poly=0x1021 init=0x0000 (confirmed for Sonoff MG24 RCP)."""
+    crc = 0x0000
+    for b in data:
+        crc ^= b << 8
+        for _ in range(8):
+            crc = ((crc << 1) ^ 0x1021 if crc & 0x8000 else crc << 1) & 0xFFFF
+    return crc
+
+
+def _cpc_make_frame(ep: int, ctrl: int, payload: bytes = b"") -> bytes:
+    """Encode a CPC frame. Layout: FLAG EP LEN_LO LEN_HI CTRL HCS(2) PAYLOAD FCS(2)."""
+    fcs_len = 2
+    length = len(payload) + fcs_len  # LEN includes FCS
+    hdr = bytes([CPC_FLAG, ep, length & 0xFF, (length >> 8) & 0xFF, ctrl])
+    hcs = _cpc_crc16(hdr)
+    fcs = _cpc_crc16(payload)
+    return hdr + struct.pack("<H", hcs) + payload + struct.pack("<H", fcs)
+
+
+def _cpc_parse_frames(data: bytes):
+    """
+    Parse CPC frames from raw bytes.
+    Yields (ep, ctrl, payload) for each valid frame.
+    """
+    i = 0
+    while i < len(data):
+        if data[i] != CPC_FLAG:
+            i += 1
+            continue
+        if i + 7 > len(data):
+            break
+
+        ep   = data[i + 1]
+        plen = data[i + 2] | (data[i + 3] << 8)
+        ctrl = data[i + 4]
+
+        # Validate HCS
+        hdr = data[i:i + 5]
+        hcs_recv = data[i + 5] | (data[i + 6] << 8)
+        if _cpc_crc16(hdr) != hcs_recv:
+            i += 1
+            continue
+
+        if plen < 2:
+            i += 1
+            continue
+
+        payload_len = plen - 2
+        frame_end = i + 7 + payload_len + 2
+        if frame_end > len(data):
+            break
+
+        payload = data[i + 7:i + 7 + payload_len]
+        fcs_recv = data[i + 7 + payload_len] | (data[i + 7 + payload_len + 1] << 8)
+        if _cpc_crc16(payload) != fcs_recv:
+            i += 1
+            continue
+
+        yield (ep, ctrl, payload)
+        i = frame_end
+
+
+# =========================================================================
 # MULTIPAN MANAGER — CpcCore + optional otbr-agent
 # =========================================================================
 
@@ -395,59 +469,152 @@ class MultiPanManager:
         return cmd
 
     # =========================================================================
-    # SERIAL RESET
+    # LINK DRAIN AND RESET
     # =========================================================================
 
     @staticmethod
-    def _reset_serial_state(port: str, baudrate: int = 115200) -> bool:
+    def _drain_and_reset_link(port: str, baudrate: int = 115200) -> bool:
         """
-        Ensure the MG24 is in application mode, not Gecko Bootloader.
+        Reset the CPC link to a clean state before CpcCore takes over.
 
-        If a previous reset_sequence put the chip into bootloader (DTR+RTS),
-        sending '2' (the bootloader "run" command) boots the application.
-        Safe to send even if already in application mode (ignored as garbage).
+        The MG24 RCP persists its CPC link state across serial reconnects.
+        If a previous session (cpcd, zmm_cpc, or even Dongle Jedi probe)
+        left the link in an established state, the RCP will immediately
+        start retransmitting unacknowledged I-frames instead of accepting
+        new SABM handshakes.
 
-        DTR and RTS are explicitly held low on open and before close to
-        prevent pyserial from accidentally re-entering the Gecko Bootloader.
+        This method:
+          1. RTS toggle — hardware reset the chip
+          2. Read the boot burst — typically a stale I-frame on ep0
+          3. Acknowledge with correct RR N(R) — stops the retransmit loop
+          4. Send DISC on ep0, ep12, ep13 — tears down old link state
+          5. Send SABM on ep0 — verify the RCP accepts a fresh handshake
+          6. Send DISC on ep0 — leave cleanly for CpcCore to take over
+
+        DTR is held low throughout to avoid entering the Gecko Bootloader.
         """
         import serial as pyserial
         import time
 
         try:
-            ser = pyserial.Serial(port, baudrate, timeout=1)
-
-            # Immediately deassert DTR and RTS — safe state for MG24
+            ser = pyserial.Serial(port, baudrate, timeout=0.5)
             ser.dtr = False
             ser.rts = False
 
-            ser.reset_input_buffer()
-
-            # Send Gecko Bootloader "run" command to exit bootloader
-            # Command '2' = boot into application firmware
-            # Harmless if chip is already running application (CPC ignores it)
-            ser.write(b"2\r\n")
+            # ── Step 1: RTS hardware reset ─────────────────────────────
+            logger.info("Link reset: RTS toggle...")
+            ser.rts = True
+            time.sleep(0.1)
+            ser.rts = False
             time.sleep(0.5)
 
-            # Also try sending a newline to trigger bootloader menu
-            # then "2" to select run — covers both menu and direct mode
-            ser.write(b"\n")
+            # ── Step 2: Read boot burst and acknowledge stale I-frames ──
+            logger.info("Link reset: draining stale frames...")
+            acked_eps = set()
+            for attempt in range(10):
+                data = ser.read(500)
+                if not data:
+                    if attempt > 0:
+                        break  # No more data after first read
+                    time.sleep(0.5)
+                    continue
+
+                for ep, ctrl, payload in _cpc_parse_frames(data):
+                    if ctrl & 0x01 == 0:  # I-frame
+                        ns = (ctrl >> 1) & 0x07
+                        nr = (ns + 1) & 0x07
+                        # Send RR with correct N(R) to stop retransmissions
+                        rr_ctrl = 0x01 | (nr << 5)
+                        rr = _cpc_make_frame(ep, rr_ctrl)
+                        ser.write(rr)
+                        acked_eps.add(ep)
+                        logger.info(
+                            f"Link reset: acked stale I-frame on ep{ep} "
+                            f"N(S)={ns} → RR N(R)={nr}"
+                        )
+                    elif ctrl & 0x03 == 0x03:  # U-frame
+                        utype = ctrl & 0xEF
+                        if utype == _U_SABM:
+                            # RCP is sending fresh SABM — great, respond UA
+                            ua = _cpc_make_frame(ep, _U_UA)
+                            ser.write(ua)
+                            logger.info(f"Link reset: RCP sent SABM on ep{ep}, responded UA")
+                            acked_eps.add(ep)
+
+                time.sleep(0.2)
+
+            if acked_eps:
+                logger.info(f"Link reset: acknowledged frames on eps {sorted(acked_eps)}")
+            else:
+                logger.info("Link reset: no stale frames (clean state)")
+
+            # ── Step 3: Send DISC on all endpoints ─────────────────────
+            # This tears down whatever link state the RCP has
+            logger.info("Link reset: sending DISC on ep0, ep12, ep13...")
+            for ep in [0, 12, 13]:
+                disc = _cpc_make_frame(ep, _U_DISC)
+                ser.write(disc)
+                time.sleep(0.1)
+
+            # Drain any responses (UA to our DISC, or more I-frames)
+            time.sleep(0.5)
+            for _ in range(5):
+                resp = ser.read(500)
+                if not resp:
+                    break
+                for ep, ctrl, payload in _cpc_parse_frames(resp):
+                    if ctrl & 0x01 == 0:  # Still getting I-frames — ack them
+                        ns = (ctrl >> 1) & 0x07
+                        nr = (ns + 1) & 0x07
+                        rr_ctrl = 0x01 | (nr << 5)
+                        ser.write(_cpc_make_frame(ep, rr_ctrl))
+                        logger.info(f"Link reset: acked another I-frame on ep{ep}")
+                    elif (ctrl & 0xEF) == _U_UA:
+                        logger.info(f"Link reset: got UA on ep{ep} (DISC accepted)")
+                time.sleep(0.2)
+
+            # ── Step 4: Verify — send SABM ep0, expect UA ─────────────
+            logger.info("Link reset: verifying with SABM on ep0...")
+            sabm = _cpc_make_frame(0, _U_SABM)
+            ser.write(sabm)
+            time.sleep(1.0)
+
+            verified = False
+            resp = ser.read(500)
+            if resp:
+                for ep, ctrl, payload in _cpc_parse_frames(resp):
+                    if ep == 0 and (ctrl & 0xEF) == _U_UA:
+                        logger.info("Link reset: ✅ ep0 UA received — link is clean")
+                        verified = True
+                    elif ep == 0 and (ctrl & 0xEF) == _U_SABM:
+                        # RCP sent its own SABM — respond with UA
+                        ser.write(_cpc_make_frame(0, _U_UA))
+                        logger.info("Link reset: ✅ RCP initiated SABM on ep0, responded UA")
+                        verified = True
+
+            if not verified:
+                logger.warning(
+                    "Link reset: ep0 UA not received after SABM — "
+                    "RCP may need additional drain cycles"
+                )
+
+            # ── Step 5: Clean disconnect — DISC ep0 ────────────────────
+            # Leave the link in CLOSED state so CpcCore starts fresh
+            disc = _cpc_make_frame(0, _U_DISC)
+            ser.write(disc)
             time.sleep(0.3)
-            ser.write(b"2\r\n")
-            time.sleep(1.5)
+            ser.read(500)  # drain any response
 
-            ser.reset_input_buffer()
-            ser.reset_output_buffer()
-
-            # Hold DTR/RTS low before close — prevents pyserial's close()
-            # from briefly toggling them, which can re-enter bootloader
+            # Hold DTR/RTS low before close
             ser.dtr = False
             ser.rts = False
-
             ser.close()
-            logger.info(f"Bootloader exit command sent for {port}")
-            return True
+
+            logger.info("Link reset: complete — port released for CpcCore")
+            return verified
+
         except Exception as e:
-            logger.warning(f"Bootloader exit failed: {e}")
+            logger.warning(f"Link reset failed: {e}")
             return False
 
     # =========================================================================
@@ -462,16 +629,11 @@ class MultiPanManager:
         """
         Start the MultiPAN stack.
 
-        Follows the same proven sequence as the old cpcd-based multipan:
-          1. Serial reset — bootloader exit command (identical to old version)
-          2. Brief settle — let CPC firmware boot
-          3. CpcCore opens serial port and begins listening
-
-        The key difference from the old cpcd path is that cpcd had built-in
-        proactive SABM initiation.  CpcCore's Rust router now has the same
-        capability: after a 3s grace period, it sends SABM on ep0 + all
-        registered endpoints, retrying every 2s up to 5 times.  This makes
-        the handshake robust regardless of timing.
+        The startup sequence handles the critical problem that the MG24 RCP
+        persists CPC link state across serial reconnects.  If a previous
+        session left the link established, the RCP retransmits stale I-frames
+        and ignores new SABMs.  _drain_and_reset_link() clears this state
+        before CpcCore takes over.
 
         Args:
             serial_port: Override serial port (e.g. from Dongle Jedi result).
@@ -510,28 +672,24 @@ class MultiPanManager:
             or 115200
         )
 
-        # ── Step 1: Ensure chip is out of bootloader ─────────────────────
-        # Same serial reset as the old working cpcd-based multipan.
-        logger.info("Resetting chip via serial bootloader exit...")
-        self._reset_serial_state(port, baudrate=baud)
+        # ── Step 1: Drain stale link state and reset ─────────────────
+        # This is the critical step that makes the RCP accept fresh SABMs.
+        # Runs synchronously via pyserial before CpcCore takes the port.
+        logger.info("Draining stale CPC link state...")
+        link_ok = self._drain_and_reset_link(port, baudrate=baud)
+        if link_ok:
+            logger.info("CPC link reset verified — RCP ready for fresh handshake")
+        else:
+            logger.warning("CPC link reset unverified — proceeding anyway")
 
-        # ── Step 2: Settle — let chip boot into CPC application mode ─────
-        # The MG24 needs ~2s after bootloader exit to start CPC firmware.
-        # During this time the RCP will send its initial SABM burst on
-        # ep0, ep12, ep13.  These frames sit in the kernel's serial FIFO
-        # (4096 bytes — plenty for a few 9-byte U-frames) until someone
-        # opens the port.
-        await asyncio.sleep(2)
+        # ── Step 2: Brief settle ─────────────────────────────────────
+        # Let the port fully release and the chip settle after DISC
+        await asyncio.sleep(1)
 
-        # ── Step 3: Start CpcCore ────────────────────────────────────────
-        # Opens serial port, binds TCP listeners, spawns Tokio router.
-        # The router's first action is to drain the serial FIFO — if the
-        # RCP's SABMs are buffered there, they'll be consumed and the
-        # reactive handshake completes immediately.
-        #
-        # If the SABMs were missed (chip booted faster/slower, FIFO was
-        # flushed, etc.), the router's proactive SABM logic activates
-        # after a 3s grace period — same behaviour as cpcd.
+        # ── Step 3: Start CpcCore ────────────────────────────────────
+        # The RCP's link state is now CLOSED.  CpcCore will either:
+        #  - Catch the RCP's fresh SABM burst (reactive path), or
+        #  - Send proactive SABM after 3s grace (active path)
         ezsp_port = self._zigbeed_config.get("ezsp_port", 9999)
 
         tcp_endpoints = {12: ezsp_port}
@@ -552,12 +710,7 @@ class MultiPanManager:
 
         logger.info("CpcCore started — awaiting CPC handshake...")
 
-        # ── Step 4: Wait for ep12 to reach OPEN ─────────────────────────
-        # Budget breakdown:
-        #   0–3s:   Router listens for RCP's SABM (buffered or live)
-        #   ~3s:    If nothing received, router sends proactive SABM
-        #   3–13s:  Up to 5 SABM retries at 2s intervals
-        #   13–30s: Safety margin
+        # ── Step 4: Wait for ep12 to reach OPEN ─────────────────────
         loop = asyncio.get_event_loop()
         ep12_open = await loop.run_in_executor(
             None,

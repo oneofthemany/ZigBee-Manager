@@ -4,9 +4,9 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="sabm improvements">
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="diagnostics for cpc issues">
       <change afterPath="$PROJECT_DIR$/modules/tdm/zmm_cpc/cross/x86.toml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/modules/tdm/zmm_cpc/src/hdlc.rs" beforeDir="false" afterPath="$PROJECT_DIR$/modules/tdm/zmm_cpc/src/hdlc.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/modules/multipan.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/multipan.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -152,22 +152,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00124" summary="rolled back as reset was not the issue">
-      <option name="closed" value="true" />
-      <created>1774518706149</created>
-      <option name="number" value="00124" />
-      <option name="presentableId" value="LOCAL-00124" />
-      <option name="project" value="LOCAL" />
-      <updated>1774518706149</updated>
-    </task>
-    <task id="LOCAL-00125" summary="rolled back service teardown due to coding error and application failure">
-      <option name="closed" value="true" />
-      <created>1774520277516</created>
-      <option name="number" value="00125" />
-      <option name="presentableId" value="LOCAL-00125" />
-      <option name="project" value="LOCAL" />
-      <updated>1774520277516</updated>
     </task>
     <task id="LOCAL-00126" summary="adding debug for probe result">
       <option name="closed" value="true" />
@@ -545,7 +529,23 @@
       <option name="project" value="LOCAL" />
       <updated>1774803725677</updated>
     </task>
-    <option name="localTasksCounter" value="173" />
+    <task id="LOCAL-00173" summary="sabm improvements">
+      <option name="closed" value="true" />
+      <created>1774805636461</created>
+      <option name="number" value="00173" />
+      <option name="presentableId" value="LOCAL-00173" />
+      <option name="project" value="LOCAL" />
+      <updated>1774805636461</updated>
+    </task>
+    <task id="LOCAL-00174" summary="diagnostics for cpc issues">
+      <option name="closed" value="true" />
+      <created>1774805872085</created>
+      <option name="number" value="00174" />
+      <option name="presentableId" value="LOCAL-00174" />
+      <option name="project" value="LOCAL" />
+      <updated>1774805872085</updated>
+    </task>
+    <option name="localTasksCounter" value="175" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -560,7 +560,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="moved _usb_reset_serial_device above lifecycle" />
     <MESSAGE value="adding /dev/bus/usd to runtime args for container for cpcd support" />
     <MESSAGE value="further improvements for cpcd" />
     <MESSAGE value="serial break fix" />
@@ -585,7 +584,8 @@
     <MESSAGE value="debug line added for app modules tdm dir bug" />
     <MESSAGE value="sabm patch" />
     <MESSAGE value="sabm improvements" />
-    <option name="LAST_COMMIT_MESSAGE" value="sabm improvements" />
+    <MESSAGE value="diagnostics for cpc issues" />
+    <option name="LAST_COMMIT_MESSAGE" value="diagnostics for cpc issues" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
