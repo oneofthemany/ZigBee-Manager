@@ -342,7 +342,7 @@ COPY . .
 
 # ── Build and install zmm_cpc Rust/PyO3 TDM module ──────────────────────
 RUN pip install --no-cache-dir maturin \
- && cd modules/tdm/zmm_cpc \
+ && cd /app/modules/tdm/zmm_cpc \
  && maturin build --release --out /tmp/wheels \
  && pip install --no-cache-dir /tmp/wheels/zmm_cpc-*.whl \
  && rm -rf /tmp/wheels
