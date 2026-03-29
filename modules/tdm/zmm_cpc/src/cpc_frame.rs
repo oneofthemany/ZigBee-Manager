@@ -169,6 +169,19 @@ pub fn encode_disc(ep_id: u8) -> Vec<u8> {
     RawFrame::u_frame(ep_id, U_DISC).encode()
 }
 
+/// Encode a SABM (Set Asynchronous Balanced Mode) frame for ep_id.
+///
+/// Used by the router to proactively initiate a CPC connection when the
+/// RCP has not sent its own SABM within the startup grace period.
+/// This mirrors cpcd's behaviour: if the RCP doesn't initiate, we do.
+///
+/// The RCP will respond with UA if it accepts, or ignore it if it's
+/// already in application mode and waiting for us to respond to its
+/// SABM (in which case the normal reactive path handles it).
+pub fn encode_sabm(ep_id: u8) -> Vec<u8> {
+RawFrame::u_frame(ep_id, U_SABM).encode()
+}
+
 /// Encode a Receive Ready (RR) supervisory frame.
 ///
 /// `nr` = next sequence number we expect from the RCP (acknowledges up to N(R)-1).
@@ -336,6 +349,20 @@ mod tests {
         let wire = encode_disc(EP_ZIGBEE);
         let frame = decode_wire(&wire);
         assert_eq!(frame, CpcFrame::Disconnect { ep_id: EP_ZIGBEE });
+    }
+
+    #[test]
+    fn encode_sabm_decodes_to_connect() {
+        let wire = encode_sabm(EP_ZIGBEE);
+        let frame = decode_wire(&wire);
+        assert_eq!(frame, CpcFrame::Connect { ep_id: EP_ZIGBEE });
+    }
+
+    #[test]
+    fn encode_sabm_ep0() {
+        let wire = encode_sabm(EP_SYSTEM);
+        let frame = decode_wire(&wire);
+        assert_eq!(frame, CpcFrame::Connect { ep_id: EP_SYSTEM });
     }
 
     #[test]
