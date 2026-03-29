@@ -24,7 +24,7 @@ die()     { error "$*"; exit 1; }
 
 # ── Defaults ─────────────────────────────────────────────────────────────────
 REPO_URL="https://github.com/oneofthemany/ZigBee-Matter-Manager.git"
-REPO_BRANCH="main"
+REPO_BRANCH="dev"
 APP_DIR="${ZMM_APP_DIR:-$HOME/zigbee-matter-manager}"
 IMAGE_NAME="zigbee-matter-manager"
 CONTAINER_NAME="zigbee-matter-manager"
