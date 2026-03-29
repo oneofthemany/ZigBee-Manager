@@ -300,8 +300,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         procps \
         strace \
         iproute2 \
-
+        pkg-config \
     && rm -rf /var/lib/apt/lists/*
+
+# ── Rust toolchain ─────────
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | \
+    sh -s -- -y --default-toolchain stable --profile minimal
+ENV PATH="/root/.cargo/bin:${PATH}"
 
 # Fetch and install Silicon Labs packages matching Bookworm
 RUN DOWNLOAD_URL=$(curl -s https://api.github.com/repos/SiliconLabs/simplicity_sdk/releases/latest | jq -r '.assets[] | select(.name=="debian-bookworm.zip") | .browser_download_url') \
@@ -334,6 +339,16 @@ RUN pip install --no-cache-dir --upgrade pip \
 
 # Application source
 COPY . .
+
+# ── Build and install zmm_cpc Rust/PyO3 TDM module ──────────────────────
+RUN pip install --no-cache-dir maturin \
+ && cd modules/tdm/zmm_cpc \
+ && maturin build --release --out /tmp/wheels \
+ && pip install --no-cache-dir /tmp/wheels/zmm_cpc-*.whl \
+ && rm -rf /tmp/wheels
+
+# ── Strip Rust toolchain — only needed at build time ─────────────────────
+RUN rm -rf /root/.cargo /root/.rustup
 
 # Required directories
 RUN mkdir -p /data /app/data/matter /app/data/backups /app/logs /app/config \
