@@ -1,0 +1,18 @@
+[package]
+name = "zmm_cpc"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "zmm_cpc"
+crate-type = ["cdylib"]
+
+[dependencies]
+pyo3          = { version = "0.23", features = ["extension-module"] }
+tokio         = { version = "1",    features = ["full"] }
+tokio-serial  = "5"
+bytes         = "1"
+thiserror     = "1"
+
+[features]
+extension-module = ["pyo3/extension-module"]

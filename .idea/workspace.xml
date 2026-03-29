@@ -4,7 +4,24 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="reset_sequence to true and _reset_serial_state fix" />
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="reset_sequence to true and _reset_serial_state fix">
+      <change afterPath="$PROJECT_DIR$/modules/rust/deploy.sh" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/modules/rust/layout.md" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/modules/rust/zmm_cpc/Cargo.toml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/modules/rust/zmm_cpc/cross/aarch64.toml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/modules/rust/zmm_cpc/cross/x86.toml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/modules/rust/zmm_cpc/pyproject.toml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/modules/rust/zmm_cpc/src/cpc_frame.rs" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/modules/rust/zmm_cpc/src/endpoint.rs" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/modules/rust/zmm_cpc/src/hdlc.rs" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/modules/rust/zmm_cpc/src/lib.rs" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/modules/rust/zmm_cpc/src/py_bindings.rs" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/modules/rust/zmm_cpc/src/router.rs" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/modules/rust/zmm_cpc/src/serial_io.rs" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/modules/rust/zmm_cpc/src/tdm.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/modules/multipan.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/multipan.py" afterDir="false" />
+    </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -48,29 +65,29 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent">{
-  &quot;keyToString&quot;: {
-    &quot;ModuleVcsDetector.initialDetectionPerformed&quot;: &quot;true&quot;,
-    &quot;Python.main.executor&quot;: &quot;Run&quot;,
-    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.cidr.known.project.marker&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.readMode.enableVisualFormatting&quot;: &quot;true&quot;,
-    &quot;SHARE_PROJECT_CONFIGURATION_FILES&quot;: &quot;true&quot;,
-    &quot;SHELLCHECK.PATH&quot;: &quot;/var/home/smu02/.local/share/Google/AndroidStudio2025.3.1/Shell Script/shellcheck&quot;,
-    &quot;Shell Script.deploy.sh.executor&quot;: &quot;Run&quot;,
-    &quot;cf.first.check.clang-format&quot;: &quot;false&quot;,
-    &quot;cidr.known.project.marker&quot;: &quot;true&quot;,
-    &quot;git-widget-placeholder&quot;: &quot;main&quot;,
-    &quot;kotlin-language-version-configured&quot;: &quot;true&quot;,
-    &quot;last_opened_file_path&quot;: &quot;/var/home/smu02/StudioProjects/ZigBee-Manager&quot;,
-    &quot;project.structure.last.edited&quot;: &quot;Project&quot;,
-    &quot;project.structure.proportion&quot;: &quot;0.0&quot;,
-    &quot;project.structure.side.proportion&quot;: &quot;0.2&quot;,
-    &quot;settings.editor.selected.configurable&quot;: &quot;AndroidSdkUpdater&quot;
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "ModuleVcsDetector.initialDetectionPerformed": "true",
+    "Python.main.executor": "Run",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252": "true",
+    "RunOnceActivity.cidr.known.project.marker": "true",
+    "RunOnceActivity.git.unshallow": "true",
+    "RunOnceActivity.readMode.enableVisualFormatting": "true",
+    "SHARE_PROJECT_CONFIGURATION_FILES": "true",
+    "SHELLCHECK.PATH": "/var/home/smu02/.local/share/Google/AndroidStudio2025.3.1/Shell Script/shellcheck",
+    "Shell Script.deploy.sh.executor": "Run",
+    "cf.first.check.clang-format": "false",
+    "cidr.known.project.marker": "true",
+    "git-widget-placeholder": "dev",
+    "kotlin-language-version-configured": "true",
+    "last_opened_file_path": "/var/home/smu02/StudioProjects/ZigBee-Manager/modules/rust/zmm_cpc/cross",
+    "project.structure.last.edited": "Project",
+    "project.structure.proportion": "0.0",
+    "project.structure.side.proportion": "0.2",
+    "settings.editor.selected.configurable": "AndroidSdkUpdater"
   }
-}</component>
+}]]></component>
   <component name="PyConsoleOptionsProvider">
     <option name="myPythonConsoleState">
       <console-settings sdk-home="$USER_HOME$/venv/bin/python3.14">
@@ -85,7 +102,12 @@
     </option>
   </component>
   <component name="RecentsManager">
+    <key name="CopyFile.RECENT_KEYS">
+      <recent name="$PROJECT_DIR$/modules/rust/zmm_cpc/cross" />
+    </key>
     <key name="MoveFile.RECENT_KEYS">
+      <recent name="$PROJECT_DIR$/modules/rust/zmm_cpc/src" />
+      <recent name="$PROJECT_DIR$/modules/rust/zmm_cpc" />
       <recent name="$PROJECT_DIR$" />
       <recent name="$PROJECT_DIR$/mqtt" />
     </key>
