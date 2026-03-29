@@ -4,7 +4,7 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="updated to include rust toolchain for zmm_cpc tdm">
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="line 345 to /app/modules">
       <change afterPath="$PROJECT_DIR$/modules/tdm/zmm_cpc/cross/x86.toml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/build.sh" beforeDir="false" afterPath="$PROJECT_DIR$/build.sh" afterDir="false" />
     </list>
@@ -152,22 +152,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00119" summary="new multipan updates - WIP">
-      <option name="closed" value="true" />
-      <created>1774463707155</created>
-      <option name="number" value="00119" />
-      <option name="presentableId" value="LOCAL-00119" />
-      <option name="project" value="LOCAL" />
-      <updated>1774463707155</updated>
-    </task>
-    <task id="LOCAL-00120" summary="new multipan updates - WIP">
-      <option name="closed" value="true" />
-      <created>1774514621079</created>
-      <option name="number" value="00120" />
-      <option name="presentableId" value="LOCAL-00120" />
-      <option name="project" value="LOCAL" />
-      <updated>1774514621079</updated>
     </task>
     <task id="LOCAL-00121" summary="baudrate fix">
       <option name="closed" value="true" />
@@ -545,7 +529,23 @@
       <option name="project" value="LOCAL" />
       <updated>1774800546202</updated>
     </task>
-    <option name="localTasksCounter" value="168" />
+    <task id="LOCAL-00168" summary="updated buidl ro be for dev branch">
+      <option name="closed" value="true" />
+      <created>1774800813156</created>
+      <option name="number" value="00168" />
+      <option name="presentableId" value="LOCAL-00168" />
+      <option name="project" value="LOCAL" />
+      <updated>1774800813156</updated>
+    </task>
+    <task id="LOCAL-00169" summary="line 345 to /app/modules">
+      <option name="closed" value="true" />
+      <created>1774800966855</created>
+      <option name="number" value="00169" />
+      <option name="presentableId" value="LOCAL-00169" />
+      <option name="project" value="LOCAL" />
+      <updated>1774800966855</updated>
+    </task>
+    <option name="localTasksCounter" value="170" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -560,8 +560,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="sudo fix for umount of conatiner" />
-    <MESSAGE value="-n added for no passwd" />
     <MESSAGE value="updates to mulitpan detection" />
     <MESSAGE value="which bash added" />
     <MESSAGE value="cpc clean up fixes" />
@@ -585,7 +583,9 @@
     <MESSAGE value="replace ptybridge and cpcd" />
     <MESSAGE value="renamed dir to tdm" />
     <MESSAGE value="updated to include rust toolchain for zmm_cpc tdm" />
-    <option name="LAST_COMMIT_MESSAGE" value="updated to include rust toolchain for zmm_cpc tdm" />
+    <MESSAGE value="updated buidl ro be for dev branch" />
+    <MESSAGE value="line 345 to /app/modules" />
+    <option name="LAST_COMMIT_MESSAGE" value="line 345 to /app/modules" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>

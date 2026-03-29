@@ -341,6 +341,7 @@ RUN pip install --no-cache-dir --upgrade pip \
 COPY . .
 
 # ── Build and install zmm_cpc Rust/PyO3 TDM module ──────────────────────
+RUN ls -la /app/modules/ && ls -la /app/modules/tdm/ || echo "NOT FOUND"
 RUN pip install --no-cache-dir maturin \
  && cd /app/modules/tdm/zmm_cpc \
  && maturin build --release --out /tmp/wheels \
