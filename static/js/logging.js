@@ -7,6 +7,10 @@ import { state } from './state.js';
 import { getTimestamp } from './utils.js';
 import { analysePacket, renderPacketAnalysis } from './packet-analysis.js';
 
+// Debug packets cache and sort state
+let _debugPacketCache = [];
+let _debugSortState = { col: 'time', dir: 'desc' };
+
 /**
  * Add log entry to the log buffer
  */
@@ -274,7 +278,7 @@ export function handleLivePacket(p) {
 export async function viewDebugPackets() {
     const modal = new bootstrap.Modal(document.getElementById('debugPacketsModal'));
     modal.show();
-    // CRITICAL FIX: Ensure refresh is called to fetch the full data history
+    // Ensure refresh is called to fetch the full data history
     await refreshDebugPackets();
 }
 
@@ -283,118 +287,157 @@ export async function refreshDebugPackets() {
     content.innerHTML = '<div class="text-center p-4"><i class="fas fa-spinner fa-spin"></i> Loading...</div>';
 
     try {
-        // Read filter values from the UI
         const importanceFilter = document.getElementById('packetImportanceFilter')?.value || '';
-        const ieeeFilter = document.getElementById('packetIeeeFilter')?.value?.trim() || '';
-        const clusterFilter = document.getElementById('packetClusterFilter')?.value?.trim() || '';
+        const ieeeFilter       = document.getElementById('packetIeeeFilter')?.value?.trim() || '';
+        const clusterFilter    = document.getElementById('packetClusterFilter')?.value?.trim() || '';
 
-        // Build query parameters
         const params = new URLSearchParams({ limit: '100' });
 
-        if (importanceFilter) {
-            params.append('importance', importanceFilter);
-        }
-        if (ieeeFilter) {
-            params.append('ieee', ieeeFilter);
-        }
+        if (importanceFilter) params.append('importance', importanceFilter);
+        if (ieeeFilter)       params.append('ieee', ieeeFilter);
         if (clusterFilter) {
-            // Convert hex string to decimal if it starts with 0x, otherwise parse as decimal
             const clusterInt = clusterFilter.startsWith('0x')
                 ? parseInt(clusterFilter, 16)
                 : parseInt(clusterFilter, 10);
-
-            if (!isNaN(clusterInt)) {
-                params.append('cluster', clusterInt.toString());
-            }
+            if (!isNaN(clusterInt)) params.append('cluster', clusterInt.toString());
         }
 
-        const res = await fetch(`/api/debug/packets?${params.toString()}`);
+        const res  = await fetch(`/api/debug/packets?${params.toString()}`);
         const data = await res.json();
 
         if (data.success) {
-            let html = '<table class="table table-sm table-hover"><thead><tr>' +
-                '<th width="10%">Time</th>' +
-                '<th width="15%">Device</th>' +
-                '<th width="10%">Type</th>' +
-                '<th width="10%">IEEE</th>' +
-                '<th width="15%">Cluster</th>' +
-                '<th width="15%">Cmd</th>' +
-                '<th width="20%">Summary</th>' +
-                '<th width="5%"></th>' +
-                '</tr></thead><tbody>';
-
-            if (data.packets.length === 0) {
-                html += '<tr><td colspan="8" class="text-center text-muted py-3">No packets match the current filters</td></tr>';
-            } else {
-                data.packets.forEach((p, idx) => {
-                    try {
-                        const ieeeShort = p.ieee ? p.ieee.substring(p.ieee.length - 8) : 'N/A';
-                        const device = state.deviceCache[p.ieee] || {};
-                        const devName = device.friendly_name || device.name || 'Unknown';
-                        const devModel = device.model || device.model_id || '-';
-                        const rowId = `packet-${idx}`;
-
-                        let analysis;
-                        try {
-                            analysis = analysePacket(p);
-                        } catch (e) {
-                            console.warn('Packet analyser not available:', e);
-                            analysis = {
-                                cluster_name: p.cluster_name || `0x${(p.cluster_id || 0).toString(16).padStart(4, '0')}`,
-                                command: p.decoded?.command_name || p.decoded?.command_id_hex || 'Unknown',
-                                summary: ''
-                            };
-                        }
-
-                        let rowClass = '';
-                        if (p.cluster === 0xEF00) rowClass = 'table-warning';
-                        else if (p.cluster === 0x0406) rowClass = 'table-info';
-
-                        html += `<tr class="${rowClass}" style="cursor: pointer;" onclick="togglePacketDetails('${rowId}')">
-                            <td class="small">${p.timestamp_str}</td>
-                            <td class="small fw-bold text-truncate" style="max-width: 150px;" title="${devName}">${devName}</td>
-                            <td class="small text-muted text-truncate" style="max-width: 100px;" title="${devModel}">${devModel}</td>
-                            <td class="small text-muted" title="${p.ieee || 'N/A'}">${ieeeShort}</td>
-                            <td>${analysis.cluster_name}</td>
-                            <td class="small">${analysis.command}</td>
-                            <td class="small">${analysis.summary || '-'}</td>
-                            <td class="text-center">
-                                <i class="fas fa-chevron-down" id="icon-${rowId}"></i>
-                            </td>
-                        </tr>`;
-
-                        // ADDED text-light to fix visibility on dark background
-                        html += `<tr id="${rowId}" style="display: none;">
-                            <td colspan="8" class="bg-dark text-light">
-                                <div class="p-3">`;
-
-                        try {
-                            html += renderPacketAnalysis(p);
-                        } catch (e) {
-                            html += `<div class="alert alert-warning">Packet analyser not available. Showing raw data:</div>`;
-                        }
-
-                        html += `
-                                    <div class="mt-3">
-                                        <strong class="d-block mb-2">Raw Packet Data:</strong>
-                                        <pre class="bg-black text-light p-2 rounded small" style="max-height: 300px; overflow-y: auto;">${JSON.stringify(p.decoded, null, 2)}</pre>
-                                    </div>
-                                </div>
-                            </td>
-                        </tr>`;
-                    } catch (rowError) {
-                        console.error('Error rendering packet row:', rowError);
-                        html += `<tr><td colspan="8" class="text-danger small">Error rendering packet ${idx}: ${rowError.message}</td></tr>`;
-                    }
-                });
-            }
-            html += '</tbody></table>';
-            content.innerHTML = html;
+            _debugPacketCache = data.packets;
+            renderDebugPacketTable();
         }
     } catch (e) {
         console.error('Full error details:', e);
-        content.innerHTML = `<div class="alert alert-danger m-3">Error loading packets: ${e.message}<br><small>Check console for details</small></div>`;
+        document.getElementById('debugPacketsContent').innerHTML =
+            `<div class="alert alert-danger m-3">Error loading packets: ${e.message}<br><small>Check console for details</small></div>`;
     }
+}
+
+function renderDebugPacketTable() {
+    const content = document.getElementById('debugPacketsContent');
+    if (!content) return;
+
+    // Pre-compute sortable values for each packet
+    const rows = _debugPacketCache.map((p, idx) => {
+        const ieeeShort = p.ieee ? p.ieee.substring(p.ieee.length - 8) : 'N/A';
+        const device    = state.deviceCache[p.ieee] || {};
+        const devName   = device.friendly_name || device.name || 'Unknown';
+        const devModel  = device.model || device.model_id || '-';
+        let analysis;
+        try {
+            analysis = analysePacket(p);
+        } catch (e) {
+            analysis = {
+                cluster_name: p.cluster_name || `0x${(p.cluster || 0).toString(16).padStart(4, '0')}`,
+                command:      p.decoded?.command_name || p.decoded?.command_id_hex || 'Unknown',
+                summary:      ''
+            };
+        }
+        return { p, idx, ieeeShort, devName, devModel, analysis };
+    });
+
+    // Sort
+    const { col, dir } = _debugSortState;
+    rows.sort((a, b) => {
+        let va, vb;
+        switch (col) {
+            case 'time':    va = a.p.timestamp || 0;               vb = b.p.timestamp || 0;               break;
+            case 'device':  va = a.devName.toLowerCase();          vb = b.devName.toLowerCase();          break;
+            case 'type':    va = a.devModel.toLowerCase();         vb = b.devModel.toLowerCase();         break;
+            case 'ieee':    va = (a.p.ieee || '').toLowerCase();   vb = (b.p.ieee || '').toLowerCase();   break;
+            case 'cluster': va = a.p.cluster || 0;                 vb = b.p.cluster || 0;                 break;
+            case 'cmd':     va = a.analysis.command.toLowerCase(); vb = b.analysis.command.toLowerCase(); break;
+            case 'summary': va = (a.analysis.summary || '').toLowerCase(); vb = (b.analysis.summary || '').toLowerCase(); break;
+            default:        va = a.p.timestamp || 0;               vb = b.p.timestamp || 0;
+        }
+        if (va < vb) return dir === 'asc' ? -1 : 1;
+        if (va > vb) return dir === 'asc' ?  1 : -1;
+        return 0;
+    });
+
+    // Build sortable header
+    const COLS = [
+        { key: 'time',    label: 'Time',    width: '10%' },
+        { key: 'device',  label: 'Device',  width: '15%' },
+        { key: 'type',    label: 'Type',    width: '10%' },
+        { key: 'ieee',    label: 'IEEE',    width: '10%' },
+        { key: 'cluster', label: 'Cluster', width: '15%' },
+        { key: 'cmd',     label: 'Cmd',     width: '15%' },
+        { key: 'summary', label: 'Summary', width: '20%' },
+    ];
+
+    const headerCells = COLS.map(({ key, label, width }) => {
+        const active = _debugSortState.col === key;
+        const icon   = active
+            ? (_debugSortState.dir === 'asc' ? 'fa-sort-up' : 'fa-sort-down')
+            : 'fa-sort';
+        return `<th width="${width}" class="debug-sort-hdr" data-col="${key}" style="cursor:pointer;user-select:none;">` +
+               `${label} <i class="fas ${icon} ${active ? 'text-primary' : 'text-muted'} small"></i></th>`;
+    }).join('');
+
+    let html = `<table class="table table-sm table-hover">
+        <thead><tr>${headerCells}<th width="20%">Summary</th><th width="5%"></th></tr></thead>
+        <tbody>`;
+
+    if (rows.length === 0) {
+        html += '<tr><td colspan="8" class="text-center text-muted py-3">No packets match the current filters</td></tr>';
+    } else {
+        rows.forEach(({ p, idx, ieeeShort, devName, devModel, analysis }) => {
+            try {
+                const rowId = `packet-${idx}`;
+                let rowClass = '';
+                if (p.cluster === 0xEF00) rowClass = 'table-warning';
+                else if (p.cluster === 0x0406) rowClass = 'table-info';
+
+                html += `<tr class="${rowClass}" style="cursor:pointer;" onclick="togglePacketDetails('${rowId}')">
+                    <td class="small">${p.timestamp_str}</td>
+                    <td class="small fw-bold text-truncate" style="max-width:150px;" title="${devName}">${devName}</td>
+                    <td class="small text-muted text-truncate" style="max-width:100px;" title="${devModel}">${devModel}</td>
+                    <td class="small text-muted" title="${p.ieee || 'N/A'}">${ieeeShort}</td>
+                    <td>${analysis.cluster_name}</td>
+                    <td class="small">${analysis.command}</td>
+                    <td class="small">${analysis.summary || '-'}</td>
+                    <td class="text-center"><i class="fas fa-chevron-down" id="icon-${rowId}"></i></td>
+                </tr>`;
+
+                html += `<tr id="${rowId}" style="display:none;">
+                    <td colspan="8" class="bg-dark text-light"><div class="p-3">`;
+                try {
+                    html += renderPacketAnalysis(p);
+                } catch (e) {
+                    html += `<div class="alert alert-warning">Packet analyser error: ${e.message}</div>`;
+                }
+                html += `<div class="mt-3">
+                    <strong class="d-block mb-2">Raw Packet Data:</strong>
+                    <pre class="bg-black text-light p-2 rounded small" style="max-height:300px;overflow-y:auto;">${JSON.stringify(p.decoded, null, 2)}</pre>
+                </div></div></td></tr>`;
+
+            } catch (rowError) {
+                console.error('Error rendering packet row:', rowError);
+                html += `<tr><td colspan="8" class="text-danger small">Error rendering packet ${idx}: ${rowError.message}</td></tr>`;
+            }
+        });
+    }
+
+    html += '</tbody></table>';
+    content.innerHTML = html;
+
+    // Attach sort click handlers
+    content.querySelectorAll('.debug-sort-hdr').forEach(th => {
+        th.addEventListener('click', () => {
+            const col = th.dataset.col;
+            if (_debugSortState.col === col) {
+                _debugSortState.dir = _debugSortState.dir === 'asc' ? 'desc' : 'asc';
+            } else {
+                _debugSortState.col = col;
+                _debugSortState.dir = col === 'time' ? 'desc' : 'asc';
+            }
+            renderDebugPacketTable();
+        });
+    });
 }
 
 /**

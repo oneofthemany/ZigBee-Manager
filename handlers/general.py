@@ -381,8 +381,8 @@ class OnOffHandler(ClusterHandler):
                     "name": f"Contact Sensor {ep}",
                     "device_class": "door",
                     "value_template": f"{{{{ value_json.contact_{ep} }}}}",
-                    "payload_on": True,
-                    "payload_off": False
+                    "payload_on": False,
+                    "payload_off": True
                 }
             }]
 

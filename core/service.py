@@ -50,6 +50,7 @@ from modules.device_ban import get_ban_manager
 from modules.touchlink import create_touchlink_manager, TouchlinkManager
 from modules.automation import AutomationEngine
 from modules.ota import OTAManager, build_ota_config
+from modules.multipan import MultiPanManager
 
 # Import mixins
 from core.config_builder import ConfigBuilderMixin
@@ -122,6 +123,7 @@ class ZigbeeService(
 
         self.join_history = []
         self._config = config
+        self.multipan: Optional['MultiPanManager'] = None
 
         # Pairing state
         self.pairing_expiration = 0
@@ -283,7 +285,7 @@ class ZigbeeService(
     # START / STOP
     # =========================================================================
 
-    async def start(self, network_key=None):
+    async def start(self, network_key=None, probe_progress_cb=None):
         """Start the Zigbee network with enhanced resilience."""
         # Backwards compatibility migration
         if 'ezsp_config' in self._config and 'ezsp' not in self._config:
@@ -294,19 +296,78 @@ class ZigbeeService(
                 'config': self._config['ezsp_config']
             }
 
-        # Probe radio type
-        radio_type = await self._probe_radio_type()
-        logger.info(f"✅ Detected radio type: {radio_type}")
+        # Probe radio type + serial parameters (protocol-level handshake)
+        probe_result = await self._probe_radio_type(progress_cb=probe_progress_cb)
+
+        # ================================================================
+        # MULTIPAN INTERCEPT — if Jedi detected RCP firmware, start the
+        # CPC daemon stack and redirect bellows to the zigbeed socket.
+        # ================================================================
+        adapter_family = probe_result.get("adapter_family", "")
+        if adapter_family == "Silicon Labs CPC Multi-PAN (RCP)":
+            logger.info(
+                "MultiPAN RCP firmware detected — starting CPC stack..."
+            )
+            logger.debug(f"MultiPAN probe_result: {probe_result}")
+            try:
+                from modules.multipan import MultiPanManager
+
+                multipan_config = self._config.get("multipan", {})
+                self.multipan = MultiPanManager(
+                    zigbee_config=self._config,
+                    multipan_config=multipan_config,
+                    event_emitter=self._emit,
+                )
+
+                if await self.multipan.start(serial_port=self.port, jedi_result=probe_result):
+                    # Override port — bellows will connect to zigbeed's socket
+                    # instead of the serial port (which cpcd now owns)
+                    original_port = self.port
+                    self.port = self.multipan.ezsp_socket
+                    logger.info(
+                        f"MultiPAN active: {original_port} → {self.port}"
+                    )
+
+                    # Re-probe: socket path → returns EZSP with no serial params
+                    probe_result = await self._probe_radio_type()
+                else:
+                    logger.error(
+                        "MultiPAN stack failed to start — "
+                        "falling back to direct serial (may fail if "
+                        "dongle has RCP firmware)"
+                    )
+                    await self.multipan.stop()
+                    self.multipan = None
+
+            except ImportError:
+                logger.warning(
+                    "multipan module not available — "
+                    "cannot use MultiPAN RCP firmware. "
+                    "Install cpcd/zigbeed or flash NCP firmware."
+                )
+            except Exception as e:
+                logger.error(f"MultiPAN startup error: {e}")
+                self.multipan = None
+
+
+        radio_type = probe_result["radio_type"]
+        logger.info(
+            f"✅ Detected radio: {radio_type} @ "
+            f"{probe_result.get('baudrate', '?')} baud / "
+            f"{probe_result.get('flow_control', '?')} flow"
+        )
 
         # Import correct driver
         if radio_type == "EZSP":
             from bellows.zigbee.application import ControllerApplication
         elif radio_type == "ZNP":
             from zigpy_znp.zigbee.application import ControllerApplication
+        elif radio_type == "DECONZ":
+            from zigpy_deconz.zigbee.application import ControllerApplication
         else:
             raise RuntimeError(f"Unsupported radio type: {radio_type}")
 
-        # Build config
+        # Build config using detected serial parameters
         if radio_type == "EZSP":
             ezsp_conf = {}
             user_ezsp = self._config.get('ezsp', {}).get('config', {})
@@ -314,9 +375,11 @@ class ZigbeeService(
                 if key.startswith('CONFIG_'):
                     ezsp_conf[key] = val
                     logger.info(f"User override: {key} = {val}")
-            conf = self._build_ezsp_config(ezsp_conf, network_key)
+            conf = self._build_ezsp_config(ezsp_conf, network_key, detected=probe_result)
         elif radio_type == "ZNP":
-            conf = self._build_znp_config(network_key)
+            conf = self._build_znp_config(network_key, detected=probe_result)
+        elif radio_type == "DECONZ":
+            conf = self._build_deconz_config(network_key, detected=probe_result)
 
         # Robust startup with retries
         for attempt in range(12):
@@ -324,6 +387,15 @@ class ZigbeeService(
                 self.app = await ControllerApplication.new(
                     config=conf, auto_form=True, start_radio=True
                 )
+
+                # MultiPAN: zigbeed doesn't support EZSP readCounters —
+                # disable watchdog before it fires
+                if self.multipan and self.multipan.is_running:
+                    if hasattr(self.app, '_watchdog_task') and self.app._watchdog_task:
+                        self.app._watchdog_task.cancel()
+                    if hasattr(self.app, '_watchdog_monitor'):
+                        self.app._watchdog_monitor.stop()
+                    logger.info("Disabled EZSP watchdog (MultiPAN/zigbeed mode)")
 
                 self._touchlink = await create_touchlink_manager(self.app)
                 if self._touchlink:
@@ -465,6 +537,12 @@ class ZigbeeService(
         if self.app:
             await self.app.shutdown()
             logger.info("Zigbee network stopped")
+
+        # Stop MultiPAN stack AFTER bellows has disconnected
+        # (reverse order: otbr → socat → zigbeed → cpcd)
+        if self.multipan and self.multipan.is_running:
+            await self.multipan.stop()
+            self.multipan = None
 
     # =========================================================================
     # ZIGPY LISTENER INTERFACE
@@ -651,6 +729,13 @@ class ZigbeeService(
         except Exception:
             pass
 
+        # 2b. UPDATE LAST SEEN for all known devices
+        try:
+            if ieee in self.devices:
+                self.devices[ieee].update_last_seen()
+        except Exception:
+            pass
+
         # 3. FAST PATH (Time-critical)
         try:
             fast_pathed = self.fast_path.process_frame(
@@ -716,6 +801,129 @@ class ZigbeeService(
         except Exception as e:
             logger.debug(f"[{ieee}] Contact sensor fallback error: {e}")
 
+
+        # 6. GENERIC REPORT ATTRIBUTES DISPATCHER
+        # zigpy cluster dispatch doesn't reliably reach handlers for
+        # Report Attributes — parse raw ZCL and dispatch to handlers directly
+        try:
+            if ieee in self.devices and message and len(message) >= 7:
+                frame_control = message[0]
+                is_global = (frame_control & 0x03) == 0x00  # Frame type = global
+                command_id = message[2]
+
+                if is_global and command_id == 0x0A:  # Report Attributes
+                    zdev = self.devices[ieee]
+
+                    # Find handler for this cluster + endpoint
+                    handler = zdev.handlers.get((src_ep, cluster))
+                    if not handler:
+                        handler = zdev.handlers.get(cluster)
+
+                    if handler:
+                        idx = 3
+                        while idx + 3 <= len(message):
+                            attr_id = message[idx] | (message[idx + 1] << 8)
+                            data_type = message[idx + 2]
+                            idx += 3
+
+                            value, size = self._parse_zcl_value(data_type, message, idx)
+                            if size < 0:
+                                break
+                            idx += size
+
+                            if value is not None:
+                                try:
+                                    handler.attribute_updated(attr_id, value)
+                                except Exception as e:
+                                    logger.debug(f"[{ieee}] Handler dispatch 0x{cluster:04x} "
+                                                 f"attr 0x{attr_id:04x} error: {e}")
+
+                        # Update last seen
+                        zdev.update_last_seen()
+        except Exception as e:
+            logger.debug(f"[{ieee}] Generic dispatch error: {e}")
+
+
+        @staticmethod
+        def _parse_zcl_value(data_type, message, idx):
+            """
+            Parse a ZCL typed value from raw bytes.
+            Returns (value, size) or (None, -1) on error.
+            """
+            try:
+                remaining = len(message) - idx
+
+                # Boolean (0x10)
+                if data_type == 0x10:
+                    if remaining < 1:
+                        return None, -1
+                    return bool(message[idx]), 1
+
+                # Bitmap8 (0x18), Uint8 (0x20), Enum8 (0x30)
+                if data_type in (0x18, 0x20, 0x30):
+                    if remaining < 1:
+                        return None, -1
+                    return message[idx], 1
+
+                # Bitmap16 (0x19), Uint16 (0x21), Enum16 (0x31)
+                if data_type in (0x19, 0x21, 0x31):
+                    if remaining < 2:
+                        return None, -1
+                    return int.from_bytes(message[idx:idx + 2], 'little'), 2
+
+                # Uint24 (0x22)
+                if data_type == 0x22:
+                    if remaining < 3:
+                        return None, -1
+                    return int.from_bytes(message[idx:idx + 3], 'little'), 3
+
+                # Uint32 (0x23), Bitmap32 (0x1B)
+                if data_type in (0x23, 0x1B):
+                    if remaining < 4:
+                        return None, -1
+                    return int.from_bytes(message[idx:idx + 4], 'little'), 4
+
+                # Int8 (0x28)
+                if data_type == 0x28:
+                    if remaining < 1:
+                        return None, -1
+                    return int.from_bytes(message[idx:idx + 1], 'little', signed=True), 1
+
+                # Int16 (0x29)
+                if data_type == 0x29:
+                    if remaining < 2:
+                        return None, -1
+                    return int.from_bytes(message[idx:idx + 2], 'little', signed=True), 2
+
+                # Int32 (0x2B)
+                if data_type == 0x2B:
+                    if remaining < 4:
+                        return None, -1
+                    return int.from_bytes(message[idx:idx + 4], 'little', signed=True), 4
+
+                # Bitmap24 (0x1A), Uint24 (0x22)
+                if data_type == 0x1A:
+                    if remaining < 3:
+                        return None, -1
+                    return int.from_bytes(message[idx:idx + 3], 'little'), 3
+
+                # Octet string (0x41), Character string (0x42)
+                if data_type in (0x41, 0x42):
+                    if remaining < 1:
+                        return None, -1
+                    str_len = message[idx]
+                    if remaining < 1 + str_len:
+                        return None, -1
+                    raw = message[idx + 1:idx + 1 + str_len]
+                    if data_type == 0x42:
+                        return raw.decode('utf-8', errors='replace'), 1 + str_len
+                    return raw, 1 + str_len
+
+                # Unknown type — skip
+                return None, -1
+
+            except Exception:
+                return None, -1
     # =========================================================================
     # DEVICE UPDATE HANDLING
     # =========================================================================

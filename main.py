@@ -49,6 +49,7 @@ from modules.safe_deploy import register_deploy_routes, check_deploy_on_startup
 from modules.system_monitor import SystemMonitor
 from modules.telemetry_collector import TelemetryCollector
 from modules.telemetry_api import register_telemetry_routes
+from modules.dongle_jedi_api import register_setup_routes
 
 # Import route registrations
 from routes import (
@@ -130,6 +131,9 @@ mqtt_service = MQTTService(
     log_callback=None
 )
 
+mqtt_enabled = get_conf('mqtt', 'enabled', True)  # Default True for backward compat
+
+
 zigbee_service = ZigbeeService(
     port=get_conf('zigbee', 'port', '/dev/ttyACM0'),
     mqtt_client=mqtt_service,
@@ -208,25 +212,54 @@ async def lifespan(app: FastAPI):
         "payload": {"level": "INFO", "message": "System Starting...", "timestamp": None}
     })
 
-    # Start MQTT
-    try:
-        await mqtt_service.start()
-        logger.info("MQTT connected")
-    except Exception as e:
-        logger.warning(f"MQTT connection failed: {e}")
+    # Setup wizard routes (must register before Zigbee start check)
+    register_setup_routes(app, ws_manager=manager)
 
-    # MQTT Explorer
-    mqtt_service.mqtt_explorer = MQTTExplorer(mqtt_service, max_messages=1000)
-    logger.info("MQTT Explorer initialized")
+    # Check if setup is needed BEFORE starting MQTT or Zigbee
+    from modules.dongle_jedi import DongleJedi
+    setup_status = DongleJedi.needs_setup()
 
-    async def mqtt_explorer_callback(message_record):
-        await manager.broadcast({"type": "mqtt_message", "payload": message_record})
-    mqtt_service.mqtt_explorer.add_callback(mqtt_explorer_callback)
+    mqtt_enabled = get_conf('mqtt', 'enabled', True)
 
-    # Start Zigbee
-    ensure_network_credentials("./config/config.yaml")
-    network_key = get_conf('zigbee', 'network_key', None)
-    asyncio.create_task(zigbee_service.start(network_key=network_key))
+    if setup_status["needs_setup"]:
+        logger.warning(f"Setup needed: {setup_status['reason']}")
+        logger.info("Web UI is up — setup wizard will guide the user")
+        await manager.broadcast({
+            "type": "log",
+            "payload": {
+                "level": "WARN",
+                "message": f"Setup needed ({setup_status['reason']}). Open the web UI.",
+                "timestamp": None,
+            }
+        })
+    else:
+        mqtt_enabled = get_conf('mqtt', 'enabled', True)
+
+        if mqtt_enabled:
+            try:
+                await mqtt_service.start()
+                logger.info("MQTT connected")
+            except Exception as e:
+                logger.warning(f"MQTT connection failed: {e}")
+
+            mqtt_service.mqtt_explorer = MQTTExplorer(mqtt_service, max_messages=1000)
+            async def mqtt_explorer_callback(message_record):
+                await manager.broadcast({"type": "mqtt_message", "payload": message_record})
+            mqtt_service.mqtt_explorer.add_callback(mqtt_explorer_callback)
+            logger.info("MQTT Explorer initialized")
+        else:
+            logger.info("MQTT disabled (standalone mode)")
+
+        # Start Zigbee
+        ensure_network_credentials("./config/config.yaml")
+        network_key = get_conf('zigbee', 'network_key', None)
+        await zigbee_service.start(network_key=network_key)
+        logger.info("Zigbee network started")
+
+        # Wire group callback
+        if mqtt_enabled:
+            mqtt_service.group_command_callback = zigbee_service.group_manager.handle_mqtt_group_command
+            logger.info("Wired GroupManager callback to MQTT Service")
 
     # Start Matter
     if matter_server:
@@ -254,25 +287,52 @@ async def lifespan(app: FastAPI):
 
         async def _start_spectrum_monitor(svc):
             """Wait for radio, probe energy_scan support, then start."""
-            for _ in range(30):
+            # MultiPAN startup takes longer — CPC stack adds 40-70s
+            # before bellows can connect. Extend patience accordingly.
+            is_multipan = getattr(svc, 'multipan', None) is not None
+            max_wait = 300 if is_multipan else 150  # 5min vs 2.5min
+            poll_interval = 5
+            max_polls = max_wait // poll_interval
+
+            if is_multipan:
+                logger.info(
+                    f"Spectrum monitor: MultiPAN detected, "
+                    f"extending radio wait to {max_wait}s"
+                )
+
+            for i in range(max_polls):
                 if svc.app:
-                    # Probe whether the coordinator supports energy_scan
                     try:
                         result = await svc.app.energy_scan(
                             channels=range(11, 12), count=1, duration_exp=2
                         )
                         if result:
                             svc.spectrum_monitor.start()
-                            logger.info(f"Spectrum monitor started (interval={spectrum_interval}s)")
+                            logger.info(
+                                f"Spectrum monitor started "
+                                f"(interval={spectrum_interval}s, "
+                                f"waited {i * poll_interval}s for radio)"
+                            )
                         else:
-                            logger.warning("Spectrum monitor: energy_scan returned empty — disabled")
+                            logger.warning(
+                                "Spectrum monitor: energy_scan returned empty — disabled"
+                            )
                     except NotImplementedError:
-                        logger.warning("Spectrum monitor: energy_scan not supported by this coordinator — disabled")
+                        logger.warning(
+                            "Spectrum monitor: energy_scan not supported "
+                            "by this coordinator — disabled"
+                        )
                     except Exception as e:
-                        logger.warning(f"Spectrum monitor: energy_scan probe failed ({e}) — disabled")
+                        logger.warning(
+                            f"Spectrum monitor: energy_scan probe failed "
+                            f"({e}) — disabled"
+                        )
                     return
-                await asyncio.sleep(5)
-            logger.warning("Spectrum monitor: radio never ready after 150s — disabled")
+                await asyncio.sleep(poll_interval)
+
+            logger.warning(
+                f"Spectrum monitor: radio never ready after {max_wait}s — disabled"
+            )
 
         asyncio.create_task(_start_spectrum_monitor(zigbee_service))
 
@@ -281,7 +341,9 @@ async def lifespan(app: FastAPI):
     if hasattr(zigbee_service, 'group_manager'):
         logger.info("Group manager initialized")
 
-    mqtt_service.group_command_callback = zigbee_service.group_manager.handle_mqtt_group_command
+    if mqtt_enabled:
+        mqtt_service.group_command_callback = zigbee_service.group_manager.handle_mqtt_group_command
+        logger.info("Wired GroupManager callback to MQTT Service")
     logger.info("Wired GroupManager callback to MQTT Service")
 
     # ── System Monitor & Telemetry ──
@@ -340,7 +402,7 @@ async def lifespan(app: FastAPI):
 
 
     # Safe Deploy
-    register_deploy_routes(app, service_name="zigbee_manager")
+    register_deploy_routes(app, service_name="zigbee_matter_manager")
     logger.info("Safe deploy routes registered")
 
     # Check if we're recovering from a deploy
@@ -349,7 +411,7 @@ async def lifespan(app: FastAPI):
     yield  # Application runs here
 
     # Shutdown
-    logger.info("Shutting down Zigbee Gateway...")
+    logger.info("Shutting down Zigbee Matter Manager...")
 
     # 1. monitors and telemetry first
     system_monitor.stop()
@@ -358,6 +420,8 @@ async def lifespan(app: FastAPI):
     close_telemetry_db()
 
     # 2. services
+    if zigbee_service.multipan and zigbee_service.multipan.is_running:
+        await zigbee_service.multipan.stop()
     await zigbee_service.stop()
     await mqtt_service.stop()
     if hasattr(zigbee_service, 'spectrum_monitor'):
@@ -416,6 +480,103 @@ register_websocket_routes(app)
 register_zone_routes(app, lambda: zigbee_service.zone_manager, lambda: zigbee_service.devices)
 register_ota_routes(app, lambda: zigbee_service.ota_manager)
 register_automation_routes(app, lambda: zigbee_service.automation)
+
+# ============================================================================
+# POST-SETUP ZIGBEE HOT-START SERVICES
+# ============================================================================
+
+@app.post("/api/setup/start-services")
+async def start_services_after_setup():
+    """
+    Called by the setup wizard after all config is applied.
+    Starts MQTT (if enabled) and Zigbee, streaming probe progress via WS.
+    """
+    global CONFIG
+
+    try:
+        # Re-read config
+        CONFIG = load_config()
+        mqtt_enabled = get_conf('mqtt', 'enabled', True)
+
+        # ── Step 1: MQTT ──
+        await manager.broadcast({
+            "type": "setup_phase",
+            "payload": {"phase": "mqtt", "message": "Configuring MQTT..."}
+        })
+
+        if mqtt_enabled:
+            mqtt_service.broker = get_conf('mqtt', 'broker_host', 'localhost')
+            mqtt_service.port = get_conf('mqtt', 'broker_port', 1883)
+            mqtt_service.username = get_conf('mqtt', 'username')
+            mqtt_service.password = get_conf('mqtt', 'password')
+            mqtt_service.base_topic = get_conf('mqtt', 'base_topic', 'zigbee_matter_manager')
+
+            await mqtt_service.stop()
+            await mqtt_service.start()
+
+            mqtt_service.mqtt_explorer = MQTTExplorer(mqtt_service, max_messages=1000)
+            async def mqtt_explorer_callback(message_record):
+                await manager.broadcast({"type": "mqtt_message", "payload": message_record})
+            mqtt_service.mqtt_explorer.add_callback(mqtt_explorer_callback)
+
+            await manager.broadcast({
+                "type": "setup_phase",
+                "payload": {
+                    "phase": "mqtt_done",
+                    "message": f"MQTT connected to {mqtt_service.broker}",
+                    "success": mqtt_service.connected,
+                }
+            })
+        else:
+            await manager.broadcast({
+                "type": "setup_phase",
+                "payload": {"phase": "mqtt_done", "message": "MQTT disabled (standalone)", "success": True}
+            })
+
+        # ── Step 2: Zigbee with live probe progress ──
+        await manager.broadcast({
+            "type": "setup_phase",
+            "payload": {"phase": "zigbee_probe", "message": "Detecting Zigbee coordinator..."}
+        })
+
+        new_port = get_conf('zigbee', 'port', '/dev/ttyACM0')
+        zigbee_service.port = new_port
+        zigbee_service._config = CONFIG.get('zigbee', {})
+
+        ensure_network_credentials("./config/config.yaml")
+        CONFIG = load_config()
+        network_key = get_conf('zigbee', 'network_key', None)
+
+        # Progress callback that broadcasts Dongle Jedi events to frontend
+        async def probe_progress(progress):
+            await manager.broadcast({
+                "type": "setup_probe_progress",
+                "payload": progress.to_dict(),
+            })
+
+        await zigbee_service.start(
+            network_key=network_key,
+            probe_progress_cb=probe_progress,
+        )
+
+        # Wire group callback
+        if mqtt_enabled:
+            mqtt_service.group_command_callback = zigbee_service.group_manager.handle_mqtt_group_command
+
+        await manager.broadcast({
+            "type": "setup_complete",
+            "payload": {"message": "All services started successfully"}
+        })
+
+        return {"success": True, "message": f"Services started on {new_port}"}
+
+    except Exception as e:
+        logger.error(f"Failed to start services: {e}", exc_info=True)
+        await manager.broadcast({
+            "type": "setup_error",
+            "payload": {"error": str(e)}
+        })
+        return {"success": False, "error": str(e)}
 
 # ============================================================================
 # ENTRY POINT

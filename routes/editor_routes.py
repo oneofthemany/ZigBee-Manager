@@ -14,7 +14,7 @@ from typing import Optional
 logger = logging.getLogger("routes.editor")
 
 # Project root — all paths are relative to this
-PROJECT_ROOT = Path("/opt/zigbee_manager")
+PROJECT_ROOT = Path("/app")
 
 # Directories the editor can access
 ALLOWED_DIRS = [

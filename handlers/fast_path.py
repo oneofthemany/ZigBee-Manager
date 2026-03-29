@@ -326,113 +326,55 @@ class FastPathProcessor:
     def _emit_motion_immediate(self, ieee: str, occupied: bool):
         """
         Emit motion event with minimal latency.
-
-        Steps:
-        1. Update device state in memory
-        2. Fast-path MQTT publish (non-blocking)
-        3. WebSocket broadcast (non-blocking)
-
-        Target latency: < 5ms
+        Uses device.update_state() to ensure proper MQTT + WebSocket pipeline.
         """
         if ieee not in self.service.devices:
             return
 
         device = self.service.devices[ieee]
 
-        # Update state immediately
-        device.state['occupancy'] = occupied
-        device.state['motion'] = occupied
-        device.state['presence'] = occupied
-        device.last_seen = int(time.time() * 1000)
+        # Use the proper update pipeline — this triggers:
+        # handle_device_update() → MQTT publish + WebSocket broadcast
+        device.update_state({
+            'occupancy': occupied,
+            'motion': occupied,
+            'presence': occupied,
+        })
 
-        # Mark cache dirty (will save in background)
-        self.service._cache_dirty = True
-
-        # Fast MQTT publish (non-blocking)
-        if self.service.mqtt and hasattr(self.service.mqtt, 'publish_fast'):
-            safe_name = self.service.get_safe_name(ieee)
-            payload = json.dumps({
-                'occupancy': occupied,
-                'motion': occupied,
-                'presence': occupied
-            })
-            self.service.mqtt.publish_fast(f"{safe_name}/state", payload, qos=0)
-
-        # WebSocket broadcast (non-blocking if using queue)
-        if hasattr(self.service, 'event_callback'):
-            try:
-                import asyncio
-                # Use call_soon_threadsafe or create_task to avoid blocking
-                # We assume event_callback is async
-                # Check if there is a running loop, otherwise we can't emit
-                try:
-                    loop = asyncio.get_running_loop()
-                    loop.create_task(self.service.event_callback('device_state', {
-                        'ieee': ieee,
-                        'state': {'occupancy': occupied, 'motion': occupied}
-                    }))
-                except RuntimeError:
-                    pass
-            except Exception as e:
-                logger.debug(f"WebSocket broadcast error: {e}")
-
-    def _emit_presence_immediate(self, ieee: str, present: bool, distance: Optional[int] = None):
-        """Emit Tuya radar presence event with minimal latency."""
+    def _emit_presence_immediate(self, ieee: str, present: bool, distance=None):
+        """
+        Emit Tuya radar presence event with minimal latency.
+        Uses device.update_state() to ensure proper MQTT + WebSocket pipeline.
+        """
         if ieee not in self.service.devices:
             return
 
         device = self.service.devices[ieee]
-
-        # Update state
-        device.state['presence'] = present
-        device.state['state'] = present
-        device.state['occupancy'] = present
-
+        state_update = {
+            'presence': present,
+            'occupancy': present,
+        }
         if distance is not None:
-            device.state['distance'] = distance / 100.0  # Convert to meters
+            state_update['distance'] = distance / 100.0
 
-        device.last_seen = int(time.time() * 1000)
-        self.service._cache_dirty = True
-
-        # Fast MQTT publish
-        if self.service.mqtt and hasattr(self.service.mqtt, 'publish_fast'):
-            safe_name = self.service.get_safe_name(ieee)
-            state_dict = {
-                'presence': present,
-                'state': present,
-                'occupancy': present
-            }
-            if distance is not None:
-                state_dict['distance'] = device.state['distance']
-
-            payload = json.dumps(state_dict)
-            self.service.mqtt.publish_fast(f"{safe_name}/state", payload, qos=0)
+        device.update_state(state_update)
 
     def _emit_ias_zone_immediate(self, ieee: str, zone_status: int, alarm: bool,
                                  tamper: bool, battery_low: bool):
-        """Emit IAS Zone event with minimal latency."""
+        """
+        Emit IAS Zone event with minimal latency.
+        Uses device.update_state() to ensure proper MQTT + WebSocket pipeline.
+        """
         if ieee not in self.service.devices:
             return
 
         device = self.service.devices[ieee]
-
-        # Update state
-        device.state['zone_status'] = zone_status
-        device.state['contact'] = not alarm  # Inverted: alarm=True means contact=False (open)
-        device.state['tamper'] = tamper
-        device.state['battery_low'] = battery_low
-        device.last_seen = int(time.time() * 1000)
-        self.service._cache_dirty = True
-
-        # Fast MQTT publish
-        if self.service.mqtt and hasattr(self.service.mqtt, 'publish_fast'):
-            safe_name = self.service.get_safe_name(ieee)
-            payload = json.dumps({
-                'contact': not alarm,
-                'tamper': tamper,
-                'battery_low': battery_low
-            })
-            self.service.mqtt.publish_fast(f"{safe_name}/state", payload, qos=0)
+        device.update_state({
+            'zone_status': zone_status,
+            'contact': not alarm,
+            'tamper': tamper,
+            'battery_low': battery_low,
+        })
 
     def _get_data_type_size(self, data_type: int, message: bytes, idx: int) -> int:
         """

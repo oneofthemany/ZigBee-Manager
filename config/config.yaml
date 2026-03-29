@@ -26,16 +26,33 @@ web:
 
 # Matter integration (optional — requires python-matter-server)
 matter:
-   enabled: true                    # Start embedded server
-   port: 5580                       # WS port (default 5580)
-   storage_path: ./data/matter      # Fabric/node persistence
-   vendor_id: 0xFFF1                # Matter vendor ID (default)
-   fabric_id: 1                     # Fabric ID (default)
-   bluetooth_adapter: 0             # BLE adapter index (optional, for commissioning)
+  enabled: true                    # Start embedded server
+  port: 5580                       # WS port (default 5580)
+  storage_path: ./data/matter      # Fabric/node persistence
+  vendor_id: 0xFFF1                # Matter vendor ID (default)
+  fabric_id: 1                     # Fabric ID (default)
+  bluetooth_adapter: 0             # BLE adapter index (optional, for commissioning)
 
   # --- OR use an external server instead ---
   # enabled: false
   # server_url: ws://localhost:5580/ws
+
+# # MultiPAN RCP (auto-detected — only add to override defaults)
+# multipan:
+#   cpcd:
+#     # serial_port: /dev/ttyACM0  # auto-detected from zigbee.port
+#     baudrate: 460800
+#     flow_control: hardware
+#     # config_file: /usr/local/etc/cpcd.conf  # use system config if exists
+#   zigbeed:
+#     ezsp_port: 9999
+#     # pty_path: /tmp/zigbeed_socket
+#     # config_file: /usr/local/etc/zigbeed.conf
+#   otbr:
+#     enabled: true
+#     thread_interface: wpan0
+#     backbone_interface: eth0
+#     nat64: false
 
 ai:
   provider: ollama
@@ -87,57 +104,55 @@ zigbee:
     #  CONFIG_APS_UNICAST_MESSAGE_COUNT: 20
     #  CONFIG_SOURCE_ROUTE_TABLE_SIZE: 200
     #  CONFIG_ROUTE_TABLE_SIZE: 16
-    #  CONFIG_MAX_HOPS: 30
+  #  CONFIG_MAX_HOPS: 30
   #  CONFIG_INDIRECT_TRANSMISSION_TIMEOUT: 7680
 
-  #For large networks (40+ devices), use these instead:
+  # ================================================================
+  # EZSP (Silicon Labs EFR32 MG21/MG24, Sonoff, Tube ZB, etc.)
+  # ================================================================
   ezsp:
-    baudrate: 460800
-    flow_control: hardware
+    baudrate: auto           # Was: 460800 — now auto-detected via ASH handshake
+    flow_control: auto       # Was: hardware — now auto-detected
     config:
-      CONFIG_PACKET_BUFFER_COUNT: 254
-      CONFIG_NEIGHBOR_TABLE_SIZE: 26
       CONFIG_ADDRESS_TABLE_SIZE: 32
-      CONFIG_MULTICAST_TABLE_SIZE: 16
-      CONFIG_BINDING_TABLE_SIZE: 32
       CONFIG_APS_UNICAST_MESSAGE_COUNT: 32
-      CONFIG_SOURCE_ROUTE_TABLE_SIZE: 255
-      CONFIG_ROUTE_TABLE_SIZE: 32
-      CONFIG_MAX_HOPS: 30
-      CONFIG_INDIRECT_TRANSMISSION_TIMEOUT: 7680
-      CONFIG_FRAGMENT_WINDOW_SIZE: 8
-      CONFIG_FRAGMENT_DELAY_MS: 50
+      CONFIG_BINDING_TABLE_SIZE: 32
       CONFIG_BROADCAST_TABLE_SIZE: 15
+      CONFIG_FRAGMENT_DELAY_MS: 50
+      CONFIG_FRAGMENT_WINDOW_SIZE: 8
+      CONFIG_INDIRECT_TRANSMISSION_TIMEOUT: 7680
+      CONFIG_MAX_HOPS: 30
+      CONFIG_MULTICAST_TABLE_SIZE: 16
+      CONFIG_NEIGHBOR_TABLE_SIZE: 26
+      CONFIG_PACKET_BUFFER_COUNT: 254
       CONFIG_RETRY_QUEUE_SIZE: 16
+      CONFIG_ROUTE_TABLE_SIZE: 32
+      CONFIG_SOURCE_ROUTE_TABLE_SIZE: 255
 
   # ================================================================
-  # ZNP-SPECIFIC CONFIGURATION (Texas Instruments CC2652/CC1352)
-  # Only used if radio_type is 'znp' or auto-detected as ZNP
+  # ZNP (Texas Instruments CC2652/CC1352/CC2531)
   # ================================================================
   znp:
-    baudrate: 115200
-    # ZNP typically doesn't need flow control
-
-    # ZNP-specific settings
+    baudrate: auto           # Was: 115200 — now auto-detected
     config:
-      led_mode: off
-      CONFIG_PACKET_BUFFER_COUNT: 254
-      CONFIG_NEIGHBOR_TABLE_SIZE: 26
       CONFIG_ADDRESS_TABLE_SIZE: 32
-      CONFIG_MULTICAST_TABLE_SIZE: 16
-      CONFIG_BINDING_TABLE_SIZE: 32
       CONFIG_APS_UNICAST_MESSAGE_COUNT: 32
-      CONFIG_SOURCE_ROUTE_TABLE_SIZE: 255
-      CONFIG_ROUTE_TABLE_SIZE: 32
-      CONFIG_MAX_HOPS: 30
-      CONFIG_INDIRECT_TRANSMISSION_TIMEOUT: 7680
-      CONFIG_FRAGMENT_WINDOW_SIZE: 8
-      CONFIG_FRAGMENT_DELAY_MS: 50
+      CONFIG_BINDING_TABLE_SIZE: 32
       CONFIG_BROADCAST_TABLE_SIZE: 15
+      CONFIG_FRAGMENT_DELAY_MS: 50
+      CONFIG_FRAGMENT_WINDOW_SIZE: 8
+      CONFIG_INDIRECT_TRANSMISSION_TIMEOUT: 7680
+      CONFIG_MAX_HOPS: 30
+      CONFIG_MULTICAST_TABLE_SIZE: 16
+      CONFIG_NEIGHBOR_TABLE_SIZE: 26
+      CONFIG_PACKET_BUFFER_COUNT: 254
       CONFIG_RETRY_QUEUE_SIZE: 16
+      CONFIG_ROUTE_TABLE_SIZE: 32
+      CONFIG_SOURCE_ROUTE_TABLE_SIZE: 255
+      led_mode: false
 
   # ================================================================
-  # DECONZ-SPECIFIC (ConBee/RaspBee) - Future support
+  # DECONZ (Dresden Elektronik ConBee I/II/III, RaspBee I/II)
   # ================================================================
-  # deconz:
-  #   baudrate: 38400
+  deconz:
+    baudrate: auto           # 38400 for ConBee II/III/RaspBee, 57600 for ConBee I

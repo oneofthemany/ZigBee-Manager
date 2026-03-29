@@ -124,27 +124,92 @@ class MatterServerManager:
 
     async def _kill_orphans(self):
         """Kill any leftover matter-server processes from previous runs."""
+        pid_file = os.path.join(self.storage_path, "matter-server.pid")
+
+        # Check PID file from previous run
+        if os.path.exists(pid_file):
+            try:
+                old_pid = int(open(pid_file).read().strip())
+                os.kill(old_pid, signal.SIGTERM)
+                logger.warning(f"Killed previous matter-server from PID file: {old_pid}")
+                await asyncio.sleep(2)
+                try:
+                    os.kill(old_pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+            except (ProcessLookupError, ValueError, OSError):
+                pass
+            try:
+                os.remove(pid_file)
+            except FileNotFoundError:
+                pass
+
         import subprocess
+        killed = 0
+        my_pid = os.getpid()
+        child_pid = self._process.pid if self._process else None
+
+        # Pattern 1: match entry-point name with our port
+        # Pattern 2: match module invocation with our port
+        patterns = [
+            f"matter-server.*--port.*{self.port}",
+            f"matter_server.server.*--port.*{self.port}",
+        ]
+
+        found_pids = set()
+        for pattern in patterns:
+            try:
+                result = subprocess.run(
+                    ["pgrep", "-f", pattern],
+                    capture_output=True, text=True
+                )
+                if result.stdout.strip():
+                    for p in result.stdout.strip().split('\n'):
+                        p = p.strip()
+                        if p:
+                            found_pids.add(int(p))
+            except Exception:
+                pass
+
+        # Fallback: anything holding our port
         try:
             result = subprocess.run(
-                ["pgrep", "-f", "matter_server.server.*--port.*" + str(self.port)],
-                capture_output=True, text=True
+                ["fuser", f"{self.port}/tcp"],
+                capture_output=True, text=True, stderr=subprocess.DEVNULL
             )
             if result.stdout.strip():
-                pids = result.stdout.strip().split('\n')
-                my_pid = os.getpid()
-                for pid in pids:
-                    pid = int(pid.strip())
-                    if pid != my_pid:
-                        try:
-                            os.kill(pid, signal.SIGKILL)
-                            logger.warning(f"Killed orphaned matter-server process: {pid}")
-                        except ProcessLookupError:
-                            pass
-                # Wait for them to die
-                await asyncio.sleep(1)
-        except Exception as e:
-            logger.debug(f"Orphan cleanup: {e}")
+                for p in result.stdout.strip().split():
+                    p = p.strip()
+                    if p:
+                        found_pids.add(int(p))
+        except Exception:
+            pass
+
+        # Kill everything except ourselves and our current child
+        for pid in found_pids:
+            if pid == my_pid or pid == child_pid:
+                continue
+            try:
+                os.kill(pid, signal.SIGTERM)
+                logger.warning(f"Sent SIGTERM to orphaned matter-server process: {pid}")
+                killed += 1
+            except ProcessLookupError:
+                pass
+
+        if killed:
+            # Give them a moment to exit gracefully
+            await asyncio.sleep(2)
+            # SIGKILL any survivors
+            for pid in found_pids:
+                if pid == my_pid or pid == child_pid:
+                    continue
+                try:
+                    os.kill(pid, signal.SIGKILL)
+                    logger.warning(f"Force-killed orphaned matter-server process: {pid}")
+                except ProcessLookupError:
+                    pass
+            await asyncio.sleep(1)
+            logger.info(f"Orphan cleanup: killed {killed} stale process(es)")
 
     async def _spawn(self) -> bool:
         """Spawn the subprocess."""
@@ -162,7 +227,12 @@ class MatterServerManager:
             )
 
             self._running = True
-            logger.info(f"✅ Matter server started (PID {self._process.pid}) on port {self.port}")
+            logger.info(f"Matter server started (PID {self._process.pid})")
+
+            # Write PID file for orphan cleanup on next start
+            pid_file = os.path.join(self.storage_path, "matter-server.pid")
+            with open(pid_file, 'w') as f:
+                f.write(str(self._process.pid))
 
             # Start log reader + health monitor
             self._monitor_task = asyncio.create_task(self._monitor())
@@ -230,6 +300,13 @@ class MatterServerManager:
         self._shutdown = True
         self._running = False
 
+        # Remove PID file
+        pid_file = os.path.join(self.storage_path, "matter-server.pid")
+        try:
+            os.remove(pid_file)
+        except FileNotFoundError:
+            pass
+
         if self._monitor_task:
             self._monitor_task.cancel()
             try:
@@ -240,7 +317,6 @@ class MatterServerManager:
         if self._process and self._process.returncode is None:
             logger.info(f"Stopping Matter server (PID {self._process.pid})...")
             try:
-                # Send SIGTERM to the process group
                 os.killpg(os.getpgid(self._process.pid), signal.SIGTERM)
                 try:
                     await asyncio.wait_for(self._process.wait(), timeout=10)
@@ -250,7 +326,7 @@ class MatterServerManager:
                     os.killpg(os.getpgid(self._process.pid), signal.SIGKILL)
                     await self._process.wait()
             except ProcessLookupError:
-                pass  # Already dead
+                pass
             except Exception as e:
                 logger.error(f"Error stopping Matter server: {e}")
 

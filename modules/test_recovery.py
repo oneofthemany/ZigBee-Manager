@@ -25,7 +25,7 @@ from typing import Optional, Callable
 
 logger = logging.getLogger("editor.test_recovery")
 
-PROJECT_ROOT = Path("/opt/zigbee_manager")
+PROJECT_ROOT = Path("/app")
 BACKUP_DIR = PROJECT_ROOT / ".editor_backups"
 PENDING_FILE = PROJECT_ROOT / ".editor_pending_test.json"
 

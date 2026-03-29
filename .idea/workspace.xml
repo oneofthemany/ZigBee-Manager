@@ -4,7 +4,7 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="xml push" />
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="reset_sequence to true and _reset_serial_state fix" />
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -37,7 +37,7 @@
   <component name="GithubPullRequestsUISettings">{
   &quot;selectedUrlAndAccountId&quot;: {
     &quot;url&quot;: &quot;https://github.com/oneofthemany/ZigBee-Matter-Manager.git&quot;,
-    &quot;accountId&quot;: &quot;b00be1dc-7b4f-4311-ab84-b3d2175df6fb&quot;
+    &quot;accountId&quot;: &quot;e255082e-bca2-4e88-a50f-e3452f07b5b3&quot;
   }
 }</component>
   <component name="ProjectColorInfo">{
@@ -51,26 +51,90 @@
   <component name="PropertiesComponent">{
   &quot;keyToString&quot;: {
     &quot;ModuleVcsDetector.initialDetectionPerformed&quot;: &quot;true&quot;,
+    &quot;Python.main.executor&quot;: &quot;Run&quot;,
     &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
     &quot;RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252&quot;: &quot;true&quot;,
     &quot;RunOnceActivity.cidr.known.project.marker&quot;: &quot;true&quot;,
     &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
     &quot;RunOnceActivity.readMode.enableVisualFormatting&quot;: &quot;true&quot;,
+    &quot;SHARE_PROJECT_CONFIGURATION_FILES&quot;: &quot;true&quot;,
+    &quot;SHELLCHECK.PATH&quot;: &quot;/var/home/smu02/.local/share/Google/AndroidStudio2025.3.1/Shell Script/shellcheck&quot;,
+    &quot;Shell Script.deploy.sh.executor&quot;: &quot;Run&quot;,
     &quot;cf.first.check.clang-format&quot;: &quot;false&quot;,
     &quot;cidr.known.project.marker&quot;: &quot;true&quot;,
-    &quot;git-widget-placeholder&quot;: &quot;dev&quot;,
+    &quot;git-widget-placeholder&quot;: &quot;main&quot;,
     &quot;kotlin-language-version-configured&quot;: &quot;true&quot;,
-    &quot;last_opened_file_path&quot;: &quot;/home/smu02/StudioProjects/ZigBee-Matter-Manager&quot;,
+    &quot;last_opened_file_path&quot;: &quot;/var/home/smu02/StudioProjects/ZigBee-Manager&quot;,
     &quot;project.structure.last.edited&quot;: &quot;Project&quot;,
     &quot;project.structure.proportion&quot;: &quot;0.0&quot;,
-    &quot;project.structure.side.proportion&quot;: &quot;0.2&quot;
+    &quot;project.structure.side.proportion&quot;: &quot;0.2&quot;,
+    &quot;settings.editor.selected.configurable&quot;: &quot;AndroidSdkUpdater&quot;
   }
 }</component>
+  <component name="PyConsoleOptionsProvider">
+    <option name="myPythonConsoleState">
+      <console-settings sdk-home="$USER_HOME$/venv/bin/python3.14">
+        <option name="sdk">
+          <Sdk />
+        </option>
+        <option name="mySdkHome" value="$USER_HOME$/venv/bin/python3.14" />
+        <option name="mySdk">
+          <Sdk />
+        </option>
+      </console-settings>
+    </option>
+  </component>
   <component name="RecentsManager">
     <key name="MoveFile.RECENT_KEYS">
       <recent name="$PROJECT_DIR$" />
       <recent name="$PROJECT_DIR$/mqtt" />
     </key>
+  </component>
+  <component name="RunManager" selected="Python.main">
+    <configuration name="main" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
+      <module name="ZigBee-Manager" />
+      <option name="ENV_FILES" value="" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <envs>
+        <env name="PYTHONUNBUFFERED" value="1" />
+      </envs>
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$" />
+      <option name="IS_MODULE_SDK" value="false" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <option name="RUN_TOOL" value="" />
+      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/main.py" />
+      <option name="PARAMETERS" value="" />
+      <option name="SHOW_COMMAND_LINE" value="false" />
+      <option name="EMULATE_TERMINAL" value="false" />
+      <option name="MODULE_MODE" value="false" />
+      <option name="REDIRECT_INPUT" value="false" />
+      <option name="INPUT_FILE" value="" />
+      <method v="2" />
+    </configuration>
+    <configuration name="deploy.sh" type="ShConfigurationType" temporary="true">
+      <option name="SCRIPT_TEXT" value="" />
+      <option name="INDEPENDENT_SCRIPT_PATH" value="true" />
+      <option name="SCRIPT_PATH" value="$PROJECT_DIR$/deploy.sh" />
+      <option name="SCRIPT_OPTIONS" value="" />
+      <option name="INDEPENDENT_SCRIPT_WORKING_DIRECTORY" value="true" />
+      <option name="SCRIPT_WORKING_DIRECTORY" value="$PROJECT_DIR$" />
+      <option name="INDEPENDENT_INTERPRETER_PATH" value="true" />
+      <option name="INTERPRETER_PATH" value="/bin/bash" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="EXECUTE_IN_TERMINAL" value="true" />
+      <option name="EXECUTE_SCRIPT_FILE" value="true" />
+      <envs />
+      <method v="2" />
+    </configuration>
+    <recent_temporary>
+      <list>
+        <item itemvalue="Python.main" />
+        <item itemvalue="Shell Script.deploy.sh" />
+      </list>
+    </recent_temporary>
   </component>
   <component name="TaskManager">
     <task active="true" id="Default" summary="Default task">
@@ -80,375 +144,399 @@
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
     </task>
-    <task id="LOCAL-00001" summary="new automations tab which mirrors the automations made in the device modal">
+    <task id="LOCAL-00115" summary="multepan phase 1 test">
       <option name="closed" value="true" />
-      <created>1772810974186</created>
-      <option name="number" value="00001" />
-      <option name="presentableId" value="LOCAL-00001" />
+      <created>1774453785413</created>
+      <option name="number" value="00115" />
+      <option name="presentableId" value="LOCAL-00115" />
       <option name="project" value="LOCAL" />
-      <updated>1772810974186</updated>
+      <updated>1774453785413</updated>
     </task>
-    <task id="LOCAL-00002" summary="deleted as moved to new core services">
+    <task id="LOCAL-00116" summary="updated topic to be in line with new application capabilty">
       <option name="closed" value="true" />
-      <created>1773652419201</created>
-      <option name="number" value="00002" />
-      <option name="presentableId" value="LOCAL-00002" />
+      <created>1774454412557</created>
+      <option name="number" value="00116" />
+      <option name="presentableId" value="LOCAL-00116" />
       <option name="project" value="LOCAL" />
-      <updated>1773652419201</updated>
+      <updated>1774454412557</updated>
     </task>
-    <task id="LOCAL-00003" summary="updated to cater for mqtt_queue in modules dir">
+    <task id="LOCAL-00117" summary="improving start spectrum to mitigate disablement due to length CPC scans">
       <option name="closed" value="true" />
-      <created>1773652971418</created>
-      <option name="number" value="00003" />
-      <option name="presentableId" value="LOCAL-00003" />
+      <created>1774454764725</created>
+      <option name="number" value="00117" />
+      <option name="presentableId" value="LOCAL-00117" />
       <option name="project" value="LOCAL" />
-      <updated>1773652971418</updated>
+      <updated>1774454764725</updated>
     </task>
-    <task id="LOCAL-00004" summary="duplicate">
+    <task id="LOCAL-00118" summary="update container to run slim bookworm">
       <option name="closed" value="true" />
-      <created>1773653060544</created>
-      <option name="number" value="00004" />
-      <option name="presentableId" value="LOCAL-00004" />
+      <created>1774458044673</created>
+      <option name="number" value="00118" />
+      <option name="presentableId" value="LOCAL-00118" />
       <option name="project" value="LOCAL" />
-      <updated>1773653060544</updated>
+      <updated>1774458044673</updated>
     </task>
-    <task id="LOCAL-00005" summary="duplicate">
+    <task id="LOCAL-00119" summary="new multipan updates - WIP">
       <option name="closed" value="true" />
-      <created>1773653089193</created>
-      <option name="number" value="00005" />
-      <option name="presentableId" value="LOCAL-00005" />
+      <created>1774463707155</created>
+      <option name="number" value="00119" />
+      <option name="presentableId" value="LOCAL-00119" />
       <option name="project" value="LOCAL" />
-      <updated>1773653089193</updated>
+      <updated>1774463707155</updated>
     </task>
-    <task id="LOCAL-00006" summary="new code editor tab using Monaco Editor and test recovery functions allowing user to test code updates with recovery - includes all code extensions">
+    <task id="LOCAL-00120" summary="new multipan updates - WIP">
       <option name="closed" value="true" />
-      <created>1773661323243</created>
-      <option name="number" value="00006" />
-      <option name="presentableId" value="LOCAL-00006" />
+      <created>1774514621079</created>
+      <option name="number" value="00120" />
+      <option name="presentableId" value="LOCAL-00120" />
       <option name="project" value="LOCAL" />
-      <updated>1773661323243</updated>
+      <updated>1774514621079</updated>
     </task>
-    <task id="LOCAL-00007" summary="line removed">
+    <task id="LOCAL-00121" summary="baudrate fix">
       <option name="closed" value="true" />
-      <created>1773661341218</created>
-      <option name="number" value="00007" />
-      <option name="presentableId" value="LOCAL-00007" />
+      <created>1774515588342</created>
+      <option name="number" value="00121" />
+      <option name="presentableId" value="LOCAL-00121" />
       <option name="project" value="LOCAL" />
-      <updated>1773661341218</updated>
+      <updated>1774515588343</updated>
     </task>
-    <task id="LOCAL-00008" summary="updated old text reference to be zigbee matter">
+    <task id="LOCAL-00122" summary="multipan fixes">
       <option name="closed" value="true" />
-      <created>1773663796154</created>
-      <option name="number" value="00008" />
-      <option name="presentableId" value="LOCAL-00008" />
+      <created>1774518157208</created>
+      <option name="number" value="00122" />
+      <option name="presentableId" value="LOCAL-00122" />
       <option name="project" value="LOCAL" />
-      <updated>1773663796154</updated>
+      <updated>1774518157208</updated>
     </task>
-    <task id="LOCAL-00009" summary="screens added">
+    <task id="LOCAL-00123" summary="service teardown improvements">
       <option name="closed" value="true" />
-      <created>1773664049184</created>
-      <option name="number" value="00009" />
-      <option name="presentableId" value="LOCAL-00009" />
+      <created>1774518175913</created>
+      <option name="number" value="00123" />
+      <option name="presentableId" value="LOCAL-00123" />
       <option name="project" value="LOCAL" />
-      <updated>1773664049184</updated>
+      <updated>1774518175913</updated>
     </task>
-    <task id="LOCAL-00010" summary="updated markdowns">
+    <task id="LOCAL-00124" summary="rolled back as reset was not the issue">
       <option name="closed" value="true" />
-      <created>1773664070541</created>
-      <option name="number" value="00010" />
-      <option name="presentableId" value="LOCAL-00010" />
+      <created>1774518706149</created>
+      <option name="number" value="00124" />
+      <option name="presentableId" value="LOCAL-00124" />
       <option name="project" value="LOCAL" />
-      <updated>1773664070541</updated>
+      <updated>1774518706149</updated>
     </task>
-    <task id="LOCAL-00011" summary="new screens">
+    <task id="LOCAL-00125" summary="rolled back service teardown due to coding error and application failure">
       <option name="closed" value="true" />
-      <created>1773664677184</created>
-      <option name="number" value="00011" />
-      <option name="presentableId" value="LOCAL-00011" />
+      <created>1774520277516</created>
+      <option name="number" value="00125" />
+      <option name="presentableId" value="LOCAL-00125" />
       <option name="project" value="LOCAL" />
-      <updated>1773664677184</updated>
+      <updated>1774520277516</updated>
     </task>
-    <task id="LOCAL-00012" summary="editor fixes for time machine">
+    <task id="LOCAL-00126" summary="adding debug for probe result">
       <option name="closed" value="true" />
-      <created>1773665551781</created>
-      <option name="number" value="00012" />
-      <option name="presentableId" value="LOCAL-00012" />
+      <created>1774521062506</created>
+      <option name="number" value="00126" />
+      <option name="presentableId" value="LOCAL-00126" />
       <option name="project" value="LOCAL" />
-      <updated>1773665551781</updated>
+      <updated>1774521062506</updated>
     </task>
-    <task id="LOCAL-00013" summary="workspace update">
+    <task id="LOCAL-00127" summary="workspace sommit">
       <option name="closed" value="true" />
-      <created>1773665579770</created>
-      <option name="number" value="00013" />
-      <option name="presentableId" value="LOCAL-00013" />
+      <created>1774521210599</created>
+      <option name="number" value="00127" />
+      <option name="presentableId" value="LOCAL-00127" />
       <option name="project" value="LOCAL" />
-      <updated>1773665579770</updated>
+      <updated>1774521210599</updated>
     </task>
-    <task id="LOCAL-00014" summary="workspace update">
+    <task id="LOCAL-00128" summary="missing jedi declaration in cpcd config">
       <option name="closed" value="true" />
-      <created>1773665652926</created>
-      <option name="number" value="00014" />
-      <option name="presentableId" value="LOCAL-00014" />
+      <created>1774521765171</created>
+      <option name="number" value="00128" />
+      <option name="presentableId" value="LOCAL-00128" />
       <option name="project" value="LOCAL" />
-      <updated>1773665652926</updated>
+      <updated>1774521765171</updated>
     </task>
-    <task id="LOCAL-00015" summary="improved animation">
+    <task id="LOCAL-00129" summary="workspace update">
       <option name="closed" value="true" />
-      <created>1773920802657</created>
-      <option name="number" value="00015" />
-      <option name="presentableId" value="LOCAL-00015" />
+      <created>1774608081238</created>
+      <option name="number" value="00129" />
+      <option name="presentableId" value="LOCAL-00129" />
       <option name="project" value="LOCAL" />
-      <updated>1773920802657</updated>
+      <updated>1774608081238</updated>
     </task>
-    <task id="LOCAL-00016" summary="xml">
+    <task id="LOCAL-00130" summary="rolled back">
       <option name="closed" value="true" />
-      <created>1773921189139</created>
-      <option name="number" value="00016" />
-      <option name="presentableId" value="LOCAL-00016" />
+      <created>1774609126619</created>
+      <option name="number" value="00130" />
+      <option name="presentableId" value="LOCAL-00130" />
       <option name="project" value="LOCAL" />
-      <updated>1773921189139</updated>
+      <updated>1774609126619</updated>
     </task>
-    <task id="LOCAL-00017" summary="new ai NLM for automations">
+    <task id="LOCAL-00131" summary="new dynamic device - WIP test">
       <option name="closed" value="true" />
-      <created>1774002523794</created>
-      <option name="number" value="00017" />
-      <option name="presentableId" value="LOCAL-00017" />
+      <created>1774609284577</created>
+      <option name="number" value="00131" />
+      <option name="presentableId" value="LOCAL-00131" />
       <option name="project" value="LOCAL" />
-      <updated>1774002523794</updated>
+      <updated>1774609284577</updated>
     </task>
-    <task id="LOCAL-00018" summary="improved to cater for new ai elements and container creation for ollama">
+    <task id="LOCAL-00132" summary="removing teardown dead weight">
       <option name="closed" value="true" />
-      <created>1774002553375</created>
-      <option name="number" value="00018" />
-      <option name="presentableId" value="LOCAL-00018" />
+      <created>1774610542448</created>
+      <option name="number" value="00132" />
+      <option name="presentableId" value="LOCAL-00132" />
       <option name="project" value="LOCAL" />
-      <updated>1774002553375</updated>
+      <updated>1774610542449</updated>
     </task>
-    <task id="LOCAL-00019" summary="new ai and safe deploy">
+    <task id="LOCAL-00133" summary="new teardown/rebuild container for when device is unplugged">
       <option name="closed" value="true" />
-      <created>1774002587053</created>
-      <option name="number" value="00019" />
-      <option name="presentableId" value="LOCAL-00019" />
+      <created>1774611249608</created>
+      <option name="number" value="00133" />
+      <option name="presentableId" value="LOCAL-00133" />
       <option name="project" value="LOCAL" />
-      <updated>1774002587053</updated>
+      <updated>1774611249608</updated>
     </task>
-    <task id="LOCAL-00020" summary="initial commit of safe deploy">
+    <task id="LOCAL-00134" summary="removed as no longer required">
       <option name="closed" value="true" />
-      <created>1774002613168</created>
-      <option name="number" value="00020" />
-      <option name="presentableId" value="LOCAL-00020" />
+      <created>1774611324659</created>
+      <option name="number" value="00134" />
+      <option name="presentableId" value="LOCAL-00134" />
       <option name="project" value="LOCAL" />
-      <updated>1774002613168</updated>
+      <updated>1774611324659</updated>
     </task>
-    <task id="LOCAL-00021" summary="kill orphans added to remove swap bug">
+    <task id="LOCAL-00135" summary="final commit - --priv added to ensure container survivability">
       <option name="closed" value="true" />
-      <created>1774007799917</created>
-      <option name="number" value="00021" />
-      <option name="presentableId" value="LOCAL-00021" />
+      <created>1774611723317</created>
+      <option name="number" value="00135" />
+      <option name="presentableId" value="LOCAL-00135" />
       <option name="project" value="LOCAL" />
-      <updated>1774007799917</updated>
+      <updated>1774611723317</updated>
     </task>
-    <task id="LOCAL-00022" summary="duckdb added for system telemetry persistence">
+    <task id="LOCAL-00136" summary="roll back due to permission issues in container">
       <option name="closed" value="true" />
-      <created>1774007830822</created>
-      <option name="number" value="00022" />
-      <option name="presentableId" value="LOCAL-00022" />
+      <created>1774612520889</created>
+      <option name="number" value="00136" />
+      <option name="presentableId" value="LOCAL-00136" />
       <option name="project" value="LOCAL" />
-      <updated>1774007830822</updated>
+      <updated>1774612520889</updated>
     </task>
-    <task id="LOCAL-00023" summary="updates for system and improvement for mqtt explorer stats - removing noisy updateStats to only be active when tab is open">
+    <task id="LOCAL-00137" summary="final attempt at survivability fo container when dongle removed">
       <option name="closed" value="true" />
-      <created>1774009277875</created>
-      <option name="number" value="00023" />
-      <option name="presentableId" value="LOCAL-00023" />
+      <created>1774613763940</created>
+      <option name="number" value="00137" />
+      <option name="presentableId" value="LOCAL-00137" />
       <option name="project" value="LOCAL" />
-      <updated>1774009277875</updated>
+      <updated>1774613763940</updated>
     </task>
-    <task id="LOCAL-00024" summary="new syste monitor nd telemetry">
+    <task id="LOCAL-00138" summary="teardown notice added">
       <option name="closed" value="true" />
-      <created>1774009301686</created>
-      <option name="number" value="00024" />
-      <option name="presentableId" value="LOCAL-00024" />
+      <created>1774614425315</created>
+      <option name="number" value="00138" />
+      <option name="presentableId" value="LOCAL-00138" />
       <option name="project" value="LOCAL" />
-      <updated>1774009301686</updated>
+      <updated>1774614425315</updated>
     </task>
-    <task id="LOCAL-00025" summary="updated stats gathering to be less noisy">
+    <task id="LOCAL-00139" summary="adding no passwd to file and updating service to use bash to run the pre_script">
       <option name="closed" value="true" />
-      <created>1774009327875</created>
-      <option name="number" value="00025" />
-      <option name="presentableId" value="LOCAL-00025" />
+      <created>1774615658536</created>
+      <option name="number" value="00139" />
+      <option name="presentableId" value="LOCAL-00139" />
       <option name="project" value="LOCAL" />
-      <updated>1774009327875</updated>
+      <updated>1774615658536</updated>
     </task>
-    <task id="LOCAL-00026" summary="text removal">
+    <task id="LOCAL-00140" summary="updated to show location of teardown script and changed text to red">
       <option name="closed" value="true" />
-      <created>1774009375114</created>
-      <option name="number" value="00026" />
-      <option name="presentableId" value="LOCAL-00026" />
+      <created>1774615992902</created>
+      <option name="number" value="00140" />
+      <option name="presentableId" value="LOCAL-00140" />
       <option name="project" value="LOCAL" />
-      <updated>1774009375114</updated>
+      <updated>1774615992902</updated>
     </task>
-    <task id="LOCAL-00027" summary="new system tab">
+    <task id="LOCAL-00141" summary="dark mode fix for beetxt">
       <option name="closed" value="true" />
-      <created>1774009387488</created>
-      <option name="number" value="00027" />
-      <option name="presentableId" value="LOCAL-00027" />
+      <created>1774617284512</created>
+      <option name="number" value="00141" />
+      <option name="presentableId" value="LOCAL-00141" />
       <option name="project" value="LOCAL" />
-      <updated>1774009387489</updated>
+      <updated>1774617284512</updated>
     </task>
-    <task id="LOCAL-00028" summary="new telemetry collector">
+    <task id="LOCAL-00142" summary="sudo fix for umount of conatiner">
       <option name="closed" value="true" />
-      <created>1774009403260</created>
-      <option name="number" value="00028" />
-      <option name="presentableId" value="LOCAL-00028" />
+      <created>1774617430960</created>
+      <option name="number" value="00142" />
+      <option name="presentableId" value="LOCAL-00142" />
       <option name="project" value="LOCAL" />
-      <updated>1774009403260</updated>
+      <updated>1774617430960</updated>
     </task>
-    <task id="LOCAL-00029" summary="new system &amp; telemetry features">
+    <task id="LOCAL-00143" summary="-n added for no passwd">
       <option name="closed" value="true" />
-      <created>1774009437944</created>
-      <option name="number" value="00029" />
-      <option name="presentableId" value="LOCAL-00029" />
+      <created>1774617755595</created>
+      <option name="number" value="00143" />
+      <option name="presentableId" value="LOCAL-00143" />
       <option name="project" value="LOCAL" />
-      <updated>1774009437944</updated>
+      <updated>1774617755595</updated>
     </task>
-    <task id="LOCAL-00030" summary="new telemetry duckdb">
+    <task id="LOCAL-00144" summary="updates to mulitpan detection">
       <option name="closed" value="true" />
-      <created>1774009449363</created>
-      <option name="number" value="00030" />
-      <option name="presentableId" value="LOCAL-00030" />
+      <created>1774637852996</created>
+      <option name="number" value="00144" />
+      <option name="presentableId" value="LOCAL-00144" />
       <option name="project" value="LOCAL" />
-      <updated>1774009449363</updated>
+      <updated>1774637852996</updated>
     </task>
-    <task id="LOCAL-00031" summary="new system toast notifications">
+    <task id="LOCAL-00145" summary="which bash added">
       <option name="closed" value="true" />
-      <created>1774009478845</created>
-      <option name="number" value="00031" />
-      <option name="presentableId" value="LOCAL-00031" />
+      <created>1774638109942</created>
+      <option name="number" value="00145" />
+      <option name="presentableId" value="LOCAL-00145" />
       <option name="project" value="LOCAL" />
-      <updated>1774009478845</updated>
+      <updated>1774638109942</updated>
     </task>
-    <task id="LOCAL-00032" summary="xml push">
+    <task id="LOCAL-00146" summary="cpc clean up fixes">
       <option name="closed" value="true" />
-      <created>1774009488739</created>
-      <option name="number" value="00032" />
-      <option name="presentableId" value="LOCAL-00032" />
+      <created>1774692944108</created>
+      <option name="number" value="00146" />
+      <option name="presentableId" value="LOCAL-00146" />
       <option name="project" value="LOCAL" />
-      <updated>1774009488739</updated>
+      <updated>1774692944108</updated>
     </task>
-    <task id="LOCAL-00033" summary="timeout=aiohttp.ClientTimeout increased to 180">
+    <task id="LOCAL-00147" summary="moved _usb_reset_serial_device above lifecycle">
       <option name="closed" value="true" />
-      <created>1774017919943</created>
-      <option name="number" value="00033" />
-      <option name="presentableId" value="LOCAL-00033" />
+      <created>1774693556881</created>
+      <option name="number" value="00147" />
+      <option name="presentableId" value="LOCAL-00147" />
       <option name="project" value="LOCAL" />
-      <updated>1774017919943</updated>
+      <updated>1774693556881</updated>
     </task>
-    <task id="LOCAL-00034" summary="add in a warmup function for ai assistant">
+    <task id="LOCAL-00148" summary="adding /dev/bus/usd to runtime args for container for cpcd support">
       <option name="closed" value="true" />
-      <created>1774017969263</created>
-      <option name="number" value="00034" />
-      <option name="presentableId" value="LOCAL-00034" />
+      <created>1774694410011</created>
+      <option name="number" value="00148" />
+      <option name="presentableId" value="LOCAL-00148" />
       <option name="project" value="LOCAL" />
-      <updated>1774017969263</updated>
+      <updated>1774694410011</updated>
     </task>
-    <task id="LOCAL-00035" summary="improve the editor to verify imports before allowing file to be saved">
+    <task id="LOCAL-00149" summary="further improvements for cpcd">
       <option name="closed" value="true" />
-      <created>1774018015787</created>
-      <option name="number" value="00035" />
-      <option name="presentableId" value="LOCAL-00035" />
+      <created>1774694432428</created>
+      <option name="number" value="00149" />
+      <option name="presentableId" value="LOCAL-00149" />
       <option name="project" value="LOCAL" />
-      <updated>1774018015787</updated>
+      <updated>1774694432428</updated>
     </task>
-    <task id="LOCAL-00036" summary="migrate to duckdb for persistence">
+    <task id="LOCAL-00150" summary="serial break fix">
       <option name="closed" value="true" />
-      <created>1774019731705</created>
-      <option name="number" value="00036" />
-      <option name="presentableId" value="LOCAL-00036" />
+      <created>1774696152053</created>
+      <option name="number" value="00150" />
+      <option name="presentableId" value="LOCAL-00150" />
       <option name="project" value="LOCAL" />
-      <updated>1774019731705</updated>
+      <updated>1774696152053</updated>
     </task>
-    <task id="LOCAL-00037" summary="result patch for db">
+    <task id="LOCAL-00151" summary="baud rate fixes - multipan">
       <option name="closed" value="true" />
-      <created>1774019768657</created>
-      <option name="number" value="00037" />
-      <option name="presentableId" value="LOCAL-00037" />
+      <created>1774700356737</created>
+      <option name="number" value="00151" />
+      <option name="presentableId" value="LOCAL-00151" />
       <option name="project" value="LOCAL" />
-      <updated>1774019768657</updated>
+      <updated>1774700356737</updated>
     </task>
-    <task id="LOCAL-00038" summary="new bootguard to  recover from backup in the event of restart failure">
+    <task id="LOCAL-00152" summary="improvements to USB product string pre-detection for CPC/RCP devices with NCP quirk fw detection">
       <option name="closed" value="true" />
-      <created>1774020748013</created>
-      <option name="number" value="00038" />
-      <option name="presentableId" value="LOCAL-00038" />
+      <created>1774700677924</created>
+      <option name="number" value="00152" />
+      <option name="presentableId" value="LOCAL-00152" />
       <option name="project" value="LOCAL" />
-      <updated>1774020748013</updated>
+      <updated>1774700677924</updated>
     </task>
-    <task id="LOCAL-00039" summary="adding in boot guard to service">
+    <task id="LOCAL-00153" summary="watchdog fix for multipan">
       <option name="closed" value="true" />
-      <created>1774021006328</created>
-      <option name="number" value="00039" />
-      <option name="presentableId" value="LOCAL-00039" />
+      <created>1774700900571</created>
+      <option name="number" value="00153" />
+      <option name="presentableId" value="LOCAL-00153" />
       <option name="project" value="LOCAL" />
-      <updated>1774021006328</updated>
+      <updated>1774700900571</updated>
     </task>
-    <task id="LOCAL-00040" summary="bug fix for contact sensors and better initialisation for devices">
+    <task id="LOCAL-00154" summary="minor tweaks to cater for recent findings">
       <option name="closed" value="true" />
-      <created>1774203854105</created>
-      <option name="number" value="00040" />
-      <option name="presentableId" value="LOCAL-00040" />
+      <created>1774700987469</created>
+      <option name="number" value="00154" />
+      <option name="presentableId" value="LOCAL-00154" />
       <option name="project" value="LOCAL" />
-      <updated>1774203854105</updated>
+      <updated>1774700987469</updated>
     </task>
-    <task id="LOCAL-00041" summary="contact sensor fix">
+    <task id="LOCAL-00155" summary="socat removal from new pty bridge">
       <option name="closed" value="true" />
-      <created>1774203872393</created>
-      <option name="number" value="00041" />
-      <option name="presentableId" value="LOCAL-00041" />
+      <created>1774702053958</created>
+      <option name="number" value="00155" />
+      <option name="presentableId" value="LOCAL-00155" />
       <option name="project" value="LOCAL" />
-      <updated>1774203872393</updated>
+      <updated>1774702053958</updated>
     </task>
-    <task id="LOCAL-00042" summary="tuple fix for report config">
+    <task id="LOCAL-00156" summary="more deps for dev">
       <option name="closed" value="true" />
-      <created>1774203983854</created>
-      <option name="number" value="00042" />
-      <option name="presentableId" value="LOCAL-00042" />
+      <created>1774725775101</created>
+      <option name="number" value="00156" />
+      <option name="presentableId" value="LOCAL-00156" />
       <option name="project" value="LOCAL" />
-      <updated>1774203983854</updated>
+      <updated>1774725775101</updated>
     </task>
-    <task id="LOCAL-00043" summary="xml push">
+    <task id="LOCAL-00157" summary="more deps for dev">
       <option name="closed" value="true" />
-      <created>1774203998398</created>
-      <option name="number" value="00043" />
-      <option name="presentableId" value="LOCAL-00043" />
+      <created>1774726196176</created>
+      <option name="number" value="00157" />
+      <option name="presentableId" value="LOCAL-00157" />
       <option name="project" value="LOCAL" />
-      <updated>1774203998398</updated>
+      <updated>1774726196176</updated>
     </task>
-    <task id="LOCAL-00044" summary="add capabilties attr to is_contact_sensor">
+    <task id="LOCAL-00158" summary="PTYTCPBridge to correct MultiPanManager init">
       <option name="closed" value="true" />
-      <created>1774204864935</created>
-      <option name="number" value="00044" />
-      <option name="presentableId" value="LOCAL-00044" />
+      <created>1774726595979</created>
+      <option name="number" value="00158" />
+      <option name="presentableId" value="LOCAL-00158" />
       <option name="project" value="LOCAL" />
-      <updated>1774204864935</updated>
+      <updated>1774726595979</updated>
     </task>
-    <task id="LOCAL-00045" summary="fix for contact sensor and updates to provide a comprehensive capability list inside updateControlValues">
+    <task id="LOCAL-00159" summary="reset sequence to false">
       <option name="closed" value="true" />
-      <created>1774204940514</created>
-      <option name="number" value="00045" />
-      <option name="presentableId" value="LOCAL-00045" />
+      <created>1774727751106</created>
+      <option name="number" value="00159" />
+      <option name="presentableId" value="LOCAL-00159" />
       <option name="project" value="LOCAL" />
-      <updated>1774204940514</updated>
+      <updated>1774727751106</updated>
     </task>
-    <task id="LOCAL-00046" summary="xml push">
+    <task id="LOCAL-00160" summary="reset block added ahead of cpcd in start()">
       <option name="closed" value="true" />
-      <created>1774204956469</created>
-      <option name="number" value="00046" />
-      <option name="presentableId" value="LOCAL-00046" />
+      <created>1774728398377</created>
+      <option name="number" value="00160" />
+      <option name="presentableId" value="LOCAL-00160" />
       <option name="project" value="LOCAL" />
-      <updated>1774204956469</updated>
+      <updated>1774728398377</updated>
     </task>
-    <option name="localTasksCounter" value="47" />
+    <task id="LOCAL-00161" summary="adding baud rate to the RTS  reset">
+      <option name="closed" value="true" />
+      <created>1774728725757</created>
+      <option name="number" value="00161" />
+      <option name="presentableId" value="LOCAL-00161" />
+      <option name="project" value="LOCAL" />
+      <updated>1774728725757</updated>
+    </task>
+    <task id="LOCAL-00162" summary="_reset_serial_state updated to correct baud">
+      <option name="closed" value="true" />
+      <created>1774729080897</created>
+      <option name="number" value="00162" />
+      <option name="presentableId" value="LOCAL-00162" />
+      <option name="project" value="LOCAL" />
+      <updated>1774729080897</updated>
+    </task>
+    <task id="LOCAL-00163" summary="reset_sequence to true and _reset_serial_state fix">
+      <option name="closed" value="true" />
+      <created>1774731431156</created>
+      <option name="number" value="00163" />
+      <option name="presentableId" value="LOCAL-00163" />
+      <option name="project" value="LOCAL" />
+      <updated>1774731431156</updated>
+    </task>
+    <option name="localTasksCounter" value="164" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -463,31 +551,42 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="initial commit of safe deploy" />
-    <MESSAGE value="kill orphans added to remove swap bug" />
-    <MESSAGE value="duckdb added for system telemetry persistence" />
-    <MESSAGE value="updates for system and improvement for mqtt explorer stats - removing noisy updateStats to only be active when tab is open" />
-    <MESSAGE value="new syste monitor nd telemetry" />
-    <MESSAGE value="updated stats gathering to be less noisy" />
-    <MESSAGE value="text removal" />
-    <MESSAGE value="new system tab" />
-    <MESSAGE value="new telemetry collector" />
-    <MESSAGE value="new system &amp; telemetry features" />
-    <MESSAGE value="new telemetry duckdb" />
-    <MESSAGE value="new system toast notifications" />
-    <MESSAGE value="timeout=aiohttp.ClientTimeout increased to 180" />
-    <MESSAGE value="add in a warmup function for ai assistant" />
-    <MESSAGE value="improve the editor to verify imports before allowing file to be saved" />
-    <MESSAGE value="migrate to duckdb for persistence" />
-    <MESSAGE value="result patch for db" />
-    <MESSAGE value="new bootguard to  recover from backup in the event of restart failure" />
-    <MESSAGE value="adding in boot guard to service" />
-    <MESSAGE value="bug fix for contact sensors and better initialisation for devices" />
-    <MESSAGE value="contact sensor fix" />
-    <MESSAGE value="tuple fix for report config" />
-    <MESSAGE value="add capabilties attr to is_contact_sensor" />
-    <MESSAGE value="fix for contact sensor and updates to provide a comprehensive capability list inside updateControlValues" />
-    <MESSAGE value="xml push" />
-    <option name="LAST_COMMIT_MESSAGE" value="xml push" />
+    <MESSAGE value="teardown notice added" />
+    <MESSAGE value="adding no passwd to file and updating service to use bash to run the pre_script" />
+    <MESSAGE value="updated to show location of teardown script and changed text to red" />
+    <MESSAGE value="dark mode fix for beetxt" />
+    <MESSAGE value="sudo fix for umount of conatiner" />
+    <MESSAGE value="-n added for no passwd" />
+    <MESSAGE value="updates to mulitpan detection" />
+    <MESSAGE value="which bash added" />
+    <MESSAGE value="cpc clean up fixes" />
+    <MESSAGE value="moved _usb_reset_serial_device above lifecycle" />
+    <MESSAGE value="adding /dev/bus/usd to runtime args for container for cpcd support" />
+    <MESSAGE value="further improvements for cpcd" />
+    <MESSAGE value="serial break fix" />
+    <MESSAGE value="baud rate fixes - multipan" />
+    <MESSAGE value="improvements to USB product string pre-detection for CPC/RCP devices with NCP quirk fw detection" />
+    <MESSAGE value="watchdog fix for multipan" />
+    <MESSAGE value="minor tweaks to cater for recent findings" />
+    <MESSAGE value="socat removal from new pty bridge" />
+    <MESSAGE value="more deps for dev" />
+    <MESSAGE value="PTYTCPBridge to correct MultiPanManager init" />
+    <MESSAGE value="reset sequence to false" />
+    <MESSAGE value="reset block added ahead of cpcd in start()" />
+    <MESSAGE value="adding baud rate to the RTS  reset" />
+    <MESSAGE value="_reset_serial_state updated to correct baud" />
+    <MESSAGE value="reset_sequence to true and _reset_serial_state fix" />
+    <option name="LAST_COMMIT_MESSAGE" value="reset_sequence to true and _reset_serial_state fix" />
+  </component>
+  <component name="XDebuggerManager">
+    <breakpoint-manager>
+      <breakpoints>
+        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
+          <url>file://$PROJECT_DIR$/main.py</url>
+          <line>15</line>
+          <option name="timeStamp" value="1" />
+        </line-breakpoint>
+      </breakpoints>
+    </breakpoint-manager>
   </component>
 </project>

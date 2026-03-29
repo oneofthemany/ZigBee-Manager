@@ -32,6 +32,7 @@ from handlers.lightlink import *
 from handlers.lighting import *
 from handlers.diagnostics import *
 from handlers.generic import *
+from handlers.poll_control import *
 
 
 logger = logging.getLogger("device")
@@ -44,7 +45,6 @@ CONSIDER_UNAVAILABLE_PASSIVE = 60 * 60 * 72   # 72 hours for passive-only sensor
 SKIP_GENERIC_CLUSTERS = {
     0x0019,  # OTA Upgrade
     0x0021,  # Green Power Proxy
-    0x0020,  # Poll Control
     0x000A,  # Time
 }
 

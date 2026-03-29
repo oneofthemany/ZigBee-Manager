@@ -140,7 +140,12 @@ export function initWS() {
                     break;
 
                 default:
-                    console.debug('Unknown WS message type:', msg.type);
+                    // Pass unhandled message types to external handlers
+                    // (setup wizard, plugins, etc.)
+                    if (typeof window._onWsMessage === 'function') {
+                        window._onWsMessage(msg);
+                    }
+                    break;
             }
         } catch (e) {
             console.error("WS Error:", e);
