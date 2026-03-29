@@ -4,9 +4,7 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="_reset_serial_state updated to correct baud">
-      <change beforePath="$PROJECT_DIR$/modules/multipan.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/multipan.py" afterDir="false" />
-    </list>
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="reset_sequence to true and _reset_serial_state fix" />
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -145,14 +143,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00114" summary="minor descriptive text added for runtime mount path">
-      <option name="closed" value="true" />
-      <created>1774452043520</created>
-      <option name="number" value="00114" />
-      <option name="presentableId" value="LOCAL-00114" />
-      <option name="project" value="LOCAL" />
-      <updated>1774452043520</updated>
     </task>
     <task id="LOCAL-00115" summary="multepan phase 1 test">
       <option name="closed" value="true" />
@@ -538,7 +528,15 @@
       <option name="project" value="LOCAL" />
       <updated>1774729080897</updated>
     </task>
-    <option name="localTasksCounter" value="163" />
+    <task id="LOCAL-00163" summary="reset_sequence to true and _reset_serial_state fix">
+      <option name="closed" value="true" />
+      <created>1774731431156</created>
+      <option name="number" value="00163" />
+      <option name="presentableId" value="LOCAL-00163" />
+      <option name="project" value="LOCAL" />
+      <updated>1774731431156</updated>
+    </task>
+    <option name="localTasksCounter" value="164" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -553,7 +551,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="final attempt at survivability fo container when dongle removed" />
     <MESSAGE value="teardown notice added" />
     <MESSAGE value="adding no passwd to file and updating service to use bash to run the pre_script" />
     <MESSAGE value="updated to show location of teardown script and changed text to red" />
@@ -578,7 +575,8 @@
     <MESSAGE value="reset block added ahead of cpcd in start()" />
     <MESSAGE value="adding baud rate to the RTS  reset" />
     <MESSAGE value="_reset_serial_state updated to correct baud" />
-    <option name="LAST_COMMIT_MESSAGE" value="_reset_serial_state updated to correct baud" />
+    <MESSAGE value="reset_sequence to true and _reset_serial_state fix" />
+    <option name="LAST_COMMIT_MESSAGE" value="reset_sequence to true and _reset_serial_state fix" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
