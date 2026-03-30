@@ -289,7 +289,7 @@ async def lifespan(app: FastAPI):
         )
         # --- Start bridge ---
         from modules.matter_bridge import MatterBridge
-        server_url = f"ws://localhost:{matter_config.get("port")}/ws"
+        server_url = f"ws://localhost:{port}/ws"
         matter_bridge = MatterBridge(
             server_url = server_url,
             mqtt_service = mqtt_service,

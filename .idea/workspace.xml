@@ -5,8 +5,6 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="troubleshooting port issues in config.yaml">
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/build.sh" beforeDir="false" afterPath="$PROJECT_DIR$/build.sh" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/main.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/modules/tdm/zmm_cpc/src/router.rs" beforeDir="false" afterPath="$PROJECT_DIR$/modules/tdm/zmm_cpc/src/router.rs" afterDir="false" />
     </list>
@@ -173,14 +171,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00148" summary="adding /dev/bus/usd to runtime args for container for cpcd support">
-      <option name="closed" value="true" />
-      <created>1774694410011</created>
-      <option name="number" value="00148" />
-      <option name="presentableId" value="LOCAL-00148" />
-      <option name="project" value="LOCAL" />
-      <updated>1774694410011</updated>
     </task>
     <task id="LOCAL-00149" summary="further improvements for cpcd">
       <option name="closed" value="true" />
@@ -566,7 +556,15 @@
       <option name="project" value="LOCAL" />
       <updated>1774885743183</updated>
     </task>
-    <option name="localTasksCounter" value="197" />
+    <task id="LOCAL-00197" summary="troubleshooting port issues in config.yaml">
+      <option name="closed" value="true" />
+      <created>1774889040054</created>
+      <option name="number" value="00197" />
+      <option name="presentableId" value="LOCAL-00197" />
+      <option name="project" value="LOCAL" />
+      <updated>1774889040054</updated>
+    </task>
+    <option name="localTasksCounter" value="198" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
