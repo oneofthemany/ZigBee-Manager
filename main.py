@@ -30,6 +30,8 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 import random
+import hashlib
+import threading
 
 # Import services
 from core import ZigbeeService
@@ -108,6 +110,24 @@ def load_config():
         return {}
     with open("./config/config.yaml", 'r') as f:
         return yaml.safe_load(f) or {}
+
+def _watch_config():
+    path = "./config/config.yaml"
+    import traceback as tb
+    last = open(path).read()
+    while True:
+        time.sleep(0.5)
+        try:
+            cur = open(path).read()
+            if cur != last:
+                print("CONFIG CHANGED:")
+                print(cur)
+                tb.print_stack()
+                last = cur
+        except Exception:
+            pass
+
+threading.Thread(target=_watch_config, daemon=True).start()
 
 
 CONFIG = load_config()
