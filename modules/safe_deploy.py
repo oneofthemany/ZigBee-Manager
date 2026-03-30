@@ -44,8 +44,13 @@ router = APIRouter(prefix="/api/system", tags=["system"])
 # CONFIGURATION
 # ============================================================================
 
-APP_DIR = os.environ.get('ZMM_APP_DIR', '/app')
-BACKUP_DIR = os.environ.get('ZMM_BACKUP_DIR', '/app/data/backups')
+# This gets the directory where main.py is located
+BASE_PATH = Path(__file__).resolve().parent
+
+# Use environment variables if they exist, otherwise fall back to your dynamic local path
+APP_DIR = os.environ.get('ZMM_APP_DIR', str(BASE_PATH))
+BACKUP_DIR = os.environ.get('ZMM_BACKUP_DIR', str(BASE_PATH / "data" / "backups"))
+
 MAX_BACKUPS = 10
 HEALTH_CHECK_URL = "http://localhost:8000/api/devices"
 HEALTH_CHECK_TIMEOUT = 60       # seconds to wait for healthy restart
