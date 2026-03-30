@@ -171,14 +171,6 @@
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
     </task>
-    <task id="LOCAL-00136" summary="roll back due to permission issues in container">
-      <option name="closed" value="true" />
-      <created>1774612520889</created>
-      <option name="number" value="00136" />
-      <option name="presentableId" value="LOCAL-00136" />
-      <option name="project" value="LOCAL" />
-      <updated>1774612520889</updated>
-    </task>
     <task id="LOCAL-00137" summary="final attempt at survivability fo container when dongle removed">
       <option name="closed" value="true" />
       <created>1774613763940</created>
@@ -563,7 +555,15 @@
       <option name="project" value="LOCAL" />
       <updated>1774873090450</updated>
     </task>
-    <option name="localTasksCounter" value="185" />
+    <task id="LOCAL-00185" summary="updated to fix this error:&#10;&#10;sed: -e expression #1, char 47: unknown option to `s'">
+      <option name="closed" value="true" />
+      <created>1774873099068</created>
+      <option name="number" value="00185" />
+      <option name="presentableId" value="LOCAL-00185" />
+      <option name="project" value="LOCAL" />
+      <updated>1774873099068</updated>
+    </task>
+    <option name="localTasksCounter" value="186" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
