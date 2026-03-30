@@ -526,7 +526,7 @@ async def start_services_after_setup():
     Called by the setup wizard after all config is applied.
     Starts MQTT (if enabled) and Zigbee, streaming probe progress via WS.
     """
-    global CONFIG
+    global config
 
     try:
         # Re-read config
