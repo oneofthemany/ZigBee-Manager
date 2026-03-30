@@ -106,10 +106,17 @@ logger = logging.getLogger('main')
 
 def load_config():
     """Load configuration from config.yaml."""
-    if not os.path.exists("./config/config.yaml"):
-        return {}
-    with open("./config/config.yaml", 'r') as f:
-        return yaml.safe_load(f) or {}
+    try:
+        if not os.path.exists("./config/config.yaml"):
+            return {}
+        with open("./config/config.yaml", 'r') as config_file:
+            return yaml.safe_load(config_file)
+    except FileNotFoundError as e:
+        logging.error(f"Config file not found: {e}")
+        exit(1)
+    except yaml.YAMLError as e:
+        logging.error(f"Error parsing YAML: {e}")
+        exit(1)
 
 def _watch_config_file():
     _path = "./config/config.yaml"
@@ -135,62 +142,40 @@ def _watch_config_file():
 threading.Thread(target=_watch_config_file, daemon=True, name="config-watcher").start()
 
 
-CONFIG = load_config()
+config = load_config()
 
+mqtt_config = config.get("mqtt", {})
+web_config = config.get("web", {})
+matter_config = config.get("matter", {})
+zigbee_config = config.get("zigbee", {})
 
-def get_conf(section, key, default=None):
-    """Get configuration value."""
-    return CONFIG.get(section, {}).get(key, default)
+#def get_conf(section, key, default=None):
+#    """Get configuration value."""
+#    return CONFIG.get(section, {}).get(key, default)
 
 # ============================================================================
 # SERVICES INITIALIZATION
 # ============================================================================
 
 mqtt_service = MQTTService(
-    broker_host=get_conf('mqtt', 'broker_host', 'localhost'),
-    port=get_conf('mqtt', 'broker_port', 1883),
-    username=get_conf('mqtt', 'username'),
-    password=get_conf('mqtt', 'password'),
-    base_topic=get_conf('mqtt', 'base_topic', 'zigbee_ha'),
-    qos=get_conf('mqtt', 'qos', 0),
-    log_callback=None
+    broker_host = mqtt_config.get_conf("broker_host"),
+    port = mqtt_config.get_conf("broker_port"),
+    username = mqtt_config.get("user"),
+    password = mqtt_config.get("password"),
+    base_topic = mqtt_config.get("base_topic"),
+    qos = mqtt_config.get("qos"),
+    log_callback = None
 )
 
 mqtt_enabled = get_conf('mqtt', 'enabled', True)  # Default True for backward compat
 
 
 zigbee_service = ZigbeeService(
-    port=get_conf('zigbee', 'port', '/dev/ttyACM0'),
-    mqtt_client=mqtt_service,
-    config=CONFIG.get('zigbee', {}),
-    event_callback=broadcast_event
+    port = zigbee_config.get("port"),
+    mqtt_client = mqtt_service,
+    config = zigbee_config,
+    event_callback = broadcast_event
 )
-
-# ============================================================================
-# MATTER — Embedded server + bridge (optional)
-# ============================================================================
-matter_server = None
-matter_bridge = None
-
-matter_config = CONFIG.get('matter', {})
-if matter_config.get('enabled', False):
-    # --- Start embedded server ---
-    from modules.matter_server import MatterServerManager
-    storage_path = matter_config.get('storage_path', './data/matter')
-    matter_server = MatterServerManager(
-        storage_path=storage_path,
-        port=matter_config.get('port', 5580)
-    )
-
-    # --- Start bridge ---
-    from modules.matter_bridge import MatterBridge
-    server_url = f"ws://localhost:{matter_config.get('port', 5580)}/ws"
-    matter_bridge = MatterBridge(
-        server_url=server_url,
-        mqtt_service=mqtt_service,
-        event_callback=broadcast_event
-    )
-    logger.info(f"Matter integration enabled (embedded server + bridge)")
 
 
 # ============================================================================
@@ -287,6 +272,31 @@ async def lifespan(app: FastAPI):
             logger.info("Wired GroupManager callback to MQTT Service")
 
     # Start Matter
+    # ============================================================================
+    # MATTER — Embedded server + bridge (optional)
+    # ============================================================================
+    matter_server = None
+    matter_bridge = None
+
+    matter_config = matter_config
+    if matter_config.get('enabled', False):
+        # --- Start embedded server ---
+        from modules.matter_server import MatterServerManager
+        storage_path = matter_config.get("storage_path")
+        matter_server = MatterServerManager(
+            storage_path = storage_path,
+            port = matter_config.get("port")
+        )
+        # --- Start bridge ---
+        from modules.matter_bridge import MatterBridge
+        server_url = f"ws://localhost:{matter_config.get("port")}/ws"
+        matter_bridge = MatterBridge(
+            server_url = server_url,
+            mqtt_service = mqtt_service,
+            event_callback = broadcast_event
+        )
+        logger.info(f"Matter integration enabled (embedded server + bridge)")
+
     if matter_server:
         try:
             started = await matter_server.start()

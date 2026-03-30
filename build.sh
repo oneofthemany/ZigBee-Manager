@@ -399,8 +399,6 @@ build_image() {
 # PREPARE DATA DIRECTORIES
 # =============================================================================
 prepare_data_dirs() {
-    # Reclaim ownership — previous runs with :Z or different UID may have
-    # changed ownership to root/container user
     if [[ -d "$DATA_DIR" ]]; then
         if ! [[ -w "$DATA_DIR" ]]; then
             info "Reclaiming ownership of ${DATA_DIR}..."
@@ -432,11 +430,11 @@ prepare_data_dirs() {
     fi
 
     # Patch USB device into config.yaml
-    #if [[ -n "${USB_DEVICE:-}" && -f "$DATA_DIR/config/config.yaml" ]]; then
-    #    sed -i "s|port: SERIAL_PORT|port: ${USB_DEVICE}|g" \
-    #        "$DATA_DIR/config/config.yaml"
-    #    ok "config.yaml updated with device: ${USB_DEVICE}"
-    #fi
+    if [[ -n "${USB_DEVICE:-}" && -f "$DATA_DIR/config/config.yaml" ]]; then
+        sed -i "s|port: SERIAL_PORT|port: ${USB_DEVICE}|g" \
+            "$DATA_DIR/config/config.yaml"
+        ok "config.yaml updated with device: ${USB_DEVICE}"
+    fi
 
     ok "Data directories ready at ${DATA_DIR}"
 }
