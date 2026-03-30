@@ -62,16 +62,19 @@ pub enum HdlcError {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CRC-16/CCITT (IBM-3740)
-// poly=0x1021, init=0xFFFF, no input/output reflection
+// poly=0x1021, init=0x0000, no input/output reflection (CRC-16/XMODEM)
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Compute CRC-16/CCITT over `data`.
+/// Compute CRC-16/XMODEM over `data`.
+///
+/// poly=0x1021, init=0x0000, no reflection.  Confirmed against live MG24
+/// MultiPAN RCP via diag_cpc.py — init=0xFFFF (IBM-3740) does NOT match.
 ///
 /// Table-driven for throughput; no unsafe.
 pub fn crc16(data: &[u8]) -> u16 {
     // Pre-computed table for poly 0x1021
     const TABLE: [u16; 256] = make_crc_table();
-    let mut crc: u16 = 0xFFFF;
+    let mut crc: u16 = 0x0000;
     for &byte in data {
         let idx = ((crc >> 8) as u8 ^ byte) as usize;
         crc = (crc << 8) ^ TABLE[idx];
@@ -351,13 +354,14 @@ mod tests {
 
     #[test]
     fn crc_known_vector() {
-        // CRC-16/IBM-3740 ("123456789") = 0x29B1
-        assert_eq!(crc16(b"123456789"), 0x29B1);
+        // CRC-16/XMODEM ("123456789") = 0x31C3
+        assert_eq!(crc16(b"123456789"), 0x31C3);
     }
 
     #[test]
     fn crc_empty() {
-        assert_eq!(crc16(b""), 0xFFFF);
+        // CRC of empty slice with init 0x0000 = 0x0000
+        assert_eq!(crc16(b""), 0x0000);
     }
 
     // ── Header byte order ─────────────────────────────────────────────────────
