@@ -118,7 +118,7 @@ def _watch_config_file():
     except Exception:
         return
     while True:
-        _time.sleep(0.3)
+        time.sleep(0.1)
         try:
             _cur = open(_path).read()
             if _cur != _last:

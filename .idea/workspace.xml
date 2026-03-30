@@ -4,8 +4,7 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="adding a watch config to find yaml dump bug">
-      <change beforePath="$PROJECT_DIR$/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/main.py" afterDir="false" />
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="updated to push to logging">
       <change beforePath="$PROJECT_DIR$/modules/tdm/zmm_cpc/src/router.rs" beforeDir="false" afterPath="$PROJECT_DIR$/modules/tdm/zmm_cpc/src/router.rs" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -171,14 +170,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00145" summary="which bash added">
-      <option name="closed" value="true" />
-      <created>1774638109942</created>
-      <option name="number" value="00145" />
-      <option name="presentableId" value="LOCAL-00145" />
-      <option name="project" value="LOCAL" />
-      <updated>1774638109942</updated>
     </task>
     <task id="LOCAL-00146" summary="cpc clean up fixes">
       <option name="closed" value="true" />
@@ -564,7 +555,15 @@
       <option name="project" value="LOCAL" />
       <updated>1774884512569</updated>
     </task>
-    <option name="localTasksCounter" value="194" />
+    <task id="LOCAL-00194" summary="updated to push to logging">
+      <option name="closed" value="true" />
+      <created>1774884789199</created>
+      <option name="number" value="00194" />
+      <option name="presentableId" value="LOCAL-00194" />
+      <option name="project" value="LOCAL" />
+      <updated>1774884789199</updated>
+    </task>
+    <option name="localTasksCounter" value="195" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -579,7 +578,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="rust tdm to replace cpc - initial commit" />
     <MESSAGE value="replace ptybridge and cpcd" />
     <MESSAGE value="renamed dir to tdm" />
     <MESSAGE value="updated to include rust toolchain for zmm_cpc tdm" />
@@ -604,6 +602,7 @@
     <MESSAGE value="patch for zigbee port in build script to prevent overwrite of other ports" />
     <MESSAGE value="zigbee port placeholder: SERIAL_PORT" />
     <MESSAGE value="adding a watch config to find yaml dump bug" />
-    <option name="LAST_COMMIT_MESSAGE" value="adding a watch config to find yaml dump bug" />
+    <MESSAGE value="updated to push to logging" />
+    <option name="LAST_COMMIT_MESSAGE" value="updated to push to logging" />
   </component>
 </project>
