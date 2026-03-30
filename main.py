@@ -13,6 +13,17 @@ Routes are split into:
   modules/zones_api.py      - Zone CRUD (already existed)
   modules/automation_api.py - Automation CRUD (already existed)
 """
+
+import builtins, traceback, sys
+_real_open = builtins.open
+def _traced_open(name, *a, **kw):
+    f = _real_open(name, *a, **kw)
+    mode = a[0] if a else kw.get('mode', 'r')
+    if 'config.yaml' in str(name) and ('w' in str(mode) or 'a' in str(mode)):
+        print(f"\n{'='*60}\nCONFIG WRITE: {name} mode={mode}\n{''.join(traceback.format_stack())}\n{'='*60}\n", file=sys.stderr, flush=True)
+    return f
+builtins.open = _traced_open
+
 import uvicorn
 import subprocess
 import json
