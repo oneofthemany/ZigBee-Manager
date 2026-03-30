@@ -433,9 +433,9 @@ prepare_data_dirs() {
 
     # Patch USB device into config.yaml
     if [[ -n "${USB_DEVICE:-}" && -f "$DATA_DIR/config/config.yaml" ]]; then
-        sed -i "s|port:.*\/dev\/tty[A-Za-z]*[0-9]*|port: ${USB_DEVICE}|g" \
+        sed -i -E "s|port: (ZIGBEE_PORT|\/dev\/tty[A-Za-z0-9]*)|port: ${USB_DEVICE}|g" \
             "$DATA_DIR/config/config.yaml"
-        ok "config.yaml updated with device: ${USB_DEVICE}"
+        echo "config.yaml updated with device: ${USB_DEVICE}"
     fi
 
     ok "Data directories ready at ${DATA_DIR}"
