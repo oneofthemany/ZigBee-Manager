@@ -4,8 +4,7 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="zigbee port placeholder: SERIAL_PORT">
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="adding a watch config to find yaml dump bug">
       <change beforePath="$PROJECT_DIR$/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/main.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/modules/tdm/zmm_cpc/src/router.rs" beforeDir="false" afterPath="$PROJECT_DIR$/modules/tdm/zmm_cpc/src/router.rs" afterDir="false" />
     </list>
@@ -172,14 +171,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00144" summary="updates to mulitpan detection">
-      <option name="closed" value="true" />
-      <created>1774637852996</created>
-      <option name="number" value="00144" />
-      <option name="presentableId" value="LOCAL-00144" />
-      <option name="project" value="LOCAL" />
-      <updated>1774637852996</updated>
     </task>
     <task id="LOCAL-00145" summary="which bash added">
       <option name="closed" value="true" />
@@ -565,7 +556,15 @@
       <option name="project" value="LOCAL" />
       <updated>1774882120746</updated>
     </task>
-    <option name="localTasksCounter" value="193" />
+    <task id="LOCAL-00193" summary="adding a watch config to find yaml dump bug">
+      <option name="closed" value="true" />
+      <created>1774884512569</created>
+      <option name="number" value="00193" />
+      <option name="presentableId" value="LOCAL-00193" />
+      <option name="project" value="LOCAL" />
+      <updated>1774884512569</updated>
+    </task>
+    <option name="localTasksCounter" value="194" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -580,7 +579,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="reset_sequence to true and _reset_serial_state fix" />
     <MESSAGE value="rust tdm to replace cpc - initial commit" />
     <MESSAGE value="replace ptybridge and cpcd" />
     <MESSAGE value="renamed dir to tdm" />
@@ -605,6 +603,7 @@
     <MESSAGE value="branch added for easier editing" />
     <MESSAGE value="patch for zigbee port in build script to prevent overwrite of other ports" />
     <MESSAGE value="zigbee port placeholder: SERIAL_PORT" />
-    <option name="LAST_COMMIT_MESSAGE" value="zigbee port placeholder: SERIAL_PORT" />
+    <MESSAGE value="adding a watch config to find yaml dump bug" />
+    <option name="LAST_COMMIT_MESSAGE" value="adding a watch config to find yaml dump bug" />
   </component>
 </project>

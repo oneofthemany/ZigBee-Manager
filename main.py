@@ -111,23 +111,28 @@ def load_config():
     with open("./config/config.yaml", 'r') as f:
         return yaml.safe_load(f) or {}
 
-def _watch_config():
-    path = "./config/config.yaml"
-    import traceback as tb
-    last = open(path).read()
+def _watch_config_file():
+    _path = "./config/config.yaml"
+    try:
+        _last = open(_path).read()
+    except Exception:
+        return
     while True:
-        time.sleep(0.5)
+        _time.sleep(0.3)
         try:
-            cur = open(path).read()
-            if cur != last:
-                print("CONFIG CHANGED:")
-                print(cur)
-                tb.print_stack()
-                last = cur
+            _cur = open(_path).read()
+            if _cur != _last:
+                import traceback
+                logger.error(
+                    "CONFIG FILE CHANGED:\n%s\nSTACK:\n%s",
+                    _cur[:500],
+                    "".join(traceback.format_stack())
+                )
+                _last = _cur
         except Exception:
             pass
 
-threading.Thread(target=_watch_config, daemon=True).start()
+threading.Thread(target=_watch_config_file, daemon=True, name="config-watcher").start()
 
 
 CONFIG = load_config()
