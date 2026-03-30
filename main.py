@@ -574,13 +574,13 @@ async def start_services_after_setup():
             "payload": {"phase": "zigbee_probe", "message": "Detecting Zigbee coordinator..."}
         })
 
-        new_port = get_conf('zigbee', 'port', '/dev/ttyACM0')
+        new_port = zigbee_config.get("port")
         zigbee_service.port = new_port
-        zigbee_service._config = CONFIG.get('zigbee', {})
+        zigbee_service._config = zigbee_config
 
         ensure_network_credentials("./config/config.yaml")
-        CONFIG = load_config()
-        network_key = get_conf('zigbee', 'network_key', None)
+        config = load_config()
+        network_key = zigbee_config.get("network_key", None),
 
         # Progress callback that broadcasts Dongle Jedi events to frontend
         async def probe_progress(progress):
