@@ -171,7 +171,6 @@ mqtt_service = MQTTService(
 
 mqtt_enabled = mqtt_config.get("enabled", True) # Default True for backward compat
 
-
 zigbee_service = ZigbeeService(
     port = zigbee_config.get("port"),
     mqtt_client = mqtt_service,
@@ -280,8 +279,12 @@ async def lifespan(app: FastAPI):
     matter_server = None
     matter_bridge = None
 
-    matter_config = matter_config
-    if matter_config.get('enabled', False):
+    config = load_config()
+
+    matter_config = config.get("matter", {})
+    port = matter_config.get("port"),
+
+    if matter_config.get("enabled", False):
         # --- Start embedded server ---
         from modules.matter_server import MatterServerManager
         storage_path = matter_config.get("storage_path")

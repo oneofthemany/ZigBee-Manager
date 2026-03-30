@@ -4,7 +4,7 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="ssl fix for entry point">
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="ssl and logging patch for entry point">
       <change beforePath="$PROJECT_DIR$/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/main.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/modules/tdm/zmm_cpc/src/router.rs" beforeDir="false" afterPath="$PROJECT_DIR$/modules/tdm/zmm_cpc/src/router.rs" afterDir="false" />
     </list>
@@ -171,14 +171,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00155" summary="socat removal from new pty bridge">
-      <option name="closed" value="true" />
-      <created>1774702053958</created>
-      <option name="number" value="00155" />
-      <option name="presentableId" value="LOCAL-00155" />
-      <option name="project" value="LOCAL" />
-      <updated>1774702053958</updated>
     </task>
     <task id="LOCAL-00156" summary="more deps for dev">
       <option name="closed" value="true" />
@@ -564,7 +556,15 @@
       <option name="project" value="LOCAL" />
       <updated>1774891137387</updated>
     </task>
-    <option name="localTasksCounter" value="204" />
+    <task id="LOCAL-00204" summary="ssl and logging patch for entry point">
+      <option name="closed" value="true" />
+      <created>1774891932547</created>
+      <option name="number" value="00204" />
+      <option name="presentableId" value="LOCAL-00204" />
+      <option name="project" value="LOCAL" />
+      <updated>1774891932547</updated>
+    </task>
+    <option name="localTasksCounter" value="205" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -579,7 +579,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="sabm patch" />
     <MESSAGE value="sabm patches" />
     <MESSAGE value="header fixes" />
     <MESSAGE value="crc fix" />
@@ -604,6 +603,7 @@
     <MESSAGE value="final fixes for zigbee config" />
     <MESSAGE value="global config to lower" />
     <MESSAGE value="ssl fix for entry point" />
-    <option name="LAST_COMMIT_MESSAGE" value="ssl fix for entry point" />
+    <MESSAGE value="ssl and logging patch for entry point" />
+    <option name="LAST_COMMIT_MESSAGE" value="ssl and logging patch for entry point" />
   </component>
 </project>
