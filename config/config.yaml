@@ -62,7 +62,7 @@ ai:
   max_tokens: 2000
 
 zigbee:
-  port: ZIGBEE_PORT
+  port: /dev/ttyUSB0 # Serial port for Zigbee radio
   # Serial: /dev/ttyACM0 (EZSP), /dev/ttyUSB0 (ZNP)
   # MultiPAN (zigbeed): socket://127.0.0.1:9999
 
