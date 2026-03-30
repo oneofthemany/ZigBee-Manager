@@ -158,9 +158,9 @@ zigbee_config = config.get("zigbee", {})
 # ============================================================================
 
 mqtt_service = MQTTService(
-    broker_host = mqtt_config.get_conf("broker_host"),
-    port = mqtt_config.get_conf("broker_port"),
-    username = mqtt_config.get("user"),
+    broker_host = mqtt_config.get("broker_host"),
+    port = mqtt_config.get("broker_port"),
+    username = mqtt_config.get("username"),
     password = mqtt_config.get("password"),
     base_topic = mqtt_config.get("base_topic"),
     qos = mqtt_config.get("qos"),
@@ -229,7 +229,7 @@ async def lifespan(app: FastAPI):
     from modules.dongle_jedi import DongleJedi
     setup_status = DongleJedi.needs_setup()
 
-    mqtt_enabled = get_conf('mqtt', 'enabled', True)
+    mqtt_enabled = mqtt_config.get("enabled", True)
 
     if setup_status["needs_setup"]:
         logger.warning(f"Setup needed: {setup_status['reason']}")
@@ -243,7 +243,7 @@ async def lifespan(app: FastAPI):
             }
         })
     else:
-        mqtt_enabled = get_conf('mqtt', 'enabled', True)
+        mqtt_enabled = mqtt_config.get("enabled", True)
 
         if mqtt_enabled:
             try:
@@ -530,8 +530,8 @@ async def start_services_after_setup():
 
     try:
         # Re-read config
-        CONFIG = load_config()
-        mqtt_enabled = get_conf('mqtt', 'enabled', True)
+        config = load_config()
+        mqtt_enabled = mqtt_config.get("enabled", True)
 
         # ── Step 1: MQTT ──
         await manager.broadcast({
@@ -540,11 +540,11 @@ async def start_services_after_setup():
         })
 
         if mqtt_enabled:
-            mqtt_service.broker = get_conf('mqtt', 'broker_host', 'localhost')
-            mqtt_service.port = get_conf('mqtt', 'broker_port', 1883)
-            mqtt_service.username = get_conf('mqtt', 'username')
-            mqtt_service.password = get_conf('mqtt', 'password')
-            mqtt_service.base_topic = get_conf('mqtt', 'base_topic', 'zigbee_matter_manager')
+            mqtt_service.broker = mqtt_config.get("broker_host")
+            mqtt_service.port = mqtt_config.get("broker_port")
+            mqtt_service.username = mqtt_config.get("username")
+            mqtt_service.password = mqtt_config.get("password")
+            mqtt_service.base_topic = mqtt_config.get("base_topic")
 
             await mqtt_service.stop()
             await mqtt_service.start()

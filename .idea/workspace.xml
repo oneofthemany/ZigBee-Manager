@@ -4,7 +4,7 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="fix for matter port">
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="mqtt enabled patch">
       <change beforePath="$PROJECT_DIR$/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/main.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/modules/tdm/zmm_cpc/src/router.rs" beforeDir="false" afterPath="$PROJECT_DIR$/modules/tdm/zmm_cpc/src/router.rs" afterDir="false" />
     </list>
@@ -171,14 +171,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00150" summary="serial break fix">
-      <option name="closed" value="true" />
-      <created>1774696152053</created>
-      <option name="number" value="00150" />
-      <option name="presentableId" value="LOCAL-00150" />
-      <option name="project" value="LOCAL" />
-      <updated>1774696152053</updated>
     </task>
     <task id="LOCAL-00151" summary="baud rate fixes - multipan">
       <option name="closed" value="true" />
@@ -564,7 +556,15 @@
       <option name="project" value="LOCAL" />
       <updated>1774889374191</updated>
     </task>
-    <option name="localTasksCounter" value="199" />
+    <task id="LOCAL-00199" summary="mqtt enabled patch">
+      <option name="closed" value="true" />
+      <created>1774889685236</created>
+      <option name="number" value="00199" />
+      <option name="presentableId" value="LOCAL-00199" />
+      <option name="project" value="LOCAL" />
+      <updated>1774889685236</updated>
+    </task>
+    <option name="localTasksCounter" value="200" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -579,7 +579,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="updated buidl ro be for dev branch" />
     <MESSAGE value="line 345 to /app/modules" />
     <MESSAGE value="debug line added for app modules tdm dir bug" />
     <MESSAGE value="sabm improvements" />
@@ -604,6 +603,7 @@
     <MESSAGE value="underscore removal for time - typo" />
     <MESSAGE value="troubleshooting port issues in config.yaml" />
     <MESSAGE value="fix for matter port" />
-    <option name="LAST_COMMIT_MESSAGE" value="fix for matter port" />
+    <MESSAGE value="mqtt enabled patch" />
+    <option name="LAST_COMMIT_MESSAGE" value="mqtt enabled patch" />
   </component>
 </project>
