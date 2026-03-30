@@ -4,10 +4,9 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="header fixes">
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="crc fix">
       <change afterPath="$PROJECT_DIR$/modules/tdm/zmm_cpc/cross/x86.toml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/diag_cpc.py" beforeDir="false" afterPath="$PROJECT_DIR$/diag_cpc.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/modules/tdm/zmm_cpc/src/hdlc.rs" beforeDir="false" afterPath="$PROJECT_DIR$/modules/tdm/zmm_cpc/src/hdlc.rs" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -153,14 +152,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00129" summary="workspace update">
-      <option name="closed" value="true" />
-      <created>1774608081238</created>
-      <option name="number" value="00129" />
-      <option name="presentableId" value="LOCAL-00129" />
-      <option name="project" value="LOCAL" />
-      <updated>1774608081238</updated>
     </task>
     <task id="LOCAL-00130" summary="rolled back">
       <option name="closed" value="true" />
@@ -546,7 +537,15 @@
       <option name="project" value="LOCAL" />
       <updated>1774861893511</updated>
     </task>
-    <option name="localTasksCounter" value="178" />
+    <task id="LOCAL-00178" summary="crc fix">
+      <option name="closed" value="true" />
+      <created>1774862874368</created>
+      <option name="number" value="00178" />
+      <option name="presentableId" value="LOCAL-00178" />
+      <option name="project" value="LOCAL" />
+      <updated>1774862874368</updated>
+    </task>
+    <option name="localTasksCounter" value="179" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -561,7 +560,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="serial break fix" />
     <MESSAGE value="baud rate fixes - multipan" />
     <MESSAGE value="improvements to USB product string pre-detection for CPC/RCP devices with NCP quirk fw detection" />
     <MESSAGE value="watchdog fix for multipan" />
@@ -586,7 +584,8 @@
     <MESSAGE value="sabm patch" />
     <MESSAGE value="sabm patches" />
     <MESSAGE value="header fixes" />
-    <option name="LAST_COMMIT_MESSAGE" value="header fixes" />
+    <MESSAGE value="crc fix" />
+    <option name="LAST_COMMIT_MESSAGE" value="crc fix" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>

@@ -3,21 +3,22 @@
 ZMM CPC Diagnostic Tool
 ========================
 Comprehensive on-wire diagnostic for the CPC/HDLC framing layer.
-Run inside the container:
 
-    podman exec zigbee-matter-manager python3 /app/diag_cpc.py
-    podman exec zigbee-matter-manager python3 /app/diag_cpc.py --port /dev/ttyACM0
-    podman exec zigbee-matter-manager python3 /app/diag_cpc.py --baud 460800
+Can run directly on the host (no container needed):
+
+    python3 diag_cpc.py
+    python3 diag_cpc.py --port /dev/ttyACM0
+    python3 diag_cpc.py --baud 115200 --skip-sweep
+
+Requires: pip install pyserial
 
 Tests performed:
   1. Serial port access and permissions
-  2. CRC-16 variant detection (init=0x0000 vs 0xFFFF)
-  3. Baud rate sweep (listen for data at common rates)
-  4. Hardware reset (RTS toggle) and boot capture
-  5. Frame format detection (field order, LEN semantics)
-  6. Full CPC handshake: DISC → SABM → UA verification
-  7. zmm_cpc module import and CRC consistency check
-  8. Endpoint SABM/UA handshake on ep0, ep12, ep13
+  2. Baud rate sweep (listen for data at common rates)
+  3. CRC-16 variant detection (init=0x0000 vs 0xFFFF)
+  4. CPC handshake: ep0 property exchange → SABM → UA
+  5. zmm_cpc module import and CRC consistency check
+  6. Interactive conversation (8 seconds of bidirectional traffic)
 """
 
 import argparse
@@ -61,6 +62,31 @@ U_DISC = 0x43
 
 CTRL_NAMES = {U_SABM: "SABM", U_UA: "UA", U_DISC: "DISC"}
 
+# ── ep0 system property commands ──────────────────────────────────────────────
+# Extracted from SiLabs cpcd source + confirmed via strace
+SYS_CMD_NOOP           = 0x00
+SYS_CMD_RESET          = 0x01
+SYS_CMD_PROP_VALUE_GET = 0x02
+SYS_CMD_PROP_VALUE_SET = 0x03
+SYS_CMD_PROP_VALUE_IS  = 0x06
+
+# Property IDs queried by cpcd during init (from strace of cpcd v4.7.1.0)
+# Format: (cmd, property_payload_bytes)
+# cpcd sends these in order on ep0 as I-frame payloads.
+# payload = [cmd, seq, ...property_data]
+CPCD_INIT_PROPERTIES = [
+    bytes([0x03, 0x00, 0x08, 0x00, 0x02, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]),
+    bytes([0x01, 0x01, 0x00, 0x00]),
+    bytes([0x02, 0x02, 0x04, 0x00, 0x20, 0x00, 0x00, 0x00]),
+    bytes([0x02, 0x03, 0x04, 0x00, 0x01, 0x00, 0x00, 0x00]),
+    bytes([0x02, 0x04, 0x04, 0x00, 0x02, 0x00, 0x00, 0x00]),
+    bytes([0x02, 0x05, 0x04, 0x00, 0x03, 0x00, 0x00, 0x00]),
+    bytes([0x03, 0x06, 0x08, 0x00, 0x60, 0x00, 0x00, 0x00, 0x04, 0x07, 0x01, 0x00]),
+    bytes([0x02, 0x07, 0x04, 0x00, 0x40, 0x00, 0x00, 0x00]),
+    bytes([0x02, 0x08, 0x04, 0x00, 0x50, 0x00, 0x00, 0x00]),
+    bytes([0x02, 0x09, 0x04, 0x00, 0x04, 0x00, 0x00, 0x00]),
+]
+
 
 def make_frame(ep: int, ctrl: int, payload: bytes = b"",
                crc_fn=crc16_0000, len_includes_fcs: bool = True) -> bytes:
@@ -75,6 +101,19 @@ def make_frame(ep: int, ctrl: int, payload: bytes = b"",
             + struct.pack("<H", hcs)
             + payload
             + struct.pack("<H", fcs))
+
+
+def make_iframe(ep: int, ns: int, nr: int, payload: bytes,
+                crc_fn=crc16_0000) -> bytes:
+    """Encode a CPC I-frame with explicit sequence numbers."""
+    ctrl = ((ns & 0x07) << 1) | ((nr & 0x07) << 5)
+    return make_frame(ep, ctrl, payload, crc_fn=crc_fn)
+
+
+def make_rr(ep: int, nr: int, crc_fn=crc16_0000) -> bytes:
+    """Encode a CPC RR (Receive Ready) S-frame."""
+    ctrl = 0x01 | ((nr & 0x07) << 5)
+    return make_frame(ep, ctrl, crc_fn=crc_fn)
 
 
 def decode_ctrl(ctrl: int) -> str:
@@ -175,7 +214,6 @@ def test_serial_access(port: str) -> bool:
 
     if not os.path.exists(port):
         print_result("Device exists", False, f"{port} not found")
-        # Check what's available
         import glob
         devs = glob.glob("/dev/ttyUSB*") + glob.glob("/dev/ttyACM*")
         if devs:
@@ -186,7 +224,6 @@ def test_serial_access(port: str) -> bool:
 
     print_result("Device exists", True)
 
-    # Check permissions
     readable = os.access(port, os.R_OK)
     writable = os.access(port, os.W_OK)
     print_result("Readable", readable)
@@ -201,7 +238,6 @@ def test_serial_access(port: str) -> bool:
         print(f"  Supplementary groups = {groups}")
         return False
 
-    # Try opening
     try:
         import serial as pyserial
         ser = pyserial.Serial(port, 115200, timeout=0.5)
@@ -250,7 +286,6 @@ def test_baud_sweep(port: str) -> int:
 
             print(f"  {baud:>7} baud: {status}")
 
-            # Prefer baud rates that produce valid CPC flags
             if has_flag and not best_has_flag:
                 best_baud = baud
                 best_data = data
@@ -278,7 +313,6 @@ def test_crc_variant(data: bytes) -> str:
         print("  ⚠️  Not enough data to test CRC (need ≥7 bytes)")
         return "unknown"
 
-    # Find CPC_FLAG positions
     flag_positions = [i for i, b in enumerate(data) if b == CPC_FLAG]
     if not flag_positions:
         print("  ⚠️  No CPC_FLAG (0x14) found in captured data")
@@ -286,13 +320,12 @@ def test_crc_variant(data: bytes) -> str:
 
     print(f"  CPC_FLAG at byte positions: {flag_positions}")
 
-    # For each possible layout + CRC combo, try to validate
     results = []
     for crc_name, crc_fn in [("init=0x0000", crc16_0000), ("init=0xFFFF", crc16_ffff)]:
         for layout in ["EP_LEN_CTRL", "EP_CTRL_LEN"]:
             for len_inc_fcs in [True, False]:
                 frames = try_parse_frames(data, crc_fn, layout, len_inc_fcs)
-                valid = [f for f in frames if f[4]]  # FCS also valid
+                valid = [f for f in frames if f[4]]
                 if frames:
                     tag = f"LEN{'(+FCS)' if len_inc_fcs else '(raw)'}"
                     results.append((crc_name, layout, tag, len(frames), len(valid), frames))
@@ -300,7 +333,6 @@ def test_crc_variant(data: bytes) -> str:
     if not results:
         print("  ❌ No valid frames found with any CRC/layout combination")
 
-        # Brute-force: find what CRC init matches any 2-byte span
         print("\n  Brute-force CRC search on header bytes:")
         for pos in flag_positions:
             if pos + 7 > len(data):
@@ -320,7 +352,6 @@ def test_crc_variant(data: bytes) -> str:
                                   f"= 0x{crc:04x}, hdr={hdr.hex()}")
         return "unknown"
 
-    # Show results
     best = None
     for crc_name, layout, tag, total, valid, frames in results:
         ok = "✅" if valid > 0 else "❌"
@@ -339,8 +370,22 @@ def test_crc_variant(data: bytes) -> str:
 
 
 def test_handshake(port: str, baud: int, crc_fn) -> bool:
-    """Test 4: Full CPC handshake — DISC all → SABM ep0 → expect UA."""
-    print_header("TEST 4: CPC Handshake (DISC → SABM → UA)")
+    """
+    Test 4: CPC handshake — replicate cpcd's actual init sequence.
+
+    cpcd does NOT send SABM cold. The real protocol (confirmed via strace
+    of cpcd v4.7.1.0 against MG24 MultiPAN RCP):
+
+      1. Reset chip (RTS toggle + bootloader exit)
+      2. Drain + ACK any stale RCP I-frames
+      3. Send ep0 property-get I-frames (system endpoint config)
+      4. ACK RCP responses
+      5. After property exchange, send SABM on ep0 then ep12
+      6. Expect UA from RCP
+
+    The property payloads are extracted verbatim from the cpcd strace.
+    """
+    print_header("TEST 4: CPC Handshake (ep0 property exchange → SABM)")
 
     import serial as pyserial
 
@@ -348,131 +393,191 @@ def test_handshake(port: str, baud: int, crc_fn) -> bool:
     ser.dtr = False
     ser.rts = False
 
-    # Step 1: RTS reset to put chip in known state
-    print("  Step 1: RTS reset...")
+    # ── Step 1: Chip reset ─────────────────────────────────────────────────
+    print("  Step 1: Chip reset (bootloader exit)...")
+
+    # Send bootloader exit command (safe even if already in application mode)
+    ser.write(b"2\r\n")
+    time.sleep(0.5)
+    ser.write(b"\n")
+    time.sleep(0.3)
+    ser.write(b"2\r\n")
+    time.sleep(2.0)
+
+    # Flush any bootloader menu output
+    ser.reset_input_buffer()
+    ser.reset_output_buffer()
+
+    # RTS toggle to reset CPC state
     ser.rts = True
     time.sleep(0.1)
     ser.rts = False
     time.sleep(0.5)
 
-    # Drain boot data
+    # ── Step 2: Drain boot frames, learn RCP's sequence state ──────────────
+    print("\n  Step 2: Reading boot frames...")
     boot = ser.read(500)
+    rcp_ns = 0        # RCP's N(S) — we track to send correct N(R)
+    our_ns = 0        # Our N(S) — start at 0, adjust from RCP's N(R)
+    rcp_expected = 0  # What N(R) the RCP tells us (our expected N(S))
+
     if boot:
-        print(f"  Boot data: {len(boot)} bytes — {boot.hex()}")
-        # Try to parse and respond
         frames = try_parse_frames(boot, crc_fn, "EP_LEN_CTRL", True)
         for ep, ctrl, desc, payload, fcs_ok in frames:
-            print(f"    RX: ep={ep} {desc} {'✅' if fcs_ok else '❌ FCS'}")
-            # Respond with RR if I-frame
-            if ctrl & 0x01 == 0:
-                ns = (ctrl >> 1) & 7
-                nr = (ns + 1) & 7
-                rr_ctrl = 0x01 | (nr << 5)
-                rr = make_frame(ep, rr_ctrl, crc_fn=crc_fn)
-                ser.write(rr)
-                print(f"    TX: RR N(R)={nr} on ep{ep}")
-                time.sleep(0.2)
+            print(f"    RX: ep={ep} {desc} {'✅' if fcs_ok else '❌'}"
+                  f" payload={payload.hex() if payload else ''}")
+            if fcs_ok and ctrl & 0x01 == 0:  # I-frame
+                rcp_ns = (ctrl >> 1) & 7
+                rcp_expected = (ctrl >> 5) & 7
+                # ACK with RR
+                rr_nr = (rcp_ns + 1) & 7
+                ser.write(make_rr(ep, rr_nr, crc_fn=crc_fn))
+                print(f"    TX: RR N(R)={rr_nr}")
+                time.sleep(0.1)
+
+        our_ns = rcp_expected  # Start at what the RCP expects
+        print(f"\n    RCP state: N(S)={rcp_ns}, expects our N(S)={rcp_expected}")
     else:
-        print("  Boot data: (empty)")
+        print("    (no boot data — chip may need longer reset)")
 
-    # Step 2: Send DISC on all endpoints
-    print("\n  Step 2: Sending DISC on ep0, ep12, ep13...")
-    for ep in [0, 12, 13]:
-        disc = make_frame(ep, U_DISC, crc_fn=crc_fn)
-        ser.write(disc)
-        print(f"    TX: DISC ep{ep} — {disc.hex()}")
-        time.sleep(0.2)
+    # ── Step 3: ep0 property exchange (replaying cpcd's init) ──────────────
+    print("\n  Step 3: ep0 property exchange (replaying cpcd init sequence)...")
 
-    # Read responses
-    time.sleep(1)
-    disc_resp = ser.read(500)
-    if disc_resp:
-        print(f"    RX: {len(disc_resp)} bytes — {disc_resp.hex()}")
-        frames = try_parse_frames(disc_resp, crc_fn, "EP_LEN_CTRL", True)
-        for ep, ctrl, desc, payload, fcs_ok in frames:
-            print(f"      ep={ep} {desc} {'✅' if fcs_ok else '❌ FCS'}")
-    else:
-        print("    RX: (empty — normal, some firmware ignores DISC)")
+    properties_ok = 0
+    responses_seen = 0
 
-    # Step 3: Send SABM on ep0
-    print("\n  Step 3: Sending SABM on ep0...")
+    for i, prop_payload in enumerate(CPCD_INIT_PROPERTIES):
+        # Send property query as I-frame on ep0
+        frame = make_iframe(0, our_ns, (rcp_ns + 1) & 7, prop_payload, crc_fn=crc_fn)
+        ser.write(frame)
+        cmd = prop_payload[0]
+        seq = prop_payload[1]
+        cmd_name = {0x01: "RESET", 0x02: "PROP_GET", 0x03: "PROP_GET_EX"}.get(cmd, f"0x{cmd:02x}")
+        print(f"    TX: ep0 I N(S)={our_ns} — {cmd_name} seq={seq}")
+
+        our_ns = (our_ns + 1) & 7
+
+        # Wait for response
+        time.sleep(0.3)
+        resp = ser.read(200)
+        if resp:
+            rframes = try_parse_frames(resp, crc_fn, "EP_LEN_CTRL", True)
+            for ep, ctrl, desc, payload, fcs_ok in rframes:
+                tag = "✅" if fcs_ok else "❌"
+                if payload and len(payload) >= 2:
+                    resp_cmd = payload[0]
+                    resp_seq = payload[1]
+                    print(f"    RX: ep={ep} {desc} {tag} cmd=0x{resp_cmd:02x} seq={resp_seq}")
+                else:
+                    print(f"    RX: ep={ep} {desc} {tag}")
+
+                if fcs_ok:
+                    responses_seen += 1
+                    if ctrl & 0x01 == 0:  # I-frame response
+                        rcp_ns = (ctrl >> 1) & 7
+                        properties_ok += 1
+                        # ACK
+                        rr_nr = (rcp_ns + 1) & 7
+                        ser.write(make_rr(ep, rr_nr, crc_fn=crc_fn))
+
+    print(f"\n    Property exchange: {properties_ok}/{len(CPCD_INIT_PROPERTIES)} "
+          f"responses, {responses_seen} total frames")
+    print_result("ep0 property exchange", properties_ok > 0)
+
+    # ── Step 4: Send SABM on ep0 ──────────────────────────────────────────
+    print("\n  Step 4: Sending SABM on ep0...")
     sabm = make_frame(0, U_SABM, crc_fn=crc_fn)
     ser.write(sabm)
     print(f"    TX: SABM ep0 — {sabm.hex()}")
 
-    time.sleep(1)
-    sabm_resp = ser.read(500)
+    time.sleep(1.0)
     ep0_ok = False
-    if sabm_resp:
-        print(f"    RX: {len(sabm_resp)} bytes — {sabm_resp.hex()}")
-        frames = try_parse_frames(sabm_resp, crc_fn, "EP_LEN_CTRL", True)
+
+    # Drain all responses — may include both property retransmits and UA
+    resp = ser.read(500)
+    if resp:
+        frames = try_parse_frames(resp, crc_fn, "EP_LEN_CTRL", True)
         for ep, ctrl, desc, payload, fcs_ok in frames:
-            print(f"      ep={ep} {desc} {'✅' if fcs_ok else '❌ FCS'}")
-            if ep == 0 and (ctrl & 0xEF) == U_UA:
+            print(f"    RX: ep={ep} {desc} {'✅' if fcs_ok else '❌'}")
+            if ep == 0 and (ctrl & 0xEF) == U_UA and fcs_ok:
                 ep0_ok = True
+            elif fcs_ok and ctrl & 0x01 == 0:  # I-frame
+                rcp_ns = (ctrl >> 1) & 7
+                ser.write(make_rr(ep, (rcp_ns + 1) & 7, crc_fn=crc_fn))
     else:
         print("    RX: (empty)")
 
     print_result("ep0 UA received", ep0_ok)
 
-    if not ep0_ok:
-        ser.close()
-        return False
-
-    # Step 4: Send SABM on ep12
-    print("\n  Step 4: Sending SABM on ep12...")
+    # ── Step 5: Send SABM on ep12 ─────────────────────────────────────────
+    print("\n  Step 5: Sending SABM on ep12...")
     sabm12 = make_frame(12, U_SABM, crc_fn=crc_fn)
     ser.write(sabm12)
     print(f"    TX: SABM ep12 — {sabm12.hex()}")
 
-    time.sleep(1)
-    resp12 = ser.read(500)
+    time.sleep(1.0)
     ep12_ok = False
-    if resp12:
-        print(f"    RX: {len(resp12)} bytes — {resp12.hex()}")
-        frames = try_parse_frames(resp12, crc_fn, "EP_LEN_CTRL", True)
+
+    resp = ser.read(500)
+    if resp:
+        frames = try_parse_frames(resp, crc_fn, "EP_LEN_CTRL", True)
         for ep, ctrl, desc, payload, fcs_ok in frames:
-            print(f"      ep={ep} {desc} {'✅' if fcs_ok else '❌ FCS'}")
-            if ep == 12 and (ctrl & 0xEF) == U_UA:
+            print(f"    RX: ep={ep} {desc} {'✅' if fcs_ok else '❌'}")
+            if ep == 12 and (ctrl & 0xEF) == U_UA and fcs_ok:
                 ep12_ok = True
-            elif ep == 12 and (ctrl & 0xEF) == U_SABM:
+            elif ep == 12 and (ctrl & 0xEF) == U_SABM and fcs_ok:
                 # RCP sent its own SABM — respond with UA
                 ua = make_frame(12, U_UA, crc_fn=crc_fn)
                 ser.write(ua)
                 print(f"    TX: UA ep12 (responding to RCP's SABM)")
                 ep12_ok = True
+            elif fcs_ok and ctrl & 0x01 == 0:  # I-frame (property retransmit)
+                rcp_ns = (ctrl >> 1) & 7
+                ser.write(make_rr(ep, (rcp_ns + 1) & 7, crc_fn=crc_fn))
     else:
         print("    RX: (empty)")
 
     print_result("ep12 UA received", ep12_ok)
 
-    # Step 5: Send SABM on ep13 (OpenThread — may or may not respond)
-    print("\n  Step 5: Sending SABM on ep13 (optional)...")
+    # ── Step 6: Send SABM on ep13 (optional) ──────────────────────────────
+    print("\n  Step 6: Sending SABM on ep13 (optional)...")
     sabm13 = make_frame(13, U_SABM, crc_fn=crc_fn)
     ser.write(sabm13)
-    time.sleep(1)
+    time.sleep(1.0)
     resp13 = ser.read(500)
     ep13_ok = False
     if resp13:
         frames = try_parse_frames(resp13, crc_fn, "EP_LEN_CTRL", True)
         for ep, ctrl, desc, payload, fcs_ok in frames:
-            print(f"      ep={ep} {desc} {'✅' if fcs_ok else '❌ FCS'}")
-            if ep == 13 and (ctrl & 0xEF) == U_UA:
+            print(f"    RX: ep={ep} {desc} {'✅' if fcs_ok else '❌'}")
+            if ep == 13 and (ctrl & 0xEF) == U_UA and fcs_ok:
                 ep13_ok = True
-            elif ep == 13 and (ctrl & 0xEF) == U_SABM:
+            elif ep == 13 and (ctrl & 0xEF) == U_SABM and fcs_ok:
                 ua = make_frame(13, U_UA, crc_fn=crc_fn)
                 ser.write(ua)
                 ep13_ok = True
+            elif fcs_ok and ctrl & 0x01 == 0:
+                rcp_ns = (ctrl >> 1) & 7
+                ser.write(make_rr(ep, (rcp_ns + 1) & 7, crc_fn=crc_fn))
     print_result("ep13 UA received", ep13_ok, "(optional — Thread endpoint)")
 
-    # Step 6: Send DISC to clean up
-    print("\n  Step 6: Cleanup — sending DISC...")
+    # ── Step 7: Cleanup ───────────────────────────────────────────────────
+    print("\n  Step 7: Cleanup — sending DISC...")
     for ep in [12, 13, 0]:
         ser.write(make_frame(ep, U_DISC, crc_fn=crc_fn))
         time.sleep(0.1)
 
     ser.close()
-    return ep0_ok and ep12_ok
+
+    # Overall result: property exchange + at least ep0 or ep12 opened
+    handshake_ok = properties_ok > 0 and (ep0_ok or ep12_ok)
+    if not handshake_ok and properties_ok > 0:
+        print("\n  ℹ️  Property exchange worked but SABM got no UA.")
+        print("     This means the RCP accepted our I-frames but may need")
+        print("     the full cpcd property sequence before opening endpoints.")
+        print("     zmm_cpc router.rs needs ep0 property handler for Phase 2.")
+
+    return handshake_ok
 
 
 def test_zmm_cpc_module(crc_fn) -> bool:
@@ -493,36 +598,26 @@ def test_zmm_cpc_module(crc_fn) -> bool:
         print_result("CpcCore class available", False, str(e))
         return False
 
-    # Verify the Rust CRC matches our Python CRC
-    # We can't call crc16 directly from Python, but we can encode a frame
-    # and verify the bytes match what we'd produce
     try:
         core = CpcCore(
-            serial_port="/dev/null",  # won't actually open
+            serial_port="/dev/null",
             baudrate=115200,
             tcp_endpoints={12: 9999},
         )
         print_result("CpcCore construction", True)
-
-        # Check repr
         r = repr(core)
         print(f"  repr: {r}")
-
     except Exception as e:
-        # May fail on /dev/null — that's OK, we just wanted to test import
         print(f"  CpcCore(/dev/null) raised: {e}")
         print("  (Expected — /dev/null is not a serial port)")
 
-    # Verify our Python CRC matches the expected values for known frames
-    # SABM ep0 with init=0x0000:
-    # Header: 14 00 02 00 EF
+    # Verify our Python CRC matches zmm_cpc's CRC
     sabm_hdr = bytes([0x14, 0x00, 0x02, 0x00, 0xEF])
     sabm_hcs = crc_fn(sabm_hdr)
     sabm_frame = make_frame(0, U_SABM, crc_fn=crc_fn)
     print(f"  SABM ep0 frame: {sabm_frame.hex()}")
     print(f"  SABM ep0 HCS:   0x{sabm_hcs:04x}")
 
-    # Cross-check: the frame we generate should be parseable
     frames = try_parse_frames(sabm_frame, crc_fn, "EP_LEN_CTRL", True)
     if frames and frames[0][4]:
         print_result("Self-generated SABM round-trips", True)
@@ -625,11 +720,13 @@ def print_summary(results: dict):
         if not results.get("Baud rate"):
             print("  FIX: No data at any baud rate — check USB connection, firmware")
         if results.get("CRC variant") == "unknown":
-            print("  FIX: Could not determine CRC variant — firmware may use a non-standard format")
+            print("  FIX: Could not determine CRC variant — firmware may use non-standard format")
         if not results.get("CPC handshake"):
-            print("  FIX: RCP not responding to SABM — check CRC init and header field order in hdlc.rs")
+            print("  FIX: ep0 property exchange or SABM failed.")
+            print("       zmm_cpc router.rs needs ep0 property handler to complete init.")
+            print("       RCP requires property exchange before opening data endpoints.")
         if not results.get("Interactive"):
-            print("  FIX: No frames exchanged — verify baud rate, CRC, and field order all match")
+            print("  FIX: No frames exchanged — verify baud rate, CRC, and field order")
     print()
 
 
@@ -646,7 +743,7 @@ def main():
 
     print()
     print("╔══════════════════════════════════════════════════════════════════╗")
-    print("║           ZMM CPC Diagnostic Tool v1.0                           ║")
+    print("║           ZMM CPC Diagnostic Tool v2.0                         ║")
     print("╚══════════════════════════════════════════════════════════════════╝")
 
     results = {}
@@ -693,7 +790,7 @@ def main():
     if boot_data:
         crc_result = test_crc_variant(boot_data)
 
-    # Select CRC function based on detection
+    # Select CRC function
     if "0x0000" in crc_result:
         crc_fn = crc16_0000
         print(f"\n  Using CRC-16 init=0x0000 for remaining tests")
@@ -701,13 +798,12 @@ def main():
         crc_fn = crc16_ffff
         print(f"\n  Using CRC-16 init=0xFFFF for remaining tests")
     else:
-        # Try both, prefer 0x0000 (confirmed for Sonoff MG24)
         crc_fn = crc16_0000
         print(f"\n  CRC undetermined — defaulting to init=0x0000")
 
     results["CRC variant"] = crc_result
 
-    # Test 4: CPC handshake
+    # Test 4: CPC handshake (property exchange + SABM)
     handshake_ok = test_handshake(args.port, baud, crc_fn)
     results["CPC handshake"] = handshake_ok
 
