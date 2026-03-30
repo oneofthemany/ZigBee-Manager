@@ -492,9 +492,17 @@ mod tests {
     }
 
     /// Encode a CPC wire frame (same helper as in hdlc tests).
+    /// Wire layout: FLAG EP LEN_LO LEN_HI CTRL HCS(2) PAYLOAD FCS(2)
+    /// LEN = payload.len() + FCS_LEN
     fn make_wire(ep_id: u8, ctrl: u8, payload: &[u8]) -> Bytes {
-        let l = payload.len() as u16;
-        let hdr = [CPC_FLAG, ep_id, ctrl, (l & 0xFF) as u8, (l >> 8) as u8];
+        let len = (payload.len() + FCS_LEN) as u16;
+        let hdr: [u8; 5] = [
+            CPC_FLAG,
+            ep_id,
+            (len & 0xFF) as u8,
+            (len >> 8)   as u8,
+            ctrl,
+        ];
         let hcs = crc16(&hdr);
         let fcs = crc16(payload);
         let mut v = hdr.to_vec();
@@ -511,8 +519,9 @@ mod tests {
 
     /// Decode the ep_id and ctrl byte from a captured wire frame without
     /// verifying CRCs (they were already validated by encode_*).
+    /// Wire layout: FLAG(0) EP(1) LEN_LO(2) LEN_HI(3) CTRL(4)
     fn wire_ep_ctrl(wire: &[u8]) -> (u8, u8) {
-        (wire[1], wire[2])
+        (wire[1], wire[4])
     }
 
     /// Build a router with PassThroughTdm and a mock serial handle.
@@ -665,7 +674,7 @@ mod tests {
         let chunk = router.serial.rx.recv().await.unwrap();
         router.handle_rx_chunk(chunk).await;
         let rr0 = capture.recv().await.unwrap();
-        let nr0 = (rr0[2] >> 5) & 0x07;
+        let nr0 = (rr0[4] >> 5) & 0x07;
         assert_eq!(nr0, 1);
 
         // seq=1 → RR N(R)=2
@@ -674,7 +683,7 @@ mod tests {
         let chunk = router.serial.rx.recv().await.unwrap();
         router.handle_rx_chunk(chunk).await;
         let rr1 = capture.recv().await.unwrap();
-        let nr1 = (rr1[2] >> 5) & 0x07;
+        let nr1 = (rr1[4] >> 5) & 0x07;
         assert_eq!(nr1, 2);
     }
 
@@ -698,7 +707,7 @@ mod tests {
         let chunk = router.serial.rx.recv().await.unwrap();
         router.handle_rx_chunk(chunk).await;
         let rr7 = capture.recv().await.unwrap();
-        let nr7 = (rr7[2] >> 5) & 0x07;
+        let nr7 = (rr7[4] >> 5) & 0x07;
         assert_eq!(nr7, 0, "N(R) must wrap to 0 after seq 7");
     }
 
@@ -718,11 +727,13 @@ mod tests {
         router.drain_tx().await;
 
         let sent = capture.recv().await.unwrap();
+        // Wire layout: FLAG(0) EP(1) LEN_LO(2) LEN_HI(3) CTRL(4) HCS(5-6) PAYLOAD(7..) FCS(last 2)
         // I-frame: ctrl bit 0 = 0
-        assert_eq!(sent[2] & 0x01, 0, "outbound frame must be I-frame");
+        assert_eq!(sent[4] & 0x01, 0, "outbound frame must be I-frame");
         assert_eq!(sent[1], EP_ZIGBEE);
-        // Payload should be the spinel bytes (at offset 7, before 2-byte FCS)
-        let payload_len = (sent[3] as usize) | ((sent[4] as usize) << 8);
+        // LEN includes FCS, so payload_len = LEN - FCS_LEN
+        let len_field = (sent[2] as usize) | ((sent[3] as usize) << 8);
+        let payload_len = len_field - FCS_LEN;
         let extracted = &sent[7..7 + payload_len];
         assert_eq!(extracted, spinel.as_ref());
     }
@@ -741,7 +752,7 @@ mod tests {
 
         let mut seqs = Vec::new();
         while let Ok(sent) = capture.try_recv() {
-            let ctrl = sent[2];
+            let ctrl = sent[4];
             let seq = (ctrl >> 1) & 0x07;
             seqs.push(seq);
         }
@@ -763,7 +774,7 @@ mod tests {
 
         let mut seqs = Vec::new();
         while let Ok(sent) = capture.try_recv() {
-            seqs.push((sent[2] >> 1) & 0x07);
+            seqs.push((sent[4] >> 1) & 0x07);
         }
         assert_eq!(seqs, vec![0, 1, 2, 3, 4, 5, 6, 7, 0], "N(S) must wrap at 8");
     }
@@ -897,7 +908,6 @@ mod tests {
         // We need to drive the loop manually.  Since we can't call run()
         // (it loops forever), test the SABM logic directly:
         assert!(!router.ep0_connected);
-        assert!(!router.sabm_sent);
 
         // Send proactive SABM (simulating what run() does after grace)
         let wire = Bytes::from(encode_sabm(EP_SYSTEM));

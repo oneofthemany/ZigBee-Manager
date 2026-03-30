@@ -4,9 +4,11 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="diagnostics for cpc issues">
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="sabm patch">
       <change afterPath="$PROJECT_DIR$/modules/tdm/zmm_cpc/cross/x86.toml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/modules/multipan.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/multipan.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/modules/tdm/zmm_cpc/src/cpc_frame.rs" beforeDir="false" afterPath="$PROJECT_DIR$/modules/tdm/zmm_cpc/src/cpc_frame.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/modules/tdm/zmm_cpc/src/router.rs" beforeDir="false" afterPath="$PROJECT_DIR$/modules/tdm/zmm_cpc/src/router.rs" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -152,14 +154,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00126" summary="adding debug for probe result">
-      <option name="closed" value="true" />
-      <created>1774521062506</created>
-      <option name="number" value="00126" />
-      <option name="presentableId" value="LOCAL-00126" />
-      <option name="project" value="LOCAL" />
-      <updated>1774521062506</updated>
     </task>
     <task id="LOCAL-00127" summary="workspace sommit">
       <option name="closed" value="true" />
@@ -545,7 +539,15 @@
       <option name="project" value="LOCAL" />
       <updated>1774805872085</updated>
     </task>
-    <option name="localTasksCounter" value="175" />
+    <task id="LOCAL-00175" summary="sabm patch">
+      <option name="closed" value="true" />
+      <created>1774819155528</created>
+      <option name="number" value="00175" />
+      <option name="presentableId" value="LOCAL-00175" />
+      <option name="project" value="LOCAL" />
+      <updated>1774819155528</updated>
+    </task>
+    <option name="localTasksCounter" value="176" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -582,10 +584,10 @@
     <MESSAGE value="updated buidl ro be for dev branch" />
     <MESSAGE value="line 345 to /app/modules" />
     <MESSAGE value="debug line added for app modules tdm dir bug" />
-    <MESSAGE value="sabm patch" />
     <MESSAGE value="sabm improvements" />
     <MESSAGE value="diagnostics for cpc issues" />
-    <option name="LAST_COMMIT_MESSAGE" value="diagnostics for cpc issues" />
+    <MESSAGE value="sabm patch" />
+    <option name="LAST_COMMIT_MESSAGE" value="sabm patch" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>

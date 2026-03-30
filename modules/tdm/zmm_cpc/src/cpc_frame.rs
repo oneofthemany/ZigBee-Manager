@@ -228,9 +228,17 @@ mod tests {
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     /// Build a wire frame and round-trip it through Framer → parse.
+    /// Wire layout: FLAG EP LEN_LO LEN_HI CTRL HCS(2) PAYLOAD FCS(2)
+    /// LEN = payload.len() + FCS_LEN
     fn wire_round_trip(ep_id: u8, ctrl: u8, payload: &[u8]) -> CpcFrame {
-        let len = payload.len() as u16;
-        let hdr = [CPC_FLAG, ep_id, ctrl, (len & 0xFF) as u8, (len >> 8) as u8];
+        let len = (payload.len() + FCS_LEN) as u16;
+        let hdr: [u8; 5] = [
+            CPC_FLAG,
+            ep_id,
+            (len & 0xFF) as u8,
+            (len >> 8)   as u8,
+            ctrl,
+        ];
         let hcs = crc16(&hdr);
         let fcs = crc16(payload);
         let mut wire = hdr.to_vec();
