@@ -4,8 +4,8 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="matter config patches">
-      <change beforePath="$PROJECT_DIR$/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/main.py" afterDir="false" />
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="patch test">
+      <change beforePath="$PROJECT_DIR$/build.sh" beforeDir="false" afterPath="$PROJECT_DIR$/build.sh" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/modules/tdm/zmm_cpc/src/router.rs" beforeDir="false" afterPath="$PROJECT_DIR$/modules/tdm/zmm_cpc/src/router.rs" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -171,14 +171,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00157" summary="more deps for dev">
-      <option name="closed" value="true" />
-      <created>1774726196176</created>
-      <option name="number" value="00157" />
-      <option name="presentableId" value="LOCAL-00157" />
-      <option name="project" value="LOCAL" />
-      <updated>1774726196176</updated>
     </task>
     <task id="LOCAL-00158" summary="PTYTCPBridge to correct MultiPanManager init">
       <option name="closed" value="true" />
@@ -564,7 +556,15 @@
       <option name="project" value="LOCAL" />
       <updated>1774892644116</updated>
     </task>
-    <option name="localTasksCounter" value="206" />
+    <task id="LOCAL-00206" summary="patch test">
+      <option name="closed" value="true" />
+      <created>1774893149056</created>
+      <option name="number" value="00206" />
+      <option name="presentableId" value="LOCAL-00206" />
+      <option name="project" value="LOCAL" />
+      <updated>1774893149056</updated>
+    </task>
+    <option name="localTasksCounter" value="207" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -579,7 +579,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="header fixes" />
     <MESSAGE value="crc fix" />
     <MESSAGE value="added maturin for rust tdm" />
     <MESSAGE value="updated to cater for venv or container deployment" />
@@ -604,6 +603,7 @@
     <MESSAGE value="ssl fix for entry point" />
     <MESSAGE value="ssl and logging patch for entry point" />
     <MESSAGE value="matter config patches" />
-    <option name="LAST_COMMIT_MESSAGE" value="matter config patches" />
+    <MESSAGE value="patch test" />
+    <option name="LAST_COMMIT_MESSAGE" value="patch test" />
   </component>
 </project>
