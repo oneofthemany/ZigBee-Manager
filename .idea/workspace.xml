@@ -4,7 +4,7 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="updated to push to logging">
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="underscore removal for time - typo">
       <change beforePath="$PROJECT_DIR$/modules/tdm/zmm_cpc/src/router.rs" beforeDir="false" afterPath="$PROJECT_DIR$/modules/tdm/zmm_cpc/src/router.rs" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -170,14 +170,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00146" summary="cpc clean up fixes">
-      <option name="closed" value="true" />
-      <created>1774692944108</created>
-      <option name="number" value="00146" />
-      <option name="presentableId" value="LOCAL-00146" />
-      <option name="project" value="LOCAL" />
-      <updated>1774692944108</updated>
     </task>
     <task id="LOCAL-00147" summary="moved _usb_reset_serial_device above lifecycle">
       <option name="closed" value="true" />
@@ -563,7 +555,15 @@
       <option name="project" value="LOCAL" />
       <updated>1774884789199</updated>
     </task>
-    <option name="localTasksCounter" value="195" />
+    <task id="LOCAL-00195" summary="underscore removal for time - typo">
+      <option name="closed" value="true" />
+      <created>1774885273053</created>
+      <option name="number" value="00195" />
+      <option name="presentableId" value="LOCAL-00195" />
+      <option name="project" value="LOCAL" />
+      <updated>1774885273053</updated>
+    </task>
+    <option name="localTasksCounter" value="196" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -578,7 +578,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="replace ptybridge and cpcd" />
     <MESSAGE value="renamed dir to tdm" />
     <MESSAGE value="updated to include rust toolchain for zmm_cpc tdm" />
     <MESSAGE value="updated buidl ro be for dev branch" />
@@ -603,6 +602,7 @@
     <MESSAGE value="zigbee port placeholder: SERIAL_PORT" />
     <MESSAGE value="adding a watch config to find yaml dump bug" />
     <MESSAGE value="updated to push to logging" />
-    <option name="LAST_COMMIT_MESSAGE" value="updated to push to logging" />
+    <MESSAGE value="underscore removal for time - typo" />
+    <option name="LAST_COMMIT_MESSAGE" value="underscore removal for time - typo" />
   </component>
 </project>

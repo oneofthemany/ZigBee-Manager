@@ -432,11 +432,11 @@ prepare_data_dirs() {
     fi
 
     # Patch USB device into config.yaml
-    if [[ -n "${USB_DEVICE:-}" && -f "$DATA_DIR/config/config.yaml" ]]; then
-        sed -i "s|port: SERIAL_PORT|port: ${USB_DEVICE}|g" \
-            "$DATA_DIR/config/config.yaml"
-        ok "config.yaml updated with device: ${USB_DEVICE}"
-    fi
+    #if [[ -n "${USB_DEVICE:-}" && -f "$DATA_DIR/config/config.yaml" ]]; then
+    #    sed -i "s|port: SERIAL_PORT|port: ${USB_DEVICE}|g" \
+    #        "$DATA_DIR/config/config.yaml"
+    #    ok "config.yaml updated with device: ${USB_DEVICE}"
+    #fi
 
     ok "Data directories ready at ${DATA_DIR}"
 }
