@@ -11,3 +11,4 @@ aiohttp
 python-matter-server
 python-multipart
 duckdb
+maturin
