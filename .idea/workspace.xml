@@ -4,10 +4,11 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="final patch test for port placeholder zigbee">
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="rolled back as not the issue">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/build.sh" beforeDir="false" afterPath="$PROJECT_DIR$/build.sh" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/config/config.yaml" beforeDir="false" afterPath="$PROJECT_DIR$/config/config.yaml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/modules/tdm/zmm_cpc/src/router.rs" beforeDir="false" afterPath="$PROJECT_DIR$/modules/tdm/zmm_cpc/src/router.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/teardown.sh" beforeDir="false" afterPath="$PROJECT_DIR$/teardown.sh" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -172,14 +173,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00138" summary="teardown notice added">
-      <option name="closed" value="true" />
-      <created>1774614425315</created>
-      <option name="number" value="00138" />
-      <option name="presentableId" value="LOCAL-00138" />
-      <option name="project" value="LOCAL" />
-      <updated>1774614425315</updated>
     </task>
     <task id="LOCAL-00139" summary="adding no passwd to file and updating service to use bash to run the pre_script">
       <option name="closed" value="true" />
@@ -565,7 +558,15 @@
       <option name="project" value="LOCAL" />
       <updated>1774873441760</updated>
     </task>
-    <option name="localTasksCounter" value="187" />
+    <task id="LOCAL-00187" summary="rolled back as not the issue">
+      <option name="closed" value="true" />
+      <created>1774878679118</created>
+      <option name="number" value="00187" />
+      <option name="presentableId" value="LOCAL-00187" />
+      <option name="project" value="LOCAL" />
+      <updated>1774878679118</updated>
+    </task>
+    <option name="localTasksCounter" value="188" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -580,7 +581,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="PTYTCPBridge to correct MultiPanManager init" />
     <MESSAGE value="reset sequence to false" />
     <MESSAGE value="reset block added ahead of cpcd in start()" />
     <MESSAGE value="adding baud rate to the RTS  reset" />
@@ -605,6 +605,7 @@
     <MESSAGE value="unique name for zigbee port to prevent port overwrites in build" />
     <MESSAGE value="updated to fix this error:&#10;&#10;sed: -e expression #1, char 47: unknown option to `s'" />
     <MESSAGE value="final patch test for port placeholder zigbee" />
-    <option name="LAST_COMMIT_MESSAGE" value="final patch test for port placeholder zigbee" />
+    <MESSAGE value="rolled back as not the issue" />
+    <option name="LAST_COMMIT_MESSAGE" value="rolled back as not the issue" />
   </component>
 </project>
