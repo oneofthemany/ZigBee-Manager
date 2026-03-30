@@ -167,7 +167,7 @@ mqtt_service = MQTTService(
     log_callback = None
 )
 
-mqtt_enabled = get_conf('mqtt', 'enabled', True)  # Default True for backward compat
+mqtt_enabled = mqtt_config.get("enabled", True) # Default True for backward compat
 
 
 zigbee_service = ZigbeeService(
