@@ -8,7 +8,8 @@ zha-quirks
 pydantic
 zigpy-znp==0.14.3
 aiohttp
-python-matter-server
+# pip install --no-cache-dir "python-matter-server[server]"
+python-matter-server[server]
 python-multipart
 duckdb
 maturin
