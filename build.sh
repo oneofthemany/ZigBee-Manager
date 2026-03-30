@@ -433,8 +433,11 @@ prepare_data_dirs() {
 
     # Patch USB device into config.yaml
     if [[ -n "${USB_DEVICE:-}" && -f "$DATA_DIR/config/config.yaml" ]]; then
-        sed -i "s|port:.*\/dev\/tty[A-Za-z]*[0-9]*|port: ${USB_DEVICE}|g" \
-            "$DATA_DIR/config/config.yaml"
+        # Only replace 'port:' lines within the zigbee: section
+        # Range: from ^zigbee: to the next top-level key (^[a-z])
+        sed -i "/^zigbee:/,/^[a-z]/{
+            s|^\([[:space:]]*port:\).*|\1 ${USB_DEVICE}|
+        }" "$DATA_DIR/config/config.yaml"
         ok "config.yaml updated with device: ${USB_DEVICE}"
     fi
 
