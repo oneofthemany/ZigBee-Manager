@@ -618,7 +618,7 @@ async def start_services_after_setup():
 # ============================================================================
 
 if __name__ == "__main__":
-    ssl_config = CONFIG.get('web', {}).get('ssl', {})
+    ssl_config = web_config.get('web', {}).get('ssl', {})
     ssl_enabled = ssl_config.get('enabled', False)
 
     host = get_conf('web', 'host', '0.0.0.0')
