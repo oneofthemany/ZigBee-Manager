@@ -148,6 +148,8 @@ mqtt_config = config.get("mqtt", {})
 web_config = config.get("web", {})
 matter_config = config.get("matter", {})
 zigbee_config = config.get("zigbee", {})
+logging_config = config.get("logging", {})
+ssl_config = web_config.get('web', {}).get('ssl', {})
 
 #def get_conf(section, key, default=None):
 #    """Get configuration value."""
@@ -618,22 +620,21 @@ async def start_services_after_setup():
 # ============================================================================
 
 if __name__ == "__main__":
-    ssl_config = web_config.get('web', {}).get('ssl', {})
     ssl_enabled = ssl_config.get('enabled', False)
 
-    host = get_conf('web', 'host', '0.0.0.0')
-    port = get_conf('web', 'port', 8000)
+    host = web_config.get("host")
+    port = web_config.get("port")
 
     kwargs = {
         "app": "main:app",
         "host": host,
         "port": port,
-        "log_level": get_conf('logging', 'level', 'info').lower(),
+        "log_level": logging_config.get("level").lower(),
     }
 
     if ssl_enabled:
-        kwargs["ssl_certfile"] = ssl_config.get('certfile', 'certs/cert.pem')
-        kwargs["ssl_keyfile"] = ssl_config.get('keyfile', 'certs/key.pem')
+        kwargs["ssl_certfile"] = ssl_config.get("cert_file")
+        kwargs["ssl_keyfile"] = ssl_config.get("key_file")
         logger.info(f"Starting with SSL on https://{host}:{port}")
     else:
         logger.info(f"Starting on http://{host}:{port}")

@@ -4,7 +4,7 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="mqtt enabled patch">
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="ssl fix for entry point">
       <change beforePath="$PROJECT_DIR$/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/main.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/modules/tdm/zmm_cpc/src/router.rs" beforeDir="false" afterPath="$PROJECT_DIR$/modules/tdm/zmm_cpc/src/router.rs" afterDir="false" />
     </list>
@@ -171,38 +171,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00151" summary="baud rate fixes - multipan">
-      <option name="closed" value="true" />
-      <created>1774700356737</created>
-      <option name="number" value="00151" />
-      <option name="presentableId" value="LOCAL-00151" />
-      <option name="project" value="LOCAL" />
-      <updated>1774700356737</updated>
-    </task>
-    <task id="LOCAL-00152" summary="improvements to USB product string pre-detection for CPC/RCP devices with NCP quirk fw detection">
-      <option name="closed" value="true" />
-      <created>1774700677924</created>
-      <option name="number" value="00152" />
-      <option name="presentableId" value="LOCAL-00152" />
-      <option name="project" value="LOCAL" />
-      <updated>1774700677924</updated>
-    </task>
-    <task id="LOCAL-00153" summary="watchdog fix for multipan">
-      <option name="closed" value="true" />
-      <created>1774700900571</created>
-      <option name="number" value="00153" />
-      <option name="presentableId" value="LOCAL-00153" />
-      <option name="project" value="LOCAL" />
-      <updated>1774700900571</updated>
-    </task>
-    <task id="LOCAL-00154" summary="minor tweaks to cater for recent findings">
-      <option name="closed" value="true" />
-      <created>1774700987469</created>
-      <option name="number" value="00154" />
-      <option name="presentableId" value="LOCAL-00154" />
-      <option name="project" value="LOCAL" />
-      <updated>1774700987469</updated>
     </task>
     <task id="LOCAL-00155" summary="socat removal from new pty bridge">
       <option name="closed" value="true" />
@@ -564,7 +532,39 @@
       <option name="project" value="LOCAL" />
       <updated>1774889685236</updated>
     </task>
-    <option name="localTasksCounter" value="200" />
+    <task id="LOCAL-00200" summary="final fixes for mqtt config">
+      <option name="closed" value="true" />
+      <created>1774890342896</created>
+      <option name="number" value="00200" />
+      <option name="presentableId" value="LOCAL-00200" />
+      <option name="project" value="LOCAL" />
+      <updated>1774890342896</updated>
+    </task>
+    <task id="LOCAL-00201" summary="final fixes for zigbee config">
+      <option name="closed" value="true" />
+      <created>1774890562071</created>
+      <option name="number" value="00201" />
+      <option name="presentableId" value="LOCAL-00201" />
+      <option name="project" value="LOCAL" />
+      <updated>1774890562071</updated>
+    </task>
+    <task id="LOCAL-00202" summary="global config to lower">
+      <option name="closed" value="true" />
+      <created>1774890659912</created>
+      <option name="number" value="00202" />
+      <option name="presentableId" value="LOCAL-00202" />
+      <option name="project" value="LOCAL" />
+      <updated>1774890659912</updated>
+    </task>
+    <task id="LOCAL-00203" summary="ssl fix for entry point">
+      <option name="closed" value="true" />
+      <created>1774891137387</created>
+      <option name="number" value="00203" />
+      <option name="presentableId" value="LOCAL-00203" />
+      <option name="project" value="LOCAL" />
+      <updated>1774891137387</updated>
+    </task>
+    <option name="localTasksCounter" value="204" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -579,10 +579,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="line 345 to /app/modules" />
-    <MESSAGE value="debug line added for app modules tdm dir bug" />
-    <MESSAGE value="sabm improvements" />
-    <MESSAGE value="diagnostics for cpc issues" />
     <MESSAGE value="sabm patch" />
     <MESSAGE value="sabm patches" />
     <MESSAGE value="header fixes" />
@@ -604,6 +600,10 @@
     <MESSAGE value="troubleshooting port issues in config.yaml" />
     <MESSAGE value="fix for matter port" />
     <MESSAGE value="mqtt enabled patch" />
-    <option name="LAST_COMMIT_MESSAGE" value="mqtt enabled patch" />
+    <MESSAGE value="final fixes for mqtt config" />
+    <MESSAGE value="final fixes for zigbee config" />
+    <MESSAGE value="global config to lower" />
+    <MESSAGE value="ssl fix for entry point" />
+    <option name="LAST_COMMIT_MESSAGE" value="ssl fix for entry point" />
   </component>
 </project>
