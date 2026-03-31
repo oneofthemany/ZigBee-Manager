@@ -132,8 +132,14 @@
       <envs />
       <method v="2" />
     </configuration>
+    <list>
+      <item itemvalue="Python.main" />
+      <item itemvalue="Shell Script.deploy.sh" />
+    </list>
     <recent_temporary>
       <list>
+        <item itemvalue="Shell Script.deploy.sh" />
+        <item itemvalue="Python.main" />
         <item itemvalue="Python.main" />
         <item itemvalue="Shell Script.deploy.sh" />
       </list>
