@@ -4,7 +4,7 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="otbr with cpc as found to not support on container build:&#10;&#10;otbr-agent[84]: 49d.23:25:05.308 [C] Platform------: The Spinel interface name &quot;spinel+cpc&quot; is not supported!&#10;otbr-agent[84]: 49d.23:25:05.308 [C] Platform------: CreateSpinelInterface() at spinel_manager.cpp:128: Failure">
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="systemd added to deps">
       <change afterPath="$PROJECT_DIR$/modules/cpc_diag.py" afterDir="false" />
       <change afterPath="$PROJECT_DIR$/modules/index.html" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/build.sh" beforeDir="false" afterPath="$PROJECT_DIR$/build.sh" afterDir="false" />
@@ -153,22 +153,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00125" summary="rolled back service teardown due to coding error and application failure">
-      <option name="closed" value="true" />
-      <created>1774520277516</created>
-      <option name="number" value="00125" />
-      <option name="presentableId" value="LOCAL-00125" />
-      <option name="project" value="LOCAL" />
-      <updated>1774520277516</updated>
-    </task>
-    <task id="LOCAL-00126" summary="adding debug for probe result">
-      <option name="closed" value="true" />
-      <created>1774521062506</created>
-      <option name="number" value="00126" />
-      <option name="presentableId" value="LOCAL-00126" />
-      <option name="project" value="LOCAL" />
-      <updated>1774521062506</updated>
     </task>
     <task id="LOCAL-00127" summary="workspace sommit">
       <option name="closed" value="true" />
@@ -546,7 +530,23 @@
       <option name="project" value="LOCAL" />
       <updated>1774966626041</updated>
     </task>
-    <option name="localTasksCounter" value="174" />
+    <task id="LOCAL-00174" summary="libsystemd added to deps">
+      <option name="closed" value="true" />
+      <created>1774967268490</created>
+      <option name="number" value="00174" />
+      <option name="presentableId" value="LOCAL-00174" />
+      <option name="project" value="LOCAL" />
+      <updated>1774967268490</updated>
+    </task>
+    <task id="LOCAL-00175" summary="systemd added to deps">
+      <option name="closed" value="true" />
+      <created>1774967359342</created>
+      <option name="number" value="00175" />
+      <option name="presentableId" value="LOCAL-00175" />
+      <option name="project" value="LOCAL" />
+      <updated>1774967359342</updated>
+    </task>
+    <option name="localTasksCounter" value="176" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -561,8 +561,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="cpc clean up fixes" />
-    <MESSAGE value="moved _usb_reset_serial_device above lifecycle" />
     <MESSAGE value="adding /dev/bus/usd to runtime args for container for cpcd support" />
     <MESSAGE value="further improvements for cpcd" />
     <MESSAGE value="serial break fix" />
@@ -586,7 +584,9 @@
     <MESSAGE value="fix for otbr-agent: unrecognized option '--radio-url=spinel+cpc://cpcd_0?iid=2&amp;iid-list=0' error" />
     <MESSAGE value="licpc dev added and pass the OT_POSIX_CONFIG_RCP_BUS=CPC build flag to otbr" />
     <MESSAGE value="otbr with cpc as found to not support on container build:&#10;&#10;otbr-agent[84]: 49d.23:25:05.308 [C] Platform------: The Spinel interface name &quot;spinel+cpc&quot; is not supported!&#10;otbr-agent[84]: 49d.23:25:05.308 [C] Platform------: CreateSpinelInterface() at spinel_manager.cpp:128: Failure" />
-    <option name="LAST_COMMIT_MESSAGE" value="otbr with cpc as found to not support on container build:&#10;&#10;otbr-agent[84]: 49d.23:25:05.308 [C] Platform------: The Spinel interface name &quot;spinel+cpc&quot; is not supported!&#10;otbr-agent[84]: 49d.23:25:05.308 [C] Platform------: CreateSpinelInterface() at spinel_manager.cpp:128: Failure" />
+    <MESSAGE value="libsystemd added to deps" />
+    <MESSAGE value="systemd added to deps" />
+    <option name="LAST_COMMIT_MESSAGE" value="systemd added to deps" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>

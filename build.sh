@@ -303,7 +303,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libnetfilter-queue-dev \
         libsystemd-dev \
         libsystemd \
-        systemd \
         ipset \
         iptables \
         dbus \
@@ -321,6 +320,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         strace \
         iproute2 \
         net-tools \
+        pkg-config \
     && rm -rf /var/lib/apt/lists/*
 
 # Fetch and install Silicon Labs packages matching Bookworm
@@ -337,46 +337,25 @@ RUN DOWNLOAD_URL=$(curl -s https://api.github.com/repos/SiliconLabs/simplicity_s
     && rm -rf /tmp/silabs debian-bookworm.zip /var/lib/apt/lists/*
 
 # ── OTBR with SiLabs CPC MultiPAN support ──────────────────────────────
-# otbr-agent must be built with the SiLabs vendor interface so it can
-# speak spinel+cpc:// to cpcd.  The plain openthread.io build only has
-# spinel+hdlc support — no CPC.
-#
-# Requires: cpcd/libcpc already installed above (provides libcpc.so)
-#
-# Build steps:
-#   1. Clone SiLabs Simplicity SDK (sparse — only the OT platform bits)
-#   2. Copy the SiLabs posix config header into the OT source tree
-#   3. Bootstrap dependencies
-#   4. Build with CPC vendor bus flags pointing to SDK interface sources
-#   5. Clean up SDK source to save image space
-
 ENV SDK_DIR=/tmp/silabs_sdk
 ENV CPCD_DIR=/usr/local
 
-# 1. Sparse clone — only the openthread platform abstraction and ot-br-posix
+# 1. Sparse clone SiLabs SDK just to get the CPC vendor extension files
 RUN git clone --depth 1 --filter=blob:none --sparse \
         https://github.com/SiliconLabs/simplicity_sdk.git ${SDK_DIR} && \
     cd ${SDK_DIR} && \
-    git sparse-checkout set \
-        protocol/openthread/platform-abstraction/posix \
-        util/third_party/openthread \
-        util/third_party/ot-br-posix
+    git sparse-checkout set protocol/openthread/platform-abstraction/posix
 
-# 2. Copy SiLabs posix config header where the OT build expects it
-RUN cp ${SDK_DIR}/protocol/openthread/platform-abstraction/posix/openthread-core-silabs-posix-config.h \
-       ${SDK_DIR}/util/third_party/openthread/src/posix/platform/
-
-# 3-4. Bootstrap and build with CPC vendor bus
-#   - Stub out sudo for sysctl calls that fail in container builds
-#   - DOT_MULTIPAN_RCP=ON compiles the multi-PAN RCP code
-#   - DOT_POSIX_RCP_VENDOR_BUS=ON enables the vendor interface slot
-#   - The two _VENDOR_ paths point to the SiLabs CPC interface source
-#   - DOT_PLATFORM_CONFIG points to the SiLabs-specific config header
+# 2. Clone official OTBR, init submodules, copy header, then build
 RUN echo '#!/bin/sh' > /usr/local/bin/sudo && \
     echo 'if echo "$*" | grep -Eq "/proc/sys|sysctl"; then exit 0; fi' >> /usr/local/bin/sudo && \
     echo 'exec /usr/bin/sudo "$@"' >> /usr/local/bin/sudo && \
     chmod +x /usr/local/bin/sudo && \
-    cd ${SDK_DIR}/util/third_party/ot-br-posix && \
+    git clone --depth=1 https://github.com/openthread/ot-br-posix /tmp/otbr && \
+    cd /tmp/otbr && \
+    git submodule update --init --recursive && \
+    cp ${SDK_DIR}/protocol/openthread/platform-abstraction/posix/openthread-core-silabs-posix-config.h \
+       /tmp/otbr/third_party/openthread/repo/src/posix/platform/ && \
     ./script/bootstrap && \
     INFRA_IF_NAME=eth0 \
     OTBR_OPTIONS=" \
@@ -392,9 +371,9 @@ RUN echo '#!/bin/sh' > /usr/local/bin/sudo && \
     ./script/setup && \
     rm -f /usr/local/bin/sudo
 
-# 5. Disable systemd service (ZMM manages otbr-agent lifecycle) and clean up
+# 3. Disable systemd service (ZMM manages otbr-agent lifecycle) and clean up
 RUN systemctl disable otbr-agent 2>/dev/null || true
-RUN rm -rf ${SDK_DIR}
+RUN rm -rf ${SDK_DIR} /tmp/otbr
 
 # Create app user with the HOST's exact UID:GID + dialout group membership.
 RUN groupadd -g "$HOST_GID" -o appgroup \
