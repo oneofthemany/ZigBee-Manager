@@ -520,20 +520,16 @@ reset_sequence: true
         """
         thread_iface = self._otbr_config.get("thread_interface", "wpan0")
         backbone_iface = self._otbr_config.get("backbone_interface", "eth0")
-        nat64 = self._otbr_config.get("nat64", False)
 
-        # Multi-PAN RCP radio URL with correct IID
+        # Multi-PAN RCP radio URL with IID
         radio_url = "spinel+cpc://cpcd_0?iid=2&iid-list=0"
 
         cmd = [
             "otbr-agent",
             "-I", thread_iface,
             "-B", backbone_iface,
-            f"--radio-url={radio_url}",
+            radio_url,
         ]
-
-        if not nat64:
-            cmd.append("--disable-nat64")
 
         return cmd
 

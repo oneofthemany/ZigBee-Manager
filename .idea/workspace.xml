@@ -4,9 +4,9 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="sudo added for final otbr build">
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="sudo and iptables fix for otbr">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/build.sh" beforeDir="false" afterPath="$PROJECT_DIR$/build.sh" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/modules/multipan.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/multipan.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -152,14 +152,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00119" summary="new multipan updates - WIP">
-      <option name="closed" value="true" />
-      <created>1774463707155</created>
-      <option name="number" value="00119" />
-      <option name="presentableId" value="LOCAL-00119" />
-      <option name="project" value="LOCAL" />
-      <updated>1774463707155</updated>
     </task>
     <task id="LOCAL-00120" summary="new multipan updates - WIP">
       <option name="closed" value="true" />
@@ -545,7 +537,15 @@
       <option name="project" value="LOCAL" />
       <updated>1774957741470</updated>
     </task>
-    <option name="localTasksCounter" value="168" />
+    <task id="LOCAL-00168" summary="sudo and iptables fix for otbr">
+      <option name="closed" value="true" />
+      <created>1774958514046</created>
+      <option name="number" value="00168" />
+      <option name="presentableId" value="LOCAL-00168" />
+      <option name="project" value="LOCAL" />
+      <updated>1774958514046</updated>
+    </task>
+    <option name="localTasksCounter" value="169" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -560,7 +560,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="sudo fix for umount of conatiner" />
     <MESSAGE value="-n added for no passwd" />
     <MESSAGE value="updates to mulitpan detection" />
     <MESSAGE value="which bash added" />
@@ -585,7 +584,8 @@
     <MESSAGE value="otbr work" />
     <MESSAGE value="lsb-release added for otbr" />
     <MESSAGE value="sudo added for final otbr build" />
-    <option name="LAST_COMMIT_MESSAGE" value="sudo added for final otbr build" />
+    <MESSAGE value="sudo and iptables fix for otbr" />
+    <option name="LAST_COMMIT_MESSAGE" value="sudo and iptables fix for otbr" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
