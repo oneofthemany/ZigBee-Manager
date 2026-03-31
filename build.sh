@@ -364,9 +364,7 @@ RUN echo '#!/bin/sh' > /usr/local/bin/sudo && \
         -DOT_POSIX_RCP_VENDOR_BUS=ON \
         -DOT_POSIX_CONFIG_RCP_VENDOR_DEPS_PACKAGE=${SDK_DIR}/protocol/openthread/platform-abstraction/posix/posix_vendor_rcp.cmake \
         -DOT_POSIX_CONFIG_RCP_VENDOR_INTERFACE=${SDK_DIR}/protocol/openthread/platform-abstraction/posix/cpc_interface.cpp \
-        -DOT_PLATFORM_CONFIG=openthread-core-silabs-posix-config.h \
-        -DOTBR_DUA_ROUTING=ON \
-        -DOTBR_SRP_ADVERTISING_PROXY=ON" \
+        -DOT_PLATFORM_CONFIG=openthread-core-silabs-posix-config.h" \
     ./script/setup && \
     rm -f /usr/local/bin/sudo
 

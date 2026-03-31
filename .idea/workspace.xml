@@ -154,14 +154,6 @@
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
     </task>
-    <task id="LOCAL-00129" summary="workspace update">
-      <option name="closed" value="true" />
-      <created>1774608081238</created>
-      <option name="number" value="00129" />
-      <option name="presentableId" value="LOCAL-00129" />
-      <option name="project" value="LOCAL" />
-      <updated>1774608081238</updated>
-    </task>
     <task id="LOCAL-00130" summary="rolled back">
       <option name="closed" value="true" />
       <created>1774609126619</created>
@@ -546,7 +538,15 @@
       <option name="project" value="LOCAL" />
       <updated>1774967947963</updated>
     </task>
-    <option name="localTasksCounter" value="178" />
+    <task id="LOCAL-00178" summary="libsystemd removed and have dev">
+      <option name="closed" value="true" />
+      <created>1774967953724</created>
+      <option name="number" value="00178" />
+      <option name="presentableId" value="LOCAL-00178" />
+      <option name="project" value="LOCAL" />
+      <updated>1774967953724</updated>
+    </task>
+    <option name="localTasksCounter" value="179" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
