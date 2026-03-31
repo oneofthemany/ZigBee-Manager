@@ -4,8 +4,7 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="back to detached mode">
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="detach not detached">
       <change beforePath="$PROJECT_DIR$/modules/tdm/zmm_cpc/src/router.rs" beforeDir="false" afterPath="$PROJECT_DIR$/modules/tdm/zmm_cpc/src/router.rs" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -177,14 +176,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00163" summary="reset_sequence to true and _reset_serial_state fix">
-      <option name="closed" value="true" />
-      <created>1774731431156</created>
-      <option name="number" value="00163" />
-      <option name="presentableId" value="LOCAL-00163" />
-      <option name="project" value="LOCAL" />
-      <updated>1774731431156</updated>
     </task>
     <task id="LOCAL-00164" summary="rust tdm to replace cpc - initial commit">
       <option name="closed" value="true" />
@@ -570,7 +561,15 @@
       <option name="project" value="LOCAL" />
       <updated>1774948788849</updated>
     </task>
-    <option name="localTasksCounter" value="212" />
+    <task id="LOCAL-00212" summary="detach not detached">
+      <option name="closed" value="true" />
+      <created>1774949332746</created>
+      <option name="number" value="00212" />
+      <option name="presentableId" value="LOCAL-00212" />
+      <option name="project" value="LOCAL" />
+      <updated>1774949332746</updated>
+    </task>
+    <option name="localTasksCounter" value="213" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -585,7 +584,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="updated to fix this error:&#10;&#10;sed: -e expression #1, char 47: unknown option to `s'" />
     <MESSAGE value="final patch test for port placeholder zigbee" />
     <MESSAGE value="rolled back as not the issue" />
     <MESSAGE value="change_me added to pan_id" />
@@ -610,6 +608,7 @@
     <MESSAGE value="adding inotify-tools to deps to track down yaml overwrites and general yaml debugging" />
     <MESSAGE value="additional debugging added" />
     <MESSAGE value="back to detached mode" />
-    <option name="LAST_COMMIT_MESSAGE" value="back to detached mode" />
+    <MESSAGE value="detach not detached" />
+    <option name="LAST_COMMIT_MESSAGE" value="detach not detached" />
   </component>
 </project>

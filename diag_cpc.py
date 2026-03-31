@@ -371,21 +371,25 @@ def test_crc_variant(data: bytes) -> str:
 
 def test_handshake(port: str, baud: int, crc_fn) -> bool:
     """
-    Test 4: CPC handshake — replicate cpcd's actual init sequence.
+    Test 4: CPC handshake — hard chip reset then property exchange + SABM.
 
-    cpcd does NOT send SABM cold. The real protocol (confirmed via strace
-    of cpcd v4.7.1.0 against MG24 MultiPAN RCP):
+    The MG24's CPC state machine persists across soft resets. A previous cpcd
+    session leaves stale N(S)/N(R) counters. The only way to get a clean
+    N(S)=0, N(R)=0 start is a HARD CHIP RESET via DTR (wired to RESETn on
+    CP210x boards like the Sonoff MG24 dongle).
 
-      1. Reset chip (RTS toggle + bootloader exit)
-      2. Drain + ACK any stale RCP I-frames
-      3. Send ep0 property-get I-frames (system endpoint config)
-      4. ACK RCP responses
-      5. After property exchange, send SABM on ep0 then ep12
-      6. Expect UA from RCP
+    Reset sequence (matches cpcd reset_sequence=true on CP210x):
+      1. Assert DTR → chip enters Gecko Bootloader (RESETn pulled low)
+      2. De-assert DTR → chip starts booting
+      3. Send bootloader exit '2\\r\\n' → application firmware starts
+      4. CPC engine initialises with N(S)=0, N(R)=0
 
-    The property payloads are extracted verbatim from the cpcd strace.
+    After reset, we replay cpcd's init:
+      5. Send property-set/get I-frames on ep0 starting at N(S)=0
+      6. Send SABM on ep0 → expect UA
+      7. Send SABM on ep12 → expect UA or RCP-initiated SABM
     """
-    print_header("TEST 4: CPC Handshake (ep0 property exchange → SABM)")
+    print_header("TEST 4: CPC Handshake (DTR reset → property exchange → SABM)")
 
     import serial as pyserial
 
@@ -393,10 +397,16 @@ def test_handshake(port: str, baud: int, crc_fn) -> bool:
     ser.dtr = False
     ser.rts = False
 
-    # ── Step 1: Chip reset ─────────────────────────────────────────────────
-    print("  Step 1: Chip reset (bootloader exit)...")
+    # ── Step 1: Hard chip reset via DTR ────────────────────────────────────
+    print("  Step 1: Hard chip reset via DTR...")
+    print("    Asserting DTR (RESETn low → Gecko Bootloader)...")
+    ser.dtr = True
+    time.sleep(0.1)
+    ser.dtr = False
+    time.sleep(0.3)
 
-    # Send bootloader exit command (safe even if already in application mode)
+    # Send bootloader exit command
+    ser.reset_input_buffer()
     ser.write(b"2\r\n")
     time.sleep(0.5)
     ser.write(b"\n")
@@ -404,22 +414,16 @@ def test_handshake(port: str, baud: int, crc_fn) -> bool:
     ser.write(b"2\r\n")
     time.sleep(2.0)
 
-    # Flush any bootloader menu output
+    # Flush everything
     ser.reset_input_buffer()
     ser.reset_output_buffer()
-
-    # RTS toggle to reset CPC state
-    ser.rts = True
-    time.sleep(0.1)
-    ser.rts = False
     time.sleep(0.5)
 
-    # ── Step 2: Drain boot frames, learn RCP's sequence state ──────────────
-    print("\n  Step 2: Reading boot frames...")
+    # ── Step 2: Read first boot frame after fresh reset ────────────────────
+    print("\n  Step 2: Reading boot frames (expecting fresh N(S)=0, N(R)=0)...")
     boot = ser.read(500)
-    rcp_ns = 0        # RCP's N(S) — we track to send correct N(R)
-    our_ns = 0        # Our N(S) — start at 0, adjust from RCP's N(R)
-    rcp_expected = 0  # What N(R) the RCP tells us (our expected N(S))
+    rcp_ns = 0
+    our_ns = 0
 
     if boot:
         frames = try_parse_frames(boot, crc_fn, "EP_LEN_CTRL", True)
@@ -428,72 +432,117 @@ def test_handshake(port: str, baud: int, crc_fn) -> bool:
                   f" payload={payload.hex() if payload else ''}")
             if fcs_ok and ctrl & 0x01 == 0:  # I-frame
                 rcp_ns = (ctrl >> 1) & 7
-                rcp_expected = (ctrl >> 5) & 7
+                rcp_nr = (ctrl >> 5) & 7
                 # ACK with RR
                 rr_nr = (rcp_ns + 1) & 7
                 ser.write(make_rr(ep, rr_nr, crc_fn=crc_fn))
+                ser.flush()
                 print(f"    TX: RR N(R)={rr_nr}")
                 time.sleep(0.1)
 
-        our_ns = rcp_expected  # Start at what the RCP expects
-        print(f"\n    RCP state: N(S)={rcp_ns}, expects our N(S)={rcp_expected}")
-    else:
-        print("    (no boot data — chip may need longer reset)")
+                # Drain any immediate retransmit
+                extra = ser.read(200)
+                if extra:
+                    eframes = try_parse_frames(extra, crc_fn, "EP_LEN_CTRL", True)
+                    for eep, ectrl, edesc, epayload, efcs in eframes:
+                        if efcs and ectrl & 0x01 == 0:
+                            ens = (ectrl >> 1) & 7
+                            if ens != rcp_ns:
+                                rcp_ns = ens
+                                ser.write(make_rr(eep, (ens + 1) & 7, crc_fn=crc_fn))
+                                ser.flush()
+                                print(f"    RX: ep={eep} {edesc} ✅ (advanced)")
+                                print(f"    TX: RR N(R)={(ens + 1) & 7}")
 
-    # ── Step 3: ep0 property exchange (replaying cpcd's init) ──────────────
+        our_ns = 0  # After hard reset, we always start at 0
+        print(f"\n    State after reset: RCP N(S)={rcp_ns}, our N(S)={our_ns}")
+    else:
+        print("    (no boot data — chip may need longer reset delay)")
+        print("    Proceeding with N(S)=0, N(R)=0")
+
+    # ── Step 3: ep0 property exchange ──────────────────────────────────────
     print("\n  Step 3: ep0 property exchange (replaying cpcd init sequence)...")
 
     properties_ok = 0
-    responses_seen = 0
+    rcp_advanced = False
 
     for i, prop_payload in enumerate(CPCD_INIT_PROPERTIES):
         # Send property query as I-frame on ep0
-        frame = make_iframe(0, our_ns, (rcp_ns + 1) & 7, prop_payload, crc_fn=crc_fn)
+        nr_to_send = (rcp_ns + 1) & 7
+        frame = make_iframe(0, our_ns, nr_to_send, prop_payload, crc_fn=crc_fn)
         ser.write(frame)
+        ser.flush()
         cmd = prop_payload[0]
         seq = prop_payload[1]
-        cmd_name = {0x01: "RESET", 0x02: "PROP_GET", 0x03: "PROP_GET_EX"}.get(cmd, f"0x{cmd:02x}")
-        print(f"    TX: ep0 I N(S)={our_ns} — {cmd_name} seq={seq}")
+        cmd_name = {0x01: "RESET", 0x02: "PROP_GET", 0x03: "PROP_SET"}.get(cmd, f"0x{cmd:02x}")
+        print(f"    TX: ep0 I N(S)={our_ns} N(R)={nr_to_send} — {cmd_name} seq={seq}")
 
         our_ns = (our_ns + 1) & 7
 
         # Wait for response
-        time.sleep(0.3)
-        resp = ser.read(200)
+        time.sleep(0.4)
+        resp = ser.read(500)
         if resp:
             rframes = try_parse_frames(resp, crc_fn, "EP_LEN_CTRL", True)
             for ep, ctrl, desc, payload, fcs_ok in rframes:
-                tag = "✅" if fcs_ok else "❌"
-                if payload and len(payload) >= 2:
-                    resp_cmd = payload[0]
-                    resp_seq = payload[1]
-                    print(f"    RX: ep={ep} {desc} {tag} cmd=0x{resp_cmd:02x} seq={resp_seq}")
-                else:
-                    print(f"    RX: ep={ep} {desc} {tag}")
+                if not fcs_ok:
+                    print(f"    RX: ep={ep} {desc} ❌ FCS")
+                    continue
 
-                if fcs_ok:
-                    responses_seen += 1
-                    if ctrl & 0x01 == 0:  # I-frame response
+                if ctrl & 0x01 == 0:  # I-frame
+                    new_ns = (ctrl >> 1) & 7
+                    new_nr = (ctrl >> 5) & 7
+                    resp_info = ""
+                    if payload and len(payload) >= 2:
+                        resp_info = f" cmd=0x{payload[0]:02x} seq={payload[1]}"
+
+                    if new_ns != rcp_ns or new_nr != 0:
+                        rcp_advanced = True
+                    rcp_ns = new_ns
+
+                    print(f"    RX: ep={ep} I N(S)={new_ns} N(R)={new_nr} ✅{resp_info}")
+
+                    # ACK
+                    rr_nr = (new_ns + 1) & 7
+                    ser.write(make_rr(ep, rr_nr, crc_fn=crc_fn))
+                    ser.flush()
+                    properties_ok += 1
+                elif ctrl & 0x03 == 0x01:  # S-frame (RR/REJ)
+                    print(f"    RX: ep={ep} {desc} ✅")
+                else:  # U-frame
+                    print(f"    RX: ep={ep} {desc} ✅")
+        else:
+            print(f"    RX: (no response)")
+
+        # After RESET command, the RCP may need extra time
+        if cmd == 0x01:
+            time.sleep(1.0)
+            drain = ser.read(500)
+            if drain:
+                dframes = try_parse_frames(drain, crc_fn, "EP_LEN_CTRL", True)
+                for ep, ctrl, desc, payload, fcs_ok in dframes:
+                    if fcs_ok and ctrl & 0x01 == 0:
                         rcp_ns = (ctrl >> 1) & 7
-                        properties_ok += 1
-                        # ACK
-                        rr_nr = (rcp_ns + 1) & 7
-                        ser.write(make_rr(ep, rr_nr, crc_fn=crc_fn))
+                        ser.write(make_rr(ep, (rcp_ns + 1) & 7, crc_fn=crc_fn))
+                        ser.flush()
+                        print(f"    RX: ep={ep} {desc} ✅ (post-reset)")
 
-    print(f"\n    Property exchange: {properties_ok}/{len(CPCD_INIT_PROPERTIES)} "
-          f"responses, {responses_seen} total frames")
-    print_result("ep0 property exchange", properties_ok > 0)
+    print(f"\n    Property results: {properties_ok} responses, "
+          f"RCP advanced N(S): {'yes ✅' if rcp_advanced else 'no ❌ (stale retransmits)'}")
+    print_result("ep0 property exchange", rcp_advanced,
+                 "RCP accepted our frames" if rcp_advanced else
+                 "RCP still retransmitting — sequence mismatch or CRC issue")
 
     # ── Step 4: Send SABM on ep0 ──────────────────────────────────────────
     print("\n  Step 4: Sending SABM on ep0...")
     sabm = make_frame(0, U_SABM, crc_fn=crc_fn)
     ser.write(sabm)
+    ser.flush()
     print(f"    TX: SABM ep0 — {sabm.hex()}")
 
     time.sleep(1.0)
     ep0_ok = False
 
-    # Drain all responses — may include both property retransmits and UA
     resp = ser.read(500)
     if resp:
         frames = try_parse_frames(resp, crc_fn, "EP_LEN_CTRL", True)
@@ -501,9 +550,10 @@ def test_handshake(port: str, baud: int, crc_fn) -> bool:
             print(f"    RX: ep={ep} {desc} {'✅' if fcs_ok else '❌'}")
             if ep == 0 and (ctrl & 0xEF) == U_UA and fcs_ok:
                 ep0_ok = True
-            elif fcs_ok and ctrl & 0x01 == 0:  # I-frame
+            elif fcs_ok and ctrl & 0x01 == 0:
                 rcp_ns = (ctrl >> 1) & 7
                 ser.write(make_rr(ep, (rcp_ns + 1) & 7, crc_fn=crc_fn))
+                ser.flush()
     else:
         print("    RX: (empty)")
 
@@ -513,6 +563,7 @@ def test_handshake(port: str, baud: int, crc_fn) -> bool:
     print("\n  Step 5: Sending SABM on ep12...")
     sabm12 = make_frame(12, U_SABM, crc_fn=crc_fn)
     ser.write(sabm12)
+    ser.flush()
     print(f"    TX: SABM ep12 — {sabm12.hex()}")
 
     time.sleep(1.0)
@@ -526,23 +577,25 @@ def test_handshake(port: str, baud: int, crc_fn) -> bool:
             if ep == 12 and (ctrl & 0xEF) == U_UA and fcs_ok:
                 ep12_ok = True
             elif ep == 12 and (ctrl & 0xEF) == U_SABM and fcs_ok:
-                # RCP sent its own SABM — respond with UA
                 ua = make_frame(12, U_UA, crc_fn=crc_fn)
                 ser.write(ua)
+                ser.flush()
                 print(f"    TX: UA ep12 (responding to RCP's SABM)")
                 ep12_ok = True
-            elif fcs_ok and ctrl & 0x01 == 0:  # I-frame (property retransmit)
+            elif fcs_ok and ctrl & 0x01 == 0:
                 rcp_ns = (ctrl >> 1) & 7
                 ser.write(make_rr(ep, (rcp_ns + 1) & 7, crc_fn=crc_fn))
+                ser.flush()
     else:
         print("    RX: (empty)")
 
     print_result("ep12 UA received", ep12_ok)
 
-    # ── Step 6: Send SABM on ep13 (optional) ──────────────────────────────
+    # ── Step 6: SABM on ep13 (optional) ───────────────────────────────────
     print("\n  Step 6: Sending SABM on ep13 (optional)...")
     sabm13 = make_frame(13, U_SABM, crc_fn=crc_fn)
     ser.write(sabm13)
+    ser.flush()
     time.sleep(1.0)
     resp13 = ser.read(500)
     ep13_ok = False
@@ -555,27 +608,36 @@ def test_handshake(port: str, baud: int, crc_fn) -> bool:
             elif ep == 13 and (ctrl & 0xEF) == U_SABM and fcs_ok:
                 ua = make_frame(13, U_UA, crc_fn=crc_fn)
                 ser.write(ua)
+                ser.flush()
                 ep13_ok = True
             elif fcs_ok and ctrl & 0x01 == 0:
                 rcp_ns = (ctrl >> 1) & 7
                 ser.write(make_rr(ep, (rcp_ns + 1) & 7, crc_fn=crc_fn))
+                ser.flush()
     print_result("ep13 UA received", ep13_ok, "(optional — Thread endpoint)")
 
     # ── Step 7: Cleanup ───────────────────────────────────────────────────
     print("\n  Step 7: Cleanup — sending DISC...")
     for ep in [12, 13, 0]:
         ser.write(make_frame(ep, U_DISC, crc_fn=crc_fn))
+        ser.flush()
         time.sleep(0.1)
 
     ser.close()
 
-    # Overall result: property exchange + at least ep0 or ep12 opened
-    handshake_ok = properties_ok > 0 and (ep0_ok or ep12_ok)
-    if not handshake_ok and properties_ok > 0:
-        print("\n  ℹ️  Property exchange worked but SABM got no UA.")
-        print("     This means the RCP accepted our I-frames but may need")
-        print("     the full cpcd property sequence before opening endpoints.")
-        print("     zmm_cpc router.rs needs ep0 property handler for Phase 2.")
+    handshake_ok = rcp_advanced and (ep0_ok or ep12_ok)
+    if not handshake_ok:
+        print()
+        if not rcp_advanced:
+            print("  ℹ️  RCP N(S) never advanced — our frames are not being accepted.")
+            print("     Possible causes:")
+            print("       • DTR reset didn't clear CPC state (try USB unplug/replug)")
+            print("       • CRC mismatch on our TX frames (verify crc16 init value)")
+            print("       • Sequence number mismatch (stale state from previous session)")
+        elif not ep0_ok and not ep12_ok:
+            print("  ℹ️  Property exchange worked but SABM got no UA.")
+            print("     RCP may need the full cpcd property sequence or")
+            print("     the RCP opens endpoints via its own SABM (not ours).")
 
     return handshake_ok
 
@@ -638,10 +700,15 @@ def test_interactive_conversation(port: str, baud: int, crc_fn) -> bool:
     ser.rts = False
 
     # RTS reset
-    print("  RTS reset...")
-    ser.rts = True
+    print("  DTR hard reset...")
+    ser.dtr = True
     time.sleep(0.1)
-    ser.rts = False
+    ser.dtr = False
+    time.sleep(0.3)
+    ser.reset_input_buffer()
+    ser.write(b"2\r\n")
+    time.sleep(2.0)
+    ser.reset_input_buffer()
 
     frames_seen = []
     deadline = time.time() + 8
@@ -743,7 +810,7 @@ def main():
 
     print()
     print("╔══════════════════════════════════════════════════════════════════╗")
-    print("║           ZMM CPC Diagnostic Tool v2.0                         ║")
+    print("║           ZMM CPC Diagnostic Tool v2.1                         ║")
     print("╚══════════════════════════════════════════════════════════════════╝")
 
     results = {}
@@ -771,15 +838,20 @@ def main():
 
     results["Baud rate"] = baud > 0
 
-    # Capture data for CRC analysis
+    # Capture data for CRC analysis (DTR reset for fresh state)
     print_header("Capturing boot data for analysis...")
     import serial as pyserial
     ser = pyserial.Serial(args.port, baud, timeout=2)
     ser.dtr = False
-    ser.rts = True
-    time.sleep(0.1)
     ser.rts = False
-    time.sleep(3)
+    # DTR pulse to reset chip
+    ser.dtr = True
+    time.sleep(0.1)
+    ser.dtr = False
+    time.sleep(0.3)
+    ser.reset_input_buffer()
+    ser.write(b"2\r\n")
+    time.sleep(2.5)
     boot_data = ser.read(500)
     ser.close()
     time.sleep(0.3)
