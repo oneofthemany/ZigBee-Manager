@@ -4,7 +4,7 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="systemd added to deps">
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="libsystemd removed and have dev">
       <change afterPath="$PROJECT_DIR$/modules/cpc_diag.py" afterDir="false" />
       <change afterPath="$PROJECT_DIR$/modules/index.html" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/build.sh" beforeDir="false" afterPath="$PROJECT_DIR$/build.sh" afterDir="false" />
@@ -153,22 +153,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00127" summary="workspace sommit">
-      <option name="closed" value="true" />
-      <created>1774521210599</created>
-      <option name="number" value="00127" />
-      <option name="presentableId" value="LOCAL-00127" />
-      <option name="project" value="LOCAL" />
-      <updated>1774521210599</updated>
-    </task>
-    <task id="LOCAL-00128" summary="missing jedi declaration in cpcd config">
-      <option name="closed" value="true" />
-      <created>1774521765171</created>
-      <option name="number" value="00128" />
-      <option name="presentableId" value="LOCAL-00128" />
-      <option name="project" value="LOCAL" />
-      <updated>1774521765171</updated>
     </task>
     <task id="LOCAL-00129" summary="workspace update">
       <option name="closed" value="true" />
@@ -546,7 +530,23 @@
       <option name="project" value="LOCAL" />
       <updated>1774967359342</updated>
     </task>
-    <option name="localTasksCounter" value="176" />
+    <task id="LOCAL-00176" summary="dep fix or conatiner file">
+      <option name="closed" value="true" />
+      <created>1774967724928</created>
+      <option name="number" value="00176" />
+      <option name="presentableId" value="LOCAL-00176" />
+      <option name="project" value="LOCAL" />
+      <updated>1774967724928</updated>
+    </task>
+    <task id="LOCAL-00177" summary="libsystemd removed and have dev">
+      <option name="closed" value="true" />
+      <created>1774967947963</created>
+      <option name="number" value="00177" />
+      <option name="presentableId" value="LOCAL-00177" />
+      <option name="project" value="LOCAL" />
+      <updated>1774967947963</updated>
+    </task>
+    <option name="localTasksCounter" value="178" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -561,8 +561,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="adding /dev/bus/usd to runtime args for container for cpcd support" />
-    <MESSAGE value="further improvements for cpcd" />
     <MESSAGE value="serial break fix" />
     <MESSAGE value="baud rate fixes - multipan" />
     <MESSAGE value="improvements to USB product string pre-detection for CPC/RCP devices with NCP quirk fw detection" />
@@ -586,7 +584,9 @@
     <MESSAGE value="otbr with cpc as found to not support on container build:&#10;&#10;otbr-agent[84]: 49d.23:25:05.308 [C] Platform------: The Spinel interface name &quot;spinel+cpc&quot; is not supported!&#10;otbr-agent[84]: 49d.23:25:05.308 [C] Platform------: CreateSpinelInterface() at spinel_manager.cpp:128: Failure" />
     <MESSAGE value="libsystemd added to deps" />
     <MESSAGE value="systemd added to deps" />
-    <option name="LAST_COMMIT_MESSAGE" value="systemd added to deps" />
+    <MESSAGE value="dep fix or conatiner file" />
+    <MESSAGE value="libsystemd removed and have dev" />
+    <option name="LAST_COMMIT_MESSAGE" value="libsystemd removed and have dev" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
