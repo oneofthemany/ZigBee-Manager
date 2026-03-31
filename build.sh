@@ -293,6 +293,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         ninja-build \
         g++ \
         libffi-dev \
+        libmbedtls-dev \
         libssl-dev \
         libdbus-1-dev \
         libavahi-client-dev \
@@ -350,6 +351,7 @@ RUN echo '#!/bin/sh' > /usr/local/bin/sudo && \
     echo 'if echo "$*" | grep -Eq "/proc/sys|sysctl"; then exit 0; fi' >> /usr/local/bin/sudo && \
     echo 'exec /usr/bin/sudo "$@"' >> /usr/local/bin/sudo && \
     chmod +x /usr/local/bin/sudo && \
+    git clone --depth 1 --branch v4.7.1.0 https://github.com/SiliconLabs/cpc-daemon.git /tmp/cpc-daemon && \
     git clone --depth=1 https://github.com/openthread/ot-br-posix /tmp/otbr && \
     cd /tmp/otbr && \
     git submodule update --init --recursive && \
@@ -360,7 +362,7 @@ RUN echo '#!/bin/sh' > /usr/local/bin/sudo && \
     OTBR_OPTIONS=" \
         -DOT_THREAD_VERSION=1.4 \
         -DOT_MULTIPAN_RCP=ON \
-        -DCPCD_SOURCE_DIR=${CPCD_DIR} \
+        -DCPCD_SOURCE_DIR=/tmp/cpc-daemon \
         -DOT_POSIX_RCP_VENDOR_BUS=ON \
         -DOT_POSIX_CONFIG_RCP_VENDOR_DEPS_PACKAGE=${SDK_DIR}/protocol/openthread/platform-abstraction/posix/posix_vendor_rcp.cmake \
         -DOT_POSIX_CONFIG_RCP_VENDOR_INTERFACE=${SDK_DIR}/protocol/openthread/platform-abstraction/posix/cpc_interface.cpp \
