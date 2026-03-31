@@ -4,11 +4,8 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="adding inotify-tools to deps to track down yaml overwrites and general yaml debugging">
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="additional debugging added">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/main.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/modules/dongle_jedi_api.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/dongle_jedi_api.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/modules/matter_server.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/matter_server.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/modules/tdm/zmm_cpc/src/router.rs" beforeDir="false" afterPath="$PROJECT_DIR$/modules/tdm/zmm_cpc/src/router.rs" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -180,14 +177,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00161" summary="adding baud rate to the RTS  reset">
-      <option name="closed" value="true" />
-      <created>1774728725757</created>
-      <option name="number" value="00161" />
-      <option name="presentableId" value="LOCAL-00161" />
-      <option name="project" value="LOCAL" />
-      <updated>1774728725757</updated>
     </task>
     <task id="LOCAL-00162" summary="_reset_serial_state updated to correct baud">
       <option name="closed" value="true" />
@@ -573,7 +562,15 @@
       <option name="project" value="LOCAL" />
       <updated>1774943935609</updated>
     </task>
-    <option name="localTasksCounter" value="210" />
+    <task id="LOCAL-00210" summary="additional debugging added">
+      <option name="closed" value="true" />
+      <created>1774946805354</created>
+      <option name="number" value="00210" />
+      <option name="presentableId" value="LOCAL-00210" />
+      <option name="project" value="LOCAL" />
+      <updated>1774946805354</updated>
+    </task>
+    <option name="localTasksCounter" value="211" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -588,7 +585,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="notice added for python-matter-server installating matter server" />
     <MESSAGE value="unique name for zigbee port to prevent port overwrites in build" />
     <MESSAGE value="updated to fix this error:&#10;&#10;sed: -e expression #1, char 47: unknown option to `s'" />
     <MESSAGE value="final patch test for port placeholder zigbee" />
@@ -613,6 +609,7 @@
     <MESSAGE value="--interactive set for debugging" />
     <MESSAGE value="Move Matter object creation out of module level and into the lifespan" />
     <MESSAGE value="adding inotify-tools to deps to track down yaml overwrites and general yaml debugging" />
-    <option name="LAST_COMMIT_MESSAGE" value="adding inotify-tools to deps to track down yaml overwrites and general yaml debugging" />
+    <MESSAGE value="additional debugging added" />
+    <option name="LAST_COMMIT_MESSAGE" value="additional debugging added" />
   </component>
 </project>
