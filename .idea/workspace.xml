@@ -4,10 +4,9 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="version bug">
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="using branch 4.7">
       <change afterPath="$PROJECT_DIR$/modules/cpc_diag.py" afterDir="false" />
       <change afterPath="$PROJECT_DIR$/modules/index.html" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -153,22 +152,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00137" summary="final attempt at survivability fo container when dongle removed">
-      <option name="closed" value="true" />
-      <created>1774613763940</created>
-      <option name="number" value="00137" />
-      <option name="presentableId" value="LOCAL-00137" />
-      <option name="project" value="LOCAL" />
-      <updated>1774613763940</updated>
-    </task>
-    <task id="LOCAL-00138" summary="teardown notice added">
-      <option name="closed" value="true" />
-      <created>1774614425315</created>
-      <option name="number" value="00138" />
-      <option name="presentableId" value="LOCAL-00138" />
-      <option name="project" value="LOCAL" />
-      <updated>1774614425315</updated>
     </task>
     <task id="LOCAL-00139" summary="adding no passwd to file and updating service to use bash to run the pre_script">
       <option name="closed" value="true" />
@@ -546,7 +529,23 @@
       <option name="project" value="LOCAL" />
       <updated>1774970839370</updated>
     </task>
-    <option name="localTasksCounter" value="186" />
+    <task id="LOCAL-00186" summary="using branch 4.7.0">
+      <option name="closed" value="true" />
+      <created>1774973479785</created>
+      <option name="number" value="00186" />
+      <option name="presentableId" value="LOCAL-00186" />
+      <option name="project" value="LOCAL" />
+      <updated>1774973479785</updated>
+    </task>
+    <task id="LOCAL-00187" summary="using branch 4.7">
+      <option name="closed" value="true" />
+      <created>1774973571549</created>
+      <option name="number" value="00187" />
+      <option name="presentableId" value="LOCAL-00187" />
+      <option name="project" value="LOCAL" />
+      <updated>1774973571549</updated>
+    </task>
+    <option name="localTasksCounter" value="188" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -561,8 +560,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="more deps for dev" />
-    <MESSAGE value="PTYTCPBridge to correct MultiPanManager init" />
     <MESSAGE value="reset sequence to false" />
     <MESSAGE value="reset block added ahead of cpcd in start()" />
     <MESSAGE value="adding baud rate to the RTS  reset" />
@@ -586,7 +583,9 @@
     <MESSAGE value="different appraach" />
     <MESSAGE value="reverted" />
     <MESSAGE value="version bug" />
-    <option name="LAST_COMMIT_MESSAGE" value="version bug" />
+    <MESSAGE value="using branch 4.7.0" />
+    <MESSAGE value="using branch 4.7" />
+    <option name="LAST_COMMIT_MESSAGE" value="using branch 4.7" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
