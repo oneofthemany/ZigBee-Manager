@@ -4,7 +4,8 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="detach not detached">
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="diag_cpc update to better diagnostics on DTR">
+      <change beforePath="$PROJECT_DIR$/diag_cpc.py" beforeDir="false" afterPath="$PROJECT_DIR$/diag_cpc.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/modules/tdm/zmm_cpc/src/router.rs" beforeDir="false" afterPath="$PROJECT_DIR$/modules/tdm/zmm_cpc/src/router.rs" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -176,14 +177,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00164" summary="rust tdm to replace cpc - initial commit">
-      <option name="closed" value="true" />
-      <created>1774799384273</created>
-      <option name="number" value="00164" />
-      <option name="presentableId" value="LOCAL-00164" />
-      <option name="project" value="LOCAL" />
-      <updated>1774799384273</updated>
     </task>
     <task id="LOCAL-00165" summary="replace ptybridge and cpcd">
       <option name="closed" value="true" />
@@ -569,7 +562,15 @@
       <option name="project" value="LOCAL" />
       <updated>1774949332746</updated>
     </task>
-    <option name="localTasksCounter" value="213" />
+    <task id="LOCAL-00213" summary="diag_cpc update to better diagnostics on DTR">
+      <option name="closed" value="true" />
+      <created>1774949668045</created>
+      <option name="number" value="00213" />
+      <option name="presentableId" value="LOCAL-00213" />
+      <option name="project" value="LOCAL" />
+      <updated>1774949668046</updated>
+    </task>
+    <option name="localTasksCounter" value="214" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -584,7 +585,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="final patch test for port placeholder zigbee" />
     <MESSAGE value="rolled back as not the issue" />
     <MESSAGE value="change_me added to pan_id" />
     <MESSAGE value="branch added for easier editing" />
@@ -609,6 +609,7 @@
     <MESSAGE value="additional debugging added" />
     <MESSAGE value="back to detached mode" />
     <MESSAGE value="detach not detached" />
-    <option name="LAST_COMMIT_MESSAGE" value="detach not detached" />
+    <MESSAGE value="diag_cpc update to better diagnostics on DTR" />
+    <option name="LAST_COMMIT_MESSAGE" value="diag_cpc update to better diagnostics on DTR" />
   </component>
 </project>
