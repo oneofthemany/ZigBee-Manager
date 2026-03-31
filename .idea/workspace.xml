@@ -4,10 +4,10 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="removal of cpc dir block">
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="reverted">
       <change afterPath="$PROJECT_DIR$/modules/cpc_diag.py" afterDir="false" />
       <change afterPath="$PROJECT_DIR$/modules/index.html" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/build.sh" beforeDir="false" afterPath="$PROJECT_DIR$/build.sh" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -153,30 +153,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00133" summary="new teardown/rebuild container for when device is unplugged">
-      <option name="closed" value="true" />
-      <created>1774611249608</created>
-      <option name="number" value="00133" />
-      <option name="presentableId" value="LOCAL-00133" />
-      <option name="project" value="LOCAL" />
-      <updated>1774611249608</updated>
-    </task>
-    <task id="LOCAL-00134" summary="removed as no longer required">
-      <option name="closed" value="true" />
-      <created>1774611324659</created>
-      <option name="number" value="00134" />
-      <option name="presentableId" value="LOCAL-00134" />
-      <option name="project" value="LOCAL" />
-      <updated>1774611324659</updated>
-    </task>
-    <task id="LOCAL-00135" summary="final commit - --priv added to ensure container survivability">
-      <option name="closed" value="true" />
-      <created>1774611723317</created>
-      <option name="number" value="00135" />
-      <option name="presentableId" value="LOCAL-00135" />
-      <option name="project" value="LOCAL" />
-      <updated>1774611723317</updated>
     </task>
     <task id="LOCAL-00136" summary="roll back due to permission issues in container">
       <option name="closed" value="true" />
@@ -546,7 +522,31 @@
       <option name="project" value="LOCAL" />
       <updated>1774969004735</updated>
     </task>
-    <option name="localTasksCounter" value="182" />
+    <task id="LOCAL-00182" summary="removal of cpc dir block">
+      <option name="closed" value="true" />
+      <created>1774969010478</created>
+      <option name="number" value="00182" />
+      <option name="presentableId" value="LOCAL-00182" />
+      <option name="project" value="LOCAL" />
+      <updated>1774969010478</updated>
+    </task>
+    <task id="LOCAL-00183" summary="different appraach">
+      <option name="closed" value="true" />
+      <created>1774969154046</created>
+      <option name="number" value="00183" />
+      <option name="presentableId" value="LOCAL-00183" />
+      <option name="project" value="LOCAL" />
+      <updated>1774969154046</updated>
+    </task>
+    <task id="LOCAL-00184" summary="reverted">
+      <option name="closed" value="true" />
+      <created>1774969292152</created>
+      <option name="number" value="00184" />
+      <option name="presentableId" value="LOCAL-00184" />
+      <option name="project" value="LOCAL" />
+      <updated>1774969292152</updated>
+    </task>
+    <option name="localTasksCounter" value="185" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -561,8 +561,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="watchdog fix for multipan" />
-    <MESSAGE value="minor tweaks to cater for recent findings" />
     <MESSAGE value="socat removal from new pty bridge" />
     <MESSAGE value="more deps for dev" />
     <MESSAGE value="PTYTCPBridge to correct MultiPanManager init" />
@@ -586,7 +584,9 @@
     <MESSAGE value="remved -DOTBR_SRP_ADVERTISING_PROXY=ON and -DOTBR_DUA_ROUTING=ON from containerfile" />
     <MESSAGE value="fetching cpc-daemon and setting -DCPCD_SOURCE_DIR=/tmp/cpc-daemon" />
     <MESSAGE value="removal of cpc dir block" />
-    <option name="LAST_COMMIT_MESSAGE" value="removal of cpc dir block" />
+    <MESSAGE value="different appraach" />
+    <MESSAGE value="reverted" />
+    <option name="LAST_COMMIT_MESSAGE" value="reverted" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>

@@ -350,7 +350,7 @@ RUN echo '#!/bin/sh' > /usr/local/bin/sudo && \
     echo 'if echo "$*" | grep -Eq "/proc/sys|sysctl"; then exit 0; fi' >> /usr/local/bin/sudo && \
     echo 'exec /usr/bin/sudo "$@"' >> /usr/local/bin/sudo && \
     chmod +x /usr/local/bin/sudo && \
-    git clone --depth 1 --branch v4.7.1.0 https://github.com/SiliconLabs/cpc-daemon.git /tmp/cpc-daemon && \
+    git clone --depth 1 https://github.com/SiliconLabs/cpc-daemon.git /tmp/cpc-daemon && \
     git clone --depth=1 https://github.com/openthread/ot-br-posix /tmp/otbr && \
     cd /tmp/otbr && \
     git submodule update --init --recursive && \
