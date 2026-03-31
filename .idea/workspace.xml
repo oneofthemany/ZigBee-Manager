@@ -4,7 +4,7 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="remved -DOTBR_SRP_ADVERTISING_PROXY=ON and -DOTBR_DUA_ROUTING=ON from containerfile">
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="removal of cpc dir block">
       <change afterPath="$PROJECT_DIR$/modules/cpc_diag.py" afterDir="false" />
       <change afterPath="$PROJECT_DIR$/modules/index.html" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/build.sh" beforeDir="false" afterPath="$PROJECT_DIR$/build.sh" afterDir="false" />
@@ -153,22 +153,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00131" summary="new dynamic device - WIP test">
-      <option name="closed" value="true" />
-      <created>1774609284577</created>
-      <option name="number" value="00131" />
-      <option name="presentableId" value="LOCAL-00131" />
-      <option name="project" value="LOCAL" />
-      <updated>1774609284577</updated>
-    </task>
-    <task id="LOCAL-00132" summary="removing teardown dead weight">
-      <option name="closed" value="true" />
-      <created>1774610542448</created>
-      <option name="number" value="00132" />
-      <option name="presentableId" value="LOCAL-00132" />
-      <option name="project" value="LOCAL" />
-      <updated>1774610542449</updated>
     </task>
     <task id="LOCAL-00133" summary="new teardown/rebuild container for when device is unplugged">
       <option name="closed" value="true" />
@@ -546,7 +530,23 @@
       <option name="project" value="LOCAL" />
       <updated>1774968385742</updated>
     </task>
-    <option name="localTasksCounter" value="180" />
+    <task id="LOCAL-00180" summary="fetching cpc-daemon and setting -DCPCD_SOURCE_DIR=/tmp/cpc-daemon">
+      <option name="closed" value="true" />
+      <created>1774968686866</created>
+      <option name="number" value="00180" />
+      <option name="presentableId" value="LOCAL-00180" />
+      <option name="project" value="LOCAL" />
+      <updated>1774968686866</updated>
+    </task>
+    <task id="LOCAL-00181" summary="removal of cpc dir block">
+      <option name="closed" value="true" />
+      <created>1774969004735</created>
+      <option name="number" value="00181" />
+      <option name="presentableId" value="LOCAL-00181" />
+      <option name="project" value="LOCAL" />
+      <updated>1774969004735</updated>
+    </task>
+    <option name="localTasksCounter" value="182" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -561,8 +561,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="baud rate fixes - multipan" />
-    <MESSAGE value="improvements to USB product string pre-detection for CPC/RCP devices with NCP quirk fw detection" />
     <MESSAGE value="watchdog fix for multipan" />
     <MESSAGE value="minor tweaks to cater for recent findings" />
     <MESSAGE value="socat removal from new pty bridge" />
@@ -586,7 +584,9 @@
     <MESSAGE value="dep fix or conatiner file" />
     <MESSAGE value="libsystemd removed and have dev" />
     <MESSAGE value="remved -DOTBR_SRP_ADVERTISING_PROXY=ON and -DOTBR_DUA_ROUTING=ON from containerfile" />
-    <option name="LAST_COMMIT_MESSAGE" value="remved -DOTBR_SRP_ADVERTISING_PROXY=ON and -DOTBR_DUA_ROUTING=ON from containerfile" />
+    <MESSAGE value="fetching cpc-daemon and setting -DCPCD_SOURCE_DIR=/tmp/cpc-daemon" />
+    <MESSAGE value="removal of cpc dir block" />
+    <option name="LAST_COMMIT_MESSAGE" value="removal of cpc dir block" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
