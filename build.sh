@@ -338,7 +338,6 @@ RUN DOWNLOAD_URL=$(curl -s https://api.github.com/repos/SiliconLabs/simplicity_s
 
 # ── OTBR with SiLabs CPC MultiPAN support ──────────────────────────────
 ENV SDK_DIR=/tmp/silabs_sdk
-ENV CPCD_DIR=/usr/local
 
 # 1. Sparse clone SiLabs SDK just to get the CPC vendor extension files
 RUN git clone --depth 1 --filter=blob:none --sparse \
@@ -346,7 +345,7 @@ RUN git clone --depth 1 --filter=blob:none --sparse \
     cd ${SDK_DIR} && \
     git sparse-checkout set protocol/openthread/platform-abstraction/posix
 
-# 2. Clone official OTBR, init submodules, copy header, then build
+# 2. Clone official OTBR, init submodules, copy header, clone cpc-daemon source, then build
 RUN echo '#!/bin/sh' > /usr/local/bin/sudo && \
     echo 'if echo "$*" | grep -Eq "/proc/sys|sysctl"; then exit 0; fi' >> /usr/local/bin/sudo && \
     echo 'exec /usr/bin/sudo "$@"' >> /usr/local/bin/sudo && \
@@ -372,7 +371,7 @@ RUN echo '#!/bin/sh' > /usr/local/bin/sudo && \
 
 # 3. Disable systemd service (ZMM manages otbr-agent lifecycle) and clean up
 RUN systemctl disable otbr-agent 2>/dev/null || true
-RUN rm -rf ${SDK_DIR} /tmp/otbr
+RUN rm -rf ${SDK_DIR} /tmp/otbr /tmp/cpc-daemon
 
 # Create app user with the HOST's exact UID:GID + dialout group membership.
 RUN groupadd -g "$HOST_GID" -o appgroup \
