@@ -483,15 +483,23 @@ class MultiPanManager:
         start retransmitting unacknowledged I-frames instead of accepting
         new SABM handshakes.
 
-        This method:
-          1. RTS toggle — hardware reset the chip
-          2. Read the boot burst — typically a stale I-frame on ep0
-          3. Acknowledge with correct RR N(R) — stops the retransmit loop
-          4. Send DISC on ep0, ep12, ep13 — tears down old link state
-          5. Send SABM on ep0 — verify the RCP accepts a fresh handshake
-          6. Send DISC on ep0 — leave cleanly for CpcCore to take over
+        The critical insight is that the RCP's retransmitted I-frames contain
+        N(R) — the sequence number the RCP expects from US next.  We must
+        adopt this as our N(S) starting point.  Similarly, we must send
+        RR with N(R) = (RCP's N(S) + 1) to acknowledge the stale frame.
 
-        DTR is held low throughout to avoid entering the Gecko Bootloader.
+        The RCP will not accept DISC or SABM until we speak its language —
+        matching sequence numbers on both sides.
+
+        This method:
+          1. RTS toggle — attempt hardware reset
+          2. Read boot burst — extract RCP's N(R) (our required N(S))
+             and RCP's N(S) (to build correct RR)
+          3. Send RR with correct N(R) to ack stale I-frames
+          4. Send DISC on ep0/12/13 — must be accepted now that seqs match
+          5. Wait for UA responses to DISC
+          6. Send SABM on ep0 — verify the RCP accepts a fresh handshake
+          7. Clean disconnect for CpcCore to take over
         """
         import serial as pyserial
         import time
@@ -508,100 +516,165 @@ class MultiPanManager:
             ser.rts = False
             time.sleep(0.5)
 
-            # ── Step 2: Read boot burst and acknowledge stale I-frames ──
+            # ── Step 2: Read boot burst and extract RCP sequence state ──
             logger.info("Link reset: draining stale frames...")
+
+            # Track per-endpoint: what N(S) the RCP is sending, and what
+            # N(R) it expects from us.
+            rcp_ns_per_ep = {}   # ep → last N(S) seen from RCP
+            rcp_nr_from_us = {}  # ep → N(R) the RCP expects from us (our N(S))
             acked_eps = set()
-            for attempt in range(10):
+
+            for attempt in range(15):
                 data = ser.read(500)
                 if not data:
-                    if attempt > 0:
-                        break  # No more data after first read
-                    time.sleep(0.5)
+                    if attempt > 2 and acked_eps:
+                        break  # Got frames and now silence — good
+                    time.sleep(0.3)
                     continue
 
                 for ep, ctrl, payload in _cpc_parse_frames(data):
                     if ctrl & 0x01 == 0:  # I-frame
                         ns = (ctrl >> 1) & 0x07
-                        nr = (ns + 1) & 0x07
-                        # Send RR with correct N(R) to stop retransmissions
-                        rr_ctrl = 0x01 | (nr << 5)
-                        rr = _cpc_make_frame(ep, rr_ctrl)
+                        nr = (ctrl >> 5) & 0x07
+                        rcp_ns_per_ep[ep] = ns
+                        rcp_nr_from_us[ep] = nr
+
+                        # Send RR acknowledging this frame
+                        rr_nr = (ns + 1) & 0x07
+                        rr = _cpc_make_frame(ep, 0x01 | (rr_nr << 5))
                         ser.write(rr)
+                        ser.flush()
                         acked_eps.add(ep)
+
                         logger.info(
-                            f"Link reset: acked stale I-frame on ep{ep} "
-                            f"N(S)={ns} → RR N(R)={nr}"
+                            f"Link reset: ep{ep} I-frame N(S)={ns} N(R)={nr} "
+                            f"→ RR N(R)={rr_nr} (RCP expects our N(S)={nr})"
                         )
                     elif ctrl & 0x03 == 0x03:  # U-frame
                         utype = ctrl & 0xEF
                         if utype == _U_SABM:
-                            # RCP is sending fresh SABM — great, respond UA
-                            ua = _cpc_make_frame(ep, _U_UA)
-                            ser.write(ua)
-                            logger.info(f"Link reset: RCP sent SABM on ep{ep}, responded UA")
+                            # RCP is sending fresh SABM — respond UA
+                            ser.write(_cpc_make_frame(ep, _U_UA))
+                            ser.flush()
+                            logger.info(
+                                f"Link reset: RCP sent SABM on ep{ep}, "
+                                f"responded UA"
+                            )
                             acked_eps.add(ep)
 
-                time.sleep(0.2)
+                time.sleep(0.15)
 
             if acked_eps:
-                logger.info(f"Link reset: acknowledged frames on eps {sorted(acked_eps)}")
+                logger.info(
+                    f"Link reset: acknowledged frames on eps {sorted(acked_eps)}"
+                )
+                if rcp_nr_from_us:
+                    logger.info(
+                        f"Link reset: RCP sequence state — "
+                        + ", ".join(
+                            f"ep{ep}: expects our N(S)={nr}"
+                            for ep, nr in sorted(rcp_nr_from_us.items())
+                        )
+                    )
             else:
                 logger.info("Link reset: no stale frames (clean state)")
 
             # ── Step 3: Send DISC on all endpoints ─────────────────────
-            # This tears down whatever link state the RCP has
+            # The RCP now knows we've acked its stale I-frames.
+            # Send DISC to tear down old link state.
             logger.info("Link reset: sending DISC on ep0, ep12, ep13...")
             for ep in [0, 12, 13]:
                 disc = _cpc_make_frame(ep, _U_DISC)
                 ser.write(disc)
-                time.sleep(0.1)
+                ser.flush()
+                time.sleep(0.05)
 
-            # Drain any responses (UA to our DISC, or more I-frames)
-            time.sleep(0.5)
+            # ── Step 4: Drain responses to DISC ────────────────────────
+            # The RCP should respond with UA to each DISC.  It may also
+            # send more I-frames if our earlier RR didn't fully clear its
+            # retransmit queue.
+            time.sleep(0.3)
+            disc_ua_count = 0
+            for _ in range(8):
+                resp = ser.read(500)
+                if not resp:
+                    break
+                for ep, ctrl, payload in _cpc_parse_frames(resp):
+                    if (ctrl & 0xEF) == _U_UA:
+                        disc_ua_count += 1
+                        logger.info(
+                            f"Link reset: got UA on ep{ep} (DISC accepted)"
+                        )
+                    elif ctrl & 0x01 == 0:  # More I-frames
+                        ns = (ctrl >> 1) & 0x07
+                        rr_nr = (ns + 1) & 0x07
+                        ser.write(_cpc_make_frame(ep, 0x01 | (rr_nr << 5)))
+                        ser.flush()
+                        logger.info(
+                            f"Link reset: acked residual I-frame on ep{ep}"
+                        )
+                    elif (ctrl & 0xEF) == _U_SABM:
+                        # RCP initiated SABM after our DISC cleared state
+                        ser.write(_cpc_make_frame(ep, _U_UA))
+                        ser.flush()
+                        logger.info(
+                            f"Link reset: RCP sent SABM on ep{ep} post-DISC, "
+                            f"responded UA"
+                        )
+                time.sleep(0.15)
+
+            if disc_ua_count > 0:
+                logger.info(
+                    f"Link reset: {disc_ua_count} DISC(s) accepted by RCP"
+                )
+
+            # ── Step 5: Verify — send SABM ep0, expect UA ─────────────
+            logger.info("Link reset: verifying with SABM on ep0...")
+            sabm = _cpc_make_frame(0, _U_SABM)
+            ser.write(sabm)
+            ser.flush()
+            time.sleep(0.8)
+
+            verified = False
             for _ in range(5):
                 resp = ser.read(500)
                 if not resp:
                     break
                 for ep, ctrl, payload in _cpc_parse_frames(resp):
-                    if ctrl & 0x01 == 0:  # Still getting I-frames — ack them
-                        ns = (ctrl >> 1) & 0x07
-                        nr = (ns + 1) & 0x07
-                        rr_ctrl = 0x01 | (nr << 5)
-                        ser.write(_cpc_make_frame(ep, rr_ctrl))
-                        logger.info(f"Link reset: acked another I-frame on ep{ep}")
-                    elif (ctrl & 0xEF) == _U_UA:
-                        logger.info(f"Link reset: got UA on ep{ep} (DISC accepted)")
-                time.sleep(0.2)
-
-            # ── Step 4: Verify — send SABM ep0, expect UA ─────────────
-            logger.info("Link reset: verifying with SABM on ep0...")
-            sabm = _cpc_make_frame(0, _U_SABM)
-            ser.write(sabm)
-            time.sleep(1.0)
-
-            verified = False
-            resp = ser.read(500)
-            if resp:
-                for ep, ctrl, payload in _cpc_parse_frames(resp):
                     if ep == 0 and (ctrl & 0xEF) == _U_UA:
-                        logger.info("Link reset: ✅ ep0 UA received — link is clean")
+                        logger.info(
+                            "Link reset: ✅ ep0 UA received — link is clean"
+                        )
                         verified = True
                     elif ep == 0 and (ctrl & 0xEF) == _U_SABM:
-                        # RCP sent its own SABM — respond with UA
                         ser.write(_cpc_make_frame(0, _U_UA))
-                        logger.info("Link reset: ✅ RCP initiated SABM on ep0, responded UA")
+                        ser.flush()
+                        logger.info(
+                            "Link reset: ✅ RCP initiated SABM on ep0, "
+                            "responded UA"
+                        )
                         verified = True
+                    elif ctrl & 0x01 == 0:  # Still I-frames
+                        ns = (ctrl >> 1) & 0x07
+                        ser.write(
+                            _cpc_make_frame(ep, 0x01 | (((ns + 1) & 7) << 5))
+                        )
+                        ser.flush()
+                if verified:
+                    break
+                time.sleep(0.2)
 
             if not verified:
                 logger.warning(
                     "Link reset: ep0 UA not received after SABM — "
-                    "RCP may need additional drain cycles"
+                    "RCP may need power cycle"
                 )
 
-            # ── Step 5: Clean disconnect — DISC ep0 ────────────────────
-            # Leave the link in CLOSED state so CpcCore starts fresh
+            # ── Step 6: Clean disconnect — DISC ep0 ────────────────────
             disc = _cpc_make_frame(0, _U_DISC)
             ser.write(disc)
+            ser.flush()
             time.sleep(0.3)
             ser.read(500)  # drain any response
 

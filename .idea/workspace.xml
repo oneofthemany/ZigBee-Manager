@@ -4,8 +4,9 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="diag_cpc update to better diagnostics on DTR">
-      <change beforePath="$PROJECT_DIR$/diag_cpc.py" beforeDir="false" afterPath="$PROJECT_DIR$/diag_cpc.py" afterDir="false" />
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="space added in header">
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/modules/multipan.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/multipan.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/modules/tdm/zmm_cpc/src/router.rs" beforeDir="false" afterPath="$PROJECT_DIR$/modules/tdm/zmm_cpc/src/router.rs" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -177,14 +178,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00165" summary="replace ptybridge and cpcd">
-      <option name="closed" value="true" />
-      <created>1774799671065</created>
-      <option name="number" value="00165" />
-      <option name="presentableId" value="LOCAL-00165" />
-      <option name="project" value="LOCAL" />
-      <updated>1774799671066</updated>
     </task>
     <task id="LOCAL-00166" summary="renamed dir to tdm">
       <option name="closed" value="true" />
@@ -570,7 +563,15 @@
       <option name="project" value="LOCAL" />
       <updated>1774949668046</updated>
     </task>
-    <option name="localTasksCounter" value="214" />
+    <task id="LOCAL-00214" summary="space added in header">
+      <option name="closed" value="true" />
+      <created>1774949821053</created>
+      <option name="number" value="00214" />
+      <option name="presentableId" value="LOCAL-00214" />
+      <option name="project" value="LOCAL" />
+      <updated>1774949821053</updated>
+    </task>
+    <option name="localTasksCounter" value="215" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -585,7 +586,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="rolled back as not the issue" />
     <MESSAGE value="change_me added to pan_id" />
     <MESSAGE value="branch added for easier editing" />
     <MESSAGE value="patch for zigbee port in build script to prevent overwrite of other ports" />
@@ -610,6 +610,7 @@
     <MESSAGE value="back to detached mode" />
     <MESSAGE value="detach not detached" />
     <MESSAGE value="diag_cpc update to better diagnostics on DTR" />
-    <option name="LAST_COMMIT_MESSAGE" value="diag_cpc update to better diagnostics on DTR" />
+    <MESSAGE value="space added in header" />
+    <option name="LAST_COMMIT_MESSAGE" value="space added in header" />
   </component>
 </project>
