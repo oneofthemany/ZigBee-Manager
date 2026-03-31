@@ -301,6 +301,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         strace \
         iproute2 \
         pkg-config \
+        inotify-tools \
     && rm -rf /var/lib/apt/lists/*
 
 # ── Rust toolchain ─────────
