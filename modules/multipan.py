@@ -1,58 +1,48 @@
 """
 MultiPAN RCP Manager
 =====================
-Manages MultiPAN RCP radio via zmm_cpc (Rust CPC/HDLC core) for concurrent
+Manages MultiPAN RCP radio via cpcd (Silicon Labs CPC daemon) for concurrent
 Zigbee + Thread on a single radio.
 
-Phase 2 stack:
-  MG24 serial → zmm_cpc (CpcCore) → TCP :9999 (ep12) → bellows/zigpy
-                                   → TCP :9998 (ep13) → OT (Phase 3)
+Architecture:
+  MG24 serial → cpcd (CPC/HDLC, TDM, NVM3 state) → Unix sockets
+                  └── /dev/shm/cpcd_0/ep12.sock → PTYTCPBridge → TCP :9999 → bellows
+                  └── /dev/shm/cpcd_0/ep13.sock → otbr-agent (Phase 3)
 
-CpcCore owns the serial port, implements CPC/HDLC framing, endpoint
-multiplexing, and exposes each CPC endpoint as a TCP listener.  bellows
-connects to socket://127.0.0.1:9999 as before — the downstream Zigbee
-startup path is unchanged.
+cpcd handles all CPC link-layer complexity at native C speed:
+  - NVM3-persisted sequence state across reconnects
+  - 192µs TDM slot timing for MultiPAN
+  - Retransmit, windowing, and flow control
+  - DTR/RTS reset sequence for CP210x boards
+  - CPC protocol versioning and encryption negotiation
 
-otbr-agent (Thread) requires Phase 3 — it expects cpcd's Unix
-SOCK_SEQPACKET sockets which zmm_cpc does not yet provide.
-
-Startup sequence:
-  1. RTS reset — toggle RTS to reboot the MG24 chip
-  2. _drain_and_reset_link() — read any stale I-frames the RCP sends
-     from a previous session, acknowledge them with correct N(R) so
-     the RCP stops retransmitting, then send DISC on all endpoints to
-     tear down the old CPC link state, then send SABM on ep0 and wait
-     for UA to confirm the link is clean.
-  3. Close pyserial, brief settle
-  4. CpcCore.start() — opens serial port, binds TCP listeners, spawns
-     the Tokio router.  The RCP is now in a clean state and will
-     respond to SABMs from the router (reactive or proactive).
+The PTYTCPBridge relays cpcd's Unix socket endpoint to a TCP port
+that bellows can connect to — replacing the external socat dependency
+with an in-process asyncio relay.
 
 Integration point: core/service.py ZigbeeService.start()
   - Dongle Jedi detects CPC_MULTIPAN firmware
-  - _probe_with_jedi() returns probe result with adapter_family
-  - start() launches MultiPanManager BEFORE building bellows config
+  - start() launches cpcd → waits for ready → starts PTY bridge
   - self.port is overridden to the EZSP socket
   - Rest of startup proceeds unchanged
 """
 import asyncio
 import logging
 import os
-import signal
+import re
 import shutil
-import struct
+import signal
+from pathlib import Path
 from typing import Optional, Dict, Callable
 
-from zmm_cpc import CpcCore
+from .pty_bridge import PTYTCPBridge
 
 logger = logging.getLogger("multipan")
 
 
 # =========================================================================
-# MANAGED DAEMON — generic subprocess wrapper (kept for otbr-agent Phase 3)
+# MANAGED DAEMON — generic subprocess wrapper
 # =========================================================================
-
-import re
 
 
 class ManagedDaemon:
@@ -297,91 +287,64 @@ class ManagedDaemon:
 
 
 # =========================================================================
-# CPC FRAMING HELPERS (Python-side, for pre-CpcCore link reset)
+# CPCD CONFIG WRITER
 # =========================================================================
 
-CPC_FLAG = 0x14
-_U_SABM = 0xEF
-_U_UA   = 0x63
-_U_DISC = 0x43
-
-
-def _cpc_crc16(data: bytes) -> int:
-    """CRC-16 poly=0x1021 init=0x0000 (confirmed for Sonoff MG24 RCP)."""
-    crc = 0x0000
-    for b in data:
-        crc ^= b << 8
-        for _ in range(8):
-            crc = ((crc << 1) ^ 0x1021 if crc & 0x8000 else crc << 1) & 0xFFFF
-    return crc
-
-
-def _cpc_make_frame(ep: int, ctrl: int, payload: bytes = b"") -> bytes:
-    """Encode a CPC frame. Layout: FLAG EP LEN_LO LEN_HI CTRL HCS(2) PAYLOAD FCS(2)."""
-    fcs_len = 2
-    length = len(payload) + fcs_len  # LEN includes FCS
-    hdr = bytes([CPC_FLAG, ep, length & 0xFF, (length >> 8) & 0xFF, ctrl])
-    hcs = _cpc_crc16(hdr)
-    fcs = _cpc_crc16(payload)
-    return hdr + struct.pack("<H", hcs) + payload + struct.pack("<H", fcs)
-
-
-def _cpc_parse_frames(data: bytes):
+def _write_cpcd_conf(
+        serial_port: str,
+        baudrate: int = 115200,
+        instance_name: str = "cpcd_0",
+        socket_folder: str = "/dev/shm",
+        hardflow: bool = False,
+        disable_encryption: bool = True,
+        reset_sequence: bool = True,
+) -> str:
     """
-    Parse CPC frames from raw bytes.
-    Yields (ep, ctrl, payload) for each valid frame.
+    Write a cpcd.conf file and return its path.
+
+    cpcd reads its config from a YAML-like key: value file.
+    We generate a minimal one matching the dongle's parameters.
     """
-    i = 0
-    while i < len(data):
-        if data[i] != CPC_FLAG:
-            i += 1
-            continue
-        if i + 7 > len(data):
-            break
+    conf_dir = Path("/tmp/zmm")
+    conf_dir.mkdir(parents=True, exist_ok=True)
+    conf_path = conf_dir / "cpcd.conf"
 
-        ep   = data[i + 1]
-        plen = data[i + 2] | (data[i + 3] << 8)
-        ctrl = data[i + 4]
+    lines = [
+        f"instance_name: {instance_name}",
+        f"bus_type: UART",
+        f"uart_device_file: {serial_port}",
+        f"uart_device_baud: {baudrate}",
+        f"uart_hardflow: {'true' if hardflow else 'false'}",
+        f"disable_encryption: {'true' if disable_encryption else 'false'}",
+        f"reset_sequence: {'true' if reset_sequence else 'false'}",
+        f"socket_folder: {socket_folder}",
+        f"stdout_trace: true",
+        f"file_tracing: false",
+    ]
 
-        # Validate HCS
-        hdr = data[i:i + 5]
-        hcs_recv = data[i + 5] | (data[i + 6] << 8)
-        if _cpc_crc16(hdr) != hcs_recv:
-            i += 1
-            continue
-
-        if plen < 2:
-            i += 1
-            continue
-
-        payload_len = plen - 2
-        frame_end = i + 7 + payload_len + 2
-        if frame_end > len(data):
-            break
-
-        payload = data[i + 7:i + 7 + payload_len]
-        fcs_recv = data[i + 7 + payload_len] | (data[i + 7 + payload_len + 1] << 8)
-        if _cpc_crc16(payload) != fcs_recv:
-            i += 1
-            continue
-
-        yield (ep, ctrl, payload)
-        i = frame_end
+    conf_path.write_text("\n".join(lines) + "\n")
+    logger.info(f"cpcd config written to {conf_path}")
+    return str(conf_path)
 
 
 # =========================================================================
-# MULTIPAN MANAGER — CpcCore + optional otbr-agent
+# MULTIPAN MANAGER — cpcd + PTYTCPBridge
 # =========================================================================
 
 class MultiPanManager:
     """
-    Manages MultiPAN RCP via zmm_cpc CpcCore (Rust CPC/HDLC).
+    Manages MultiPAN RCP via cpcd (Silicon Labs CPC daemon).
 
-    CpcCore replaces cpcd + zigbeed + PTYTCPBridge.  It owns the serial
-    port, speaks CPC/HDLC, and exposes CPC endpoints as TCP listeners
-    (ep12 → :9999 for bellows, ep13 → :9998 for OT).
+    Architecture:
+      MG24 serial → cpcd → Unix socket ep12 → PTYTCPBridge → TCP :9999 → bellows
 
-    bellows connects to socket://127.0.0.1:9999 — unchanged from Phase 1.
+    cpcd handles all CPC link-layer complexity at native C speed:
+      - NVM3-persisted sequence state across reconnects
+      - 192µs TDM slot timing for MultiPAN
+      - Retransmit, windowing, and flow control
+      - DTR/RTS reset sequence for CP210x boards
+
+    bellows connects to socket://127.0.0.1:9999 — unchanged.
     """
 
     def __init__(
@@ -403,10 +366,13 @@ class MultiPanManager:
         # Dongle Jedi probe result (set by start())
         self._jedi_result: Optional[dict] = None
 
-        # Phase 2: Rust CPC core replaces cpcd + zigbeed + PTYTCPBridge
-        self._cpc_core: Optional[CpcCore] = None
+        # cpcd managed daemon
+        self._cpcd: Optional[ManagedDaemon] = None
 
-        # otbr-agent still uses ManagedDaemon (Phase 3)
+        # PTY↔TCP bridge (replaces socat)
+        self._bridge: Optional[PTYTCPBridge] = None
+
+        # otbr-agent (Phase 3)
         self._daemons: Dict[str, ManagedDaemon] = {}
 
     @property
@@ -424,31 +390,37 @@ class MultiPanManager:
     # =========================================================================
 
     @staticmethod
+    def is_cpcd_available() -> bool:
+        """Check if cpcd binary is installed."""
+        return shutil.which("cpcd") is not None
+
+    @staticmethod
     def is_otbr_available() -> bool:
         return shutil.which("otbr-agent") is not None
 
     def check_prerequisites(self) -> dict:
-        """Check prerequisites.  CpcCore is a Python module — always available
-        if the import at the top of this file succeeded."""
+        cpcd = self.is_cpcd_available()
         otbr = self.is_otbr_available()
         return {
-            "core_available": True,   # zmm_cpc is imported
+            "cpcd_available": cpcd,
             "otbr_agent": otbr,
-            "all_available": otbr,
+            "all_available": cpcd,  # cpcd is the minimum requirement
         }
 
     # =========================================================================
-    # COMMAND BUILDERS (otbr-agent only — Phase 3)
+    # COMMAND BUILDERS
     # =========================================================================
+
+    def _build_cpcd_command(self, conf_path: str) -> list:
+        """Build cpcd command line."""
+        return ["cpcd", "--conf", conf_path]
 
     def _build_otbr_command(self) -> list:
         """
         Build otbr-agent command.
 
-        NOTE: otbr-agent currently requires cpcd Unix sockets (spinel+cpc://).
-        zmm_cpc exposes TCP endpoints, not Unix sockets.  otbr-agent
-        integration is deferred to Phase 3 when zmm_cpc adds Unix socket
-        support or otbr-agent gains TCP transport.
+        With cpcd as the transport, otbr-agent can connect directly
+        via its native spinel+cpc:// protocol — no bridging needed.
         """
         thread_iface = self._otbr_config.get("thread_interface", "wpan0")
         backbone_iface = self._otbr_config.get("backbone_interface", "eth0")
@@ -469,228 +441,6 @@ class MultiPanManager:
         return cmd
 
     # =========================================================================
-    # LINK DRAIN AND RESET
-    # =========================================================================
-
-    @staticmethod
-    def _drain_and_reset_link(port: str, baudrate: int = 115200) -> bool:
-        """
-        Reset the CPC link to a clean state before CpcCore takes over.
-
-        The MG24 RCP persists its CPC link state across serial reconnects.
-        If a previous session (cpcd, zmm_cpc, or even Dongle Jedi probe)
-        left the link in an established state, the RCP will immediately
-        start retransmitting unacknowledged I-frames instead of accepting
-        new SABM handshakes.
-
-        The critical insight is that the RCP's retransmitted I-frames contain
-        N(R) — the sequence number the RCP expects from US next.  We must
-        adopt this as our N(S) starting point.  Similarly, we must send
-        RR with N(R) = (RCP's N(S) + 1) to acknowledge the stale frame.
-
-        The RCP will not accept DISC or SABM until we speak its language —
-        matching sequence numbers on both sides.
-
-        This method:
-          1. RTS toggle — attempt hardware reset
-          2. Read boot burst — extract RCP's N(R) (our required N(S))
-             and RCP's N(S) (to build correct RR)
-          3. Send RR with correct N(R) to ack stale I-frames
-          4. Send DISC on ep0/12/13 — must be accepted now that seqs match
-          5. Wait for UA responses to DISC
-          6. Send SABM on ep0 — verify the RCP accepts a fresh handshake
-          7. Clean disconnect for CpcCore to take over
-        """
-        import serial as pyserial
-        import time
-
-        try:
-            ser = pyserial.Serial(port, baudrate, timeout=0.5)
-            ser.dtr = False
-            ser.rts = False
-
-            # ── Step 1: RTS hardware reset ─────────────────────────────
-            logger.info("Link reset: RTS toggle...")
-            ser.rts = True
-            time.sleep(0.1)
-            ser.rts = False
-            time.sleep(0.5)
-
-            # ── Step 2: Read boot burst and extract RCP sequence state ──
-            logger.info("Link reset: draining stale frames...")
-
-            # Track per-endpoint: what N(S) the RCP is sending, and what
-            # N(R) it expects from us.
-            rcp_ns_per_ep = {}   # ep → last N(S) seen from RCP
-            rcp_nr_from_us = {}  # ep → N(R) the RCP expects from us (our N(S))
-            acked_eps = set()
-
-            for attempt in range(15):
-                data = ser.read(500)
-                if not data:
-                    if attempt > 2 and acked_eps:
-                        break  # Got frames and now silence — good
-                    time.sleep(0.3)
-                    continue
-
-                for ep, ctrl, payload in _cpc_parse_frames(data):
-                    if ctrl & 0x01 == 0:  # I-frame
-                        ns = (ctrl >> 1) & 0x07
-                        nr = (ctrl >> 5) & 0x07
-                        rcp_ns_per_ep[ep] = ns
-                        rcp_nr_from_us[ep] = nr
-
-                        # Send RR acknowledging this frame
-                        rr_nr = (ns + 1) & 0x07
-                        rr = _cpc_make_frame(ep, 0x01 | (rr_nr << 5))
-                        ser.write(rr)
-                        ser.flush()
-                        acked_eps.add(ep)
-
-                        logger.info(
-                            f"Link reset: ep{ep} I-frame N(S)={ns} N(R)={nr} "
-                            f"→ RR N(R)={rr_nr} (RCP expects our N(S)={nr})"
-                        )
-                    elif ctrl & 0x03 == 0x03:  # U-frame
-                        utype = ctrl & 0xEF
-                        if utype == _U_SABM:
-                            # RCP is sending fresh SABM — respond UA
-                            ser.write(_cpc_make_frame(ep, _U_UA))
-                            ser.flush()
-                            logger.info(
-                                f"Link reset: RCP sent SABM on ep{ep}, "
-                                f"responded UA"
-                            )
-                            acked_eps.add(ep)
-
-                time.sleep(0.15)
-
-            if acked_eps:
-                logger.info(
-                    f"Link reset: acknowledged frames on eps {sorted(acked_eps)}"
-                )
-                if rcp_nr_from_us:
-                    logger.info(
-                        f"Link reset: RCP sequence state — "
-                        + ", ".join(
-                            f"ep{ep}: expects our N(S)={nr}"
-                            for ep, nr in sorted(rcp_nr_from_us.items())
-                        )
-                    )
-            else:
-                logger.info("Link reset: no stale frames (clean state)")
-
-            # ── Step 3: Send DISC on all endpoints ─────────────────────
-            # The RCP now knows we've acked its stale I-frames.
-            # Send DISC to tear down old link state.
-            logger.info("Link reset: sending DISC on ep0, ep12, ep13...")
-            for ep in [0, 12, 13]:
-                disc = _cpc_make_frame(ep, _U_DISC)
-                ser.write(disc)
-                ser.flush()
-                time.sleep(0.05)
-
-            # ── Step 4: Drain responses to DISC ────────────────────────
-            # The RCP should respond with UA to each DISC.  It may also
-            # send more I-frames if our earlier RR didn't fully clear its
-            # retransmit queue.
-            time.sleep(0.3)
-            disc_ua_count = 0
-            for _ in range(8):
-                resp = ser.read(500)
-                if not resp:
-                    break
-                for ep, ctrl, payload in _cpc_parse_frames(resp):
-                    if (ctrl & 0xEF) == _U_UA:
-                        disc_ua_count += 1
-                        logger.info(
-                            f"Link reset: got UA on ep{ep} (DISC accepted)"
-                        )
-                    elif ctrl & 0x01 == 0:  # More I-frames
-                        ns = (ctrl >> 1) & 0x07
-                        rr_nr = (ns + 1) & 0x07
-                        ser.write(_cpc_make_frame(ep, 0x01 | (rr_nr << 5)))
-                        ser.flush()
-                        logger.info(
-                            f"Link reset: acked residual I-frame on ep{ep}"
-                        )
-                    elif (ctrl & 0xEF) == _U_SABM:
-                        # RCP initiated SABM after our DISC cleared state
-                        ser.write(_cpc_make_frame(ep, _U_UA))
-                        ser.flush()
-                        logger.info(
-                            f"Link reset: RCP sent SABM on ep{ep} post-DISC, "
-                            f"responded UA"
-                        )
-                time.sleep(0.15)
-
-            if disc_ua_count > 0:
-                logger.info(
-                    f"Link reset: {disc_ua_count} DISC(s) accepted by RCP"
-                )
-
-            # ── Step 5: Verify — send SABM ep0, expect UA ─────────────
-            logger.info("Link reset: verifying with SABM on ep0...")
-            sabm = _cpc_make_frame(0, _U_SABM)
-            ser.write(sabm)
-            ser.flush()
-            time.sleep(0.8)
-
-            verified = False
-            for _ in range(5):
-                resp = ser.read(500)
-                if not resp:
-                    break
-                for ep, ctrl, payload in _cpc_parse_frames(resp):
-                    if ep == 0 and (ctrl & 0xEF) == _U_UA:
-                        logger.info(
-                            "Link reset: ✅ ep0 UA received — link is clean"
-                        )
-                        verified = True
-                    elif ep == 0 and (ctrl & 0xEF) == _U_SABM:
-                        ser.write(_cpc_make_frame(0, _U_UA))
-                        ser.flush()
-                        logger.info(
-                            "Link reset: ✅ RCP initiated SABM on ep0, "
-                            "responded UA"
-                        )
-                        verified = True
-                    elif ctrl & 0x01 == 0:  # Still I-frames
-                        ns = (ctrl >> 1) & 0x07
-                        ser.write(
-                            _cpc_make_frame(ep, 0x01 | (((ns + 1) & 7) << 5))
-                        )
-                        ser.flush()
-                if verified:
-                    break
-                time.sleep(0.2)
-
-            if not verified:
-                logger.warning(
-                    "Link reset: ep0 UA not received after SABM — "
-                    "RCP may need power cycle"
-                )
-
-            # ── Step 6: Clean disconnect — DISC ep0 ────────────────────
-            disc = _cpc_make_frame(0, _U_DISC)
-            ser.write(disc)
-            ser.flush()
-            time.sleep(0.3)
-            ser.read(500)  # drain any response
-
-            # Hold DTR/RTS low before close
-            ser.dtr = False
-            ser.rts = False
-            ser.close()
-
-            logger.info("Link reset: complete — port released for CpcCore")
-            return verified
-
-        except Exception as e:
-            logger.warning(f"Link reset failed: {e}")
-            return False
-
-    # =========================================================================
     # LIFECYCLE
     # =========================================================================
 
@@ -702,22 +452,18 @@ class MultiPanManager:
         """
         Start the MultiPAN stack.
 
-        The startup sequence handles the critical problem that the MG24 RCP
-        persists CPC link state across serial reconnects.  If a previous
-        session left the link established, the RCP retransmits stale I-frames
-        and ignores new SABMs.  _drain_and_reset_link() clears this state
-        before CpcCore takes over.
+        Sequence:
+          1. Write cpcd.conf for the detected dongle
+          2. Start cpcd as a ManagedDaemon
+          3. Wait for cpcd's "Connected to Secondary" ready marker
+          4. Start PTYTCPBridge to relay cpcd ep12 → TCP :9999
+          5. bellows can now connect to socket://127.0.0.1:9999
 
-        Args:
-            serial_port: Override serial port (e.g. from Dongle Jedi result).
-            jedi_result: Full Dongle Jedi probe result dict.
-
-        Returns True when CpcCore is running and ep12 is OPEN
-        (bellows can connect to socket://127.0.0.1:9999).
+        Returns True when cpcd is running and the bridge is active.
         """
         self._jedi_result = jedi_result
 
-        # Resolve serial port: explicit arg → Jedi → config → default
+        # Resolve serial port
         port = (
                 serial_port
                 or (jedi_result or {}).get("port")
@@ -737,6 +483,14 @@ class MultiPanManager:
             except Exception:
                 pass
 
+        # ── Check prerequisites ──────────────────────────────────────
+        if not self.is_cpcd_available():
+            logger.error(
+                "cpcd binary not found. Install Silicon Labs CPC daemon"
+            )
+            return False
+
+        # ── Resolve parameters ───────────────────────────────────────
         jedi = jedi_result or {}
         baud = int(
             jedi.get("baudrate")
@@ -745,72 +499,94 @@ class MultiPanManager:
             or 115200
         )
 
-        # ── Step 1: Drain stale link state and reset ─────────────────
-        # This is the critical step that makes the RCP accept fresh SABMs.
-        # Runs synchronously via pyserial before CpcCore takes the port.
-        logger.info("Draining stale CPC link state...")
-        link_ok = self._drain_and_reset_link(port, baudrate=baud)
-        if link_ok:
-            logger.info("CPC link reset verified — RCP ready for fresh handshake")
-        else:
-            logger.warning("CPC link reset unverified — proceeding anyway")
+        hardflow = self._cpcd_config.get("hardflow", False)
+        disable_encryption = self._cpcd_config.get("disable_encryption", True)
+        reset_sequence = self._cpcd_config.get("reset_sequence", True)
+        instance_name = self._cpcd_config.get("instance_name", "cpcd_0")
+        socket_folder = self._cpcd_config.get("socket_folder", "/dev/shm")
 
-        # ── Step 2: Brief settle ─────────────────────────────────────
-        # Let the port fully release and the chip settle after DISC
-        await asyncio.sleep(1)
-
-        # ── Step 3: Start CpcCore ────────────────────────────────────
-        # The RCP's link state is now CLOSED.  CpcCore will either:
-        #  - Catch the RCP's fresh SABM burst (reactive path), or
-        #  - Send proactive SABM after 3s grace (active path)
-        ezsp_port = self._zigbeed_config.get("ezsp_port", 9999)
-
-        tcp_endpoints = {12: ezsp_port}
-        if self._otbr_config.get("enabled", False):
-            ot_port = self._otbr_config.get("tcp_port", 9998)
-            tcp_endpoints[13] = ot_port
-
-        try:
-            self._cpc_core = CpcCore(
-                serial_port=port,
-                baudrate=baud,
-                tcp_endpoints=tcp_endpoints,
-            )
-            self._cpc_core.start()
-        except Exception as e:
-            logger.error(f"CpcCore failed to start: {e}")
-            return False
-
-        logger.info("CpcCore started — awaiting CPC handshake...")
-
-        # ── Step 4: Wait for ep12 to reach OPEN ─────────────────────
-        loop = asyncio.get_event_loop()
-        ep12_open = await loop.run_in_executor(
-            None,
-            self._cpc_core.wait_endpoint_open,
-            12,    # ep_id
-            30.0,  # timeout_secs
+        # ── Step 1: Write cpcd config ────────────────────────────────
+        conf_path = _write_cpcd_conf(
+            serial_port=port,
+            baudrate=baud,
+            instance_name=instance_name,
+            socket_folder=socket_folder,
+            hardflow=hardflow,
+            disable_encryption=disable_encryption,
+            reset_sequence=reset_sequence,
         )
 
-        if not ep12_open:
-            logger.error(
-                "CpcCore ep12 did not reach OPEN within 30s — "
-                "RCP did not respond to SABM.  Stopping."
-            )
-            self._cpc_core.stop()
-            self._cpc_core = None
+        # ── Step 2: Start cpcd ───────────────────────────────────────
+        self._cpcd = ManagedDaemon(
+            name="cpcd",
+            command=self._build_cpcd_command(conf_path),
+            ready_marker="Connected to Secondary",
+            ready_timeout=30.0,
+            max_restarts=3,
+            restart_base_delay=5.0,
+            ready_markers=[
+                "Connected to Secondary",
+            ],
+            fatal_markers=[
+                r"ASSERT.*FATAL",
+                r"Secondary Protocol.*doesn't match",
+            ],
+            require_ready=True,
+        )
+
+        cpcd_ok = await self._cpcd.start()
+        if not cpcd_ok:
+            logger.error("cpcd failed to start or reach ready state")
+            await self._stop_all()
             return False
 
-        logger.info(f"CpcCore ep12 OPEN — EZSP available on {self.ezsp_socket}")
+        logger.info("cpcd is running and connected to RCP")
 
-        # ── otbr-agent — Thread support (Phase 3, not yet compatible) ──
+        # Brief settle for cpcd to complete endpoint init
+        await asyncio.sleep(1.0)
+
+        # ── Step 3: Start PTY↔TCP bridge ─────────────────────────────
+        ezsp_port = self._zigbeed_config.get("ezsp_port", 9999)
+
+        self._bridge = PTYTCPBridge(
+            pty_path="/tmp/ttyZigbeeNCP",
+            tcp_port=ezsp_port,
+        )
+
+        bridge_ok = await self._bridge.start()
+        if not bridge_ok:
+            logger.error("PTY↔TCP bridge failed to start")
+            await self._stop_all()
+            return False
+
+        logger.info(
+            f"PTY↔TCP bridge active: "
+            f"{self._bridge.pty_path} ↔ TCP :{ezsp_port}"
+        )
+
+        # ── Optional: otbr-agent (Thread) ────────────────────────────
         otbr_enabled = self._otbr_config.get("enabled", False)
-        if otbr_enabled:
+        if otbr_enabled and self.is_otbr_available():
+            otbr_daemon = ManagedDaemon(
+                name="otbr-agent",
+                command=self._build_otbr_command(),
+                ready_marker="Thread interface is up",
+                ready_timeout=30.0,
+                max_restarts=3,
+            )
+            self._daemons["otbr-agent"] = otbr_daemon
+            otbr_ok = await otbr_daemon.start()
+            if otbr_ok:
+                logger.info("otbr-agent started — Thread network active")
+            else:
+                logger.warning("otbr-agent failed to start — Thread unavailable")
+        elif otbr_enabled:
             logger.warning(
-                "otbr-agent requires cpcd Unix sockets (spinel+cpc://) which "
-                "zmm_cpc does not yet provide.  Thread support deferred to Phase 3."
+                "otbr-agent enabled in config but binary not found — "
+                "Thread support unavailable"
             )
 
+        # ── Done ─────────────────────────────────────────────────────
         self._running = True
         logger.info(
             f"MultiPAN stack started — EZSP socket: {self.ezsp_socket}"
@@ -829,40 +605,47 @@ class MultiPanManager:
         return True
 
     async def stop(self):
-        """Stop CpcCore and any managed daemons."""
+        """Stop cpcd, bridge, and any managed daemons."""
         logger.info("Stopping MultiPAN RCP stack...")
         await self._stop_all()
         logger.info("MultiPAN RCP stack stopped")
 
     async def _stop_all(self):
-        """Stop CpcCore + daemons in reverse order."""
+        """Stop everything in reverse order."""
         self._running = False
 
-        # Stop any managed daemons first (otbr-agent, Phase 3)
+        # Stop managed daemons first (otbr-agent)
         for name in reversed(list(self._daemons.keys())):
             daemon = self._daemons[name]
             if daemon.is_running:
                 await daemon.stop()
         self._daemons.clear()
 
-        # Stop CpcCore (sends DISC on all endpoints, joins runtime thread)
-        if self._cpc_core:
-            self._cpc_core.stop()
-            self._cpc_core = None
+        # Stop PTY bridge
+        if self._bridge:
+            await self._bridge.stop()
+            self._bridge = None
+
+        # Stop cpcd last (it owns the serial port)
+        if self._cpcd:
+            await self._cpcd.stop()
+            self._cpcd = None
 
     def get_status(self) -> dict:
-        cpc_status = None
-        if self._cpc_core:
-            try:
-                cpc_status = self._cpc_core.status()
-            except Exception:
-                cpc_status = {"error": "status() failed"}
+        cpcd_status = None
+        if self._cpcd:
+            cpcd_status = self._cpcd.get_status()
+
+        bridge_status = None
+        if self._bridge:
+            bridge_status = self._bridge.get_status()
 
         return {
             "enabled": True,
             "running": self._running,
             "ezsp_socket": self.ezsp_socket if self._running else None,
-            "cpc_core": cpc_status,
+            "cpcd": cpcd_status,
+            "bridge": bridge_status,
             "daemons": {
                 name: daemon.get_status()
                 for name, daemon in self._daemons.items()

@@ -305,9 +305,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # ── Rust toolchain ─────────
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | \
-    sh -s -- -y --default-toolchain stable --profile minimal
-ENV PATH="/root/.cargo/bin:${PATH}"
+#RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | \
+#    sh -s -- -y --default-toolchain stable --profile minimal
+#ENV PATH="/root/.cargo/bin:${PATH}"
 
 # Fetch and install Silicon Labs packages matching Bookworm
 RUN DOWNLOAD_URL=$(curl -s https://api.github.com/repos/SiliconLabs/simplicity_sdk/releases/latest | jq -r '.assets[] | select(.name=="debian-bookworm.zip") | .browser_download_url') \
@@ -342,15 +342,15 @@ RUN pip install --no-cache-dir --upgrade pip \
 COPY . .
 
 # ── Build and install zmm_cpc Rust/PyO3 TDM module ──────────────────────
-RUN ls -la /app/modules/ && ls -la /app/modules/tdm/ || echo "NOT FOUND"
-RUN pip install --no-cache-dir maturin \
- && cd /app/modules/tdm/zmm_cpc \
- && maturin build --release --out /tmp/wheels \
- && pip install --no-cache-dir /tmp/wheels/zmm_cpc-*.whl \
- && rm -rf /tmp/wheels
+#RUN ls -la /app/modules/ && ls -la /app/modules/tdm/ || echo "NOT FOUND"
+#RUN pip install --no-cache-dir maturin \
+# && cd /app/modules/tdm/zmm_cpc \
+# && maturin build --release --out /tmp/wheels \
+# && pip install --no-cache-dir /tmp/wheels/zmm_cpc-*.whl \
+# && rm -rf /tmp/wheels
 
 # ── Strip Rust toolchain — only needed at build time ─────────────────────
-RUN rm -rf /root/.cargo /root/.rustup
+#RUN rm -rf /root/.cargo /root/.rustup
 
 # Required directories
 RUN mkdir -p /data /app/data/matter /app/data/backups /app/logs /app/config \
