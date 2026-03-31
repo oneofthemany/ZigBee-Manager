@@ -388,6 +388,15 @@ class ZigbeeService(
                     config=conf, auto_form=True, start_radio=True
                 )
 
+                # MultiPAN: zigbeed doesn't support EZSP readCounters —
+                # disable watchdog before it fires
+                if self.multipan and self.multipan.is_running:
+                    if hasattr(self.app, '_watchdog_task') and self.app._watchdog_task:
+                        self.app._watchdog_task.cancel()
+                    if hasattr(self.app, '_watchdog_monitor'):
+                        self.app._watchdog_monitor.stop()
+                    logger.info("Disabled EZSP watchdog (MultiPAN/zigbeed mode)")
+
                 self._touchlink = await create_touchlink_manager(self.app)
                 if self._touchlink:
                     logger.info(f"✅ Touchlink support enabled ({self._touchlink.coordinator_type})")

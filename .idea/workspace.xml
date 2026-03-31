@@ -4,10 +4,7 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="which bash added">
-      <change beforePath="$PROJECT_DIR$/core/service.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/service.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/modules/multipan.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/multipan.py" afterDir="false" />
-    </list>
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="reset_sequence to true and _reset_serial_state fix" />
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -152,150 +149,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00097" summary="testing new UID GUID for container build">
-      <option name="closed" value="true" />
-      <created>1774353799771</created>
-      <option name="number" value="00097" />
-      <option name="presentableId" value="LOCAL-00097" />
-      <option name="project" value="LOCAL" />
-      <updated>1774353799771</updated>
-    </task>
-    <task id="LOCAL-00098" summary="more changes to try and get container buikd successfull">
-      <option name="closed" value="true" />
-      <created>1774355234175</created>
-      <option name="number" value="00098" />
-      <option name="presentableId" value="LOCAL-00098" />
-      <option name="project" value="LOCAL" />
-      <updated>1774355234176</updated>
-    </task>
-    <task id="LOCAL-00099" summary="new setup wizard with dongle jedi">
-      <option name="closed" value="true" />
-      <created>1774384775026</created>
-      <option name="number" value="00099" />
-      <option name="presentableId" value="LOCAL-00099" />
-      <option name="project" value="LOCAL" />
-      <updated>1774384775026</updated>
-    </task>
-    <task id="LOCAL-00100" summary="folder dir &gt; /app for new container build">
-      <option name="closed" value="true" />
-      <created>1774384814493</created>
-      <option name="number" value="00100" />
-      <option name="presentableId" value="LOCAL-00100" />
-      <option name="project" value="LOCAL" />
-      <updated>1774384814493</updated>
-    </task>
-    <task id="LOCAL-00101" summary="hook config builder in to the dongle jedi">
-      <option name="closed" value="true" />
-      <created>1774385391770</created>
-      <option name="number" value="00101" />
-      <option name="presentableId" value="LOCAL-00101" />
-      <option name="project" value="LOCAL" />
-      <updated>1774385391771</updated>
-    </task>
-    <task id="LOCAL-00102" summary="project updates">
-      <option name="closed" value="true" />
-      <created>1774428829021</created>
-      <option name="number" value="00102" />
-      <option name="presentableId" value="LOCAL-00102" />
-      <option name="project" value="LOCAL" />
-      <updated>1774428829022</updated>
-    </task>
-    <task id="LOCAL-00103" summary="new rootless patch - testing">
-      <option name="closed" value="true" />
-      <created>1774430697439</created>
-      <option name="number" value="00103" />
-      <option name="presentableId" value="LOCAL-00103" />
-      <option name="project" value="LOCAL" />
-      <updated>1774430697439</updated>
-    </task>
-    <task id="LOCAL-00104" summary="improved service for teardown and startup">
-      <option name="closed" value="true" />
-      <created>1774432058191</created>
-      <option name="number" value="00104" />
-      <option name="presentableId" value="LOCAL-00104" />
-      <option name="project" value="LOCAL" />
-      <updated>1774432058191</updated>
-    </task>
-    <task id="LOCAL-00105" summary="improved service for teardown and startup">
-      <option name="closed" value="true" />
-      <created>1774432065241</created>
-      <option name="number" value="00105" />
-      <option name="presentableId" value="LOCAL-00105" />
-      <option name="project" value="LOCAL" />
-      <updated>1774432065241</updated>
-    </task>
-    <task id="LOCAL-00106" summary="workspace">
-      <option name="closed" value="true" />
-      <created>1774432512408</created>
-      <option name="number" value="00106" />
-      <option name="presentableId" value="LOCAL-00106" />
-      <option name="project" value="LOCAL" />
-      <updated>1774432512408</updated>
-    </task>
-    <task id="LOCAL-00107" summary="adding in dongle jedi core">
-      <option name="closed" value="true" />
-      <created>1774433115239</created>
-      <option name="number" value="00107" />
-      <option name="presentableId" value="LOCAL-00107" />
-      <option name="project" value="LOCAL" />
-      <updated>1774433115239</updated>
-    </task>
-    <task id="LOCAL-00108" summary="None patch fix for flow control">
-      <option name="closed" value="true" />
-      <created>1774435517820</created>
-      <option name="number" value="00108" />
-      <option name="presentableId" value="LOCAL-00108" />
-      <option name="project" value="LOCAL" />
-      <updated>1774435517821</updated>
-    </task>
-    <task id="LOCAL-00109" summary="setup wizard patch - WIP">
-      <option name="closed" value="true" />
-      <created>1774436842105</created>
-      <option name="number" value="00109" />
-      <option name="presentableId" value="LOCAL-00109" />
-      <option name="project" value="LOCAL" />
-      <updated>1774436842105</updated>
-    </task>
-    <task id="LOCAL-00110" summary="setup wizard finalised">
-      <option name="closed" value="true" />
-      <created>1774442358391</created>
-      <option name="number" value="00110" />
-      <option name="presentableId" value="LOCAL-00110" />
-      <option name="project" value="LOCAL" />
-      <updated>1774442358391</updated>
-    </task>
-    <task id="LOCAL-00111" summary="kill orphan pid fix for container restart">
-      <option name="closed" value="true" />
-      <created>1774442803922</created>
-      <option name="number" value="00111" />
-      <option name="presentableId" value="LOCAL-00111" />
-      <option name="project" value="LOCAL" />
-      <updated>1774442803922</updated>
-    </task>
-    <task id="LOCAL-00112" summary="userns arg added for podman container build">
-      <option name="closed" value="true" />
-      <created>1774443250839</created>
-      <option name="number" value="00112" />
-      <option name="presentableId" value="LOCAL-00112" />
-      <option name="project" value="LOCAL" />
-      <updated>1774443250839</updated>
-    </task>
-    <task id="LOCAL-00113" summary="minor descriptive text added for runtime mount path">
-      <option name="closed" value="true" />
-      <created>1774444371121</created>
-      <option name="number" value="00113" />
-      <option name="presentableId" value="LOCAL-00113" />
-      <option name="project" value="LOCAL" />
-      <updated>1774444371121</updated>
-    </task>
-    <task id="LOCAL-00114" summary="minor descriptive text added for runtime mount path">
-      <option name="closed" value="true" />
-      <created>1774452043520</created>
-      <option name="number" value="00114" />
-      <option name="presentableId" value="LOCAL-00114" />
-      <option name="project" value="LOCAL" />
-      <updated>1774452043520</updated>
     </task>
     <task id="LOCAL-00115" summary="multepan phase 1 test">
       <option name="closed" value="true" />
@@ -545,7 +398,151 @@
       <option name="project" value="LOCAL" />
       <updated>1774638109942</updated>
     </task>
-    <option name="localTasksCounter" value="146" />
+    <task id="LOCAL-00146" summary="cpc clean up fixes">
+      <option name="closed" value="true" />
+      <created>1774692944108</created>
+      <option name="number" value="00146" />
+      <option name="presentableId" value="LOCAL-00146" />
+      <option name="project" value="LOCAL" />
+      <updated>1774692944108</updated>
+    </task>
+    <task id="LOCAL-00147" summary="moved _usb_reset_serial_device above lifecycle">
+      <option name="closed" value="true" />
+      <created>1774693556881</created>
+      <option name="number" value="00147" />
+      <option name="presentableId" value="LOCAL-00147" />
+      <option name="project" value="LOCAL" />
+      <updated>1774693556881</updated>
+    </task>
+    <task id="LOCAL-00148" summary="adding /dev/bus/usd to runtime args for container for cpcd support">
+      <option name="closed" value="true" />
+      <created>1774694410011</created>
+      <option name="number" value="00148" />
+      <option name="presentableId" value="LOCAL-00148" />
+      <option name="project" value="LOCAL" />
+      <updated>1774694410011</updated>
+    </task>
+    <task id="LOCAL-00149" summary="further improvements for cpcd">
+      <option name="closed" value="true" />
+      <created>1774694432428</created>
+      <option name="number" value="00149" />
+      <option name="presentableId" value="LOCAL-00149" />
+      <option name="project" value="LOCAL" />
+      <updated>1774694432428</updated>
+    </task>
+    <task id="LOCAL-00150" summary="serial break fix">
+      <option name="closed" value="true" />
+      <created>1774696152053</created>
+      <option name="number" value="00150" />
+      <option name="presentableId" value="LOCAL-00150" />
+      <option name="project" value="LOCAL" />
+      <updated>1774696152053</updated>
+    </task>
+    <task id="LOCAL-00151" summary="baud rate fixes - multipan">
+      <option name="closed" value="true" />
+      <created>1774700356737</created>
+      <option name="number" value="00151" />
+      <option name="presentableId" value="LOCAL-00151" />
+      <option name="project" value="LOCAL" />
+      <updated>1774700356737</updated>
+    </task>
+    <task id="LOCAL-00152" summary="improvements to USB product string pre-detection for CPC/RCP devices with NCP quirk fw detection">
+      <option name="closed" value="true" />
+      <created>1774700677924</created>
+      <option name="number" value="00152" />
+      <option name="presentableId" value="LOCAL-00152" />
+      <option name="project" value="LOCAL" />
+      <updated>1774700677924</updated>
+    </task>
+    <task id="LOCAL-00153" summary="watchdog fix for multipan">
+      <option name="closed" value="true" />
+      <created>1774700900571</created>
+      <option name="number" value="00153" />
+      <option name="presentableId" value="LOCAL-00153" />
+      <option name="project" value="LOCAL" />
+      <updated>1774700900571</updated>
+    </task>
+    <task id="LOCAL-00154" summary="minor tweaks to cater for recent findings">
+      <option name="closed" value="true" />
+      <created>1774700987469</created>
+      <option name="number" value="00154" />
+      <option name="presentableId" value="LOCAL-00154" />
+      <option name="project" value="LOCAL" />
+      <updated>1774700987469</updated>
+    </task>
+    <task id="LOCAL-00155" summary="socat removal from new pty bridge">
+      <option name="closed" value="true" />
+      <created>1774702053958</created>
+      <option name="number" value="00155" />
+      <option name="presentableId" value="LOCAL-00155" />
+      <option name="project" value="LOCAL" />
+      <updated>1774702053958</updated>
+    </task>
+    <task id="LOCAL-00156" summary="more deps for dev">
+      <option name="closed" value="true" />
+      <created>1774725775101</created>
+      <option name="number" value="00156" />
+      <option name="presentableId" value="LOCAL-00156" />
+      <option name="project" value="LOCAL" />
+      <updated>1774725775101</updated>
+    </task>
+    <task id="LOCAL-00157" summary="more deps for dev">
+      <option name="closed" value="true" />
+      <created>1774726196176</created>
+      <option name="number" value="00157" />
+      <option name="presentableId" value="LOCAL-00157" />
+      <option name="project" value="LOCAL" />
+      <updated>1774726196176</updated>
+    </task>
+    <task id="LOCAL-00158" summary="PTYTCPBridge to correct MultiPanManager init">
+      <option name="closed" value="true" />
+      <created>1774726595979</created>
+      <option name="number" value="00158" />
+      <option name="presentableId" value="LOCAL-00158" />
+      <option name="project" value="LOCAL" />
+      <updated>1774726595979</updated>
+    </task>
+    <task id="LOCAL-00159" summary="reset sequence to false">
+      <option name="closed" value="true" />
+      <created>1774727751106</created>
+      <option name="number" value="00159" />
+      <option name="presentableId" value="LOCAL-00159" />
+      <option name="project" value="LOCAL" />
+      <updated>1774727751106</updated>
+    </task>
+    <task id="LOCAL-00160" summary="reset block added ahead of cpcd in start()">
+      <option name="closed" value="true" />
+      <created>1774728398377</created>
+      <option name="number" value="00160" />
+      <option name="presentableId" value="LOCAL-00160" />
+      <option name="project" value="LOCAL" />
+      <updated>1774728398377</updated>
+    </task>
+    <task id="LOCAL-00161" summary="adding baud rate to the RTS  reset">
+      <option name="closed" value="true" />
+      <created>1774728725757</created>
+      <option name="number" value="00161" />
+      <option name="presentableId" value="LOCAL-00161" />
+      <option name="project" value="LOCAL" />
+      <updated>1774728725757</updated>
+    </task>
+    <task id="LOCAL-00162" summary="_reset_serial_state updated to correct baud">
+      <option name="closed" value="true" />
+      <created>1774729080897</created>
+      <option name="number" value="00162" />
+      <option name="presentableId" value="LOCAL-00162" />
+      <option name="project" value="LOCAL" />
+      <updated>1774729080897</updated>
+    </task>
+    <task id="LOCAL-00163" summary="reset_sequence to true and _reset_serial_state fix">
+      <option name="closed" value="true" />
+      <created>1774731431156</created>
+      <option name="number" value="00163" />
+      <option name="presentableId" value="LOCAL-00163" />
+      <option name="project" value="LOCAL" />
+      <updated>1774731431156</updated>
+    </task>
+    <option name="localTasksCounter" value="164" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -560,23 +557,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="baudrate fix" />
-    <MESSAGE value="multipan fixes" />
-    <MESSAGE value="service teardown improvements" />
-    <MESSAGE value="rolled back as reset was not the issue" />
-    <MESSAGE value="rolled back service teardown due to coding error and application failure" />
-    <MESSAGE value="adding debug for probe result" />
-    <MESSAGE value="workspace sommit" />
-    <MESSAGE value="missing jedi declaration in cpcd config" />
-    <MESSAGE value="workspace update" />
-    <MESSAGE value="rolled back" />
-    <MESSAGE value="new dynamic device - WIP test" />
-    <MESSAGE value="removing teardown dead weight" />
-    <MESSAGE value="new teardown/rebuild container for when device is unplugged" />
-    <MESSAGE value="removed as no longer required" />
-    <MESSAGE value="final commit - --priv added to ensure container survivability" />
-    <MESSAGE value="roll back due to permission issues in container" />
-    <MESSAGE value="final attempt at survivability fo container when dongle removed" />
     <MESSAGE value="teardown notice added" />
     <MESSAGE value="adding no passwd to file and updating service to use bash to run the pre_script" />
     <MESSAGE value="updated to show location of teardown script and changed text to red" />
@@ -585,7 +565,24 @@
     <MESSAGE value="-n added for no passwd" />
     <MESSAGE value="updates to mulitpan detection" />
     <MESSAGE value="which bash added" />
-    <option name="LAST_COMMIT_MESSAGE" value="which bash added" />
+    <MESSAGE value="cpc clean up fixes" />
+    <MESSAGE value="moved _usb_reset_serial_device above lifecycle" />
+    <MESSAGE value="adding /dev/bus/usd to runtime args for container for cpcd support" />
+    <MESSAGE value="further improvements for cpcd" />
+    <MESSAGE value="serial break fix" />
+    <MESSAGE value="baud rate fixes - multipan" />
+    <MESSAGE value="improvements to USB product string pre-detection for CPC/RCP devices with NCP quirk fw detection" />
+    <MESSAGE value="watchdog fix for multipan" />
+    <MESSAGE value="minor tweaks to cater for recent findings" />
+    <MESSAGE value="socat removal from new pty bridge" />
+    <MESSAGE value="more deps for dev" />
+    <MESSAGE value="PTYTCPBridge to correct MultiPanManager init" />
+    <MESSAGE value="reset sequence to false" />
+    <MESSAGE value="reset block added ahead of cpcd in start()" />
+    <MESSAGE value="adding baud rate to the RTS  reset" />
+    <MESSAGE value="_reset_serial_state updated to correct baud" />
+    <MESSAGE value="reset_sequence to true and _reset_serial_state fix" />
+    <option name="LAST_COMMIT_MESSAGE" value="reset_sequence to true and _reset_serial_state fix" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>

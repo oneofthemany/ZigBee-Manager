@@ -297,6 +297,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libnl-3-200 \
         libnl-route-3-200 \
         socat \
+        procps \
+        strace \
+        iproute2 \
+
     && rm -rf /var/lib/apt/lists/*
 
 # Fetch and install Silicon Labs packages matching Bookworm
@@ -542,6 +546,12 @@ run_container() {
                 run_args+=(--device "${USB_DEVICE}:${USB_DEVICE}")
             fi
         fi
+    fi
+
+    # ── USB bus access for USBDEVFS_RESET (MultiPAN CPC state cleanup) ──
+    if [[ -d /dev/bus/usb ]]; then
+        run_args+=(-v /dev/bus/usb:/dev/bus/usb)
+        ok "Mounted /dev/bus/usb for USB device reset support"
     fi
 
     # ── Device access: --group-add for dialout, disable SELinux label ──
