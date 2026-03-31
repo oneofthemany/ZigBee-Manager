@@ -4,10 +4,11 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="space added in header">
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="ep0 I-frames were silently dropped - fixed">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/build.sh" beforeDir="false" afterPath="$PROJECT_DIR$/build.sh" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/modules/multipan.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/multipan.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/modules/tdm/zmm_cpc/src/router.rs" beforeDir="false" afterPath="$PROJECT_DIR$/modules/tdm/zmm_cpc/src/router.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/modules/tdm/zmm_cpc/src/cpc_frame.rs" beforeDir="false" afterPath="$PROJECT_DIR$/modules/tdm/zmm_cpc/src/cpc_frame.rs" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -69,7 +70,7 @@
     "cidr.known.project.marker": "true",
     "git-widget-placeholder": "dev",
     "kotlin-language-version-configured": "true",
-    "last_opened_file_path": "/home/smu02/StudioProjects/ZigBee-Matter-Manager/config",
+    "last_opened_file_path": "/home/smu02/StudioProjects/ZigBee-Matter-Manager",
     "project.structure.last.edited": "SDKs",
     "project.structure.proportion": "0.15",
     "project.structure.side.proportion": "0.2",
@@ -91,9 +92,9 @@
   </component>
   <component name="RecentsManager">
     <key name="CopyFile.RECENT_KEYS">
+      <recent name="$PROJECT_DIR$" />
       <recent name="$PROJECT_DIR$/config" />
       <recent name="$PROJECT_DIR$/modules/tdm" />
-      <recent name="$PROJECT_DIR$" />
       <recent name="$PROJECT_DIR$/modules/rust/zmm_cpc/cross" />
     </key>
     <key name="MoveFile.RECENT_KEYS">
@@ -178,22 +179,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00166" summary="renamed dir to tdm">
-      <option name="closed" value="true" />
-      <created>1774800306333</created>
-      <option name="number" value="00166" />
-      <option name="presentableId" value="LOCAL-00166" />
-      <option name="project" value="LOCAL" />
-      <updated>1774800306333</updated>
-    </task>
-    <task id="LOCAL-00167" summary="updated to include rust toolchain for zmm_cpc tdm">
-      <option name="closed" value="true" />
-      <created>1774800546202</created>
-      <option name="number" value="00167" />
-      <option name="presentableId" value="LOCAL-00167" />
-      <option name="project" value="LOCAL" />
-      <updated>1774800546202</updated>
     </task>
     <task id="LOCAL-00168" summary="updated buidl ro be for dev branch">
       <option name="closed" value="true" />
@@ -571,7 +556,23 @@
       <option name="project" value="LOCAL" />
       <updated>1774949821053</updated>
     </task>
-    <option name="localTasksCounter" value="215" />
+    <task id="LOCAL-00215" summary="drain and reset improvements">
+      <option name="closed" value="true" />
+      <created>1774950509114</created>
+      <option name="number" value="00215" />
+      <option name="presentableId" value="LOCAL-00215" />
+      <option name="project" value="LOCAL" />
+      <updated>1774950509114</updated>
+    </task>
+    <task id="LOCAL-00216" summary="ep0 I-frames were silently dropped - fixed">
+      <option name="closed" value="true" />
+      <created>1774950605133</created>
+      <option name="number" value="00216" />
+      <option name="presentableId" value="LOCAL-00216" />
+      <option name="project" value="LOCAL" />
+      <updated>1774950605133</updated>
+    </task>
+    <option name="localTasksCounter" value="217" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -586,8 +587,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="change_me added to pan_id" />
-    <MESSAGE value="branch added for easier editing" />
     <MESSAGE value="patch for zigbee port in build script to prevent overwrite of other ports" />
     <MESSAGE value="zigbee port placeholder: SERIAL_PORT" />
     <MESSAGE value="adding a watch config to find yaml dump bug" />
@@ -611,6 +610,8 @@
     <MESSAGE value="detach not detached" />
     <MESSAGE value="diag_cpc update to better diagnostics on DTR" />
     <MESSAGE value="space added in header" />
-    <option name="LAST_COMMIT_MESSAGE" value="space added in header" />
+    <MESSAGE value="drain and reset improvements" />
+    <MESSAGE value="ep0 I-frames were silently dropped - fixed" />
+    <option name="LAST_COMMIT_MESSAGE" value="ep0 I-frames were silently dropped - fixed" />
   </component>
 </project>
