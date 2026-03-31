@@ -33,14 +33,14 @@ class MatterServerManager:
     def __init__(
             self,
             storage_path: str = "./data/matter",
-            port: int = 5580,
+            matter_port: int = 5580,
             vendor_id: int = 0xFFF1,
             fabric_id: int = 1,
             bluetooth_adapter: Optional[int] = None,
             log_level: str = "info",
     ):
         self.storage_path = os.path.abspath(storage_path)
-        self.port = port
+        self.matter_port = matter_port
         self.vendor_id = vendor_id
         self.fabric_id = fabric_id
         self.bluetooth_adapter = bluetooth_adapter
@@ -73,7 +73,7 @@ class MatterServerManager:
     @property
     def ws_url(self) -> str:
         """WebSocket URL for the bridge to connect to."""
-        return f"ws://localhost:{self.port}/ws"
+        return f"ws://localhost:{self.matter_port}/ws"
 
     def _build_command(self) -> list:
         """Build the command line for the subprocess."""
@@ -86,7 +86,7 @@ class MatterServerManager:
 
         cmd.extend([
             "--storage-path", self.storage_path,
-            "--port", str(self.port),
+            "--port", str(self.matter_port),
             "--vendorid", str(self.vendor_id),
             "--fabricid", str(self.fabric_id),
             "--log-level", self.log_level,
@@ -152,8 +152,8 @@ class MatterServerManager:
         # Pattern 1: match entry-point name with our port
         # Pattern 2: match module invocation with our port
         patterns = [
-            f"matter-server.*--port.*{self.port}",
-            f"matter_server.server.*--port.*{self.port}",
+            f"matter-server.*--port.*{self.matter_port}",
+            f"matter_server.server.*--port.*{self.matter_port}",
         ]
 
         found_pids = set()
@@ -174,7 +174,7 @@ class MatterServerManager:
         # Fallback: anything holding our port
         try:
             result = subprocess.run(
-                ["fuser", f"{self.port}/tcp"],
+                ["fuser", f"{self.matter_port}/tcp"],
                 capture_output=True, text=True, stderr=subprocess.DEVNULL
             )
             if result.stdout.strip():
@@ -339,7 +339,7 @@ class MatterServerManager:
             "available": self.is_available,
             "running": self._running,
             "pid": self._process.pid if self._process and self._process.returncode is None else None,
-            "port": self.port,
+            "port": self.matter_port,
             "ws_url": self.ws_url,
             "storage_path": self.storage_path,
             "restart_count": self._restart_count,

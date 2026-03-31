@@ -194,18 +194,18 @@ class MatterLifecycle:
         from modules.matter_bridge import MatterBridge
 
         storage_path = matter_cfg.get('storage_path', './data/matter')
-        port = matter_cfg.get('port', 5580)
+        matter_port = matter_cfg.get('port', 5580)
 
         self.server = MatterServerManager(
             storage_path=storage_path,
-            port=port,
+            matter_port=matter_port,
             vendor_id=matter_cfg.get('vendor_id', 0xFFF1),
             fabric_id=matter_cfg.get('fabric_id', 1),
             bluetooth_adapter=matter_cfg.get('bluetooth_adapter'),
             log_level=matter_cfg.get('log_level', 'info'),
         )
 
-        server_url = matter_cfg.get('server_url', f"ws://localhost:{port}/ws")
+        server_url = matter_cfg.get('server_url', f"ws://localhost:{matter_port}/ws")
         self.bridge = MatterBridge(
             server_url=server_url,
             mqtt_service=mqtt_svc,
@@ -213,7 +213,7 @@ class MatterLifecycle:
         )
 
         logger.info(
-            f"Matter configured (server port={port}, "
+            f"Matter configured (server port={matter_port}, "
             f"bridge url={server_url})"
         )
 

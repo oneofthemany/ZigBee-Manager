@@ -165,6 +165,7 @@ async def apply_config(request: ApplyRequest):
             "config": updated,
             "restart_required": True,
         }
+        logger.info(f"{message}: {updated}")
     except Exception as e:
         logger.error(f"Failed to apply config: {e}", exc_info=True)
         raise HTTPException(500, f"Failed to save configuration: {e}")

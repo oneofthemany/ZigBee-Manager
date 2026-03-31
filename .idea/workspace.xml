@@ -4,9 +4,11 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="Move Matter object creation out of module level and into the lifespan">
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="adding inotify-tools to deps to track down yaml overwrites and general yaml debugging">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/build.sh" beforeDir="false" afterPath="$PROJECT_DIR$/build.sh" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/main.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/modules/dongle_jedi_api.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/dongle_jedi_api.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/modules/matter_server.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/matter_server.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/modules/tdm/zmm_cpc/src/router.rs" beforeDir="false" afterPath="$PROJECT_DIR$/modules/tdm/zmm_cpc/src/router.rs" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -52,30 +54,30 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent">{
-  &quot;keyToString&quot;: {
-    &quot;ModuleVcsDetector.initialDetectionPerformed&quot;: &quot;true&quot;,
-    &quot;Python.main.executor&quot;: &quot;Run&quot;,
-    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.cidr.known.project.marker&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.readMode.enableVisualFormatting&quot;: &quot;true&quot;,
-    &quot;SHARE_PROJECT_CONFIGURATION_FILES&quot;: &quot;true&quot;,
-    &quot;SHELLCHECK.PATH&quot;: &quot;/var/home/smu02/.local/share/Google/AndroidStudio2025.3.1/Shell Script/shellcheck&quot;,
-    &quot;Shell Script.deploy.sh (1).executor&quot;: &quot;Run&quot;,
-    &quot;Shell Script.deploy.sh.executor&quot;: &quot;Run&quot;,
-    &quot;cf.first.check.clang-format&quot;: &quot;false&quot;,
-    &quot;cidr.known.project.marker&quot;: &quot;true&quot;,
-    &quot;git-widget-placeholder&quot;: &quot;dev&quot;,
-    &quot;kotlin-language-version-configured&quot;: &quot;true&quot;,
-    &quot;last_opened_file_path&quot;: &quot;/home/smu02/StudioProjects/ZigBee-Matter-Manager/config&quot;,
-    &quot;project.structure.last.edited&quot;: &quot;Project&quot;,
-    &quot;project.structure.proportion&quot;: &quot;0.15&quot;,
-    &quot;project.structure.side.proportion&quot;: &quot;0.2&quot;,
-    &quot;settings.editor.selected.configurable&quot;: &quot;AndroidSdkUpdater&quot;
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "ModuleVcsDetector.initialDetectionPerformed": "true",
+    "Python.main.executor": "Run",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252": "true",
+    "RunOnceActivity.cidr.known.project.marker": "true",
+    "RunOnceActivity.git.unshallow": "true",
+    "RunOnceActivity.readMode.enableVisualFormatting": "true",
+    "SHARE_PROJECT_CONFIGURATION_FILES": "true",
+    "SHELLCHECK.PATH": "/var/home/smu02/.local/share/Google/AndroidStudio2025.3.1/Shell Script/shellcheck",
+    "Shell Script.deploy.sh (1).executor": "Run",
+    "Shell Script.deploy.sh.executor": "Run",
+    "cf.first.check.clang-format": "false",
+    "cidr.known.project.marker": "true",
+    "git-widget-placeholder": "dev",
+    "kotlin-language-version-configured": "true",
+    "last_opened_file_path": "/home/smu02/StudioProjects/ZigBee-Matter-Manager/config",
+    "project.structure.last.edited": "SDKs",
+    "project.structure.proportion": "0.15",
+    "project.structure.side.proportion": "0.2",
+    "settings.editor.selected.configurable": "AndroidSdkUpdater"
   }
-}</component>
+}]]></component>
   <component name="PyConsoleOptionsProvider">
     <option name="myPythonConsoleState">
       <console-settings sdk-home="$USER_HOME$/venv/bin/python3.14">
@@ -113,6 +115,7 @@
         <env name="PYTHONUNBUFFERED" value="1" />
       </envs>
       <option name="SDK_HOME" value="" />
+      <option name="SDK_NAME" value="Python 3.14" />
       <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$" />
       <option name="IS_MODULE_SDK" value="false" />
       <option name="ADD_CONTENT_ROOTS" value="true" />
@@ -157,6 +160,11 @@
       <envs />
       <method v="2" />
     </configuration>
+    <list>
+      <item itemvalue="Python.main" />
+      <item itemvalue="Shell Script.deploy.sh" />
+      <item itemvalue="Shell Script.deploy.sh (1)" />
+    </list>
     <recent_temporary>
       <list>
         <item itemvalue="Python.main" />
@@ -172,14 +180,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00160" summary="reset block added ahead of cpcd in start()">
-      <option name="closed" value="true" />
-      <created>1774728398377</created>
-      <option name="number" value="00160" />
-      <option name="presentableId" value="LOCAL-00160" />
-      <option name="project" value="LOCAL" />
-      <updated>1774728398377</updated>
     </task>
     <task id="LOCAL-00161" summary="adding baud rate to the RTS  reset">
       <option name="closed" value="true" />
@@ -565,7 +565,15 @@
       <option name="project" value="LOCAL" />
       <updated>1774894065806</updated>
     </task>
-    <option name="localTasksCounter" value="209" />
+    <task id="LOCAL-00209" summary="adding inotify-tools to deps to track down yaml overwrites and general yaml debugging">
+      <option name="closed" value="true" />
+      <created>1774943935608</created>
+      <option name="number" value="00209" />
+      <option name="presentableId" value="LOCAL-00209" />
+      <option name="project" value="LOCAL" />
+      <updated>1774943935609</updated>
+    </task>
+    <option name="localTasksCounter" value="210" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -580,7 +588,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="updated to cater for venv or container deployment" />
     <MESSAGE value="notice added for python-matter-server installating matter server" />
     <MESSAGE value="unique name for zigbee port to prevent port overwrites in build" />
     <MESSAGE value="updated to fix this error:&#10;&#10;sed: -e expression #1, char 47: unknown option to `s'" />
@@ -605,6 +612,7 @@
     <MESSAGE value="patch test" />
     <MESSAGE value="--interactive set for debugging" />
     <MESSAGE value="Move Matter object creation out of module level and into the lifespan" />
-    <option name="LAST_COMMIT_MESSAGE" value="Move Matter object creation out of module level and into the lifespan" />
+    <MESSAGE value="adding inotify-tools to deps to track down yaml overwrites and general yaml debugging" />
+    <option name="LAST_COMMIT_MESSAGE" value="adding inotify-tools to deps to track down yaml overwrites and general yaml debugging" />
   </component>
 </project>
