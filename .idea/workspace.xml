@@ -4,11 +4,8 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="ep0 I-frames were silently dropped - fixed">
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="remove rust tdm and pivot towards cpcpd and pty bridge">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/build.sh" beforeDir="false" afterPath="$PROJECT_DIR$/build.sh" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/modules/multipan.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/multipan.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/modules/tdm/zmm_cpc/src/cpc_frame.rs" beforeDir="false" afterPath="$PROJECT_DIR$/modules/tdm/zmm_cpc/src/cpc_frame.rs" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -179,22 +176,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00168" summary="updated buidl ro be for dev branch">
-      <option name="closed" value="true" />
-      <created>1774800813156</created>
-      <option name="number" value="00168" />
-      <option name="presentableId" value="LOCAL-00168" />
-      <option name="project" value="LOCAL" />
-      <updated>1774800813156</updated>
-    </task>
-    <task id="LOCAL-00169" summary="line 345 to /app/modules">
-      <option name="closed" value="true" />
-      <created>1774800966855</created>
-      <option name="number" value="00169" />
-      <option name="presentableId" value="LOCAL-00169" />
-      <option name="project" value="LOCAL" />
-      <updated>1774800966855</updated>
     </task>
     <task id="LOCAL-00170" summary="debug line added for app modules tdm dir bug">
       <option name="closed" value="true" />
@@ -572,7 +553,23 @@
       <option name="project" value="LOCAL" />
       <updated>1774950605133</updated>
     </task>
-    <option name="localTasksCounter" value="217" />
+    <task id="LOCAL-00217" summary="remove rust tdm and pivot towards cpcpd and pty bridge">
+      <option name="closed" value="true" />
+      <created>1774953142478</created>
+      <option name="number" value="00217" />
+      <option name="presentableId" value="LOCAL-00217" />
+      <option name="project" value="LOCAL" />
+      <updated>1774953142478</updated>
+    </task>
+    <task id="LOCAL-00218" summary="remove rust tdm and pivot towards cpcpd and pty bridge">
+      <option name="closed" value="true" />
+      <created>1774953149660</created>
+      <option name="number" value="00218" />
+      <option name="presentableId" value="LOCAL-00218" />
+      <option name="project" value="LOCAL" />
+      <updated>1774953149660</updated>
+    </task>
+    <option name="localTasksCounter" value="219" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -587,7 +584,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="patch for zigbee port in build script to prevent overwrite of other ports" />
     <MESSAGE value="zigbee port placeholder: SERIAL_PORT" />
     <MESSAGE value="adding a watch config to find yaml dump bug" />
     <MESSAGE value="updated to push to logging" />
@@ -612,6 +608,7 @@
     <MESSAGE value="space added in header" />
     <MESSAGE value="drain and reset improvements" />
     <MESSAGE value="ep0 I-frames were silently dropped - fixed" />
-    <option name="LAST_COMMIT_MESSAGE" value="ep0 I-frames were silently dropped - fixed" />
+    <MESSAGE value="remove rust tdm and pivot towards cpcpd and pty bridge" />
+    <option name="LAST_COMMIT_MESSAGE" value="remove rust tdm and pivot towards cpcpd and pty bridge" />
   </component>
 </project>
