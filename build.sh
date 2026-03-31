@@ -319,7 +319,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         strace \
         iproute2 \
         net-tools \
-
     && rm -rf /var/lib/apt/lists/*
 
 # Fetch and install Silicon Labs packages matching Bookworm
@@ -355,11 +354,16 @@ RUN pip install --no-cache-dir --upgrade pip \
 COPY . .
 
 # OTBR native build
-RUN git clone --depth=1 https://github.com/openthread/ot-br-posix /tmp/otbr && \
+RUN echo '#!/bin/sh' > /usr/local/bin/sudo && \
+    echo 'if echo "$*" | grep -Eq "/proc/sys|sysctl"; then exit 0; fi' >> /usr/local/bin/sudo && \
+    echo 'exec /usr/bin/sudo "$@"' >> /usr/local/bin/sudo && \
+    chmod +x /usr/local/bin/sudo && \
+    git clone --depth=1 https://github.com/openthread/ot-br-posix /tmp/otbr && \
     cd /tmp/otbr && \
     ./script/bootstrap && \
     INFRA_IF_NAME=eth0 ./script/setup && \
-    rm -rf /tmp/otbr
+    rm -rf /tmp/otbr && \
+    rm -f /usr/local/bin/sudo
 
 RUN systemctl disable otbr-agent 2>/dev/null || true
 
@@ -547,6 +551,7 @@ run_container() {
         --publish "${host_matter_port}:${MATTER_INTERNAL_PORT}"
         --sysctl net.ipv6.conf.all.disable_ipv6=0
         --sysctl net.ipv6.conf.all.forwarding=1
+        --sysctl net.ipv4.conf.all.forwarding=1
         --volume /dev/shm:/dev/shm
         --volume /run/dbus:/run/dbus
         --volume "${DATA_DIR}/config:/app/config"

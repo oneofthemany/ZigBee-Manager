@@ -4,7 +4,10 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="lsb-release added for otbr" />
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="sudo added for final otbr build">
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/build.sh" beforeDir="false" afterPath="$PROJECT_DIR$/build.sh" afterDir="false" />
+    </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -149,14 +152,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00118" summary="update container to run slim bookworm">
-      <option name="closed" value="true" />
-      <created>1774458044673</created>
-      <option name="number" value="00118" />
-      <option name="presentableId" value="LOCAL-00118" />
-      <option name="project" value="LOCAL" />
-      <updated>1774458044673</updated>
     </task>
     <task id="LOCAL-00119" summary="new multipan updates - WIP">
       <option name="closed" value="true" />
@@ -542,7 +537,15 @@
       <option name="project" value="LOCAL" />
       <updated>1774957491895</updated>
     </task>
-    <option name="localTasksCounter" value="167" />
+    <task id="LOCAL-00167" summary="sudo added for final otbr build">
+      <option name="closed" value="true" />
+      <created>1774957741470</created>
+      <option name="number" value="00167" />
+      <option name="presentableId" value="LOCAL-00167" />
+      <option name="project" value="LOCAL" />
+      <updated>1774957741470</updated>
+    </task>
+    <option name="localTasksCounter" value="168" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -557,7 +560,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="dark mode fix for beetxt" />
     <MESSAGE value="sudo fix for umount of conatiner" />
     <MESSAGE value="-n added for no passwd" />
     <MESSAGE value="updates to mulitpan detection" />
@@ -582,7 +584,8 @@
     <MESSAGE value="change_me added to pan id" />
     <MESSAGE value="otbr work" />
     <MESSAGE value="lsb-release added for otbr" />
-    <option name="LAST_COMMIT_MESSAGE" value="lsb-release added for otbr" />
+    <MESSAGE value="sudo added for final otbr build" />
+    <option name="LAST_COMMIT_MESSAGE" value="sudo added for final otbr build" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
