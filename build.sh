@@ -285,6 +285,7 @@ ARG HOST_DIALOUT_GID=20
 # System deps
 RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential \
+        lsb-release \
         git \
         ca-certificates \
         cmake \

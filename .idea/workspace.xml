@@ -4,11 +4,7 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="change_me added to pan id">
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/build.sh" beforeDir="false" afterPath="$PROJECT_DIR$/build.sh" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/core/service.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/service.py" afterDir="false" />
-    </list>
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="otbr work" />
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -153,14 +149,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00116" summary="updated topic to be in line with new application capabilty">
-      <option name="closed" value="true" />
-      <created>1774454412557</created>
-      <option name="number" value="00116" />
-      <option name="presentableId" value="LOCAL-00116" />
-      <option name="project" value="LOCAL" />
-      <updated>1774454412557</updated>
     </task>
     <task id="LOCAL-00117" summary="improving start spectrum to mitigate disablement due to length CPC scans">
       <option name="closed" value="true" />
@@ -546,7 +534,15 @@
       <option name="project" value="LOCAL" />
       <updated>1774955962044</updated>
     </task>
-    <option name="localTasksCounter" value="165" />
+    <task id="LOCAL-00165" summary="otbr work">
+      <option name="closed" value="true" />
+      <created>1774956937144</created>
+      <option name="number" value="00165" />
+      <option name="presentableId" value="LOCAL-00165" />
+      <option name="project" value="LOCAL" />
+      <updated>1774956937144</updated>
+    </task>
+    <option name="localTasksCounter" value="166" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -561,7 +557,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="adding no passwd to file and updating service to use bash to run the pre_script" />
     <MESSAGE value="updated to show location of teardown script and changed text to red" />
     <MESSAGE value="dark mode fix for beetxt" />
     <MESSAGE value="sudo fix for umount of conatiner" />
@@ -586,7 +581,8 @@
     <MESSAGE value="_reset_serial_state updated to correct baud" />
     <MESSAGE value="reset_sequence to true and _reset_serial_state fix" />
     <MESSAGE value="change_me added to pan id" />
-    <option name="LAST_COMMIT_MESSAGE" value="change_me added to pan id" />
+    <MESSAGE value="otbr work" />
+    <option name="LAST_COMMIT_MESSAGE" value="otbr work" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
