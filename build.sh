@@ -345,23 +345,22 @@ RUN git clone --depth 1 --filter=blob:none --sparse \
     cd ${SDK_DIR} && \
     git sparse-checkout set protocol/openthread/platform-abstraction/posix
 
-# 2. Clone official OTBR, init submodules, copy header, clone cpc-daemon source, then build
+# 2. Clone official OTBR, init submodules, copy header, force system linking, then build
 RUN echo '#!/bin/sh' > /usr/local/bin/sudo && \
     echo 'if echo "$*" | grep -Eq "/proc/sys|sysctl"; then exit 0; fi' >> /usr/local/bin/sudo && \
     echo 'exec /usr/bin/sudo "$@"' >> /usr/local/bin/sudo && \
     chmod +x /usr/local/bin/sudo && \
-    git clone --depth 1 --branch v4.7 https://github.com/SiliconLabs/cpc-daemon.git /tmp/cpc-daemon && \
     git clone --depth=1 https://github.com/openthread/ot-br-posix /tmp/otbr && \
     cd /tmp/otbr && \
     git submodule update --init --recursive && \
     cp ${SDK_DIR}/protocol/openthread/platform-abstraction/posix/openthread-core-silabs-posix-config.h \
        /tmp/otbr/third_party/openthread/repo/src/posix/platform/ && \
+    echo 'target_link_libraries(ot-core PRIVATE cpc)' > ${SDK_DIR}/protocol/openthread/platform-abstraction/posix/posix_vendor_rcp.cmake && \
     ./script/bootstrap && \
     INFRA_IF_NAME=eth0 \
     OTBR_OPTIONS=" \
         -DOT_THREAD_VERSION=1.4 \
         -DOT_MULTIPAN_RCP=ON \
-        -DCPCD_SOURCE_DIR=/tmp/cpc-daemon \
         -DOT_POSIX_RCP_VENDOR_BUS=ON \
         -DOT_POSIX_CONFIG_RCP_VENDOR_DEPS_PACKAGE=${SDK_DIR}/protocol/openthread/platform-abstraction/posix/posix_vendor_rcp.cmake \
         -DOT_POSIX_CONFIG_RCP_VENDOR_INTERFACE=${SDK_DIR}/protocol/openthread/platform-abstraction/posix/cpc_interface.cpp \
