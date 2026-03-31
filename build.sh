@@ -329,6 +329,7 @@ RUN DOWNLOAD_URL=$(curl -s https://api.github.com/repos/SiliconLabs/simplicity_s
     && apt-get update \
     && apt-get install -y --no-install-recommends \
         /tmp/silabs/debian-bookworm/deb/libcpc3_*_${ARCH}.deb \
+        /tmp/silabs/debian-bookworm/deb/libcpc-dev_*_${ARCH}.deb \
         /tmp/silabs/debian-bookworm/deb/cpcd_*_${ARCH}.deb \
         /tmp/silabs/debian-bookworm/deb/zigbeed_*_${ARCH}.deb \
     && rm -rf /tmp/silabs debian-bookworm.zip /var/lib/apt/lists/*
@@ -361,7 +362,7 @@ RUN echo '#!/bin/sh' > /usr/local/bin/sudo && \
     git clone --depth=1 https://github.com/openthread/ot-br-posix /tmp/otbr && \
     cd /tmp/otbr && \
     ./script/bootstrap && \
-    INFRA_IF_NAME=eth0 ./script/setup && \
+    INFRA_IF_NAME=eth0 OTBR_OPTIONS="-DOT_POSIX_CONFIG_RCP_BUS=CPC" ./script/setup && \
     rm -rf /tmp/otbr && \
     rm -f /usr/local/bin/sudo
 
