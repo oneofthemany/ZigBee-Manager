@@ -384,17 +384,39 @@ class ZigbeeService(
         # Robust startup with retries
         for attempt in range(12):
             try:
+                # MultiPAN: zigbeed doesn't support EZSP readCounters.
+                # The watchdog is spawned INSIDE ControllerApplication.new()
+                # during startup(), so cancelling it after new() returns is
+                # a race — the first watchdog tick can fire before we cancel.
+                # Fix: monkey-patch _watchdog_feed to a no-op BEFORE new().
+                _original_watchdog_feed = None
+                if self.multipan and self.multipan.is_running:
+                    _original_watchdog_feed = getattr(
+                        ControllerApplication, '_watchdog_feed', None
+                    )
+
+                    async def _noop_watchdog_feed(self_app):
+                        pass
+
+                    ControllerApplication._watchdog_feed = _noop_watchdog_feed
+                    logger.info(
+                        "MultiPAN: patched _watchdog_feed to no-op "
+                        "(zigbeed does not support readCounters)"
+                    )
+
                 self.app = await ControllerApplication.new(
                     config=conf, auto_form=True, start_radio=True
                 )
 
-                # MultiPAN: zigbeed doesn't support EZSP readCounters —
-                # disable watchdog before it fires
+                # MultiPAN: also cancel the watchdog task and restore the
+                # original method (in case it's needed for non-MultiPAN later)
                 if self.multipan and self.multipan.is_running:
                     if hasattr(self.app, '_watchdog_task') and self.app._watchdog_task:
                         self.app._watchdog_task.cancel()
                     if hasattr(self.app, '_watchdog_monitor'):
                         self.app._watchdog_monitor.stop()
+                    if _original_watchdog_feed is not None:
+                        ControllerApplication._watchdog_feed = _original_watchdog_feed
                     logger.info("Disabled EZSP watchdog (MultiPAN/zigbeed mode)")
 
                 self._touchlink = await create_touchlink_manager(self.app)

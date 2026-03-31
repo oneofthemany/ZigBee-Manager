@@ -4,7 +4,11 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="reset_sequence to true and _reset_serial_state fix" />
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="change_me added to pan id">
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/build.sh" beforeDir="false" afterPath="$PROJECT_DIR$/build.sh" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/core/service.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/service.py" afterDir="false" />
+    </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -23,7 +27,7 @@
   <component name="Git.Settings">
     <option name="RECENT_BRANCH_BY_REPOSITORY">
       <map>
-        <entry key="$PROJECT_DIR$" value="main" />
+        <entry key="$PROJECT_DIR$" value="dev" />
       </map>
     </option>
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
@@ -149,14 +153,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00115" summary="multepan phase 1 test">
-      <option name="closed" value="true" />
-      <created>1774453785413</created>
-      <option name="number" value="00115" />
-      <option name="presentableId" value="LOCAL-00115" />
-      <option name="project" value="LOCAL" />
-      <updated>1774453785413</updated>
     </task>
     <task id="LOCAL-00116" summary="updated topic to be in line with new application capabilty">
       <option name="closed" value="true" />
@@ -542,7 +538,15 @@
       <option name="project" value="LOCAL" />
       <updated>1774731431156</updated>
     </task>
-    <option name="localTasksCounter" value="164" />
+    <task id="LOCAL-00164" summary="change_me added to pan id">
+      <option name="closed" value="true" />
+      <created>1774955962044</created>
+      <option name="number" value="00164" />
+      <option name="presentableId" value="LOCAL-00164" />
+      <option name="project" value="LOCAL" />
+      <updated>1774955962044</updated>
+    </task>
+    <option name="localTasksCounter" value="165" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -557,7 +561,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="teardown notice added" />
     <MESSAGE value="adding no passwd to file and updating service to use bash to run the pre_script" />
     <MESSAGE value="updated to show location of teardown script and changed text to red" />
     <MESSAGE value="dark mode fix for beetxt" />
@@ -582,7 +585,8 @@
     <MESSAGE value="adding baud rate to the RTS  reset" />
     <MESSAGE value="_reset_serial_state updated to correct baud" />
     <MESSAGE value="reset_sequence to true and _reset_serial_state fix" />
-    <option name="LAST_COMMIT_MESSAGE" value="reset_sequence to true and _reset_serial_state fix" />
+    <MESSAGE value="change_me added to pan id" />
+    <option name="LAST_COMMIT_MESSAGE" value="change_me added to pan id" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>

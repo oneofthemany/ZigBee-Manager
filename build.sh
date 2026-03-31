@@ -286,8 +286,24 @@ ARG HOST_DIALOUT_GID=20
 RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential \
         git \
+        ca-certificates \
+        cmake \
+        ninja-build \
+        g++ \
         libffi-dev \
         libssl-dev \
+        libdbus-1-dev \
+        libavahi-client-dev \
+        libreadline-dev \
+        libboost-dev \
+        libboost-filesystem-dev \
+        libboost-system-dev \
+        libnetfilter-queue-dev \
+        libsystemd-dev \
+        ipset \
+        iptables \
+        dbus \
+        avahi-daemon \
         logrotate \
         curl \
         wget \
@@ -300,6 +316,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         procps \
         strace \
         iproute2 \
+        net-tools \
 
     && rm -rf /var/lib/apt/lists/*
 
@@ -334,6 +351,15 @@ RUN pip install --no-cache-dir --upgrade pip \
 
 # Application source
 COPY . .
+
+# OTBR native build
+RUN git clone --depth=1 https://github.com/openthread/ot-br-posix /tmp/otbr && \
+    cd /tmp/otbr && \
+    ./script/bootstrap && \
+    INFRA_IF_NAME=eth0 ./script/setup && \
+    rm -rf /tmp/otbr
+
+RUN systemctl disable otbr-agent 2>/dev/null || true
 
 # Required directories
 RUN mkdir -p /data /app/data/matter /app/data/backups /app/logs /app/config \
@@ -511,9 +537,16 @@ run_container() {
     local run_args=(
         --detach
         --name "$CONTAINER_NAME"
+        --cap-add=NET_ADMIN
+        --cap-add=NET_RAW
+        --cap-add=SYS_ADMIN
         --restart unless-stopped
         --publish "${host_port}:${INTERNAL_PORT}"
         --publish "${host_matter_port}:${MATTER_INTERNAL_PORT}"
+        --sysctl net.ipv6.conf.all.disable_ipv6=0
+        --sysctl net.ipv6.conf.all.forwarding=1
+        --volume /dev/shm:/dev/shm
+        --volume /run/dbus:/run/dbus
         --volume "${DATA_DIR}/config:/app/config"
         --volume "${DATA_DIR}/data:/app/data"
         --volume "${DATA_DIR}/logs:/app/logs"
