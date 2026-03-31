@@ -4,11 +4,10 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="fix for otbr-agent: unrecognized option '--radio-url=spinel+cpc://cpcd_0?iid=2&amp;iid-list=0' error">
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="licpc dev added and pass the OT_POSIX_CONFIG_RCP_BUS=CPC build flag to otbr">
       <change afterPath="$PROJECT_DIR$/modules/cpc_diag.py" afterDir="false" />
       <change afterPath="$PROJECT_DIR$/modules/index.html" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/build.sh" beforeDir="false" afterPath="$PROJECT_DIR$/build.sh" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -154,14 +153,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00122" summary="multipan fixes">
-      <option name="closed" value="true" />
-      <created>1774518157208</created>
-      <option name="number" value="00122" />
-      <option name="presentableId" value="LOCAL-00122" />
-      <option name="project" value="LOCAL" />
-      <updated>1774518157208</updated>
     </task>
     <task id="LOCAL-00123" summary="service teardown improvements">
       <option name="closed" value="true" />
@@ -547,7 +538,15 @@
       <option name="project" value="LOCAL" />
       <updated>1774959493395</updated>
     </task>
-    <option name="localTasksCounter" value="171" />
+    <task id="LOCAL-00171" summary="licpc dev added and pass the OT_POSIX_CONFIG_RCP_BUS=CPC build flag to otbr">
+      <option name="closed" value="true" />
+      <created>1774960839597</created>
+      <option name="number" value="00171" />
+      <option name="presentableId" value="LOCAL-00171" />
+      <option name="project" value="LOCAL" />
+      <updated>1774960839597</updated>
+    </task>
+    <option name="localTasksCounter" value="172" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -562,7 +561,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="updates to mulitpan detection" />
     <MESSAGE value="which bash added" />
     <MESSAGE value="cpc clean up fixes" />
     <MESSAGE value="moved _usb_reset_serial_device above lifecycle" />
@@ -587,7 +585,8 @@
     <MESSAGE value="sudo added for final otbr build" />
     <MESSAGE value="sudo and iptables fix for otbr" />
     <MESSAGE value="fix for otbr-agent: unrecognized option '--radio-url=spinel+cpc://cpcd_0?iid=2&amp;iid-list=0' error" />
-    <option name="LAST_COMMIT_MESSAGE" value="fix for otbr-agent: unrecognized option '--radio-url=spinel+cpc://cpcd_0?iid=2&amp;iid-list=0' error" />
+    <MESSAGE value="licpc dev added and pass the OT_POSIX_CONFIG_RCP_BUS=CPC build flag to otbr" />
+    <option name="LAST_COMMIT_MESSAGE" value="licpc dev added and pass the OT_POSIX_CONFIG_RCP_BUS=CPC build flag to otbr" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
