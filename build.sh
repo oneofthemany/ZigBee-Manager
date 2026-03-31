@@ -303,6 +303,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libnetfilter-queue-dev \
         libsystemd-dev \
         libsystemd \
+        systemd \
         ipset \
         iptables \
         dbus \
