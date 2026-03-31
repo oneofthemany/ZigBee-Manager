@@ -4,7 +4,7 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="otbr work" />
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="lsb-release added for otbr" />
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -149,14 +149,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00117" summary="improving start spectrum to mitigate disablement due to length CPC scans">
-      <option name="closed" value="true" />
-      <created>1774454764725</created>
-      <option name="number" value="00117" />
-      <option name="presentableId" value="LOCAL-00117" />
-      <option name="project" value="LOCAL" />
-      <updated>1774454764725</updated>
     </task>
     <task id="LOCAL-00118" summary="update container to run slim bookworm">
       <option name="closed" value="true" />
@@ -542,7 +534,15 @@
       <option name="project" value="LOCAL" />
       <updated>1774956937144</updated>
     </task>
-    <option name="localTasksCounter" value="166" />
+    <task id="LOCAL-00166" summary="lsb-release added for otbr">
+      <option name="closed" value="true" />
+      <created>1774957491895</created>
+      <option name="number" value="00166" />
+      <option name="presentableId" value="LOCAL-00166" />
+      <option name="project" value="LOCAL" />
+      <updated>1774957491895</updated>
+    </task>
+    <option name="localTasksCounter" value="167" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -557,7 +557,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="updated to show location of teardown script and changed text to red" />
     <MESSAGE value="dark mode fix for beetxt" />
     <MESSAGE value="sudo fix for umount of conatiner" />
     <MESSAGE value="-n added for no passwd" />
@@ -582,7 +581,8 @@
     <MESSAGE value="reset_sequence to true and _reset_serial_state fix" />
     <MESSAGE value="change_me added to pan id" />
     <MESSAGE value="otbr work" />
-    <option name="LAST_COMMIT_MESSAGE" value="otbr work" />
+    <MESSAGE value="lsb-release added for otbr" />
+    <option name="LAST_COMMIT_MESSAGE" value="lsb-release added for otbr" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
