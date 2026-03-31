@@ -4,7 +4,7 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="additional debugging added">
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="back to detached mode">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/modules/tdm/zmm_cpc/src/router.rs" beforeDir="false" afterPath="$PROJECT_DIR$/modules/tdm/zmm_cpc/src/router.rs" afterDir="false" />
     </list>
@@ -177,14 +177,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00162" summary="_reset_serial_state updated to correct baud">
-      <option name="closed" value="true" />
-      <created>1774729080897</created>
-      <option name="number" value="00162" />
-      <option name="presentableId" value="LOCAL-00162" />
-      <option name="project" value="LOCAL" />
-      <updated>1774729080897</updated>
     </task>
     <task id="LOCAL-00163" summary="reset_sequence to true and _reset_serial_state fix">
       <option name="closed" value="true" />
@@ -570,7 +562,15 @@
       <option name="project" value="LOCAL" />
       <updated>1774946805354</updated>
     </task>
-    <option name="localTasksCounter" value="211" />
+    <task id="LOCAL-00211" summary="back to detached mode">
+      <option name="closed" value="true" />
+      <created>1774948788849</created>
+      <option name="number" value="00211" />
+      <option name="presentableId" value="LOCAL-00211" />
+      <option name="project" value="LOCAL" />
+      <updated>1774948788849</updated>
+    </task>
+    <option name="localTasksCounter" value="212" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -585,7 +585,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="unique name for zigbee port to prevent port overwrites in build" />
     <MESSAGE value="updated to fix this error:&#10;&#10;sed: -e expression #1, char 47: unknown option to `s'" />
     <MESSAGE value="final patch test for port placeholder zigbee" />
     <MESSAGE value="rolled back as not the issue" />
@@ -610,6 +609,7 @@
     <MESSAGE value="Move Matter object creation out of module level and into the lifespan" />
     <MESSAGE value="adding inotify-tools to deps to track down yaml overwrites and general yaml debugging" />
     <MESSAGE value="additional debugging added" />
-    <option name="LAST_COMMIT_MESSAGE" value="additional debugging added" />
+    <MESSAGE value="back to detached mode" />
+    <option name="LAST_COMMIT_MESSAGE" value="back to detached mode" />
   </component>
 </project>

@@ -524,7 +524,7 @@ run_container() {
     fi
 
     local run_args=(
-        --detached
+        --detach
         --name "$CONTAINER_NAME"
         --restart unless-stopped
         --publish "${host_port}:${INTERNAL_PORT}"
