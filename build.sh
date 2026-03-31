@@ -302,6 +302,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libboost-system-dev \
         libnetfilter-queue-dev \
         libsystemd-dev \
+        libsystemd \
         ipset \
         iptables \
         dbus \
