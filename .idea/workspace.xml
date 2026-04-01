@@ -4,7 +4,7 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="slirp4netns trial" />
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="adding in sysctl for ipv6 and ipv4" />
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -149,14 +149,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00167" summary="sudo added for final otbr build">
-      <option name="closed" value="true" />
-      <created>1774957741470</created>
-      <option name="number" value="00167" />
-      <option name="presentableId" value="LOCAL-00167" />
-      <option name="project" value="LOCAL" />
-      <updated>1774957741470</updated>
     </task>
     <task id="LOCAL-00168" summary="sudo and iptables fix for otbr">
       <option name="closed" value="true" />
@@ -542,7 +534,15 @@
       <option name="project" value="LOCAL" />
       <updated>1775052339656</updated>
     </task>
-    <option name="localTasksCounter" value="216" />
+    <task id="LOCAL-00216" summary="adding in sysctl for ipv6 and ipv4">
+      <option name="closed" value="true" />
+      <created>1775052837905</created>
+      <option name="number" value="00216" />
+      <option name="presentableId" value="LOCAL-00216" />
+      <option name="project" value="LOCAL" />
+      <updated>1775052837905</updated>
+    </task>
+    <option name="localTasksCounter" value="217" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -557,7 +557,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="using branch 4.7.0" />
     <MESSAGE value="using branch 4.7" />
     <MESSAGE value="force the use of libcpc" />
     <MESSAGE value="force complied version to 4.7.1.0" />
@@ -582,6 +581,7 @@
     <MESSAGE value="removal of conatiner removal process as dealt with using the teardown script for any updates" />
     <MESSAGE value="removal of restart for otbr" />
     <MESSAGE value="slirp4netns trial" />
-    <option name="LAST_COMMIT_MESSAGE" value="slirp4netns trial" />
+    <MESSAGE value="adding in sysctl for ipv6 and ipv4" />
+    <option name="LAST_COMMIT_MESSAGE" value="adding in sysctl for ipv6 and ipv4" />
   </component>
 </project>
