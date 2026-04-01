@@ -601,6 +601,23 @@ class MatterBridge:
     async def commission(self, code: str) -> dict:
         """Commission a Matter device using its setup code."""
         try:
+            # If OTBR is running, provide Thread credentials before commissioning
+            try:
+                import subprocess
+                result = subprocess.run(
+                    ["ot-ctl", "dataset", "active", "-x"],
+                    capture_output=True, text=True, timeout=5
+                )
+                if result.returncode == 0:
+                    dataset_hex = result.stdout.strip().split("\n")[0].strip()
+                    if dataset_hex and dataset_hex != "Done":
+                        await self._send_command("set_thread_dataset", {
+                            "dataset": dataset_hex
+                        })
+                        logger.info(f"Matter: Thread dataset provided for commissioning")
+            except Exception as e:
+                logger.debug(f"Thread dataset not available (non-fatal): {e}")
+
             await self._send_command("commission_with_code", {"code": code})
             logger.info(f"Matter: commissioning started with code {code[:8]}...")
             return {"success": True, "protocol": "matter"}
