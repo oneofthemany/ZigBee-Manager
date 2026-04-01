@@ -51,6 +51,8 @@ from modules.telemetry_collector import TelemetryCollector
 from modules.telemetry_api import register_telemetry_routes
 from modules.dongle_jedi_api import register_setup_routes
 
+port = int(os.environ.get("ZMM_PORT", 8000))
+
 # Import route registrations
 from routes import (
     register_config_routes,
@@ -149,21 +151,24 @@ matter_bridge = None
 
 matter_config = CONFIG.get('matter', {})
 if matter_config.get('enabled', False):
-    # --- Start embedded server ---
     from modules.matter_server import MatterServerManager
+
     storage_path = matter_config.get('storage_path', './data/matter')
+    # Environment variable takes priority (set by build.sh for host networking),
+    # then config.yaml, then default 5580
+    matter_port = int(os.environ.get('ZMM_MATTER_PORT', 0)) or matter_config.get('port', 5580)
+
     matter_server = MatterServerManager(
         storage_path=storage_path,
-        port=matter_config.get('port', 5580)
+        port=matter_port,
     )
 
-    # --- Start bridge ---
     from modules.matter_bridge import MatterBridge
-    server_url = f"ws://localhost:{matter_config.get('port', 5580)}/ws"
+    server_url = f"ws://localhost:{matter_port}/ws"
     matter_bridge = MatterBridge(
         server_url=server_url,
         mqtt_service=mqtt_service,
-        event_callback=broadcast_event
+        event_callback=broadcast_event,
     )
     logger.info(f"Matter integration enabled (embedded server + bridge)")
 
@@ -587,7 +592,9 @@ if __name__ == "__main__":
     ssl_enabled = ssl_config.get('enabled', False)
 
     host = get_conf('web', 'host', '0.0.0.0')
-    port = get_conf('web', 'port', 8000)
+    # Environment variable takes priority (set by build.sh for host networking),
+    # then config.yaml, then default 8000
+    port = int(os.environ.get('ZMM_PORT', 0)) or get_conf('web', 'port', 8000)
 
     kwargs = {
         "app": "main:app",

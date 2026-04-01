@@ -4,12 +4,14 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="improving run container to cater for networking requirements for otbr">
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="network fix for pasta">
       <change afterPath="$PROJECT_DIR$/docs/project_overview.md" afterDir="false" />
       <change afterPath="$PROJECT_DIR$/modules/cpc_diag.py" afterDir="false" />
       <change afterPath="$PROJECT_DIR$/modules/index.html" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/build.sh" beforeDir="false" afterPath="$PROJECT_DIR$/build.sh" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/main.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -155,14 +157,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00154" summary="minor tweaks to cater for recent findings">
-      <option name="closed" value="true" />
-      <created>1774700987469</created>
-      <option name="number" value="00154" />
-      <option name="presentableId" value="LOCAL-00154" />
-      <option name="project" value="LOCAL" />
-      <updated>1774700987469</updated>
     </task>
     <task id="LOCAL-00155" summary="socat removal from new pty bridge">
       <option name="closed" value="true" />
@@ -548,7 +542,15 @@
       <option name="project" value="LOCAL" />
       <updated>1775040104178</updated>
     </task>
-    <option name="localTasksCounter" value="203" />
+    <task id="LOCAL-00203" summary="network fix for pasta">
+      <option name="closed" value="true" />
+      <created>1775040807374</created>
+      <option name="number" value="00203" />
+      <option name="presentableId" value="LOCAL-00203" />
+      <option name="project" value="LOCAL" />
+      <updated>1775040807374</updated>
+    </task>
+    <option name="localTasksCounter" value="204" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -563,7 +565,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="otbr with cpc as found to not support on container build:&#10;&#10;otbr-agent[84]: 49d.23:25:05.308 [C] Platform------: The Spinel interface name &quot;spinel+cpc&quot; is not supported!&#10;otbr-agent[84]: 49d.23:25:05.308 [C] Platform------: CreateSpinelInterface() at spinel_manager.cpp:128: Failure" />
     <MESSAGE value="libsystemd added to deps" />
     <MESSAGE value="systemd added to deps" />
     <MESSAGE value="dep fix or conatiner file" />
@@ -588,7 +589,8 @@
     <MESSAGE value="adding back in --device /dev/net/tun:/dev/net/tun&#10;&#10;required by platformConfigureTunDevice in otbr agent" />
     <MESSAGE value="auto detect interface off container in _build_otbr_command to fix Platform------: CreateIcmp6Socket() at infra_if.cpp:187: No such device" />
     <MESSAGE value="improving run container to cater for networking requirements for otbr" />
-    <option name="LAST_COMMIT_MESSAGE" value="improving run container to cater for networking requirements for otbr" />
+    <MESSAGE value="network fix for pasta" />
+    <option name="LAST_COMMIT_MESSAGE" value="network fix for pasta" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>

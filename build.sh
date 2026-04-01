@@ -605,6 +605,7 @@ run_container() {
     local run_args=(
         --detach
         --name "$CONTAINER_NAME"
+        --network=host
         --cap-add=NET_ADMIN
         --cap-add=NET_RAW
         --cap-add=SYS_ADMIN
@@ -620,36 +621,15 @@ run_container() {
         --volume "${DATA_DIR}/logs:/app/logs"
     )
 
-    # ── Networking: otbr-agent needs raw sockets for ICMPv6 ──────────
-    # Strategy:
-    #   Podman rootless + pasta available → pasta with port forwarding
-    #   Podman rootless without pasta     → host networking (no port remap)
-    #   Podman rootful                    → host networking
-    #   Docker                            → host networking
-    #
-    # Only pasta supports raw sockets AND port forwarding simultaneously.
-    # All other configurations require --network=host where the container
-    # shares the host's network stack (ports exposed at INTERNAL_PORT).
+    # ── Dynamic ports via environment variables ──────────────────────
+    # With --network=host the container shares the host's network stack.
+    # No port mapping — the app listens directly on the host interface.
+    # If the default ports (8000/5580) are busy, build.sh picks free ones
+    # and tells the app to listen there via environment variables.
+    run_args+=(-e "ZMM_PORT=${host_port}")
+    run_args+=(-e "ZMM_MATTER_PORT=${host_matter_port}")
 
-    if [[ "$RUNTIME" == "podman" ]] && [[ $(id -u) -ne 0 ]]; then
-        # Rootless Podman
-        if command -v pasta &>/dev/null; then
-            run_args+=(--network="pasta:-t,${host_port}:${INTERNAL_PORT},-t,${host_matter_port}:${MATTER_INTERNAL_PORT}")
-            ok "Networking: pasta (port forwarding + raw socket support)"
-        else
-            run_args+=(--network=host)
-            warn "Networking: host (pasta not found — install 'passt' for port remapping)"
-            warn "  ZMM will be at http://<host>:${INTERNAL_PORT} (no port remap)"
-        fi
-    else
-        # Docker or rootful Podman — host networking for raw socket support
-        run_args+=(--network=host)
-        ok "Networking: host (raw socket support for Thread border routing)"
-        if [[ "$host_port" != "${INTERNAL_PORT}" ]] || [[ "$host_matter_port" != "${MATTER_INTERNAL_PORT}" ]]; then
-            warn "  Port remapping not available with host networking."
-            warn "  ZMM: http://<host>:${INTERNAL_PORT}  Matter: <host>:${MATTER_INTERNAL_PORT}"
-        fi
-    fi
+    ok "Networking: host (ZMM port: ${host_port}, Matter port: ${host_matter_port})"
 
     # ── UID mapping: keep host UID inside container (Podman only) ──
     if [[ "$RUNTIME" == "podman" ]]; then
@@ -663,7 +643,6 @@ run_container() {
 
         if [[ "$RUNTIME" == "podman" && -n "${DEVICE_MOUNT_PATH:-}" ]]; then
             # Podman rootless: use the bind-mounted device path
-            # Maps /mnt/devices/ttyACM0 - USB0 on host → /dev/ttyACM0 -USB0 inside container
             run_args+=(--device "${DEVICE_MOUNT_PATH}:${real_dev}")
             ok "Using bind-mounted device: ${DEVICE_MOUNT_PATH} → ${real_dev}"
 
