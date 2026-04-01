@@ -283,8 +283,11 @@ class MatterBridge:
             self._shutdown = False
             logger.info(f"✅ Connected to Matter server: {self.server_url}")
 
-            # Request initial node list
-            await self._send_command("get_nodes")
+            # Subscribe to events AND get initial node dump
+            # start_listening returns server info, then sends node data as events.
+            # Unlike get_nodes, it also subscribes to future node_added/node_updated/
+            # attribute_updated events — essential for mid-session commissioning.
+            await self._send_command("start_listening")
 
             # Start listener
             self._listen_task = asyncio.create_task(self._listen_loop())
@@ -347,7 +350,7 @@ class MatterBridge:
                 self._connected = True
                 logger.info(f"✅ Reconnected to Matter server: {self.server_url}")
 
-                await self._send_command("get_nodes")
+                await self._send_command("start_listening")
                 self._listen_task = asyncio.create_task(self._listen_loop())
                 return  # Success — exit loop
 
@@ -413,22 +416,52 @@ class MatterBridge:
 
     async def _handle_message(self, data: dict):
         """Process a message from matter-server."""
-        # Response to a command (e.g. get_nodes)
+        # Response to a command (e.g. start_listening, get_nodes)
         if "result" in data and "message_id" in data:
             result = data["result"]
+
             if isinstance(result, list):
-                # Node list response
+                # Node list response (from get_nodes or start_listening node dump)
+                node_count = 0
                 for node in result:
                     if isinstance(node, dict) and "node_id" in node:
                         await self._upsert_node(node)
-                logger.info(f"Matter: loaded {len(result)} nodes")
+                        node_count += 1
+                logger.info(f"Matter: loaded {node_count} nodes")
 
                 # Publish discovery for all devices after initial load
-                await self._publish_all_discovery()
+                if node_count > 0:
+                    await self._publish_all_discovery()
+
+            elif isinstance(result, dict):
+                # Server info response from start_listening — log and continue.
+                # Node data follows as separate event messages.
+                sdk_ver = result.get("sdk_version", "?")
+                thread_set = result.get("thread_credentials_set", False)
+                bt = result.get("bluetooth_enabled", False)
+                logger.info(
+                    f"Matter server info: SDK {sdk_ver}, "
+                    f"thread_credentials={thread_set}, bluetooth={bt}"
+                )
             return
 
         # Event-based messages
         event = data.get("event")
+
+        # start_listening sends node dump as event with empty event name
+        # and result containing the node list
+        if "result" in data and "event" in data:
+            result = data["result"]
+            if isinstance(result, list):
+                node_count = 0
+                for node in result:
+                    if isinstance(node, dict) and "node_id" in node:
+                        await self._upsert_node(node)
+                        node_count += 1
+                if node_count > 0:
+                    logger.info(f"Matter: loaded {node_count} nodes from event stream")
+                    await self._publish_all_discovery()
+                return
 
         if event == "node_added":
             node = data.get("data", {})
