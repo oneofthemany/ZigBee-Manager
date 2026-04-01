@@ -716,6 +716,8 @@ reset_sequence: true
                 command=self._build_otbr_command(),
                 ready_marker="Thread interface is up",
                 ready_timeout=30.0,
+                max_restarts=0,
+                restart_on_fatal=False,
             )
             self._daemons["otbr-agent"] = otbr
 
