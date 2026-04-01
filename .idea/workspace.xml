@@ -4,10 +4,9 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="removing sudo from otbr agent to troubleshoot">
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="adding /var/lib/thread dir and permissions for OTBR to run">
       <change afterPath="$PROJECT_DIR$/modules/cpc_diag.py" afterDir="false" />
       <change afterPath="$PROJECT_DIR$/modules/index.html" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -153,14 +152,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00149" summary="further improvements for cpcd">
-      <option name="closed" value="true" />
-      <created>1774694432428</created>
-      <option name="number" value="00149" />
-      <option name="presentableId" value="LOCAL-00149" />
-      <option name="project" value="LOCAL" />
-      <updated>1774694432428</updated>
     </task>
     <task id="LOCAL-00150" summary="serial break fix">
       <option name="closed" value="true" />
@@ -546,7 +537,15 @@
       <option name="project" value="LOCAL" />
       <updated>1775036344360</updated>
     </task>
-    <option name="localTasksCounter" value="198" />
+    <task id="LOCAL-00198" summary="adding /var/lib/thread dir and permissions for OTBR to run">
+      <option name="closed" value="true" />
+      <created>1775037044643</created>
+      <option name="number" value="00198" />
+      <option name="presentableId" value="LOCAL-00198" />
+      <option name="project" value="LOCAL" />
+      <updated>1775037044643</updated>
+    </task>
+    <option name="localTasksCounter" value="199" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -561,7 +560,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="sudo added for final otbr build" />
     <MESSAGE value="sudo and iptables fix for otbr" />
     <MESSAGE value="fix for otbr-agent: unrecognized option '--radio-url=spinel+cpc://cpcd_0?iid=2&amp;iid-list=0' error" />
     <MESSAGE value="licpc dev added and pass the OT_POSIX_CONFIG_RCP_BUS=CPC build flag to otbr" />
@@ -586,7 +584,8 @@
     <MESSAGE value="adding port in use information to build" />
     <MESSAGE value="adding sudo to lsof and ss commands" />
     <MESSAGE value="removing sudo from otbr agent to troubleshoot" />
-    <option name="LAST_COMMIT_MESSAGE" value="removing sudo from otbr agent to troubleshoot" />
+    <MESSAGE value="adding /var/lib/thread dir and permissions for OTBR to run" />
+    <option name="LAST_COMMIT_MESSAGE" value="adding /var/lib/thread dir and permissions for OTBR to run" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
