@@ -115,6 +115,29 @@ port_in_use() {
     fi
 }
 
+get_port_process() {
+    local port=$1
+    local proc=""
+
+    # Try lsof first (cleanest output if installed)
+    if command -v lsof &>/dev/null; then
+        proc=$(lsof -i :"${port}" -sTCP:LISTEN 2>/dev/null | awk 'NR==2 {print $1" (PID: "$2")"}')
+    fi
+
+    # Fallback to ss (standard on modern Linux)
+    if [[ -z "$proc" ]] && command -v ss &>/dev/null; then
+        # Parses the bizarre ss output: users:(("process_name",pid=1234,fd=X))
+        proc=$(ss -lptn "sport = :${port}" 2>/dev/null | grep -o 'users:((".*"))' | sed 's/users:(("//; s/",pid=/ (PID: /; s/,.*//' | head -n 1)
+    fi
+
+    # Return the process, or a fallback warning if permissions blocked the lookup
+    if [[ -n "$proc" ]]; then
+        echo "$proc"
+    else
+        echo "an unknown process (run script with sudo to see details)"
+    fi
+}
+
 find_free_port() {
     local port=$1
     while port_in_use "$port"; do
@@ -129,10 +152,20 @@ find_free_port() {
 pick_host_port() {
     local preferred=$1
     if port_in_use "$preferred"; then
-        warn "Port ${preferred} is in use — scanning..." >&2
+        # 1. Find out who is hogging the port
+        local blocker
+        blocker=$(get_port_process "$preferred")
+
+        # 2. Tell the user exactly what is blocking it
+        warn "Port ${preferred} is currently blocked by: ${BOLD}${blocker}${NC}" >&2
+        warn "Scanning for the next available port..." >&2
+
+        # 3. Find and report the new port
         local found
         found=$(find_free_port "$((preferred + 1))")
         warn "Using port ${BOLD}${found}${NC} instead." >&2
+
+        # 4. Return the safely found port to stdout
         echo "$found"
     else
         echo "$preferred"
