@@ -415,7 +415,6 @@
             'The mesh is strong with this one\u2026',
             'I find your lack of ZigBee or Matter disturbing\u2026',
             'In my experience, there\u2019s no such thing as luck\u2026'
-            'Matter not for those who don\u2019t Matter\u2026'
         ];
         var quoteIndex = 0;
 
