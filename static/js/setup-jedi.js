@@ -408,13 +408,14 @@
             'These are the droids you\u2019re looking for\u2026',
             'The Force is strong with this coordinator\u2026',
             'Do. Or do not. There is no try.',
-            'Sensing the Zigbee network\u2026',
+            'Sensing the ZigBee Matter network\u2026',
             'Reaching out through the Force\u2026',
             'A Jedi uses the Force for knowledge\u2026',
             'Patience, young Padawan\u2026',
             'The mesh is strong with this one\u2026',
-            'I find your lack of Zigbee disturbing\u2026',
+            'I find your lack of ZigBee or Matter disturbing\u2026',
             'In my experience, there\u2019s no such thing as luck\u2026'
+            'Matter not for those who don\u2019t Matter\u2026'
         ];
         var quoteIndex = 0;
 
