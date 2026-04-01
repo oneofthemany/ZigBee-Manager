@@ -12,6 +12,7 @@ from routes.editor_routes import register_editor_routes
 from routes.ota_routes import register_ota_routes
 from routes.test_recovery_routes import register_test_recovery_routes
 from routes.websocket_routes import register_websocket_routes, manager, broadcast_event
+from routes.otbr_routes import register_otbr_routes
 
 __all__ = [
     'register_config_routes',
@@ -22,6 +23,7 @@ __all__ = [
     'register_group_routes',
     'register_editor_routes',
     'register_ota_routes',
+    'register_otbr_routes',
     'register_test_recovery_routes',
     'register_websocket_routes',
     'manager',

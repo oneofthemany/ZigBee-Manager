@@ -4,8 +4,11 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="otbr final touches">
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="route registration added for otbr">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/main.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/modules/otbr_api.py" beforeDir="false" afterPath="$PROJECT_DIR$/routes/otbr_routes.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/routes/__init__.py" beforeDir="false" afterPath="$PROJECT_DIR$/routes/__init__.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -88,6 +91,7 @@
   </component>
   <component name="RecentsManager">
     <key name="MoveFile.RECENT_KEYS">
+      <recent name="$PROJECT_DIR$/routes" />
       <recent name="$PROJECT_DIR$" />
       <recent name="$PROJECT_DIR$/mqtt" />
     </key>
@@ -151,14 +155,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00170" summary="fix for otbr-agent: unrecognized option '--radio-url=spinel+cpc://cpcd_0?iid=2&amp;iid-list=0' error">
-      <option name="closed" value="true" />
-      <created>1774959493395</created>
-      <option name="number" value="00170" />
-      <option name="presentableId" value="LOCAL-00170" />
-      <option name="project" value="LOCAL" />
-      <updated>1774959493395</updated>
     </task>
     <task id="LOCAL-00171" summary="licpc dev added and pass the OT_POSIX_CONFIG_RCP_BUS=CPC build flag to otbr">
       <option name="closed" value="true" />
@@ -544,7 +540,15 @@
       <option name="project" value="LOCAL" />
       <updated>1775061256853</updated>
     </task>
-    <option name="localTasksCounter" value="219" />
+    <task id="LOCAL-00219" summary="route registration added for otbr">
+      <option name="closed" value="true" />
+      <created>1775062139384</created>
+      <option name="number" value="00219" />
+      <option name="presentableId" value="LOCAL-00219" />
+      <option name="project" value="LOCAL" />
+      <updated>1775062139384</updated>
+    </task>
+    <option name="localTasksCounter" value="220" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -559,7 +563,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="force the use of libcpc" />
     <MESSAGE value="force complied version to 4.7.1.0" />
     <MESSAGE value="updating _build_otbr command to cater for  debugging and run as sudo" />
     <MESSAGE value="adding /dev/net/tun to run_container" />
@@ -584,6 +587,7 @@
     <MESSAGE value="slirp4netns trial" />
     <MESSAGE value="adding in sysctl for ipv6 and ipv4" />
     <MESSAGE value="otbr final touches" />
-    <option name="LAST_COMMIT_MESSAGE" value="otbr final touches" />
+    <MESSAGE value="route registration added for otbr" />
+    <option name="LAST_COMMIT_MESSAGE" value="route registration added for otbr" />
   </component>
 </project>

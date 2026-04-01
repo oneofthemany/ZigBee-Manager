@@ -51,9 +51,6 @@ from modules.telemetry_collector import TelemetryCollector
 from modules.telemetry_api import register_telemetry_routes
 from modules.dongle_jedi_api import register_setup_routes
 
-from modules.otbr_api import register_otbr_routes
-register_otbr_routes(app, zigbee_service=zigbee_service)
-
 port = int(os.environ.get("ZMM_PORT", 8000))
 
 # Import route registrations
@@ -66,6 +63,7 @@ from routes import (
     register_group_routes,
     register_editor_routes,
     register_ota_routes,
+    register_otbr_routes,
     register_test_recovery_routes,
     register_websocket_routes,
     manager, broadcast_event,
@@ -483,6 +481,7 @@ register_system_routes(app, get_zigbee_service, get_mqtt_service, get_manager)
 register_matter_routes(app, get_zigbee_service, get_matter_server, get_matter_bridge)
 register_group_routes(app, get_zigbee_service, get_manager)
 register_editor_routes(app, get_zigbee_service)
+register_otbr_routes(app, get_zigbee_service)
 register_test_recovery_routes(app, get_manager)
 register_websocket_routes(app)
 register_zone_routes(app, lambda: zigbee_service.zone_manager, lambda: zigbee_service.devices)
