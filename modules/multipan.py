@@ -514,7 +514,6 @@ reset_sequence: true
         thread_iface = self._otbr_config.get("thread_interface", "wpan0")
         backbone_iface = self._otbr_config.get("backbone_interface", None)
 
-        # Auto-detect backbone interface if not explicitly configured
         if not backbone_iface:
             import subprocess
             try:
@@ -535,16 +534,13 @@ reset_sequence: true
 
         radio_url = "spinel+cpc://cpcd_0?iid=2&iid-list=0"
 
-        # Wrapper that recreates the TUN device before each start.
-        # Handles stale interface from previous crash/restart — otbr-agent
-        # fails with "Device or resource busy" if wpan0 already exists
-        # from a previous instance.
         return [
-            "sh", "-c",
-            f"ip link del {thread_iface} 2>/dev/null; "
-            f"ip tuntap add dev {thread_iface} mode tun user $(id -u) 2>/dev/null; "
-            f"ip link set {thread_iface} up 2>/dev/null; "
-            f"exec otbr-agent -I {thread_iface} -B {backbone_iface} -d 7 -s '{radio_url}'"
+            "otbr-agent",
+            "-I", thread_iface,
+            "-B", backbone_iface,
+            "-d", "7",
+            "-s",
+            radio_url,
         ]
 
     # =========================================================================

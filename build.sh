@@ -671,16 +671,11 @@ run_container() {
 
 
     # ── Pre-create wpan0 TUN interface for Thread border router ──────
-    # Rootless Podman with --network=host can't create TUN devices
-    # (user namespace restriction on TUNSETIFF ioctl).
-    if ! ip link show wpan0 &>/dev/null 2>&1; then
-        info "Creating wpan0 TUN interface for Thread border router..."
-        sudo ip tuntap add dev wpan0 mode tun user "$(id -u)"
-        sudo ip link set wpan0 up
-        ok "wpan0 interface created"
-    else
-        ok "wpan0 interface already exists"
-    fi
+    info "Preparing wpan0 TUN interface for Thread border router..."
+    sudo ip link del wpan0 2>/dev/null || true
+    sudo ip tuntap add dev wpan0 mode tun user "$(id -u)"
+    sudo ip link set wpan0 up
+    ok "wpan0 interface ready"
 
     info "Starting container '${CONTAINER_NAME}' ..."
     "$RUNTIME" run "${run_args[@]}" "${IMAGE_NAME}:latest"
