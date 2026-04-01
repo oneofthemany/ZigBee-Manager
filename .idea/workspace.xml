@@ -4,13 +4,13 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="adding wpan0 on network host ahead of podman run as well as in service">
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="adding in removal of container ahead of port check">
       <change afterPath="$PROJECT_DIR$/docs/project_overview.md" afterDir="false" />
       <change afterPath="$PROJECT_DIR$/modules/cpc_diag.py" afterDir="false" />
       <change afterPath="$PROJECT_DIR$/modules/index.html" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/build.sh" beforeDir="false" afterPath="$PROJECT_DIR$/build.sh" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/modules/multipan.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/multipan.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -156,14 +156,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00161" summary="adding baud rate to the RTS  reset">
-      <option name="closed" value="true" />
-      <created>1774728725757</created>
-      <option name="number" value="00161" />
-      <option name="presentableId" value="LOCAL-00161" />
-      <option name="project" value="LOCAL" />
-      <updated>1774728725757</updated>
     </task>
     <task id="LOCAL-00162" summary="_reset_serial_state updated to correct baud">
       <option name="closed" value="true" />
@@ -549,7 +541,15 @@
       <option name="project" value="LOCAL" />
       <updated>1775045402595</updated>
     </task>
-    <option name="localTasksCounter" value="210" />
+    <task id="LOCAL-00210" summary="adding in removal of container ahead of port check">
+      <option name="closed" value="true" />
+      <created>1775046225621</created>
+      <option name="number" value="00210" />
+      <option name="presentableId" value="LOCAL-00210" />
+      <option name="project" value="LOCAL" />
+      <updated>1775046225621</updated>
+    </task>
+    <option name="localTasksCounter" value="211" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -564,7 +564,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="fetching cpc-daemon and setting -DCPCD_SOURCE_DIR=/tmp/cpc-daemon" />
     <MESSAGE value="removal of cpc dir block" />
     <MESSAGE value="different appraach" />
     <MESSAGE value="reverted" />
@@ -589,6 +588,7 @@
     <MESSAGE value="escape added to ZMM_PORT in HEALTHCHECK" />
     <MESSAGE value="add wpan0 build to zmm auto start script to fix platformConfigureTunDevice for network host" />
     <MESSAGE value="adding wpan0 on network host ahead of podman run as well as in service" />
-    <option name="LAST_COMMIT_MESSAGE" value="adding wpan0 on network host ahead of podman run as well as in service" />
+    <MESSAGE value="adding in removal of container ahead of port check" />
+    <option name="LAST_COMMIT_MESSAGE" value="adding in removal of container ahead of port check" />
   </component>
 </project>
