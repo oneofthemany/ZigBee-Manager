@@ -751,6 +751,17 @@ mount --bind "\$DEVICE" "\$MOUNT_PATH"
 chown ${invoking_uid}:${invoking_gid} "\$MOUNT_PATH"
 chmod 660 "\$MOUNT_PATH"
 
+# ── Create wpan0 TUN interface for Thread border router ──────────────
+# otbr-agent needs a TUN device but rootless Podman can't create one
+# (user namespace restriction). Pre-create it on the host.
+if ! ip link show wpan0 &>/dev/null 2>&1; then
+    ip tuntap add dev wpan0 mode tun user ${invoking_uid}
+    ip link set wpan0 up
+    echo "zmm-remount: wpan0 TUN interface created"
+else
+    echo "zmm-remount: wpan0 already exists"
+fi
+
 echo "zmm-remount: \$DEVICE → \$MOUNT_PATH OK"
 SCRIPT
         sudo chmod +x "$pre_script"
