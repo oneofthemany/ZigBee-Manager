@@ -4,9 +4,10 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="adding port in use information to build">
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="removing sudo from otbr agent to troubleshoot">
       <change afterPath="$PROJECT_DIR$/modules/cpc_diag.py" afterDir="false" />
       <change afterPath="$PROJECT_DIR$/modules/index.html" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -152,22 +153,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00147" summary="moved _usb_reset_serial_device above lifecycle">
-      <option name="closed" value="true" />
-      <created>1774693556881</created>
-      <option name="number" value="00147" />
-      <option name="presentableId" value="LOCAL-00147" />
-      <option name="project" value="LOCAL" />
-      <updated>1774693556881</updated>
-    </task>
-    <task id="LOCAL-00148" summary="adding /dev/bus/usd to runtime args for container for cpcd support">
-      <option name="closed" value="true" />
-      <created>1774694410011</created>
-      <option name="number" value="00148" />
-      <option name="presentableId" value="LOCAL-00148" />
-      <option name="project" value="LOCAL" />
-      <updated>1774694410011</updated>
     </task>
     <task id="LOCAL-00149" summary="further improvements for cpcd">
       <option name="closed" value="true" />
@@ -545,7 +530,23 @@
       <option name="project" value="LOCAL" />
       <updated>1775035620331</updated>
     </task>
-    <option name="localTasksCounter" value="196" />
+    <task id="LOCAL-00196" summary="adding sudo to lsof and ss commands">
+      <option name="closed" value="true" />
+      <created>1775036238711</created>
+      <option name="number" value="00196" />
+      <option name="presentableId" value="LOCAL-00196" />
+      <option name="project" value="LOCAL" />
+      <updated>1775036238711</updated>
+    </task>
+    <task id="LOCAL-00197" summary="removing sudo from otbr agent to troubleshoot">
+      <option name="closed" value="true" />
+      <created>1775036344360</created>
+      <option name="number" value="00197" />
+      <option name="presentableId" value="LOCAL-00197" />
+      <option name="project" value="LOCAL" />
+      <updated>1775036344360</updated>
+    </task>
+    <option name="localTasksCounter" value="198" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -560,8 +561,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="otbr work" />
-    <MESSAGE value="lsb-release added for otbr" />
     <MESSAGE value="sudo added for final otbr build" />
     <MESSAGE value="sudo and iptables fix for otbr" />
     <MESSAGE value="fix for otbr-agent: unrecognized option '--radio-url=spinel+cpc://cpcd_0?iid=2&amp;iid-list=0' error" />
@@ -585,7 +584,9 @@
     <MESSAGE value="adding /dev/net/tun to run_container" />
     <MESSAGE value="removing /dev/net/tun to run_container&#10;&#10;adding redirect to stderr for pick_host_port" />
     <MESSAGE value="adding port in use information to build" />
-    <option name="LAST_COMMIT_MESSAGE" value="adding port in use information to build" />
+    <MESSAGE value="adding sudo to lsof and ss commands" />
+    <MESSAGE value="removing sudo from otbr agent to troubleshoot" />
+    <option name="LAST_COMMIT_MESSAGE" value="removing sudo from otbr agent to troubleshoot" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
