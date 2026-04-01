@@ -4,13 +4,12 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="adding in removal of container ahead of port check">
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="wpan fix for otbr">
       <change afterPath="$PROJECT_DIR$/docs/project_overview.md" afterDir="false" />
       <change afterPath="$PROJECT_DIR$/modules/cpc_diag.py" afterDir="false" />
       <change afterPath="$PROJECT_DIR$/modules/index.html" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/modules/multipan.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/multipan.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -156,22 +155,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00162" summary="_reset_serial_state updated to correct baud">
-      <option name="closed" value="true" />
-      <created>1774729080897</created>
-      <option name="number" value="00162" />
-      <option name="presentableId" value="LOCAL-00162" />
-      <option name="project" value="LOCAL" />
-      <updated>1774729080897</updated>
-    </task>
-    <task id="LOCAL-00163" summary="reset_sequence to true and _reset_serial_state fix">
-      <option name="closed" value="true" />
-      <created>1774731431156</created>
-      <option name="number" value="00163" />
-      <option name="presentableId" value="LOCAL-00163" />
-      <option name="project" value="LOCAL" />
-      <updated>1774731431156</updated>
     </task>
     <task id="LOCAL-00164" summary="change_me added to pan id">
       <option name="closed" value="true" />
@@ -549,7 +532,23 @@
       <option name="project" value="LOCAL" />
       <updated>1775046225621</updated>
     </task>
-    <option name="localTasksCounter" value="211" />
+    <task id="LOCAL-00211" summary="adding in removal of container ahead of port check">
+      <option name="closed" value="true" />
+      <created>1775046947231</created>
+      <option name="number" value="00211" />
+      <option name="presentableId" value="LOCAL-00211" />
+      <option name="project" value="LOCAL" />
+      <updated>1775046947231</updated>
+    </task>
+    <task id="LOCAL-00212" summary="wpan fix for otbr">
+      <option name="closed" value="true" />
+      <created>1775046965746</created>
+      <option name="number" value="00212" />
+      <option name="presentableId" value="LOCAL-00212" />
+      <option name="project" value="LOCAL" />
+      <updated>1775046965746</updated>
+    </task>
+    <option name="localTasksCounter" value="213" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -564,7 +563,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="removal of cpc dir block" />
     <MESSAGE value="different appraach" />
     <MESSAGE value="reverted" />
     <MESSAGE value="version bug" />
@@ -589,6 +587,7 @@
     <MESSAGE value="add wpan0 build to zmm auto start script to fix platformConfigureTunDevice for network host" />
     <MESSAGE value="adding wpan0 on network host ahead of podman run as well as in service" />
     <MESSAGE value="adding in removal of container ahead of port check" />
-    <option name="LAST_COMMIT_MESSAGE" value="adding in removal of container ahead of port check" />
+    <MESSAGE value="wpan fix for otbr" />
+    <option name="LAST_COMMIT_MESSAGE" value="wpan fix for otbr" />
   </component>
 </project>
