@@ -525,7 +525,7 @@ reset_sequence: true
         radio_url = "spinel+cpc://cpcd_0?iid=2&iid-list=0"
 
         cmd = [
-            "sudo", "otbr-agent",
+            "otbr-agent",
             "-I", thread_iface,
             "-B", backbone_iface,
             "-d", "7",
