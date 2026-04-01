@@ -4,12 +4,11 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="force complied version to 4.7.1.0">
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="updating _build_otbr command to cater for  debugging and run as sudo">
       <change afterPath="$PROJECT_DIR$/modules/cpc_diag.py" afterDir="false" />
       <change afterPath="$PROJECT_DIR$/modules/index.html" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/caches/deviceStreaming.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/caches/deviceStreaming.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/misc.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/misc.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/build.sh" beforeDir="false" afterPath="$PROJECT_DIR$/build.sh" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -155,14 +154,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00142" summary="sudo fix for umount of conatiner">
-      <option name="closed" value="true" />
-      <created>1774617430960</created>
-      <option name="number" value="00142" />
-      <option name="presentableId" value="LOCAL-00142" />
-      <option name="project" value="LOCAL" />
-      <updated>1774617430960</updated>
     </task>
     <task id="LOCAL-00143" summary="-n added for no passwd">
       <option name="closed" value="true" />
@@ -548,7 +539,15 @@
       <option name="project" value="LOCAL" />
       <updated>1774974767496</updated>
     </task>
-    <option name="localTasksCounter" value="191" />
+    <task id="LOCAL-00191" summary="updating _build_otbr command to cater for  debugging and run as sudo">
+      <option name="closed" value="true" />
+      <created>1775033894371</created>
+      <option name="number" value="00191" />
+      <option name="presentableId" value="LOCAL-00191" />
+      <option name="project" value="LOCAL" />
+      <updated>1775033894371</updated>
+    </task>
+    <option name="localTasksCounter" value="192" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -563,7 +562,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="adding baud rate to the RTS  reset" />
     <MESSAGE value="_reset_serial_state updated to correct baud" />
     <MESSAGE value="reset_sequence to true and _reset_serial_state fix" />
     <MESSAGE value="change_me added to pan id" />
@@ -588,7 +586,8 @@
     <MESSAGE value="using branch 4.7" />
     <MESSAGE value="force the use of libcpc" />
     <MESSAGE value="force complied version to 4.7.1.0" />
-    <option name="LAST_COMMIT_MESSAGE" value="force complied version to 4.7.1.0" />
+    <MESSAGE value="updating _build_otbr command to cater for  debugging and run as sudo" />
+    <option name="LAST_COMMIT_MESSAGE" value="updating _build_otbr command to cater for  debugging and run as sudo" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>

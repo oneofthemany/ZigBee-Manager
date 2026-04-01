@@ -576,6 +576,7 @@ run_container() {
         --cap-add=NET_RAW
         --cap-add=SYS_ADMIN
         --restart unless-stopped
+        --device /dev/net/tun:/dev/net/tun
         --publish "${host_port}:${INTERNAL_PORT}"
         --publish "${host_matter_port}:${MATTER_INTERNAL_PORT}"
         --sysctl net.ipv6.conf.all.disable_ipv6=0
