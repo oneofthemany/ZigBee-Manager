@@ -354,6 +354,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         iproute2 \
         net-tools \
         pkg-config \
+        bluez \
     && rm -rf /var/lib/apt/lists/*
 
 # Fetch and install Silicon Labs packages matching Bookworm
@@ -632,6 +633,15 @@ run_container() {
     # ── UID mapping: keep host UID inside container (Podman only) ──
     if [[ "$RUNTIME" == "podman" ]]; then
         run_args+=(--userns=keep-id)
+    fi
+
+    # ── Bluetooth for Matter commissioning ──
+    if [[ -e /dev/hci0 ]]; then
+        run_args+=(
+            -v /var/run/dbus:/var/run/dbus
+            --device /dev/hci0:/dev/hci0
+        )
+        ok "Bluetooth adapter available for Matter commissioning"
     fi
 
     # ── USB device passthrough ──

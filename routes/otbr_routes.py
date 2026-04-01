@@ -1,6 +1,5 @@
 """
-OTBR / Thread routes.
-Extracted from modules/otbr_api.py to follow routes/ pattern.
+OTBR / Thread routes — status, network formation, topology, diagnostics.
 """
 import asyncio
 import logging
@@ -13,6 +12,7 @@ logger = logging.getLogger("routes.otbr")
 
 class FormNetworkRequest(BaseModel):
     channel: Optional[int] = Field(None, ge=11, le=26)
+    network_name: Optional[str] = Field(None, max_length=16)
 
 
 async def _ot_ctl(*args: str, timeout: float = 10.0) -> dict:
@@ -43,6 +43,36 @@ async def _ot_ctl(*args: str, timeout: float = 10.0) -> dict:
         return {"success": False, "output": "", "error": str(e)}
 
 
+async def _parse_dataset() -> dict:
+    """Parse ot-ctl dataset active into a normalised dict."""
+    result = await _ot_ctl("dataset", "active")
+    if not result["success"]:
+        return {}
+
+    # Map ot-ctl key names to normalised frontend keys
+    key_map = {
+        "network name": "network_name",
+        "channel": "channel",
+        "pan id": "pan_id",
+        "ext pan id": "ext_pan_id",
+        "mesh local prefix": "mesh_local_prefix",
+        "network key": "network_key",
+        "active timestamp": "active_timestamp",
+        "pskc": "pskc",
+        "security policy": "security_policy",
+        "channel mask": "channel_mask",
+    }
+
+    network = {}
+    for line in result["output"].split("\n"):
+        line = line.strip()
+        if ": " in line:
+            raw_key, val = line.split(": ", 1)
+            normalised = key_map.get(raw_key.strip().lower(), raw_key.strip().lower().replace(" ", "_"))
+            network[normalised] = val.strip()
+    return network
+
+
 def register_otbr_routes(app: FastAPI, get_zigbee_service):
     """Register OTBR/Thread routes."""
 
@@ -51,6 +81,8 @@ def register_otbr_routes(app: FastAPI, get_zigbee_service):
         if svc and hasattr(svc, 'multipan') and svc.multipan:
             return svc.multipan
         return None
+
+    # ── Status ──────────────────────────────────────────────────────
 
     @app.get("/api/otbr/status")
     async def otbr_status():
@@ -82,21 +114,15 @@ def register_otbr_routes(app: FastAPI, get_zigbee_service):
             result["version"] = ver["output"].strip()
 
         if result["thread_state"] not in ("disabled", "detached"):
-            dataset = await _ot_ctl("dataset", "active")
-            if dataset["success"]:
-                network = {}
-                for line in dataset["output"].split("\n"):
-                    line = line.strip()
-                    if ": " in line:
-                        key, val = line.split(": ", 1)
-                        network[key.strip().lower().replace(" ", "_")] = val.strip()
-                result["network"] = network
+            result["network"] = await _parse_dataset()
 
             addrs = await _ot_ctl("ipaddr")
             if addrs["success"] and addrs["output"]:
                 result["ipaddrs"] = [a.strip() for a in addrs["output"].split("\n") if a.strip()]
 
         return result
+
+    # ── Network Formation ───────────────────────────────────────────
 
     @app.post("/api/otbr/form-network")
     async def form_network(req: FormNetworkRequest = FormNetworkRequest()):
@@ -111,13 +137,17 @@ def register_otbr_routes(app: FastAPI, get_zigbee_service):
         steps = []
 
         result = await _ot_ctl("dataset", "init", "new")
-        steps.append({"step": "dataset init new", "success": result["success"], "output": result["output"]})
+        steps.append({"step": "dataset init new", "success": result["success"]})
         if not result["success"]:
             return {"success": False, "steps": steps, "error": "Failed to initialise dataset"}
 
         if req.channel:
             result = await _ot_ctl("dataset", "channel", str(req.channel))
             steps.append({"step": f"dataset channel {req.channel}", "success": result["success"]})
+
+        if req.network_name:
+            result = await _ot_ctl("dataset", "networkname", req.network_name)
+            steps.append({"step": f"dataset networkname {req.network_name}", "success": result["success"]})
 
         result = await _ot_ctl("dataset", "commit", "active")
         steps.append({"step": "dataset commit active", "success": result["success"]})
@@ -137,7 +167,6 @@ def register_otbr_routes(app: FastAPI, get_zigbee_service):
         await asyncio.sleep(3)
         state = await _ot_ctl("state")
         final_state = state["output"].strip() if state["success"] else "unknown"
-        steps.append({"step": "check state", "success": True, "output": final_state})
 
         logger.info(f"Thread network formed — state: {final_state}")
         return {"success": True, "state": final_state, "steps": steps}
@@ -162,21 +191,161 @@ def register_otbr_routes(app: FastAPI, get_zigbee_service):
         await _ot_ctl("ifconfig", "down")
         return {"success": True, "state": "disabled"}
 
+    # ── Dataset ─────────────────────────────────────────────────────
+
     @app.get("/api/otbr/dataset")
     async def get_dataset():
-        result = await _ot_ctl("dataset", "active", "-x")
-        if not result["success"]:
-            return {"success": False, "error": result["error"], "dataset_hex": None}
+        hex_result = await _ot_ctl("dataset", "active", "-x")
+        network = await _parse_dataset()
 
-        readable = await _ot_ctl("dataset", "active")
-        network = {}
-        if readable["success"]:
-            for line in readable["output"].split("\n"):
+        if not hex_result["success"]:
+            return {"success": False, "error": hex_result["error"], "dataset_hex": None}
+
+        return {
+            "success": True,
+            "dataset_hex": hex_result["output"].strip(),
+            "network": network,
+        }
+
+    # ── Topology ────────────────────────────────────────────────────
+
+    @app.get("/api/otbr/topology")
+    async def get_thread_topology():
+        """Get Thread network topology — routers, children, and links."""
+        nodes = []
+        links = []
+
+        # Get our own info
+        state = await _ot_ctl("state")
+        my_state = state["output"].strip().lower() if state["success"] else "unknown"
+
+        rloc = await _ot_ctl("rloc16")
+        my_rloc = rloc["output"].strip() if rloc["success"] else "0000"
+
+        eui = await _ot_ctl("eui64")
+        my_eui = eui["output"].strip() if eui["success"] else ""
+
+        ext_addr = await _ot_ctl("extaddr")
+        my_ext = ext_addr["output"].strip() if ext_addr["success"] else ""
+
+        nodes.append({
+            "id": my_ext or my_rloc,
+            "rloc16": my_rloc,
+            "eui64": my_eui,
+            "role": my_state,
+            "is_self": True,
+        })
+
+        # Get router table
+        router_table = await _ot_ctl("router", "table")
+        if router_table["success"]:
+            for line in router_table["output"].split("\n"):
                 line = line.strip()
-                if ": " in line:
-                    key, val = line.split(": ", 1)
-                    network[key.strip().lower().replace(" ", "_")] = val.strip()
+                # Skip header lines
+                if not line or line.startswith("|") and "ID" in line or line.startswith("+"):
+                    continue
+                if "|" in line:
+                    parts = [p.strip() for p in line.split("|") if p.strip()]
+                    if len(parts) >= 5:
+                        try:
+                            router_id = parts[0]
+                            rloc16 = parts[1]
+                            next_hop = parts[2]
+                            path_cost = parts[3]
+                            link_quality = parts[4] if len(parts) > 4 else "0"
 
-        return {"success": True, "dataset_hex": result["output"].strip(), "network": network}
+                            if rloc16 != my_rloc:
+                                nodes.append({
+                                    "id": rloc16,
+                                    "rloc16": rloc16,
+                                    "role": "router",
+                                    "router_id": router_id,
+                                    "is_self": False,
+                                })
+
+                                if int(link_quality) > 0:
+                                    links.append({
+                                        "source": my_rloc,
+                                        "target": rloc16,
+                                        "link_quality": int(link_quality),
+                                    })
+                        except (ValueError, IndexError):
+                            continue
+
+        # Get child table
+        child_table = await _ot_ctl("child", "table")
+        if child_table["success"]:
+            for line in child_table["output"].split("\n"):
+                line = line.strip()
+                if not line or line.startswith("|") and "ID" in line or line.startswith("+"):
+                    continue
+                if "|" in line:
+                    parts = [p.strip() for p in line.split("|") if p.strip()]
+                    if len(parts) >= 4:
+                        try:
+                            child_id = parts[0]
+                            rloc16 = parts[1]
+
+                            nodes.append({
+                                "id": rloc16,
+                                "rloc16": rloc16,
+                                "role": "child",
+                                "child_id": child_id,
+                                "is_self": False,
+                            })
+
+                            links.append({
+                                "source": my_rloc,
+                                "target": rloc16,
+                                "link_quality": 3,
+                            })
+                        except (ValueError, IndexError):
+                            continue
+
+        # Get neighbor table for link quality details
+        neighbor_table = await _ot_ctl("neighbor", "table")
+        if neighbor_table["success"]:
+            for line in neighbor_table["output"].split("\n"):
+                line = line.strip()
+                if not line or line.startswith("|") and "Role" in line or line.startswith("+"):
+                    continue
+                if "|" in line:
+                    parts = [p.strip() for p in line.split("|") if p.strip()]
+                    if len(parts) >= 6:
+                        try:
+                            role = parts[0]
+                            rloc16 = parts[1]
+                            age = parts[2]
+                            avg_rssi = parts[3]
+                            last_rssi = parts[4]
+
+                            # Update existing node with RSSI info
+                            for node in nodes:
+                                if node["rloc16"] == rloc16:
+                                    node["avg_rssi"] = avg_rssi
+                                    node["last_rssi"] = last_rssi
+                                    break
+                        except (ValueError, IndexError):
+                            continue
+
+        return {
+            "success": True,
+            "state": my_state,
+            "nodes": nodes,
+            "links": links,
+        }
+
+    # ── Diagnostics ─────────────────────────────────────────────────
+
+    @app.get("/api/otbr/counters")
+    async def get_counters():
+        """Get Thread MAC and MLE counters."""
+        mac = await _ot_ctl("counters", "mac")
+        mle = await _ot_ctl("counters", "mle")
+        return {
+            "success": True,
+            "mac": mac["output"] if mac["success"] else mac["error"],
+            "mle": mle["output"] if mle["success"] else mle["error"],
+        }
 
     logger.info("OTBR/Thread routes registered")

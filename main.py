@@ -162,6 +162,7 @@ if matter_config.get('enabled', False):
     matter_server = MatterServerManager(
         storage_path=storage_path,
         port=matter_port,
+        bluetooth_adapter=matter_config.get('bluetooth_adapter', None),
     )
 
     from modules.matter_bridge import MatterBridge
