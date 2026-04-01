@@ -610,8 +610,6 @@ run_container() {
         --cap-add=SYS_ADMIN
         --restart unless-stopped
         --device /dev/net/tun:/dev/net/tun
-        --publish "${host_port}:${INTERNAL_PORT}"
-        --publish "${host_matter_port}:${MATTER_INTERNAL_PORT}"
         --sysctl net.ipv6.conf.all.disable_ipv6=0
         --sysctl net.ipv6.conf.all.forwarding=1
         --sysctl net.ipv4.conf.all.forwarding=1
@@ -621,6 +619,37 @@ run_container() {
         --volume "${DATA_DIR}/data:/app/data"
         --volume "${DATA_DIR}/logs:/app/logs"
     )
+
+    # ── Networking: otbr-agent needs raw sockets for ICMPv6 ──────────
+    # Strategy:
+    #   Podman rootless + pasta available → pasta with port forwarding
+    #   Podman rootless without pasta     → host networking (no port remap)
+    #   Podman rootful                    → host networking
+    #   Docker                            → host networking
+    #
+    # Only pasta supports raw sockets AND port forwarding simultaneously.
+    # All other configurations require --network=host where the container
+    # shares the host's network stack (ports exposed at INTERNAL_PORT).
+
+    if [[ "$RUNTIME" == "podman" ]] && [[ $(id -u) -ne 0 ]]; then
+        # Rootless Podman
+        if command -v pasta &>/dev/null; then
+            run_args+=(--network="pasta:-t,${host_port},-t,${host_matter_port}")
+            ok "Networking: pasta (port forwarding + raw socket support)"
+        else
+            run_args+=(--network=host)
+            warn "Networking: host (pasta not found — install 'passt' for port remapping)"
+            warn "  ZMM will be at http://<host>:${INTERNAL_PORT} (no port remap)"
+        fi
+    else
+        # Docker or rootful Podman — host networking for raw socket support
+        run_args+=(--network=host)
+        ok "Networking: host (raw socket support for Thread border routing)"
+        if [[ "$host_port" != "${INTERNAL_PORT}" ]] || [[ "$host_matter_port" != "${MATTER_INTERNAL_PORT}" ]]; then
+            warn "  Port remapping not available with host networking."
+            warn "  ZMM: http://<host>:${INTERNAL_PORT}  Matter: <host>:${MATTER_INTERNAL_PORT}"
+        fi
+    fi
 
     # ── UID mapping: keep host UID inside container (Podman only) ──
     if [[ "$RUNTIME" == "podman" ]]; then
