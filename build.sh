@@ -634,7 +634,7 @@ run_container() {
     if [[ "$RUNTIME" == "podman" ]] && [[ $(id -u) -ne 0 ]]; then
         # Rootless Podman
         if command -v pasta &>/dev/null; then
-            run_args+=(--network="pasta:-t,${host_port},-t,${host_matter_port}")
+            run_args+=(--network="pasta:-t,${host_port}:${INTERNAL_PORT},-t,${host_matter_port}:${MATTER_INTERNAL_PORT}")
             ok "Networking: pasta (port forwarding + raw socket support)"
         else
             run_args+=(--network=host)
