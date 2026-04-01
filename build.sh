@@ -129,10 +129,10 @@ find_free_port() {
 pick_host_port() {
     local preferred=$1
     if port_in_use "$preferred"; then
-        warn "Port ${preferred} is in use — scanning..."
+        warn "Port ${preferred} is in use — scanning..." >&2
         local found
         found=$(find_free_port "$((preferred + 1))")
-        warn "Using port ${BOLD}${found}${NC} instead."
+        warn "Using port ${BOLD}${found}${NC} instead." >&2
         echo "$found"
     else
         echo "$preferred"
@@ -576,7 +576,6 @@ run_container() {
         --cap-add=NET_RAW
         --cap-add=SYS_ADMIN
         --restart unless-stopped
-        --device /dev/net/tun:/dev/net/tun
         --publish "${host_port}:${INTERNAL_PORT}"
         --publish "${host_matter_port}:${MATTER_INTERNAL_PORT}"
         --sysctl net.ipv6.conf.all.disable_ipv6=0
