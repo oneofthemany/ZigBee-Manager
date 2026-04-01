@@ -4,7 +4,7 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="removal of conatiner removal process as dealt with using the teardown script for any updates">
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="removal of restart for otbr">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -151,14 +151,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00165" summary="otbr work">
-      <option name="closed" value="true" />
-      <created>1774956937144</created>
-      <option name="number" value="00165" />
-      <option name="presentableId" value="LOCAL-00165" />
-      <option name="project" value="LOCAL" />
-      <updated>1774956937144</updated>
     </task>
     <task id="LOCAL-00166" summary="lsb-release added for otbr">
       <option name="closed" value="true" />
@@ -544,7 +536,15 @@
       <option name="project" value="LOCAL" />
       <updated>1775047837636</updated>
     </task>
-    <option name="localTasksCounter" value="214" />
+    <task id="LOCAL-00214" summary="removal of restart for otbr">
+      <option name="closed" value="true" />
+      <created>1775051531986</created>
+      <option name="number" value="00214" />
+      <option name="presentableId" value="LOCAL-00214" />
+      <option name="project" value="LOCAL" />
+      <updated>1775051531986</updated>
+    </task>
+    <option name="localTasksCounter" value="215" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -559,7 +559,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="reverted" />
     <MESSAGE value="version bug" />
     <MESSAGE value="using branch 4.7.0" />
     <MESSAGE value="using branch 4.7" />
@@ -584,6 +583,7 @@
     <MESSAGE value="adding in removal of container ahead of port check" />
     <MESSAGE value="wpan fix for otbr" />
     <MESSAGE value="removal of conatiner removal process as dealt with using the teardown script for any updates" />
-    <option name="LAST_COMMIT_MESSAGE" value="removal of conatiner removal process as dealt with using the teardown script for any updates" />
+    <MESSAGE value="removal of restart for otbr" />
+    <option name="LAST_COMMIT_MESSAGE" value="removal of restart for otbr" />
   </component>
 </project>

@@ -603,10 +603,15 @@ run_container() {
         "$RUNTIME" rm -f "$CONTAINER_NAME"
     fi
 
+    # Clean up any stale wpan0 from previous host-network attempts
+    sudo ip link del wpan0 2>/dev/null || true
+
     local run_args=(
         --detach
         --name "$CONTAINER_NAME"
-        --network=host
+        --network=slirp4netns
+        --publish "${host_port}:${INTERNAL_PORT}"
+        --publish "${host_matter_port}:${MATTER_INTERNAL_PORT}"
         --cap-add=NET_ADMIN
         --cap-add=NET_RAW
         --cap-add=SYS_ADMIN
@@ -619,15 +624,7 @@ run_container() {
         --volume "${DATA_DIR}/logs:/app/logs"
     )
 
-    # ── Dynamic ports via environment variables ──────────────────────
-    # With --network=host the container shares the host's network stack.
-    # No port mapping — the app listens directly on the host interface.
-    # If the default ports (8000/5580) are busy, build.sh picks free ones
-    # and tells the app to listen there via environment variables.
-    run_args+=(-e "ZMM_PORT=${host_port}")
-    run_args+=(-e "ZMM_MATTER_PORT=${host_matter_port}")
-
-    ok "Networking: host (ZMM port: ${host_port}, Matter port: ${host_matter_port})"
+    ok "Networking: slirp4netns (ZMM: ${host_port}→${INTERNAL_PORT}, Matter: ${host_matter_port}→${MATTER_INTERNAL_PORT})"
 
     # ── UID mapping: keep host UID inside container (Podman only) ──
     if [[ "$RUNTIME" == "podman" ]]; then
@@ -640,16 +637,13 @@ run_container() {
         real_dev=$(readlink -f "$USB_DEVICE")
 
         if [[ "$RUNTIME" == "podman" && -n "${DEVICE_MOUNT_PATH:-}" ]]; then
-            # Podman rootless: use the bind-mounted device path
             run_args+=(--device "${DEVICE_MOUNT_PATH}:${real_dev}")
             ok "Using bind-mounted device: ${DEVICE_MOUNT_PATH} → ${real_dev}"
 
-            # If the original was a symlink, also map it inside the container
             if [[ "$USB_DEVICE" != "$real_dev" ]]; then
                 run_args+=(--device "${DEVICE_MOUNT_PATH}:${USB_DEVICE}")
             fi
         else
-            # Docker or fallback: pass device nodes directly
             run_args+=(--device "${real_dev}:${real_dev}")
             if [[ "$USB_DEVICE" != "$real_dev" ]]; then
                 run_args+=(--device "${USB_DEVICE}:${USB_DEVICE}")
@@ -668,14 +662,6 @@ run_container() {
         run_args+=(--group-add "${DIALOUT_GID}")
     fi
     run_args+=(--security-opt label=disable)
-
-
-    # ── Pre-create wpan0 TUN interface for Thread border router ──────
-    info "Preparing wpan0 TUN interface for Thread border router..."
-    sudo ip link del wpan0 2>/dev/null || true
-    sudo ip tuntap add dev wpan0 mode tun user "$(id -u)"
-    sudo ip link set wpan0 up
-    ok "wpan0 interface ready"
 
     info "Starting container '${CONTAINER_NAME}' ..."
     "$RUNTIME" run "${run_args[@]}" "${IMAGE_NAME}:latest"
@@ -759,16 +745,6 @@ mount --bind "\$DEVICE" "\$MOUNT_PATH"
 chown ${invoking_uid}:${invoking_gid} "\$MOUNT_PATH"
 chmod 660 "\$MOUNT_PATH"
 
-# ── Create wpan0 TUN interface for Thread border router ──────────────
-# otbr-agent needs a TUN device but rootless Podman can't create one
-# (user namespace restriction). Pre-create it on the host.
-if ! ip link show wpan0 &>/dev/null 2>&1; then
-    ip tuntap add dev wpan0 mode tun user ${invoking_uid}
-    ip link set wpan0 up
-    echo "zmm-remount: wpan0 TUN interface created"
-else
-    echo "zmm-remount: wpan0 already exists"
-fi
 
 echo "zmm-remount: \$DEVICE → \$MOUNT_PATH OK"
 SCRIPT
