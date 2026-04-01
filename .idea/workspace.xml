@@ -4,11 +4,7 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="listening fixes for authentication phase">
-      <change afterPath="$PROJECT_DIR$/routes/matter_attributes_routes.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/main.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/routes/__init__.py" beforeDir="false" afterPath="$PROJECT_DIR$/routes/__init__.py" afterDir="false" />
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="otbr attributes added">
       <change beforePath="$PROJECT_DIR$/static/js/device-modal.js" beforeDir="false" afterPath="$PROJECT_DIR$/static/js/device-modal.js" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -156,14 +152,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00179" summary="remved -DOTBR_SRP_ADVERTISING_PROXY=ON and -DOTBR_DUA_ROUTING=ON from containerfile">
-      <option name="closed" value="true" />
-      <created>1774968385742</created>
-      <option name="number" value="00179" />
-      <option name="presentableId" value="LOCAL-00179" />
-      <option name="project" value="LOCAL" />
-      <updated>1774968385742</updated>
     </task>
     <task id="LOCAL-00180" summary="fetching cpc-daemon and setting -DCPCD_SOURCE_DIR=/tmp/cpc-daemon">
       <option name="closed" value="true" />
@@ -549,7 +537,15 @@
       <option name="project" value="LOCAL" />
       <updated>1775069538300</updated>
     </task>
-    <option name="localTasksCounter" value="228" />
+    <task id="LOCAL-00228" summary="otbr attributes added">
+      <option name="closed" value="true" />
+      <created>1775070197256</created>
+      <option name="number" value="00228" />
+      <option name="presentableId" value="LOCAL-00228" />
+      <option name="project" value="LOCAL" />
+      <updated>1775070197256</updated>
+    </task>
+    <option name="localTasksCounter" value="229" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -564,7 +560,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="removing sudo from otbr agent to troubleshoot" />
     <MESSAGE value="adding /var/lib/thread dir and permissions for OTBR to run" />
     <MESSAGE value="adding back in --device /dev/net/tun:/dev/net/tun&#10;&#10;required by platformConfigureTunDevice in otbr agent" />
     <MESSAGE value="auto detect interface off container in _build_otbr_command to fix Platform------: CreateIcmp6Socket() at infra_if.cpp:187: No such device" />
@@ -589,6 +584,7 @@
     <MESSAGE value="thread dataset added to commissioning matter bridge" />
     <MESSAGE value="wording change for setup" />
     <MESSAGE value="listening fixes for authentication phase" />
-    <option name="LAST_COMMIT_MESSAGE" value="listening fixes for authentication phase" />
+    <MESSAGE value="otbr attributes added" />
+    <option name="LAST_COMMIT_MESSAGE" value="otbr attributes added" />
   </component>
 </project>

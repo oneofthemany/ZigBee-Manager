@@ -80,6 +80,15 @@ export function openDeviceModal(d) {
 
     modalBody.innerHTML = html;
 
+    if (!isZigbee) {
+        const capsTab = modalBody.querySelector('[data-bs-target="#tab-caps"]');
+        if (capsTab) {
+            capsTab.addEventListener('shown.bs.tab', () => {
+                initMatterClustersTab(cachedDev.state?.node_id);
+            });
+        }
+    }
+
     // Bind schedule calendar events for thermostat devices
     if (hasCluster(cachedDev, 0x0201)) {
         bindScheduleEvents(cachedDev.ieee);
