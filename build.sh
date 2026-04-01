@@ -522,6 +522,36 @@ prepare_data_dirs() {
 }
 
 # =============================================================================
+# HOST DBUS POLICY FOR OTBR
+# =============================================================================
+prepare_otbr_dbus_policy() {
+    local policy_file="/etc/dbus-1/system.d/otbr-agent.conf"
+
+    if [[ -f "$policy_file" ]] && grep -q "context=\"default\"" "$policy_file" 2>/dev/null; then
+        ok "OTBR D-Bus policy already configured"
+        return
+    fi
+
+    info "Installing D-Bus policy for Thread border router..."
+    sudo tee "$policy_file" > /dev/null << 'DBUS_POLICY'
+<!DOCTYPE busconfig PUBLIC "-//freedesktop//DTD D-BUS Bus Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/dbus/1.0/busconfig.dtd">
+<busconfig>
+  <policy context="default">
+    <allow own_prefix="io.openthread.BorderRouter"/>
+    <allow send_destination="io.openthread.BorderRouter.wpan0"/>
+    <allow send_interface="io.openthread.BorderRouter"/>
+    <allow send_interface="org.freedesktop.DBus.Properties"/>
+    <allow send_interface="org.freedesktop.DBus.Introspectable"/>
+  </policy>
+</busconfig>
+DBUS_POLICY
+    sudo systemctl reload dbus 2>/dev/null || true
+    ok "OTBR D-Bus policy installed"
+}
+
+
+# =============================================================================
 # DEVICE BIND-MOUNT (Podman rootless workaround)
 # =============================================================================
 # Rootless Podman can't access /dev/ device nodes directly via --device.
@@ -922,6 +952,9 @@ fi
 
 # Step 6: Prepare data dirs + device mount
 prepare_data_dirs
+
+# Step 6.5: OTBR D-Bus policy on host
+prepare_otbr_dbus_policy
 
 # Step 7: Bind-mount device for rootless Podman
 prepare_device_mount

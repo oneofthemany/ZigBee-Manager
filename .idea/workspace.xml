@@ -4,7 +4,9 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="further updates to otbr" />
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="further updates to otbr">
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+    </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -150,14 +152,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00173" summary="otbr with cpc as found to not support on container build:&#10;&#10;otbr-agent[84]: 49d.23:25:05.308 [C] Platform------: The Spinel interface name &quot;spinel+cpc&quot; is not supported!&#10;otbr-agent[84]: 49d.23:25:05.308 [C] Platform------: CreateSpinelInterface() at spinel_manager.cpp:128: Failure">
-      <option name="closed" value="true" />
-      <created>1774966626041</created>
-      <option name="number" value="00173" />
-      <option name="presentableId" value="LOCAL-00173" />
-      <option name="project" value="LOCAL" />
-      <updated>1774966626041</updated>
     </task>
     <task id="LOCAL-00174" summary="libsystemd added to deps">
       <option name="closed" value="true" />
@@ -543,7 +537,15 @@
       <option name="project" value="LOCAL" />
       <updated>1775065194045</updated>
     </task>
-    <option name="localTasksCounter" value="222" />
+    <task id="LOCAL-00222" summary="further updates to otbr">
+      <option name="closed" value="true" />
+      <created>1775065332148</created>
+      <option name="number" value="00222" />
+      <option name="presentableId" value="LOCAL-00222" />
+      <option name="project" value="LOCAL" />
+      <updated>1775065332148</updated>
+    </task>
+    <option name="localTasksCounter" value="223" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
