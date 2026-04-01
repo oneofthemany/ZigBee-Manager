@@ -443,7 +443,7 @@ USER appuser
 EXPOSE 8000 5580
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
-    CMD curl -f http://localhost:${ZMM_PORT:-8000}/api/status || exit 1
+    CMD curl -f http://localhost:\${ZMM_PORT:-8000}/api/status || exit 1
 
 CMD ["python", "main.py"]
 DOCKERFILE

@@ -4,7 +4,7 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="networking patch - moved to network host">
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="healthcheck fix">
       <change afterPath="$PROJECT_DIR$/docs/project_overview.md" afterDir="false" />
       <change afterPath="$PROJECT_DIR$/modules/cpc_diag.py" afterDir="false" />
       <change afterPath="$PROJECT_DIR$/modules/index.html" afterDir="false" />
@@ -155,14 +155,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00157" summary="more deps for dev">
-      <option name="closed" value="true" />
-      <created>1774726196176</created>
-      <option name="number" value="00157" />
-      <option name="presentableId" value="LOCAL-00157" />
-      <option name="project" value="LOCAL" />
-      <updated>1774726196176</updated>
     </task>
     <task id="LOCAL-00158" summary="PTYTCPBridge to correct MultiPanManager init">
       <option name="closed" value="true" />
@@ -548,7 +540,15 @@
       <option name="project" value="LOCAL" />
       <updated>1775042080570</updated>
     </task>
-    <option name="localTasksCounter" value="206" />
+    <task id="LOCAL-00206" summary="healthcheck fix">
+      <option name="closed" value="true" />
+      <created>1775042688853</created>
+      <option name="number" value="00206" />
+      <option name="presentableId" value="LOCAL-00206" />
+      <option name="project" value="LOCAL" />
+      <updated>1775042688853</updated>
+    </task>
+    <option name="localTasksCounter" value="207" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -563,7 +563,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="systemd added to deps" />
     <MESSAGE value="dep fix or conatiner file" />
     <MESSAGE value="libsystemd removed and have dev" />
     <MESSAGE value="remved -DOTBR_SRP_ADVERTISING_PROXY=ON and -DOTBR_DUA_ROUTING=ON from containerfile" />
@@ -588,7 +587,8 @@
     <MESSAGE value="improving run container to cater for networking requirements for otbr" />
     <MESSAGE value="network fix for pasta" />
     <MESSAGE value="networking patch - moved to network host" />
-    <option name="LAST_COMMIT_MESSAGE" value="networking patch - moved to network host" />
+    <MESSAGE value="healthcheck fix" />
+    <option name="LAST_COMMIT_MESSAGE" value="healthcheck fix" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
