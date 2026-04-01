@@ -4,9 +4,7 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="otbr conf update">
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-    </list>
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="thread dataset added to commissioning matter bridge" />
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -152,14 +150,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00175" summary="systemd added to deps">
-      <option name="closed" value="true" />
-      <created>1774967359342</created>
-      <option name="number" value="00175" />
-      <option name="presentableId" value="LOCAL-00175" />
-      <option name="project" value="LOCAL" />
-      <updated>1774967359342</updated>
     </task>
     <task id="LOCAL-00176" summary="dep fix or conatiner file">
       <option name="closed" value="true" />
@@ -545,7 +535,15 @@
       <option name="project" value="LOCAL" />
       <updated>1775066141318</updated>
     </task>
-    <option name="localTasksCounter" value="224" />
+    <task id="LOCAL-00224" summary="thread dataset added to commissioning matter bridge">
+      <option name="closed" value="true" />
+      <created>1775067022284</created>
+      <option name="number" value="00224" />
+      <option name="presentableId" value="LOCAL-00224" />
+      <option name="project" value="LOCAL" />
+      <updated>1775067022284</updated>
+    </task>
+    <option name="localTasksCounter" value="225" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -560,7 +558,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="removing /dev/net/tun to run_container&#10;&#10;adding redirect to stderr for pick_host_port" />
     <MESSAGE value="adding port in use information to build" />
     <MESSAGE value="adding sudo to lsof and ss commands" />
     <MESSAGE value="removing sudo from otbr agent to troubleshoot" />
@@ -585,6 +582,7 @@
     <MESSAGE value="moved otbr to routes" />
     <MESSAGE value="further updates to otbr" />
     <MESSAGE value="otbr conf update" />
-    <option name="LAST_COMMIT_MESSAGE" value="otbr conf update" />
+    <MESSAGE value="thread dataset added to commissioning matter bridge" />
+    <option name="LAST_COMMIT_MESSAGE" value="thread dataset added to commissioning matter bridge" />
   </component>
 </project>
