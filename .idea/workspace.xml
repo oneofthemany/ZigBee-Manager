@@ -4,14 +4,11 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="network fix for pasta">
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="networking patch - moved to network host">
       <change afterPath="$PROJECT_DIR$/docs/project_overview.md" afterDir="false" />
       <change afterPath="$PROJECT_DIR$/modules/cpc_diag.py" afterDir="false" />
       <change afterPath="$PROJECT_DIR$/modules/index.html" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/build.sh" beforeDir="false" afterPath="$PROJECT_DIR$/build.sh" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/main.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -157,14 +154,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00155" summary="socat removal from new pty bridge">
-      <option name="closed" value="true" />
-      <created>1774702053958</created>
-      <option name="number" value="00155" />
-      <option name="presentableId" value="LOCAL-00155" />
-      <option name="project" value="LOCAL" />
-      <updated>1774702053958</updated>
     </task>
     <task id="LOCAL-00156" summary="more deps for dev">
       <option name="closed" value="true" />
@@ -550,7 +539,15 @@
       <option name="project" value="LOCAL" />
       <updated>1775040807374</updated>
     </task>
-    <option name="localTasksCounter" value="204" />
+    <task id="LOCAL-00204" summary="networking patch - moved to network host">
+      <option name="closed" value="true" />
+      <created>1775042074727</created>
+      <option name="number" value="00204" />
+      <option name="presentableId" value="LOCAL-00204" />
+      <option name="project" value="LOCAL" />
+      <updated>1775042074727</updated>
+    </task>
+    <option name="localTasksCounter" value="205" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -565,7 +562,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="libsystemd added to deps" />
     <MESSAGE value="systemd added to deps" />
     <MESSAGE value="dep fix or conatiner file" />
     <MESSAGE value="libsystemd removed and have dev" />
@@ -590,7 +586,8 @@
     <MESSAGE value="auto detect interface off container in _build_otbr_command to fix Platform------: CreateIcmp6Socket() at infra_if.cpp:187: No such device" />
     <MESSAGE value="improving run container to cater for networking requirements for otbr" />
     <MESSAGE value="network fix for pasta" />
-    <option name="LAST_COMMIT_MESSAGE" value="network fix for pasta" />
+    <MESSAGE value="networking patch - moved to network host" />
+    <option name="LAST_COMMIT_MESSAGE" value="networking patch - moved to network host" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
