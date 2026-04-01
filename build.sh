@@ -443,7 +443,7 @@ USER appuser
 EXPOSE 8000 5580
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
-    CMD curl -f http://localhost:8000/api/status || exit 1
+    CMD curl -f http://localhost:${ZMM_PORT:-8000}/api/status || exit 1
 
 CMD ["python", "main.py"]
 DOCKERFILE
@@ -467,6 +467,7 @@ build_image() {
 
     "$RUNTIME" build \
         "${build_args[@]}" \
+        --format docker \
         --tag "${IMAGE_NAME}:latest" \
         --file "$APP_DIR/Containerfile" \
         "$APP_DIR"
@@ -611,9 +612,6 @@ run_container() {
         --cap-add=SYS_ADMIN
         --restart unless-stopped
         --device /dev/net/tun:/dev/net/tun
-        --sysctl net.ipv6.conf.all.disable_ipv6=0
-        --sysctl net.ipv6.conf.all.forwarding=1
-        --sysctl net.ipv4.conf.all.forwarding=1
         --volume /dev/shm:/dev/shm
         --volume /run/dbus:/run/dbus
         --volume "${DATA_DIR}/config:/app/config"
