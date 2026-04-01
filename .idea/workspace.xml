@@ -4,7 +4,14 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="reset_sequence to true and _reset_serial_state fix" />
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="removal of conatiner removal process as dealt with using the teardown script for any updates">
+      <change afterPath="$PROJECT_DIR$/docs/project_overview.md" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/modules/cpc_diag.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/modules/index.html" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/build.sh" beforeDir="false" afterPath="$PROJECT_DIR$/build.sh" afterDir="false" />
+    </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -23,7 +30,7 @@
   <component name="Git.Settings">
     <option name="RECENT_BRANCH_BY_REPOSITORY">
       <map>
-        <entry key="$PROJECT_DIR$" value="main" />
+        <entry key="$PROJECT_DIR$" value="dev" />
       </map>
     </option>
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
@@ -34,12 +41,12 @@
     &quot;assignee&quot;: &quot;oneofthemany&quot;
   }
 }</component>
-  <component name="GithubPullRequestsUISettings">{
-  &quot;selectedUrlAndAccountId&quot;: {
-    &quot;url&quot;: &quot;https://github.com/oneofthemany/ZigBee-Matter-Manager.git&quot;,
-    &quot;accountId&quot;: &quot;e255082e-bca2-4e88-a50f-e3452f07b5b3&quot;
+  <component name="GithubPullRequestsUISettings"><![CDATA[{
+  "selectedUrlAndAccountId": {
+    "url": "https://github.com/oneofthemany/ZigBee-Matter-Manager.git",
+    "accountId": "b00be1dc-7b4f-4311-ab84-b3d2175df6fb"
   }
-}</component>
+}]]></component>
   <component name="ProjectColorInfo">{
   &quot;associatedIndex&quot;: 2
 }</component>
@@ -48,29 +55,29 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent">{
-  &quot;keyToString&quot;: {
-    &quot;ModuleVcsDetector.initialDetectionPerformed&quot;: &quot;true&quot;,
-    &quot;Python.main.executor&quot;: &quot;Run&quot;,
-    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.cidr.known.project.marker&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.readMode.enableVisualFormatting&quot;: &quot;true&quot;,
-    &quot;SHARE_PROJECT_CONFIGURATION_FILES&quot;: &quot;true&quot;,
-    &quot;SHELLCHECK.PATH&quot;: &quot;/var/home/smu02/.local/share/Google/AndroidStudio2025.3.1/Shell Script/shellcheck&quot;,
-    &quot;Shell Script.deploy.sh.executor&quot;: &quot;Run&quot;,
-    &quot;cf.first.check.clang-format&quot;: &quot;false&quot;,
-    &quot;cidr.known.project.marker&quot;: &quot;true&quot;,
-    &quot;git-widget-placeholder&quot;: &quot;main&quot;,
-    &quot;kotlin-language-version-configured&quot;: &quot;true&quot;,
-    &quot;last_opened_file_path&quot;: &quot;/var/home/smu02/StudioProjects/ZigBee-Manager&quot;,
-    &quot;project.structure.last.edited&quot;: &quot;Project&quot;,
-    &quot;project.structure.proportion&quot;: &quot;0.0&quot;,
-    &quot;project.structure.side.proportion&quot;: &quot;0.2&quot;,
-    &quot;settings.editor.selected.configurable&quot;: &quot;AndroidSdkUpdater&quot;
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "ModuleVcsDetector.initialDetectionPerformed": "true",
+    "Python.main.executor": "Run",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252": "true",
+    "RunOnceActivity.cidr.known.project.marker": "true",
+    "RunOnceActivity.git.unshallow": "true",
+    "RunOnceActivity.readMode.enableVisualFormatting": "true",
+    "SHARE_PROJECT_CONFIGURATION_FILES": "true",
+    "SHELLCHECK.PATH": "/var/home/smu02/.local/share/Google/AndroidStudio2025.3.1/Shell Script/shellcheck",
+    "Shell Script.deploy.sh.executor": "Run",
+    "cf.first.check.clang-format": "false",
+    "cidr.known.project.marker": "true",
+    "git-widget-placeholder": "main",
+    "kotlin-language-version-configured": "true",
+    "last_opened_file_path": "/var/home/smu02/StudioProjects/ZigBee-Manager",
+    "project.structure.last.edited": "SDKs",
+    "project.structure.proportion": "0.0",
+    "project.structure.side.proportion": "0.2",
+    "settings.editor.selected.configurable": "AndroidSdkUpdater"
   }
-}</component>
+}]]></component>
   <component name="PyConsoleOptionsProvider">
     <option name="myPythonConsoleState">
       <console-settings sdk-home="$USER_HOME$/venv/bin/python3.14">
@@ -129,8 +136,14 @@
       <envs />
       <method v="2" />
     </configuration>
+    <list>
+      <item itemvalue="Python.main" />
+      <item itemvalue="Shell Script.deploy.sh" />
+    </list>
     <recent_temporary>
       <list>
+        <item itemvalue="Shell Script.deploy.sh" />
+        <item itemvalue="Python.main" />
         <item itemvalue="Python.main" />
         <item itemvalue="Shell Script.deploy.sh" />
       </list>
@@ -144,399 +157,399 @@
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
     </task>
-    <task id="LOCAL-00115" summary="multepan phase 1 test">
+    <task id="LOCAL-00165" summary="otbr work">
       <option name="closed" value="true" />
-      <created>1774453785413</created>
-      <option name="number" value="00115" />
-      <option name="presentableId" value="LOCAL-00115" />
+      <created>1774956937144</created>
+      <option name="number" value="00165" />
+      <option name="presentableId" value="LOCAL-00165" />
       <option name="project" value="LOCAL" />
-      <updated>1774453785413</updated>
+      <updated>1774956937144</updated>
     </task>
-    <task id="LOCAL-00116" summary="updated topic to be in line with new application capabilty">
+    <task id="LOCAL-00166" summary="lsb-release added for otbr">
       <option name="closed" value="true" />
-      <created>1774454412557</created>
-      <option name="number" value="00116" />
-      <option name="presentableId" value="LOCAL-00116" />
+      <created>1774957491895</created>
+      <option name="number" value="00166" />
+      <option name="presentableId" value="LOCAL-00166" />
       <option name="project" value="LOCAL" />
-      <updated>1774454412557</updated>
+      <updated>1774957491895</updated>
     </task>
-    <task id="LOCAL-00117" summary="improving start spectrum to mitigate disablement due to length CPC scans">
+    <task id="LOCAL-00167" summary="sudo added for final otbr build">
       <option name="closed" value="true" />
-      <created>1774454764725</created>
-      <option name="number" value="00117" />
-      <option name="presentableId" value="LOCAL-00117" />
+      <created>1774957741470</created>
+      <option name="number" value="00167" />
+      <option name="presentableId" value="LOCAL-00167" />
       <option name="project" value="LOCAL" />
-      <updated>1774454764725</updated>
+      <updated>1774957741470</updated>
     </task>
-    <task id="LOCAL-00118" summary="update container to run slim bookworm">
+    <task id="LOCAL-00168" summary="sudo and iptables fix for otbr">
       <option name="closed" value="true" />
-      <created>1774458044673</created>
-      <option name="number" value="00118" />
-      <option name="presentableId" value="LOCAL-00118" />
+      <created>1774958514046</created>
+      <option name="number" value="00168" />
+      <option name="presentableId" value="LOCAL-00168" />
       <option name="project" value="LOCAL" />
-      <updated>1774458044673</updated>
+      <updated>1774958514046</updated>
     </task>
-    <task id="LOCAL-00119" summary="new multipan updates - WIP">
+    <task id="LOCAL-00169" summary="fix for otbr-agent: unrecognized option '--radio-url=spinel+cpc://cpcd_0?iid=2&amp;iid-list=0' error">
       <option name="closed" value="true" />
-      <created>1774463707155</created>
-      <option name="number" value="00119" />
-      <option name="presentableId" value="LOCAL-00119" />
+      <created>1774959165828</created>
+      <option name="number" value="00169" />
+      <option name="presentableId" value="LOCAL-00169" />
       <option name="project" value="LOCAL" />
-      <updated>1774463707155</updated>
+      <updated>1774959165828</updated>
     </task>
-    <task id="LOCAL-00120" summary="new multipan updates - WIP">
+    <task id="LOCAL-00170" summary="fix for otbr-agent: unrecognized option '--radio-url=spinel+cpc://cpcd_0?iid=2&amp;iid-list=0' error">
       <option name="closed" value="true" />
-      <created>1774514621079</created>
-      <option name="number" value="00120" />
-      <option name="presentableId" value="LOCAL-00120" />
+      <created>1774959493395</created>
+      <option name="number" value="00170" />
+      <option name="presentableId" value="LOCAL-00170" />
       <option name="project" value="LOCAL" />
-      <updated>1774514621079</updated>
+      <updated>1774959493395</updated>
     </task>
-    <task id="LOCAL-00121" summary="baudrate fix">
+    <task id="LOCAL-00171" summary="licpc dev added and pass the OT_POSIX_CONFIG_RCP_BUS=CPC build flag to otbr">
       <option name="closed" value="true" />
-      <created>1774515588342</created>
-      <option name="number" value="00121" />
-      <option name="presentableId" value="LOCAL-00121" />
+      <created>1774960839597</created>
+      <option name="number" value="00171" />
+      <option name="presentableId" value="LOCAL-00171" />
       <option name="project" value="LOCAL" />
-      <updated>1774515588343</updated>
+      <updated>1774960839597</updated>
     </task>
-    <task id="LOCAL-00122" summary="multipan fixes">
+    <task id="LOCAL-00172" summary="otbr with cpc as found to not support on container build:&#10;&#10;otbr-agent[84]: 49d.23:25:05.308 [C] Platform------: The Spinel interface name &quot;spinel+cpc&quot; is not supported!&#10;otbr-agent[84]: 49d.23:25:05.308 [C] Platform------: CreateSpinelInterface() at spinel_manager.cpp:128: Failure">
       <option name="closed" value="true" />
-      <created>1774518157208</created>
-      <option name="number" value="00122" />
-      <option name="presentableId" value="LOCAL-00122" />
+      <created>1774966600574</created>
+      <option name="number" value="00172" />
+      <option name="presentableId" value="LOCAL-00172" />
       <option name="project" value="LOCAL" />
-      <updated>1774518157208</updated>
+      <updated>1774966600574</updated>
     </task>
-    <task id="LOCAL-00123" summary="service teardown improvements">
+    <task id="LOCAL-00173" summary="otbr with cpc as found to not support on container build:&#10;&#10;otbr-agent[84]: 49d.23:25:05.308 [C] Platform------: The Spinel interface name &quot;spinel+cpc&quot; is not supported!&#10;otbr-agent[84]: 49d.23:25:05.308 [C] Platform------: CreateSpinelInterface() at spinel_manager.cpp:128: Failure">
       <option name="closed" value="true" />
-      <created>1774518175913</created>
-      <option name="number" value="00123" />
-      <option name="presentableId" value="LOCAL-00123" />
+      <created>1774966626041</created>
+      <option name="number" value="00173" />
+      <option name="presentableId" value="LOCAL-00173" />
       <option name="project" value="LOCAL" />
-      <updated>1774518175913</updated>
+      <updated>1774966626041</updated>
     </task>
-    <task id="LOCAL-00124" summary="rolled back as reset was not the issue">
+    <task id="LOCAL-00174" summary="libsystemd added to deps">
       <option name="closed" value="true" />
-      <created>1774518706149</created>
-      <option name="number" value="00124" />
-      <option name="presentableId" value="LOCAL-00124" />
+      <created>1774967268490</created>
+      <option name="number" value="00174" />
+      <option name="presentableId" value="LOCAL-00174" />
       <option name="project" value="LOCAL" />
-      <updated>1774518706149</updated>
+      <updated>1774967268490</updated>
     </task>
-    <task id="LOCAL-00125" summary="rolled back service teardown due to coding error and application failure">
+    <task id="LOCAL-00175" summary="systemd added to deps">
       <option name="closed" value="true" />
-      <created>1774520277516</created>
-      <option name="number" value="00125" />
-      <option name="presentableId" value="LOCAL-00125" />
+      <created>1774967359342</created>
+      <option name="number" value="00175" />
+      <option name="presentableId" value="LOCAL-00175" />
       <option name="project" value="LOCAL" />
-      <updated>1774520277516</updated>
+      <updated>1774967359342</updated>
     </task>
-    <task id="LOCAL-00126" summary="adding debug for probe result">
+    <task id="LOCAL-00176" summary="dep fix or conatiner file">
       <option name="closed" value="true" />
-      <created>1774521062506</created>
-      <option name="number" value="00126" />
-      <option name="presentableId" value="LOCAL-00126" />
+      <created>1774967724928</created>
+      <option name="number" value="00176" />
+      <option name="presentableId" value="LOCAL-00176" />
       <option name="project" value="LOCAL" />
-      <updated>1774521062506</updated>
+      <updated>1774967724928</updated>
     </task>
-    <task id="LOCAL-00127" summary="workspace sommit">
+    <task id="LOCAL-00177" summary="libsystemd removed and have dev">
       <option name="closed" value="true" />
-      <created>1774521210599</created>
-      <option name="number" value="00127" />
-      <option name="presentableId" value="LOCAL-00127" />
+      <created>1774967947963</created>
+      <option name="number" value="00177" />
+      <option name="presentableId" value="LOCAL-00177" />
       <option name="project" value="LOCAL" />
-      <updated>1774521210599</updated>
+      <updated>1774967947963</updated>
     </task>
-    <task id="LOCAL-00128" summary="missing jedi declaration in cpcd config">
+    <task id="LOCAL-00178" summary="libsystemd removed and have dev">
       <option name="closed" value="true" />
-      <created>1774521765171</created>
-      <option name="number" value="00128" />
-      <option name="presentableId" value="LOCAL-00128" />
+      <created>1774967953724</created>
+      <option name="number" value="00178" />
+      <option name="presentableId" value="LOCAL-00178" />
       <option name="project" value="LOCAL" />
-      <updated>1774521765171</updated>
+      <updated>1774967953724</updated>
     </task>
-    <task id="LOCAL-00129" summary="workspace update">
+    <task id="LOCAL-00179" summary="remved -DOTBR_SRP_ADVERTISING_PROXY=ON and -DOTBR_DUA_ROUTING=ON from containerfile">
       <option name="closed" value="true" />
-      <created>1774608081238</created>
-      <option name="number" value="00129" />
-      <option name="presentableId" value="LOCAL-00129" />
+      <created>1774968385742</created>
+      <option name="number" value="00179" />
+      <option name="presentableId" value="LOCAL-00179" />
       <option name="project" value="LOCAL" />
-      <updated>1774608081238</updated>
+      <updated>1774968385742</updated>
     </task>
-    <task id="LOCAL-00130" summary="rolled back">
+    <task id="LOCAL-00180" summary="fetching cpc-daemon and setting -DCPCD_SOURCE_DIR=/tmp/cpc-daemon">
       <option name="closed" value="true" />
-      <created>1774609126619</created>
-      <option name="number" value="00130" />
-      <option name="presentableId" value="LOCAL-00130" />
+      <created>1774968686866</created>
+      <option name="number" value="00180" />
+      <option name="presentableId" value="LOCAL-00180" />
       <option name="project" value="LOCAL" />
-      <updated>1774609126619</updated>
+      <updated>1774968686866</updated>
     </task>
-    <task id="LOCAL-00131" summary="new dynamic device - WIP test">
+    <task id="LOCAL-00181" summary="removal of cpc dir block">
       <option name="closed" value="true" />
-      <created>1774609284577</created>
-      <option name="number" value="00131" />
-      <option name="presentableId" value="LOCAL-00131" />
+      <created>1774969004735</created>
+      <option name="number" value="00181" />
+      <option name="presentableId" value="LOCAL-00181" />
       <option name="project" value="LOCAL" />
-      <updated>1774609284577</updated>
+      <updated>1774969004735</updated>
     </task>
-    <task id="LOCAL-00132" summary="removing teardown dead weight">
+    <task id="LOCAL-00182" summary="removal of cpc dir block">
       <option name="closed" value="true" />
-      <created>1774610542448</created>
-      <option name="number" value="00132" />
-      <option name="presentableId" value="LOCAL-00132" />
+      <created>1774969010478</created>
+      <option name="number" value="00182" />
+      <option name="presentableId" value="LOCAL-00182" />
       <option name="project" value="LOCAL" />
-      <updated>1774610542449</updated>
+      <updated>1774969010478</updated>
     </task>
-    <task id="LOCAL-00133" summary="new teardown/rebuild container for when device is unplugged">
+    <task id="LOCAL-00183" summary="different appraach">
       <option name="closed" value="true" />
-      <created>1774611249608</created>
-      <option name="number" value="00133" />
-      <option name="presentableId" value="LOCAL-00133" />
+      <created>1774969154046</created>
+      <option name="number" value="00183" />
+      <option name="presentableId" value="LOCAL-00183" />
       <option name="project" value="LOCAL" />
-      <updated>1774611249608</updated>
+      <updated>1774969154046</updated>
     </task>
-    <task id="LOCAL-00134" summary="removed as no longer required">
+    <task id="LOCAL-00184" summary="reverted">
       <option name="closed" value="true" />
-      <created>1774611324659</created>
-      <option name="number" value="00134" />
-      <option name="presentableId" value="LOCAL-00134" />
+      <created>1774969292152</created>
+      <option name="number" value="00184" />
+      <option name="presentableId" value="LOCAL-00184" />
       <option name="project" value="LOCAL" />
-      <updated>1774611324659</updated>
+      <updated>1774969292152</updated>
     </task>
-    <task id="LOCAL-00135" summary="final commit - --priv added to ensure container survivability">
+    <task id="LOCAL-00185" summary="version bug">
       <option name="closed" value="true" />
-      <created>1774611723317</created>
-      <option name="number" value="00135" />
-      <option name="presentableId" value="LOCAL-00135" />
+      <created>1774970839370</created>
+      <option name="number" value="00185" />
+      <option name="presentableId" value="LOCAL-00185" />
       <option name="project" value="LOCAL" />
-      <updated>1774611723317</updated>
+      <updated>1774970839370</updated>
     </task>
-    <task id="LOCAL-00136" summary="roll back due to permission issues in container">
+    <task id="LOCAL-00186" summary="using branch 4.7.0">
       <option name="closed" value="true" />
-      <created>1774612520889</created>
-      <option name="number" value="00136" />
-      <option name="presentableId" value="LOCAL-00136" />
+      <created>1774973479785</created>
+      <option name="number" value="00186" />
+      <option name="presentableId" value="LOCAL-00186" />
       <option name="project" value="LOCAL" />
-      <updated>1774612520889</updated>
+      <updated>1774973479785</updated>
     </task>
-    <task id="LOCAL-00137" summary="final attempt at survivability fo container when dongle removed">
+    <task id="LOCAL-00187" summary="using branch 4.7">
       <option name="closed" value="true" />
-      <created>1774613763940</created>
-      <option name="number" value="00137" />
-      <option name="presentableId" value="LOCAL-00137" />
+      <created>1774973571549</created>
+      <option name="number" value="00187" />
+      <option name="presentableId" value="LOCAL-00187" />
       <option name="project" value="LOCAL" />
-      <updated>1774613763940</updated>
+      <updated>1774973571549</updated>
     </task>
-    <task id="LOCAL-00138" summary="teardown notice added">
+    <task id="LOCAL-00188" summary="using branch 4.7">
       <option name="closed" value="true" />
-      <created>1774614425315</created>
-      <option name="number" value="00138" />
-      <option name="presentableId" value="LOCAL-00138" />
+      <created>1774973578801</created>
+      <option name="number" value="00188" />
+      <option name="presentableId" value="LOCAL-00188" />
       <option name="project" value="LOCAL" />
-      <updated>1774614425315</updated>
+      <updated>1774973578801</updated>
     </task>
-    <task id="LOCAL-00139" summary="adding no passwd to file and updating service to use bash to run the pre_script">
+    <task id="LOCAL-00189" summary="force the use of libcpc">
       <option name="closed" value="true" />
-      <created>1774615658536</created>
-      <option name="number" value="00139" />
-      <option name="presentableId" value="LOCAL-00139" />
+      <created>1774974426068</created>
+      <option name="number" value="00189" />
+      <option name="presentableId" value="LOCAL-00189" />
       <option name="project" value="LOCAL" />
-      <updated>1774615658536</updated>
+      <updated>1774974426068</updated>
     </task>
-    <task id="LOCAL-00140" summary="updated to show location of teardown script and changed text to red">
+    <task id="LOCAL-00190" summary="force complied version to 4.7.1.0">
       <option name="closed" value="true" />
-      <created>1774615992902</created>
-      <option name="number" value="00140" />
-      <option name="presentableId" value="LOCAL-00140" />
+      <created>1774974767496</created>
+      <option name="number" value="00190" />
+      <option name="presentableId" value="LOCAL-00190" />
       <option name="project" value="LOCAL" />
-      <updated>1774615992902</updated>
+      <updated>1774974767496</updated>
     </task>
-    <task id="LOCAL-00141" summary="dark mode fix for beetxt">
+    <task id="LOCAL-00191" summary="updating _build_otbr command to cater for  debugging and run as sudo">
       <option name="closed" value="true" />
-      <created>1774617284512</created>
-      <option name="number" value="00141" />
-      <option name="presentableId" value="LOCAL-00141" />
+      <created>1775033894371</created>
+      <option name="number" value="00191" />
+      <option name="presentableId" value="LOCAL-00191" />
       <option name="project" value="LOCAL" />
-      <updated>1774617284512</updated>
+      <updated>1775033894371</updated>
     </task>
-    <task id="LOCAL-00142" summary="sudo fix for umount of conatiner">
+    <task id="LOCAL-00192" summary="adding /dev/net/tun to run_container">
       <option name="closed" value="true" />
-      <created>1774617430960</created>
-      <option name="number" value="00142" />
-      <option name="presentableId" value="LOCAL-00142" />
+      <created>1775035009721</created>
+      <option name="number" value="00192" />
+      <option name="presentableId" value="LOCAL-00192" />
       <option name="project" value="LOCAL" />
-      <updated>1774617430960</updated>
+      <updated>1775035009721</updated>
     </task>
-    <task id="LOCAL-00143" summary="-n added for no passwd">
+    <task id="LOCAL-00193" summary="removing /dev/net/tun to run_container&#10;&#10;adding redirect to stderr for pick_host_port">
       <option name="closed" value="true" />
-      <created>1774617755595</created>
-      <option name="number" value="00143" />
-      <option name="presentableId" value="LOCAL-00143" />
+      <created>1775035412732</created>
+      <option name="number" value="00193" />
+      <option name="presentableId" value="LOCAL-00193" />
       <option name="project" value="LOCAL" />
-      <updated>1774617755595</updated>
+      <updated>1775035412732</updated>
     </task>
-    <task id="LOCAL-00144" summary="updates to mulitpan detection">
+    <task id="LOCAL-00194" summary="adding port in use information to build">
       <option name="closed" value="true" />
-      <created>1774637852996</created>
-      <option name="number" value="00144" />
-      <option name="presentableId" value="LOCAL-00144" />
+      <created>1775035612155</created>
+      <option name="number" value="00194" />
+      <option name="presentableId" value="LOCAL-00194" />
       <option name="project" value="LOCAL" />
-      <updated>1774637852996</updated>
+      <updated>1775035612155</updated>
     </task>
-    <task id="LOCAL-00145" summary="which bash added">
+    <task id="LOCAL-00195" summary="adding port in use information to build">
       <option name="closed" value="true" />
-      <created>1774638109942</created>
-      <option name="number" value="00145" />
-      <option name="presentableId" value="LOCAL-00145" />
+      <created>1775035620329</created>
+      <option name="number" value="00195" />
+      <option name="presentableId" value="LOCAL-00195" />
       <option name="project" value="LOCAL" />
-      <updated>1774638109942</updated>
+      <updated>1775035620331</updated>
     </task>
-    <task id="LOCAL-00146" summary="cpc clean up fixes">
+    <task id="LOCAL-00196" summary="adding sudo to lsof and ss commands">
       <option name="closed" value="true" />
-      <created>1774692944108</created>
-      <option name="number" value="00146" />
-      <option name="presentableId" value="LOCAL-00146" />
+      <created>1775036238711</created>
+      <option name="number" value="00196" />
+      <option name="presentableId" value="LOCAL-00196" />
       <option name="project" value="LOCAL" />
-      <updated>1774692944108</updated>
+      <updated>1775036238711</updated>
     </task>
-    <task id="LOCAL-00147" summary="moved _usb_reset_serial_device above lifecycle">
+    <task id="LOCAL-00197" summary="removing sudo from otbr agent to troubleshoot">
       <option name="closed" value="true" />
-      <created>1774693556881</created>
-      <option name="number" value="00147" />
-      <option name="presentableId" value="LOCAL-00147" />
+      <created>1775036344360</created>
+      <option name="number" value="00197" />
+      <option name="presentableId" value="LOCAL-00197" />
       <option name="project" value="LOCAL" />
-      <updated>1774693556881</updated>
+      <updated>1775036344360</updated>
     </task>
-    <task id="LOCAL-00148" summary="adding /dev/bus/usd to runtime args for container for cpcd support">
+    <task id="LOCAL-00198" summary="adding /var/lib/thread dir and permissions for OTBR to run">
       <option name="closed" value="true" />
-      <created>1774694410011</created>
-      <option name="number" value="00148" />
-      <option name="presentableId" value="LOCAL-00148" />
+      <created>1775037044643</created>
+      <option name="number" value="00198" />
+      <option name="presentableId" value="LOCAL-00198" />
       <option name="project" value="LOCAL" />
-      <updated>1774694410011</updated>
+      <updated>1775037044643</updated>
     </task>
-    <task id="LOCAL-00149" summary="further improvements for cpcd">
+    <task id="LOCAL-00199" summary="adding /var/lib/thread dir and permissions for OTBR to run">
       <option name="closed" value="true" />
-      <created>1774694432428</created>
-      <option name="number" value="00149" />
-      <option name="presentableId" value="LOCAL-00149" />
+      <created>1775037354656</created>
+      <option name="number" value="00199" />
+      <option name="presentableId" value="LOCAL-00199" />
       <option name="project" value="LOCAL" />
-      <updated>1774694432428</updated>
+      <updated>1775037354656</updated>
     </task>
-    <task id="LOCAL-00150" summary="serial break fix">
+    <task id="LOCAL-00200" summary="adding back in --device /dev/net/tun:/dev/net/tun&#10;&#10;required by platformConfigureTunDevice in otbr agent">
       <option name="closed" value="true" />
-      <created>1774696152053</created>
-      <option name="number" value="00150" />
-      <option name="presentableId" value="LOCAL-00150" />
+      <created>1775037901092</created>
+      <option name="number" value="00200" />
+      <option name="presentableId" value="LOCAL-00200" />
       <option name="project" value="LOCAL" />
-      <updated>1774696152053</updated>
+      <updated>1775037901092</updated>
     </task>
-    <task id="LOCAL-00151" summary="baud rate fixes - multipan">
+    <task id="LOCAL-00201" summary="auto detect interface off container in _build_otbr_command to fix Platform------: CreateIcmp6Socket() at infra_if.cpp:187: No such device">
       <option name="closed" value="true" />
-      <created>1774700356737</created>
-      <option name="number" value="00151" />
-      <option name="presentableId" value="LOCAL-00151" />
+      <created>1775038734200</created>
+      <option name="number" value="00201" />
+      <option name="presentableId" value="LOCAL-00201" />
       <option name="project" value="LOCAL" />
-      <updated>1774700356737</updated>
+      <updated>1775038734200</updated>
     </task>
-    <task id="LOCAL-00152" summary="improvements to USB product string pre-detection for CPC/RCP devices with NCP quirk fw detection">
+    <task id="LOCAL-00202" summary="improving run container to cater for networking requirements for otbr">
       <option name="closed" value="true" />
-      <created>1774700677924</created>
-      <option name="number" value="00152" />
-      <option name="presentableId" value="LOCAL-00152" />
+      <created>1775040104178</created>
+      <option name="number" value="00202" />
+      <option name="presentableId" value="LOCAL-00202" />
       <option name="project" value="LOCAL" />
-      <updated>1774700677924</updated>
+      <updated>1775040104178</updated>
     </task>
-    <task id="LOCAL-00153" summary="watchdog fix for multipan">
+    <task id="LOCAL-00203" summary="network fix for pasta">
       <option name="closed" value="true" />
-      <created>1774700900571</created>
-      <option name="number" value="00153" />
-      <option name="presentableId" value="LOCAL-00153" />
+      <created>1775040807374</created>
+      <option name="number" value="00203" />
+      <option name="presentableId" value="LOCAL-00203" />
       <option name="project" value="LOCAL" />
-      <updated>1774700900571</updated>
+      <updated>1775040807374</updated>
     </task>
-    <task id="LOCAL-00154" summary="minor tweaks to cater for recent findings">
+    <task id="LOCAL-00204" summary="networking patch - moved to network host">
       <option name="closed" value="true" />
-      <created>1774700987469</created>
-      <option name="number" value="00154" />
-      <option name="presentableId" value="LOCAL-00154" />
+      <created>1775042074727</created>
+      <option name="number" value="00204" />
+      <option name="presentableId" value="LOCAL-00204" />
       <option name="project" value="LOCAL" />
-      <updated>1774700987469</updated>
+      <updated>1775042074727</updated>
     </task>
-    <task id="LOCAL-00155" summary="socat removal from new pty bridge">
+    <task id="LOCAL-00205" summary="networking patch - moved to network host">
       <option name="closed" value="true" />
-      <created>1774702053958</created>
-      <option name="number" value="00155" />
-      <option name="presentableId" value="LOCAL-00155" />
+      <created>1775042080570</created>
+      <option name="number" value="00205" />
+      <option name="presentableId" value="LOCAL-00205" />
       <option name="project" value="LOCAL" />
-      <updated>1774702053958</updated>
+      <updated>1775042080570</updated>
     </task>
-    <task id="LOCAL-00156" summary="more deps for dev">
+    <task id="LOCAL-00206" summary="healthcheck fix">
       <option name="closed" value="true" />
-      <created>1774725775101</created>
-      <option name="number" value="00156" />
-      <option name="presentableId" value="LOCAL-00156" />
+      <created>1775042688853</created>
+      <option name="number" value="00206" />
+      <option name="presentableId" value="LOCAL-00206" />
       <option name="project" value="LOCAL" />
-      <updated>1774725775101</updated>
+      <updated>1775042688853</updated>
     </task>
-    <task id="LOCAL-00157" summary="more deps for dev">
+    <task id="LOCAL-00207" summary="escape added to ZMM_PORT in HEALTHCHECK">
       <option name="closed" value="true" />
-      <created>1774726196176</created>
-      <option name="number" value="00157" />
-      <option name="presentableId" value="LOCAL-00157" />
+      <created>1775043172607</created>
+      <option name="number" value="00207" />
+      <option name="presentableId" value="LOCAL-00207" />
       <option name="project" value="LOCAL" />
-      <updated>1774726196176</updated>
+      <updated>1775043172607</updated>
     </task>
-    <task id="LOCAL-00158" summary="PTYTCPBridge to correct MultiPanManager init">
+    <task id="LOCAL-00208" summary="add wpan0 build to zmm auto start script to fix platformConfigureTunDevice for network host">
       <option name="closed" value="true" />
-      <created>1774726595979</created>
-      <option name="number" value="00158" />
-      <option name="presentableId" value="LOCAL-00158" />
+      <created>1775043637313</created>
+      <option name="number" value="00208" />
+      <option name="presentableId" value="LOCAL-00208" />
       <option name="project" value="LOCAL" />
-      <updated>1774726595979</updated>
+      <updated>1775043637313</updated>
     </task>
-    <task id="LOCAL-00159" summary="reset sequence to false">
+    <task id="LOCAL-00209" summary="adding wpan0 on network host ahead of podman run as well as in service">
       <option name="closed" value="true" />
-      <created>1774727751106</created>
-      <option name="number" value="00159" />
-      <option name="presentableId" value="LOCAL-00159" />
+      <created>1775045402595</created>
+      <option name="number" value="00209" />
+      <option name="presentableId" value="LOCAL-00209" />
       <option name="project" value="LOCAL" />
-      <updated>1774727751106</updated>
+      <updated>1775045402595</updated>
     </task>
-    <task id="LOCAL-00160" summary="reset block added ahead of cpcd in start()">
+    <task id="LOCAL-00210" summary="adding in removal of container ahead of port check">
       <option name="closed" value="true" />
-      <created>1774728398377</created>
-      <option name="number" value="00160" />
-      <option name="presentableId" value="LOCAL-00160" />
+      <created>1775046225621</created>
+      <option name="number" value="00210" />
+      <option name="presentableId" value="LOCAL-00210" />
       <option name="project" value="LOCAL" />
-      <updated>1774728398377</updated>
+      <updated>1775046225621</updated>
     </task>
-    <task id="LOCAL-00161" summary="adding baud rate to the RTS  reset">
+    <task id="LOCAL-00211" summary="adding in removal of container ahead of port check">
       <option name="closed" value="true" />
-      <created>1774728725757</created>
-      <option name="number" value="00161" />
-      <option name="presentableId" value="LOCAL-00161" />
+      <created>1775046947231</created>
+      <option name="number" value="00211" />
+      <option name="presentableId" value="LOCAL-00211" />
       <option name="project" value="LOCAL" />
-      <updated>1774728725757</updated>
+      <updated>1775046947231</updated>
     </task>
-    <task id="LOCAL-00162" summary="_reset_serial_state updated to correct baud">
+    <task id="LOCAL-00212" summary="wpan fix for otbr">
       <option name="closed" value="true" />
-      <created>1774729080897</created>
-      <option name="number" value="00162" />
-      <option name="presentableId" value="LOCAL-00162" />
+      <created>1775046965746</created>
+      <option name="number" value="00212" />
+      <option name="presentableId" value="LOCAL-00212" />
       <option name="project" value="LOCAL" />
-      <updated>1774729080897</updated>
+      <updated>1775046965746</updated>
     </task>
-    <task id="LOCAL-00163" summary="reset_sequence to true and _reset_serial_state fix">
+    <task id="LOCAL-00213" summary="removal of conatiner removal process as dealt with using the teardown script for any updates">
       <option name="closed" value="true" />
-      <created>1774731431156</created>
-      <option name="number" value="00163" />
-      <option name="presentableId" value="LOCAL-00163" />
+      <created>1775047837636</created>
+      <option name="number" value="00213" />
+      <option name="presentableId" value="LOCAL-00213" />
       <option name="project" value="LOCAL" />
-      <updated>1774731431156</updated>
+      <updated>1775047837636</updated>
     </task>
-    <option name="localTasksCounter" value="164" />
+    <option name="localTasksCounter" value="214" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -551,42 +564,31 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="teardown notice added" />
-    <MESSAGE value="adding no passwd to file and updating service to use bash to run the pre_script" />
-    <MESSAGE value="updated to show location of teardown script and changed text to red" />
-    <MESSAGE value="dark mode fix for beetxt" />
-    <MESSAGE value="sudo fix for umount of conatiner" />
-    <MESSAGE value="-n added for no passwd" />
-    <MESSAGE value="updates to mulitpan detection" />
-    <MESSAGE value="which bash added" />
-    <MESSAGE value="cpc clean up fixes" />
-    <MESSAGE value="moved _usb_reset_serial_device above lifecycle" />
-    <MESSAGE value="adding /dev/bus/usd to runtime args for container for cpcd support" />
-    <MESSAGE value="further improvements for cpcd" />
-    <MESSAGE value="serial break fix" />
-    <MESSAGE value="baud rate fixes - multipan" />
-    <MESSAGE value="improvements to USB product string pre-detection for CPC/RCP devices with NCP quirk fw detection" />
-    <MESSAGE value="watchdog fix for multipan" />
-    <MESSAGE value="minor tweaks to cater for recent findings" />
-    <MESSAGE value="socat removal from new pty bridge" />
-    <MESSAGE value="more deps for dev" />
-    <MESSAGE value="PTYTCPBridge to correct MultiPanManager init" />
-    <MESSAGE value="reset sequence to false" />
-    <MESSAGE value="reset block added ahead of cpcd in start()" />
-    <MESSAGE value="adding baud rate to the RTS  reset" />
-    <MESSAGE value="_reset_serial_state updated to correct baud" />
-    <MESSAGE value="reset_sequence to true and _reset_serial_state fix" />
-    <option name="LAST_COMMIT_MESSAGE" value="reset_sequence to true and _reset_serial_state fix" />
-  </component>
-  <component name="XDebuggerManager">
-    <breakpoint-manager>
-      <breakpoints>
-        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
-          <url>file://$PROJECT_DIR$/main.py</url>
-          <line>15</line>
-          <option name="timeStamp" value="1" />
-        </line-breakpoint>
-      </breakpoints>
-    </breakpoint-manager>
+    <MESSAGE value="reverted" />
+    <MESSAGE value="version bug" />
+    <MESSAGE value="using branch 4.7.0" />
+    <MESSAGE value="using branch 4.7" />
+    <MESSAGE value="force the use of libcpc" />
+    <MESSAGE value="force complied version to 4.7.1.0" />
+    <MESSAGE value="updating _build_otbr command to cater for  debugging and run as sudo" />
+    <MESSAGE value="adding /dev/net/tun to run_container" />
+    <MESSAGE value="removing /dev/net/tun to run_container&#10;&#10;adding redirect to stderr for pick_host_port" />
+    <MESSAGE value="adding port in use information to build" />
+    <MESSAGE value="adding sudo to lsof and ss commands" />
+    <MESSAGE value="removing sudo from otbr agent to troubleshoot" />
+    <MESSAGE value="adding /var/lib/thread dir and permissions for OTBR to run" />
+    <MESSAGE value="adding back in --device /dev/net/tun:/dev/net/tun&#10;&#10;required by platformConfigureTunDevice in otbr agent" />
+    <MESSAGE value="auto detect interface off container in _build_otbr_command to fix Platform------: CreateIcmp6Socket() at infra_if.cpp:187: No such device" />
+    <MESSAGE value="improving run container to cater for networking requirements for otbr" />
+    <MESSAGE value="network fix for pasta" />
+    <MESSAGE value="networking patch - moved to network host" />
+    <MESSAGE value="healthcheck fix" />
+    <MESSAGE value="escape added to ZMM_PORT in HEALTHCHECK" />
+    <MESSAGE value="add wpan0 build to zmm auto start script to fix platformConfigureTunDevice for network host" />
+    <MESSAGE value="adding wpan0 on network host ahead of podman run as well as in service" />
+    <MESSAGE value="adding in removal of container ahead of port check" />
+    <MESSAGE value="wpan fix for otbr" />
+    <MESSAGE value="removal of conatiner removal process as dealt with using the teardown script for any updates" />
+    <option name="LAST_COMMIT_MESSAGE" value="removal of conatiner removal process as dealt with using the teardown script for any updates" />
   </component>
 </project>

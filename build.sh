@@ -115,6 +115,29 @@ port_in_use() {
     fi
 }
 
+get_port_process() {
+    local port=$1
+    local proc=""
+
+    # Try lsof first (cleanest output if installed)
+    if command -v lsof &>/dev/null; then
+        proc=$(sudo lsof -i :"${port}" -sTCP:LISTEN 2>/dev/null | awk 'NR==2 {print $1" (PID: "$2")"}')
+    fi
+
+    # Fallback to ss (standard on modern Linux)
+    if [[ -z "$proc" ]] && command -v ss &>/dev/null; then
+        # Parses the bizarre ss output: users:(("process_name",pid=1234,fd=X))
+        proc=$(sudo ss -lptn "sport = :${port}" 2>/dev/null | grep -o 'users:((".*"))' | sed 's/users:(("//; s/",pid=/ (PID: /; s/,.*//' | head -n 1)
+    fi
+
+    # Return the process, or a fallback warning if permissions blocked the lookup
+    if [[ -n "$proc" ]]; then
+        echo "$proc"
+    else
+        echo "an unknown process (run script with sudo to see details)"
+    fi
+}
+
 find_free_port() {
     local port=$1
     while port_in_use "$port"; do
@@ -129,10 +152,20 @@ find_free_port() {
 pick_host_port() {
     local preferred=$1
     if port_in_use "$preferred"; then
-        warn "Port ${preferred} is in use — scanning..."
+        # 1. Find out who is hogging the port
+        local blocker
+        blocker=$(get_port_process "$preferred")
+
+        # 2. Tell the user exactly what is blocking it
+        warn "Port ${preferred} is currently blocked by: ${BOLD}${blocker}${NC}" >&2
+        warn "Scanning for the next available port..." >&2
+
+        # 3. Find and report the new port
         local found
         found=$(find_free_port "$((preferred + 1))")
-        warn "Using port ${BOLD}${found}${NC} instead."
+        warn "Using port ${BOLD}${found}${NC} instead." >&2
+
+        # 4. Return the safely found port to stdout
         echo "$found"
     else
         echo "$preferred"
@@ -285,9 +318,28 @@ ARG HOST_DIALOUT_GID=20
 # System deps
 RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential \
+        lsb-release \
+        sudo \
         git \
+        ca-certificates \
+        cmake \
+        ninja-build \
+        g++ \
         libffi-dev \
+        libmbedtls-dev \
         libssl-dev \
+        libdbus-1-dev \
+        libavahi-client-dev \
+        libreadline-dev \
+        libboost-dev \
+        libboost-filesystem-dev \
+        libboost-system-dev \
+        libnetfilter-queue-dev \
+        libsystemd-dev \
+        ipset \
+        iptables \
+        dbus \
+        avahi-daemon \
         logrotate \
         curl \
         wget \
@@ -300,7 +352,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         procps \
         strace \
         iproute2 \
-
+        net-tools \
+        pkg-config \
     && rm -rf /var/lib/apt/lists/*
 
 # Fetch and install Silicon Labs packages matching Bookworm
@@ -311,9 +364,50 @@ RUN DOWNLOAD_URL=$(curl -s https://api.github.com/repos/SiliconLabs/simplicity_s
     && apt-get update \
     && apt-get install -y --no-install-recommends \
         /tmp/silabs/debian-bookworm/deb/libcpc3_*_${ARCH}.deb \
+        /tmp/silabs/debian-bookworm/deb/libcpc-dev_*_${ARCH}.deb \
         /tmp/silabs/debian-bookworm/deb/cpcd_*_${ARCH}.deb \
         /tmp/silabs/debian-bookworm/deb/zigbeed_*_${ARCH}.deb \
     && rm -rf /tmp/silabs debian-bookworm.zip /var/lib/apt/lists/*
+
+# ── OTBR with SiLabs CPC MultiPAN support ──────────────────────────────
+ENV SDK_DIR=/tmp/silabs_sdk
+
+# 1. Sparse clone SiLabs SDK just to get the CPC vendor extension files
+RUN git clone --depth 1 --filter=blob:none --sparse \
+        https://github.com/SiliconLabs/simplicity_sdk.git ${SDK_DIR} && \
+    cd ${SDK_DIR} && \
+    git sparse-checkout set protocol/openthread/platform-abstraction/posix
+
+# 2. Clone official OTBR, init submodules, clone matching cpc-daemon, then build
+RUN echo '#!/bin/sh' > /usr/local/bin/sudo && \
+    echo 'if echo "$*" | grep -Eq "/proc/sys|sysctl"; then exit 0; fi' >> /usr/local/bin/sudo && \
+    echo 'exec /usr/bin/sudo "$@"' >> /usr/local/bin/sudo && \
+    chmod +x /usr/local/bin/sudo && \
+    # Fetch exact v4.7.1 tag (no .0 at the end for Git!)
+    git clone --depth 1 --branch v4.7.1 https://github.com/SiliconLabs/cpc-daemon.git /tmp/cpc-daemon && \
+    # Force the compiled version string to be 4.7.1.0 to perfectly match the .deb daemon
+    sed -i 's/VERSION 4\.7\.1\b/VERSION 4.7.1.0/g' /tmp/cpc-daemon/CMakeLists.txt && \
+    git clone --depth=1 https://github.com/openthread/ot-br-posix /tmp/otbr && \
+    cd /tmp/otbr && \
+    git submodule update --init --recursive && \
+    cp ${SDK_DIR}/protocol/openthread/platform-abstraction/posix/openthread-core-silabs-posix-config.h \
+       /tmp/otbr/third_party/openthread/repo/src/posix/platform/ && \
+    ./script/bootstrap && \
+    INFRA_IF_NAME=eth0 \
+    OTBR_OPTIONS=" \
+        -DOT_THREAD_VERSION=1.4 \
+        -DOT_MULTIPAN_RCP=ON \
+        -DCPCD_SOURCE_DIR=/tmp/cpc-daemon \
+        -DOT_POSIX_RCP_VENDOR_BUS=ON \
+        -DOT_POSIX_CONFIG_RCP_VENDOR_DEPS_PACKAGE=${SDK_DIR}/protocol/openthread/platform-abstraction/posix/posix_vendor_rcp.cmake \
+        -DOT_POSIX_CONFIG_RCP_VENDOR_INTERFACE=${SDK_DIR}/protocol/openthread/platform-abstraction/posix/cpc_interface.cpp \
+        -DOT_PLATFORM_CONFIG=openthread-core-silabs-posix-config.h" \
+    ./script/setup && \
+    rm -f /usr/local/bin/sudo
+
+# 3. Disable systemd service (ZMM manages otbr-agent lifecycle) and clean up
+RUN systemctl disable otbr-agent 2>/dev/null || true
+RUN rm -rf ${SDK_DIR} /tmp/otbr /tmp/cpc-daemon
 
 # Create app user with the HOST's exact UID:GID + dialout group membership.
 RUN groupadd -g "$HOST_GID" -o appgroup \
@@ -336,10 +430,10 @@ RUN pip install --no-cache-dir --upgrade pip \
 COPY . .
 
 # Required directories
-RUN mkdir -p /data /app/data/matter /app/data/backups /app/logs /app/config \
+RUN mkdir -p /data /app/data/matter /app/data/backups /app/logs /app/config /var/lib/thread \
         /usr/local/lib/python3.11/site-packages/credentials/development/paa-root-certs \
  && chown -R ${HOST_UID}:${HOST_GID} /app /data /app/data /app/logs /app/config \
-        /usr/local/lib/python3.11/site-packages/credentials
+        /usr/local/lib/python3.11/site-packages/credentials /var/lib/thread
 
 ENV ZMM_BACKUP_DIR=/app/data/backups
 ENV ZMM_APP_DIR=/app
@@ -349,7 +443,7 @@ USER appuser
 EXPOSE 8000 5580
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
-    CMD curl -f http://localhost:8000/api/status || exit 1
+    CMD curl -f http://localhost:\${ZMM_PORT:-8000}/api/status || exit 1
 
 CMD ["python", "main.py"]
 DOCKERFILE
@@ -373,6 +467,7 @@ build_image() {
 
     "$RUNTIME" build \
         "${build_args[@]}" \
+        --format docker \
         --tag "${IMAGE_NAME}:latest" \
         --file "$APP_DIR/Containerfile" \
         "$APP_DIR"
@@ -511,13 +606,28 @@ run_container() {
     local run_args=(
         --detach
         --name "$CONTAINER_NAME"
+        --network=host
+        --cap-add=NET_ADMIN
+        --cap-add=NET_RAW
+        --cap-add=SYS_ADMIN
         --restart unless-stopped
-        --publish "${host_port}:${INTERNAL_PORT}"
-        --publish "${host_matter_port}:${MATTER_INTERNAL_PORT}"
+        --device /dev/net/tun:/dev/net/tun
+        --volume /dev/shm:/dev/shm
+        --volume /run/dbus:/run/dbus
         --volume "${DATA_DIR}/config:/app/config"
         --volume "${DATA_DIR}/data:/app/data"
         --volume "${DATA_DIR}/logs:/app/logs"
     )
+
+    # ── Dynamic ports via environment variables ──────────────────────
+    # With --network=host the container shares the host's network stack.
+    # No port mapping — the app listens directly on the host interface.
+    # If the default ports (8000/5580) are busy, build.sh picks free ones
+    # and tells the app to listen there via environment variables.
+    run_args+=(-e "ZMM_PORT=${host_port}")
+    run_args+=(-e "ZMM_MATTER_PORT=${host_matter_port}")
+
+    ok "Networking: host (ZMM port: ${host_port}, Matter port: ${host_matter_port})"
 
     # ── UID mapping: keep host UID inside container (Podman only) ──
     if [[ "$RUNTIME" == "podman" ]]; then
@@ -531,7 +641,6 @@ run_container() {
 
         if [[ "$RUNTIME" == "podman" && -n "${DEVICE_MOUNT_PATH:-}" ]]; then
             # Podman rootless: use the bind-mounted device path
-            # Maps /mnt/devices/ttyACM0 - USB0 on host → /dev/ttyACM0 -USB0 inside container
             run_args+=(--device "${DEVICE_MOUNT_PATH}:${real_dev}")
             ok "Using bind-mounted device: ${DEVICE_MOUNT_PATH} → ${real_dev}"
 
@@ -559,6 +668,14 @@ run_container() {
         run_args+=(--group-add "${DIALOUT_GID}")
     fi
     run_args+=(--security-opt label=disable)
+
+
+    # ── Pre-create wpan0 TUN interface for Thread border router ──────
+    info "Preparing wpan0 TUN interface for Thread border router..."
+    sudo ip link del wpan0 2>/dev/null || true
+    sudo ip tuntap add dev wpan0 mode tun user "$(id -u)"
+    sudo ip link set wpan0 up
+    ok "wpan0 interface ready"
 
     info "Starting container '${CONTAINER_NAME}' ..."
     "$RUNTIME" run "${run_args[@]}" "${IMAGE_NAME}:latest"
@@ -641,6 +758,17 @@ mount --bind "\$DEVICE" "\$MOUNT_PATH"
 # Set ownership so rootless Podman can access it
 chown ${invoking_uid}:${invoking_gid} "\$MOUNT_PATH"
 chmod 660 "\$MOUNT_PATH"
+
+# ── Create wpan0 TUN interface for Thread border router ──────────────
+# otbr-agent needs a TUN device but rootless Podman can't create one
+# (user namespace restriction). Pre-create it on the host.
+if ! ip link show wpan0 &>/dev/null 2>&1; then
+    ip tuntap add dev wpan0 mode tun user ${invoking_uid}
+    ip link set wpan0 up
+    echo "zmm-remount: wpan0 TUN interface created"
+else
+    echo "zmm-remount: wpan0 already exists"
+fi
 
 echo "zmm-remount: \$DEVICE → \$MOUNT_PATH OK"
 SCRIPT

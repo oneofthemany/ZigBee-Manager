@@ -72,7 +72,7 @@ zigbee:
 
   # Zigbee Network Settings
   channel: 25
-  pan_id: A1B2
+  pan_id: change_me
   extended_pan_id: [12, 139, 142, etc.]
   # Network Key (32-character hex string or array of 16 bytes)
   network_key: [162, 53, 36, 49, etc.]
