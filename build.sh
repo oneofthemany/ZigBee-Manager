@@ -923,11 +923,18 @@ if [[ -z "${USB_DEVICE:-}" ]]; then
     detect_usb_coordinator
 fi
 
-# Step 4: Ports
+# Step 4: Remove existing container BEFORE port detection
+if "$RUNTIME" inspect "$CONTAINER_NAME" &>/dev/null 2>&1; then
+    warn "Stopping existing container to free ports..."
+    "$RUNTIME" rm -f "$CONTAINER_NAME"
+    sleep 2
+fi
+
+# Step 5: Ports
 HOST_PORT=$(pick_host_port "$PREFERRED_PORT")
 HOST_MATTER_PORT=$(pick_host_port "$MATTER_INTERNAL_PORT")
 
-# Step 5: Build
+# Step 6: Build
 write_containerfile
 
 if "$FORCE_REBUILD" || ! "$RUNTIME" image inspect "${IMAGE_NAME}:latest" &>/dev/null 2>&1; then
@@ -936,17 +943,17 @@ else
     info "Image exists — skipping build (use --rebuild to force)."
 fi
 
-# Step 6: Prepare data dirs + device mount
+# Step 7: Prepare data dirs + device mount
 prepare_data_dirs
 
-# Step 7: Bind-mount device for rootless Podman
+# Step 8: Bind-mount device for rootless Podman
 prepare_device_mount
 
 
-# Step 8: Run
+# Step 9: Run
 run_container "$HOST_PORT" "$HOST_MATTER_PORT"
 
-# Step 9: Auto-start
+# Step 10: Auto-start
 if [[ "$INSTALL_AUTOSTART" == true ]]; then
     install_autostart
 fi

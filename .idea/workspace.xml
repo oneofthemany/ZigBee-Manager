@@ -4,12 +4,13 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="add wpan0 build to zmm auto start script to fix platformConfigureTunDevice for network host">
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="adding wpan0 on network host ahead of podman run as well as in service">
       <change afterPath="$PROJECT_DIR$/docs/project_overview.md" afterDir="false" />
       <change afterPath="$PROJECT_DIR$/modules/cpc_diag.py" afterDir="false" />
       <change afterPath="$PROJECT_DIR$/modules/index.html" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/build.sh" beforeDir="false" afterPath="$PROJECT_DIR$/build.sh" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -155,14 +156,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00160" summary="reset block added ahead of cpcd in start()">
-      <option name="closed" value="true" />
-      <created>1774728398377</created>
-      <option name="number" value="00160" />
-      <option name="presentableId" value="LOCAL-00160" />
-      <option name="project" value="LOCAL" />
-      <updated>1774728398377</updated>
     </task>
     <task id="LOCAL-00161" summary="adding baud rate to the RTS  reset">
       <option name="closed" value="true" />
@@ -548,7 +541,15 @@
       <option name="project" value="LOCAL" />
       <updated>1775043637313</updated>
     </task>
-    <option name="localTasksCounter" value="209" />
+    <task id="LOCAL-00209" summary="adding wpan0 on network host ahead of podman run as well as in service">
+      <option name="closed" value="true" />
+      <created>1775045402595</created>
+      <option name="number" value="00209" />
+      <option name="presentableId" value="LOCAL-00209" />
+      <option name="project" value="LOCAL" />
+      <updated>1775045402595</updated>
+    </task>
+    <option name="localTasksCounter" value="210" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -563,7 +564,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="remved -DOTBR_SRP_ADVERTISING_PROXY=ON and -DOTBR_DUA_ROUTING=ON from containerfile" />
     <MESSAGE value="fetching cpc-daemon and setting -DCPCD_SOURCE_DIR=/tmp/cpc-daemon" />
     <MESSAGE value="removal of cpc dir block" />
     <MESSAGE value="different appraach" />
@@ -588,6 +588,7 @@
     <MESSAGE value="healthcheck fix" />
     <MESSAGE value="escape added to ZMM_PORT in HEALTHCHECK" />
     <MESSAGE value="add wpan0 build to zmm auto start script to fix platformConfigureTunDevice for network host" />
-    <option name="LAST_COMMIT_MESSAGE" value="add wpan0 build to zmm auto start script to fix platformConfigureTunDevice for network host" />
+    <MESSAGE value="adding wpan0 on network host ahead of podman run as well as in service" />
+    <option name="LAST_COMMIT_MESSAGE" value="adding wpan0 on network host ahead of podman run as well as in service" />
   </component>
 </project>
