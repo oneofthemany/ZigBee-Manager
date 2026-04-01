@@ -121,13 +121,13 @@ get_port_process() {
 
     # Try lsof first (cleanest output if installed)
     if command -v lsof &>/dev/null; then
-        proc=$(lsof -i :"${port}" -sTCP:LISTEN 2>/dev/null | awk 'NR==2 {print $1" (PID: "$2")"}')
+        proc=$(sudo lsof -i :"${port}" -sTCP:LISTEN 2>/dev/null | awk 'NR==2 {print $1" (PID: "$2")"}')
     fi
 
     # Fallback to ss (standard on modern Linux)
     if [[ -z "$proc" ]] && command -v ss &>/dev/null; then
         # Parses the bizarre ss output: users:(("process_name",pid=1234,fd=X))
-        proc=$(ss -lptn "sport = :${port}" 2>/dev/null | grep -o 'users:((".*"))' | sed 's/users:(("//; s/",pid=/ (PID: /; s/,.*//' | head -n 1)
+        proc=$(sudo ss -lptn "sport = :${port}" 2>/dev/null | grep -o 'users:((".*"))' | sed 's/users:(("//; s/",pid=/ (PID: /; s/,.*//' | head -n 1)
     fi
 
     # Return the process, or a fallback warning if permissions blocked the lookup

@@ -4,10 +4,9 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="removing /dev/net/tun to run_container&#10;&#10;adding redirect to stderr for pick_host_port">
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="adding port in use information to build">
       <change afterPath="$PROJECT_DIR$/modules/cpc_diag.py" afterDir="false" />
       <change afterPath="$PROJECT_DIR$/modules/index.html" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/build.sh" beforeDir="false" afterPath="$PROJECT_DIR$/build.sh" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -153,22 +152,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00145" summary="which bash added">
-      <option name="closed" value="true" />
-      <created>1774638109942</created>
-      <option name="number" value="00145" />
-      <option name="presentableId" value="LOCAL-00145" />
-      <option name="project" value="LOCAL" />
-      <updated>1774638109942</updated>
-    </task>
-    <task id="LOCAL-00146" summary="cpc clean up fixes">
-      <option name="closed" value="true" />
-      <created>1774692944108</created>
-      <option name="number" value="00146" />
-      <option name="presentableId" value="LOCAL-00146" />
-      <option name="project" value="LOCAL" />
-      <updated>1774692944108</updated>
     </task>
     <task id="LOCAL-00147" summary="moved _usb_reset_serial_device above lifecycle">
       <option name="closed" value="true" />
@@ -546,7 +529,23 @@
       <option name="project" value="LOCAL" />
       <updated>1775035412732</updated>
     </task>
-    <option name="localTasksCounter" value="194" />
+    <task id="LOCAL-00194" summary="adding port in use information to build">
+      <option name="closed" value="true" />
+      <created>1775035612155</created>
+      <option name="number" value="00194" />
+      <option name="presentableId" value="LOCAL-00194" />
+      <option name="project" value="LOCAL" />
+      <updated>1775035612155</updated>
+    </task>
+    <task id="LOCAL-00195" summary="adding port in use information to build">
+      <option name="closed" value="true" />
+      <created>1775035620329</created>
+      <option name="number" value="00195" />
+      <option name="presentableId" value="LOCAL-00195" />
+      <option name="project" value="LOCAL" />
+      <updated>1775035620331</updated>
+    </task>
+    <option name="localTasksCounter" value="196" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -561,7 +560,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="change_me added to pan id" />
     <MESSAGE value="otbr work" />
     <MESSAGE value="lsb-release added for otbr" />
     <MESSAGE value="sudo added for final otbr build" />
@@ -586,7 +584,8 @@
     <MESSAGE value="updating _build_otbr command to cater for  debugging and run as sudo" />
     <MESSAGE value="adding /dev/net/tun to run_container" />
     <MESSAGE value="removing /dev/net/tun to run_container&#10;&#10;adding redirect to stderr for pick_host_port" />
-    <option name="LAST_COMMIT_MESSAGE" value="removing /dev/net/tun to run_container&#10;&#10;adding redirect to stderr for pick_host_port" />
+    <MESSAGE value="adding port in use information to build" />
+    <option name="LAST_COMMIT_MESSAGE" value="adding port in use information to build" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
