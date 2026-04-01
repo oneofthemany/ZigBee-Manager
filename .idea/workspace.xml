@@ -4,9 +4,7 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="removal of restart for otbr">
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-    </list>
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="slirp4netns trial" />
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -151,14 +149,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00166" summary="lsb-release added for otbr">
-      <option name="closed" value="true" />
-      <created>1774957491895</created>
-      <option name="number" value="00166" />
-      <option name="presentableId" value="LOCAL-00166" />
-      <option name="project" value="LOCAL" />
-      <updated>1774957491895</updated>
     </task>
     <task id="LOCAL-00167" summary="sudo added for final otbr build">
       <option name="closed" value="true" />
@@ -544,7 +534,15 @@
       <option name="project" value="LOCAL" />
       <updated>1775051531986</updated>
     </task>
-    <option name="localTasksCounter" value="215" />
+    <task id="LOCAL-00215" summary="slirp4netns trial">
+      <option name="closed" value="true" />
+      <created>1775052339656</created>
+      <option name="number" value="00215" />
+      <option name="presentableId" value="LOCAL-00215" />
+      <option name="project" value="LOCAL" />
+      <updated>1775052339656</updated>
+    </task>
+    <option name="localTasksCounter" value="216" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -559,7 +557,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="version bug" />
     <MESSAGE value="using branch 4.7.0" />
     <MESSAGE value="using branch 4.7" />
     <MESSAGE value="force the use of libcpc" />
@@ -584,6 +581,7 @@
     <MESSAGE value="wpan fix for otbr" />
     <MESSAGE value="removal of conatiner removal process as dealt with using the teardown script for any updates" />
     <MESSAGE value="removal of restart for otbr" />
-    <option name="LAST_COMMIT_MESSAGE" value="removal of restart for otbr" />
+    <MESSAGE value="slirp4netns trial" />
+    <option name="LAST_COMMIT_MESSAGE" value="slirp4netns trial" />
   </component>
 </project>
