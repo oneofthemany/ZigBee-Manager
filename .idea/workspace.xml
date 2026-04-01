@@ -4,7 +4,7 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="adding /dev/net/tun to run_container">
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="removing /dev/net/tun to run_container&#10;&#10;adding redirect to stderr for pick_host_port">
       <change afterPath="$PROJECT_DIR$/modules/cpc_diag.py" afterDir="false" />
       <change afterPath="$PROJECT_DIR$/modules/index.html" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/build.sh" beforeDir="false" afterPath="$PROJECT_DIR$/build.sh" afterDir="false" />
@@ -153,14 +153,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00144" summary="updates to mulitpan detection">
-      <option name="closed" value="true" />
-      <created>1774637852996</created>
-      <option name="number" value="00144" />
-      <option name="presentableId" value="LOCAL-00144" />
-      <option name="project" value="LOCAL" />
-      <updated>1774637852996</updated>
     </task>
     <task id="LOCAL-00145" summary="which bash added">
       <option name="closed" value="true" />
@@ -546,7 +538,15 @@
       <option name="project" value="LOCAL" />
       <updated>1775035009721</updated>
     </task>
-    <option name="localTasksCounter" value="193" />
+    <task id="LOCAL-00193" summary="removing /dev/net/tun to run_container&#10;&#10;adding redirect to stderr for pick_host_port">
+      <option name="closed" value="true" />
+      <created>1775035412732</created>
+      <option name="number" value="00193" />
+      <option name="presentableId" value="LOCAL-00193" />
+      <option name="project" value="LOCAL" />
+      <updated>1775035412732</updated>
+    </task>
+    <option name="localTasksCounter" value="194" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -561,7 +561,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="reset_sequence to true and _reset_serial_state fix" />
     <MESSAGE value="change_me added to pan id" />
     <MESSAGE value="otbr work" />
     <MESSAGE value="lsb-release added for otbr" />
@@ -586,7 +585,8 @@
     <MESSAGE value="force complied version to 4.7.1.0" />
     <MESSAGE value="updating _build_otbr command to cater for  debugging and run as sudo" />
     <MESSAGE value="adding /dev/net/tun to run_container" />
-    <option name="LAST_COMMIT_MESSAGE" value="adding /dev/net/tun to run_container" />
+    <MESSAGE value="removing /dev/net/tun to run_container&#10;&#10;adding redirect to stderr for pick_host_port" />
+    <option name="LAST_COMMIT_MESSAGE" value="removing /dev/net/tun to run_container&#10;&#10;adding redirect to stderr for pick_host_port" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
