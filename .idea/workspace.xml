@@ -4,8 +4,12 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="wording change for setup">
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="listening fixes for authentication phase">
+      <change afterPath="$PROJECT_DIR$/routes/matter_attributes_routes.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/main.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/routes/__init__.py" beforeDir="false" afterPath="$PROJECT_DIR$/routes/__init__.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/static/js/device-modal.js" beforeDir="false" afterPath="$PROJECT_DIR$/static/js/device-modal.js" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -152,14 +156,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00178" summary="libsystemd removed and have dev">
-      <option name="closed" value="true" />
-      <created>1774967953724</created>
-      <option name="number" value="00178" />
-      <option name="presentableId" value="LOCAL-00178" />
-      <option name="project" value="LOCAL" />
-      <updated>1774967953724</updated>
     </task>
     <task id="LOCAL-00179" summary="remved -DOTBR_SRP_ADVERTISING_PROXY=ON and -DOTBR_DUA_ROUTING=ON from containerfile">
       <option name="closed" value="true" />
@@ -545,7 +541,15 @@
       <option name="project" value="LOCAL" />
       <updated>1775067575623</updated>
     </task>
-    <option name="localTasksCounter" value="227" />
+    <task id="LOCAL-00227" summary="listening fixes for authentication phase">
+      <option name="closed" value="true" />
+      <created>1775069538300</created>
+      <option name="number" value="00227" />
+      <option name="presentableId" value="LOCAL-00227" />
+      <option name="project" value="LOCAL" />
+      <updated>1775069538300</updated>
+    </task>
+    <option name="localTasksCounter" value="228" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -560,7 +564,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="adding sudo to lsof and ss commands" />
     <MESSAGE value="removing sudo from otbr agent to troubleshoot" />
     <MESSAGE value="adding /var/lib/thread dir and permissions for OTBR to run" />
     <MESSAGE value="adding back in --device /dev/net/tun:/dev/net/tun&#10;&#10;required by platformConfigureTunDevice in otbr agent" />
@@ -585,6 +588,7 @@
     <MESSAGE value="otbr conf update" />
     <MESSAGE value="thread dataset added to commissioning matter bridge" />
     <MESSAGE value="wording change for setup" />
-    <option name="LAST_COMMIT_MESSAGE" value="wording change for setup" />
+    <MESSAGE value="listening fixes for authentication phase" />
+    <option name="LAST_COMMIT_MESSAGE" value="listening fixes for authentication phase" />
   </component>
 </project>

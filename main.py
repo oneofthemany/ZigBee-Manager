@@ -64,6 +64,7 @@ from routes import (
     register_editor_routes,
     register_ota_routes,
     register_otbr_routes,
+    register_matter_attribute_routes,
     register_test_recovery_routes,
     register_websocket_routes,
     manager, broadcast_event,
@@ -483,6 +484,7 @@ register_matter_routes(app, get_zigbee_service, get_matter_server, get_matter_br
 register_group_routes(app, get_zigbee_service, get_manager)
 register_editor_routes(app, get_zigbee_service)
 register_otbr_routes(app, get_zigbee_service)
+register_matter_attribute_routes(app, get_matter_bridge)
 register_test_recovery_routes(app, get_manager)
 register_websocket_routes(app)
 register_zone_routes(app, lambda: zigbee_service.zone_manager, lambda: zigbee_service.devices)
