@@ -66,13 +66,14 @@ class MatterDevice:
                 return attributes[key]
         return default
 
-    def _build_state(self, attributes: dict):
-        """Build normalised state dict from Matter attributes."""
-        self.state = {
-            "protocol": "matter",
-            "available": self._available,
-            "node_id": self.node_id,
-        }
+        def _build_state(self, attributes: dict):
+            """Build normalised state dict from Matter attributes."""
+            self.state = {
+                "protocol": "matter",
+                "available": self._available,
+                "node_id": self.node_id,
+                "last_seen": self.last_seen,
+            }
 
         # On/Off (cluster 6, attr 0)
         on_off = self._find_attr(attributes, 6, 0)
@@ -191,7 +192,7 @@ class MatterDevice:
             "friendly_name": self.friendly_name,
             "model": self.model,
             "manufacturer": self.manufacturer,
-            "lqi": None,
+            "lqi": 255 if self._available else 0,
             "last_seen_ts": self.last_seen,
             "state": self.state.copy(),
             "type": self.get_type(),
@@ -469,6 +470,11 @@ class MatterBridge:
                 await self._upsert_node(node)
                 logger.info(f"Matter: node {node['node_id']} added")
 
+                await self._emit_debug_packet("node_added", node["node_id"], {
+                "manufacturer": dev.manufacturer if ieee in self.devices else "Unknown",
+                "model": dev.model if ieee in self.devices else "Unknown",
+                })
+
         elif event == "node_updated":
             node = data.get("data", {})
             if "node_id" in node:
@@ -483,6 +489,8 @@ class MatterBridge:
 
                 # Remove HA discovery
                 await self._remove_discovery(ieee)
+
+                await self._emit_debug_packet("node_removed", node_id, {})
 
                 if self.event_callback:
                     await self.event_callback("device_left", {"ieee": ieee})
@@ -517,6 +525,13 @@ class MatterBridge:
                         # Publish state to MQTT
                         await self._publish_device_state(dev)
 
+                        await self._emit_debug_packet("attribute_updated", node_id, {
+                            "attribute_path": attr_path,
+                            "new_value": attr_value,
+                            "endpoint_id": int(attr_path.split("/")[0]) if "/" in attr_path else 0,
+                            "cluster_id": int(attr_path.split("/")[1]) if "/" in attr_path else 0,
+                        })
+
     async def _upsert_node(self, node: dict):
         """Insert or update a Matter device."""
         node_id = node["node_id"]
@@ -550,51 +565,54 @@ class MatterBridge:
     # =========================================================================
 
     async def send_command(self, node_id: int, command: str, value=None) -> dict:
-        """
-        Send a command to a Matter device via matter-server.
-        Maps normalised commands to Matter cluster operations.
-        """
+        """Send a command to a Matter device via matter-server."""
         try:
-            if command in ("on", "off", "toggle"):
-                command_name = command.capitalize()
-                if command == "on":
-                    command_name = "On"
-                elif command == "off":
-                    command_name = "Off"
-                elif command == "toggle":
-                    command_name = "Toggle"
+            cluster_id = 0
+            endpoint_id = 1
 
+            if command in ("on", "off", "toggle"):
+                cluster_id = 6
+                command_name = {"on": "On", "off": "Off", "toggle": "Toggle"}[command]
                 await self._send_command("device_command", {
                     "node_id": node_id,
-                    "endpoint_id": 1,
-                    "cluster_id": 6,  # OnOff
+                    "endpoint_id": endpoint_id,
+                    "cluster_id": cluster_id,
                     "command_name": command_name,
                 })
 
             elif command == "brightness":
-                # Convert percentage (0-100) to Matter level (0-254)
+                cluster_id = 8
                 level = int((value or 0) * 2.54)
                 await self._send_command("device_command", {
                     "node_id": node_id,
-                    "endpoint_id": 1,
-                    "cluster_id": 8,  # LevelControl
+                    "endpoint_id": endpoint_id,
+                    "cluster_id": cluster_id,
                     "command_name": "MoveToLevelWithOnOff",
                     "args": {"level": level, "transition_time": 5},
                 })
 
             elif command == "color_temp":
-                # Convert Kelvin to mireds
+                cluster_id = 768
                 mireds = int(1000000 / max(value or 4000, 1))
                 await self._send_command("device_command", {
                     "node_id": node_id,
-                    "endpoint_id": 1,
-                    "cluster_id": 768,  # ColorControl
+                    "endpoint_id": endpoint_id,
+                    "cluster_id": cluster_id,
                     "command_name": "MoveToColorTemperature",
                     "args": {"color_temperature_mireds": mireds, "transition_time": 5},
                 })
 
             else:
                 return {"success": False, "error": f"Unknown command: {command}"}
+
+            # Emit debug packet for TX direction
+            await self._emit_debug_packet("command", node_id, {
+                "command_name": command,
+                "value": value,
+                "endpoint_id": endpoint_id,
+                "cluster_id": cluster_id,
+                "direction": "TX",
+            })
 
             # Optimistic state update
             ieee = f"matter_{node_id}"
@@ -911,3 +929,57 @@ class MatterBridge:
                 for dev in self.devices.values()
             ]
         }
+
+        # =========================================================================
+        # DEBUGGING
+        # =========================================================================
+        async def _emit_debug_packet(self, event_type: str, node_id: int, data: dict):
+            """Emit a Matter event as a debug packet for the live debug stream."""
+            if not self.event_callback:
+                return
+
+            import time
+
+            ieee = f"matter_{node_id}"
+            dev = self.devices.get(ieee)
+            friendly_name = dev.friendly_name if dev else f"Node {node_id}"
+
+            packet = {
+                "protocol": "matter",
+                "timestamp": time.time(),
+                "ieee": ieee,
+                "friendly_name": friendly_name,
+                "direction": "RX",
+                "event": event_type,
+                "node_id": node_id,
+                "data": data,
+                # Mimic Zigbee packet fields for unified display
+                "cluster": data.get("cluster_id", 0),
+                "cluster_name": data.get("cluster_name", event_type),
+                "endpoint": data.get("endpoint_id", 0),
+                "importance": "high" if event_type in ("node_added", "node_removed", "command") else "normal",
+                "summary": _build_matter_summary(event_type, data, friendly_name),
+            }
+
+            try:
+                await self.event_callback("debug_packet", {"packet": packet})
+            except Exception:
+                pass
+
+
+        def _build_matter_summary(event_type: str, data: dict, name: str) -> str:
+            """Build a human-readable summary for a Matter debug packet."""
+            if event_type == "attribute_updated":
+                path = data.get("attribute_path", "?")
+                new_val = data.get("new_value", "?")
+                return f"{name}: {path} → {new_val}"
+            elif event_type == "node_added":
+                return f"New Matter device commissioned: {name}"
+            elif event_type == "node_removed":
+                return f"Matter device removed: {name}"
+            elif event_type == "node_updated":
+                return f"Matter device updated: {name}"
+            elif event_type == "command":
+                cmd = data.get("command_name", "?")
+                return f"{name}: command {cmd}"
+            return f"{name}: {event_type}"
