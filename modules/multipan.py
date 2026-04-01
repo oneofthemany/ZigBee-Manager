@@ -511,17 +511,28 @@ reset_sequence: true
         ]
 
     def _build_otbr_command(self) -> list:
-        """
-        Build otbr-agent command.
-
-        For Multi-PAN RCP, the radio URL must include iid=2 and iid-list=0.
-        This tells otbr-agent which Spinel Interface ID to use — Zigbee
-        gets IID 1 (managed by zigbeed), Thread gets IID 2.
-        """
         thread_iface = self._otbr_config.get("thread_interface", "wpan0")
-        backbone_iface = self._otbr_config.get("backbone_interface", "eth0")
+        backbone_iface = self._otbr_config.get("backbone_interface", None)
 
-        # Multi-PAN RCP radio URL with IID
+        # Auto-detect backbone interface if not explicitly configured
+        if not backbone_iface:
+            import subprocess
+            try:
+                result = subprocess.run(
+                    ["ip", "-o", "route", "show", "to", "default"],
+                    capture_output=True, text=True, timeout=5
+                )
+                parts = result.stdout.strip().split()
+                if "dev" in parts:
+                    backbone_iface = parts[parts.index("dev") + 1]
+                    logger.info(f"[otbr-agent] Auto-detected backbone interface: {backbone_iface}")
+            except Exception as e:
+                logger.warning(f"[otbr-agent] Failed to auto-detect backbone interface: {e}")
+
+            if not backbone_iface:
+                backbone_iface = "eth0"
+                logger.warning(f"[otbr-agent] Falling back to default backbone interface: {backbone_iface}")
+
         radio_url = "spinel+cpc://cpcd_0?iid=2&iid-list=0"
 
         cmd = [
