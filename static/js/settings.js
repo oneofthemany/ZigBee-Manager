@@ -32,6 +32,7 @@ export function initSettings() {
 export async function loadSettingsPanel() {
     await loadStructuredConfig();
     await loadSSLStatus();
+    renderBackupRestoreSection();
 }
 
 // ============================================================================

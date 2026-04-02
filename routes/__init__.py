@@ -14,8 +14,11 @@ from routes.test_recovery_routes import register_test_recovery_routes
 from routes.websocket_routes import register_websocket_routes, manager, broadcast_event
 from routes.otbr_routes import register_otbr_routes
 from routes.matter_attribute_routes import register_matter_attribute_routes
+from routes.backup_routes import register_backup_routes
+
 
 __all__ = [
+    'register_backup_routes',
     'register_config_routes',
     'register_device_routes',
     'register_network_routes',
