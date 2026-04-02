@@ -50,6 +50,9 @@ class MatterDevice:
         self.friendly_name = self._find_attr(attributes, 40, 5, "") or \
                              self.model or f"Matter {self.node_id}"         # NodeLabel
 
+        # Extract network addressing
+        self._extract_network_info(attributes)
+
         # Build initial state
         self._build_state(attributes)
 
@@ -65,6 +68,81 @@ class MatterDevice:
             if key in attributes:
                 return attributes[key]
         return default
+
+    def _extract_network_info(self, attributes: dict):
+        """
+        Extract network addressing from Matter attributes.
+
+        Sources:
+          - Cluster 51 (General Diagnostics) attr 0: NetworkInterfaces list
+          - Cluster 53 (Thread Network Diagnostics): Thread-specific info
+          - Cluster 54 (WiFi Network Diagnostics): WiFi-specific info
+        """
+        self.ip_addresses: List[str] = []
+        self.hardware_address: str = ""
+        self.network_type: str = "unknown"  # thread, wifi, ethernet
+
+        # Determine network type from presence of diagnostic clusters
+        # Thread Network Diagnostics = cluster 53
+        thread_channel = self._find_attr(attributes, 53, 0)
+        if thread_channel is not None:
+            self.network_type = "thread"
+
+        # WiFi Network Diagnostics = cluster 54
+        wifi_bssid = self._find_attr(attributes, 54, 0)
+        if wifi_bssid is not None:
+            self.network_type = "wifi"
+
+        # Ethernet Network Diagnostics = cluster 55
+        eth_status = self._find_attr(attributes, 55, 0)
+        if eth_status is not None and self.network_type == "unknown":
+            self.network_type = "ethernet"
+
+        # General Diagnostics cluster 51, attr 0 = NetworkInterfaces
+        # This is a list of structs with Name, HardwareAddress, IPv4/6Addresses, Type
+        net_interfaces = self._find_attr(attributes, 51, 0)
+        if isinstance(net_interfaces, list):
+            for iface in net_interfaces:
+                if not isinstance(iface, dict):
+                    continue
+                # Extract hardware (MAC) address
+                hw = iface.get("hardwareAddress") or iface.get("HardwareAddress")
+                if hw and not self.hardware_address:
+                    if isinstance(hw, (bytes, bytearray)):
+                        self.hardware_address = ":".join(f"{b:02x}" for b in hw)
+                    elif isinstance(hw, str):
+                        self.hardware_address = hw
+
+                # Extract IPv6 addresses
+                for key in ("IPv6Addresses", "iPv6Addresses", "ipv6Addresses"):
+                    addrs = iface.get(key, [])
+                    if isinstance(addrs, list):
+                        for addr in addrs:
+                            if isinstance(addr, (bytes, bytearray)):
+                                addr = self._bytes_to_ipv6(addr)
+                            if isinstance(addr, str) and addr not in self.ip_addresses:
+                                self.ip_addresses.append(addr)
+
+                # Extract IPv4 addresses
+                for key in ("IPv4Addresses", "iPv4Addresses", "ipv4Addresses"):
+                    addrs = iface.get(key, [])
+                    if isinstance(addrs, list):
+                        for addr in addrs:
+                            if isinstance(addr, (bytes, bytearray)):
+                                addr = ".".join(str(b) for b in addr)
+                            if isinstance(addr, str) and addr not in self.ip_addresses:
+                                self.ip_addresses.append(addr)
+
+    @staticmethod
+    def _bytes_to_ipv6(raw: bytes) -> str:
+        """Convert 16 raw bytes to an IPv6 address string."""
+        if len(raw) != 16:
+            return raw.hex()
+        import ipaddress
+        try:
+            return str(ipaddress.IPv6Address(raw))
+        except Exception:
+            return raw.hex()
 
     def _build_state(self, attributes: dict):
         """Build normalised state dict from Matter attributes."""
@@ -131,6 +209,7 @@ class MatterDevice:
         self._available = node.get("available", self._available)
         self.last_seen = time.time()
         attributes = node.get("attributes", {})
+        self._extract_network_info(attributes)
         self._build_state(attributes)
 
         # Re-read labels in case they changed
@@ -203,6 +282,11 @@ class MatterDevice:
             "available": self._available,
             "config_schema": [],
             "polling_interval": 0,
+            # Matter-specific addressing
+            "node_id": self.node_id,
+            "network_type": self.network_type,
+            "ip_addresses": self.ip_addresses,
+            "hardware_address": self.hardware_address,
         }
 
     def _get_capabilities(self) -> list:
@@ -468,11 +552,14 @@ class MatterBridge:
             node = data.get("data", {})
             if "node_id" in node:
                 await self._upsert_node(node)
-                logger.info(f"Matter: node {node['node_id']} added")
+                node_id = node["node_id"]
+                ieee = f"matter_{node_id}"
+                dev = self.devices.get(ieee)
+                logger.info(f"Matter: node {node_id} added")
 
-                await self._emit_debug_packet("node_added", node["node_id"], {
-                    "manufacturer": dev.manufacturer if ieee in self.devices else "Unknown",
-                    "model": dev.model if ieee in self.devices else "Unknown",
+                await self._emit_debug_packet("node_added", node_id, {
+                    "manufacturer": dev.manufacturer if dev else "Unknown",
+                    "model": dev.model if dev else "Unknown",
                 })
 
         elif event == "node_updated":

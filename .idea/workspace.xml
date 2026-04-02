@@ -4,12 +4,8 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="typos">
-      <change beforePath="$PROJECT_DIR$/.idea/misc.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/misc.xml" afterDir="false" />
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="de-indent fix for _build_state">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/modules/matter_bridge.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/matter_bridge.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/modules/multipan.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/multipan.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/routes/otbr_routes.py" beforeDir="false" afterPath="$PROJECT_DIR$/routes/otbr_routes.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -157,22 +153,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00184" summary="reverted">
-      <option name="closed" value="true" />
-      <created>1774969292152</created>
-      <option name="number" value="00184" />
-      <option name="presentableId" value="LOCAL-00184" />
-      <option name="project" value="LOCAL" />
-      <updated>1774969292152</updated>
-    </task>
-    <task id="LOCAL-00185" summary="version bug">
-      <option name="closed" value="true" />
-      <created>1774970839370</created>
-      <option name="number" value="00185" />
-      <option name="presentableId" value="LOCAL-00185" />
-      <option name="project" value="LOCAL" />
-      <updated>1774970839370</updated>
     </task>
     <task id="LOCAL-00186" summary="using branch 4.7.0">
       <option name="closed" value="true" />
@@ -550,7 +530,23 @@
       <option name="project" value="LOCAL" />
       <updated>1775072679783</updated>
     </task>
-    <option name="localTasksCounter" value="233" />
+    <task id="LOCAL-00233" summary="thread netowrk persistence">
+      <option name="closed" value="true" />
+      <created>1775121740882</created>
+      <option name="number" value="00233" />
+      <option name="presentableId" value="LOCAL-00233" />
+      <option name="project" value="LOCAL" />
+      <updated>1775121740882</updated>
+    </task>
+    <task id="LOCAL-00234" summary="de-indent fix for _build_state">
+      <option name="closed" value="true" />
+      <created>1775121782199</created>
+      <option name="number" value="00234" />
+      <option name="presentableId" value="LOCAL-00234" />
+      <option name="project" value="LOCAL" />
+      <updated>1775121782199</updated>
+    </task>
+    <option name="localTasksCounter" value="235" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -577,8 +573,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="network fix for pasta" />
-    <MESSAGE value="networking patch - moved to network host" />
     <MESSAGE value="healthcheck fix" />
     <MESSAGE value="escape added to ZMM_PORT in HEALTHCHECK" />
     <MESSAGE value="add wpan0 build to zmm auto start script to fix platformConfigureTunDevice for network host" />
@@ -602,6 +596,8 @@
     <MESSAGE value="more debugging" />
     <MESSAGE value="renamed typo" />
     <MESSAGE value="typos" />
-    <option name="LAST_COMMIT_MESSAGE" value="typos" />
+    <MESSAGE value="thread netowrk persistence" />
+    <MESSAGE value="de-indent fix for _build_state" />
+    <option name="LAST_COMMIT_MESSAGE" value="de-indent fix for _build_state" />
   </component>
 </project>
