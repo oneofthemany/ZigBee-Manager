@@ -30,10 +30,16 @@ export function openDeviceModal(d) {
         <div class="mb-3 d-flex justify-content-between align-items-center">
             <div>
                 <h5>${cachedDev.friendly_name}</h5>
-                <div class="text-muted small font-monospace">${cachedDev.ieee}</div>
+                <div class="text-muted small font-monospace">${
+                    cachedDev.protocol === 'matter'
+                        ? (cachedDev.ip_addresses?.length
+                            ? cachedDev.ip_addresses[0]
+                            : `Node ${cachedDev.node_id || '?'}`)
+                        : cachedDev.ieee
+                }</div>
             </div>
             <div>
-                ${!isZigbee ? '<span class="badge bg-info me-1">Matter</span>' : ''}
+                ${!isZigbee ? `<span class="badge bg-info me-1">${cachedDev.network_type === 'thread' ? 'Thread' : cachedDev.network_type === 'wifi' ? 'WiFi' : 'Matter'}</span>` : ''}
                 <span class="badge bg-secondary">${cachedDev.manufacturer}</span>
                 <span class="badge bg-secondary">${cachedDev.model}</span>
             </div>

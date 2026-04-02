@@ -162,7 +162,7 @@ export function renderDeviceTable() {
             <td class="align-middle">
                 <div class="font-monospace small text-muted">${
                     d.protocol === 'matter'
-                        ? `Node ${d.node_id}${d.ip_addresses?.length ? '<br>' + d.ip_addresses[0] : ''}`
+                        ? (d.ip_addresses?.length ? d.ip_addresses[0] : `Node ${d.node_id || '?'}`)
                         : d.ieee
                 }</div>
             </td>
