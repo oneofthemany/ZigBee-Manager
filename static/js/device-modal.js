@@ -124,6 +124,7 @@ export function openDeviceModal(d) {
 
 export function refreshModalState(device) {
     console.log("4. Refreshing Modal Content for:", device.friendly_name);
+    const isZigbee = !device.protocol || device.protocol === 'zigbee';
 
     // Update Overview Tab if it exists
     const overviewTab = document.getElementById('tab-overview');
@@ -140,7 +141,7 @@ export function refreshModalState(device) {
             updateControlValues(device);
         } else {
             // Full re-render if no active interaction
-            controlTab.innerHTML = renderControlTab(device);
+            controlTab.innerHTML = (!isZigbee ? renderMatterEventsTab(device) : '') + renderControlTab(device);
             // Re-bind schedule events after re-render
             if (hasCluster(device, 0x0201)) {
                 bindScheduleEvents(device.ieee);

@@ -399,7 +399,10 @@ class MatterBridge:
                     if attr_path and attr_value is not None:
                         attributes[attr_path] = attr_value
                         dev.node["attributes"] = attributes
-                        dev._build_state(attributes)
+                        # Use parser for state building — handles rotary detection etc.
+                        dev.state = dev._parser.build_state(
+                            attributes, dev.node_id, dev._available
+                        )
                         dev.last_seen = time.time()
 
                         if self.event_callback:
@@ -883,48 +886,57 @@ class MatterBridge:
         if not self.event_callback:
             return
 
-        import time
-
         ieee = f"matter_{node_id}"
         dev = self.devices.get(ieee)
         friendly_name = dev.friendly_name if dev else f"Node {node_id}"
 
+        now = time.time()
         packet = {
             "protocol": "matter",
-            "timestamp": time.time(),
+            "timestamp": now,
+            "timestamp_str": time.strftime("%H:%M:%S", time.localtime(now)),
             "ieee": ieee,
             "friendly_name": friendly_name,
-            "direction": "RX",
+            "direction": data.get("direction", "RX"),
             "event": event_type,
             "node_id": node_id,
             "data": data,
-            # Mimic Zigbee packet fields for unified display
+            # Fields for unified display with Zigbee packets
             "cluster": data.get("cluster_id", 0),
             "cluster_name": data.get("cluster_name", event_type),
             "endpoint": data.get("endpoint_id", 0),
-            "importance": "high" if event_type in ("node_added", "node_removed", "command") else "normal",
-            "summary": _build_matter_summary(event_type, data, friendly_name),
+            "importance": "high" if event_type in (
+                "node_added", "node_removed", "command", "button_event"
+            ) else "normal",
+            "summary": self._build_matter_summary(event_type, data, friendly_name),
+            # Fields the Zigbee packet analyser/renderer expects — prevent undefined errors
+            "decoded": data,
+            "message": None,
+            "profile": 0,
+            "src_ep": data.get("endpoint_id", 0),
+            "dst_ep": 0,
         }
 
         try:
-            await self.event_callback("debug_packet", {"packet": packet})
+            await self.event_callback("debug_packet", packet)
         except Exception:
             pass
 
-
-def _build_matter_summary(event_type: str, data: dict, name: str) -> str:
-    """Build a human-readable summary for a Matter debug packet."""
-    if event_type == "attribute_updated":
-        path = data.get("attribute_path", "?")
-        new_val = data.get("new_value", "?")
-        return f"{name}: {path} → {new_val}"
-    elif event_type == "node_added":
-        return f"New Matter device commissioned: {name}"
-    elif event_type == "node_removed":
-        return f"Matter device removed: {name}"
-    elif event_type == "node_updated":
-        return f"Matter device updated: {name}"
-    elif event_type == "command":
-        cmd = data.get("command_name", "?")
-        return f"{name}: command {cmd}"
-    return f"{name}: {event_type}"
+    @staticmethod
+    def _build_matter_summary(event_type: str, data: dict, name: str) -> str:
+        """Build a human-readable summary for a Matter debug packet."""
+        if event_type == "attribute_updated":
+            path = data.get("attribute_path", "?")
+            new_val = data.get("new_value", "?")
+            return f"{name}: {path} → {new_val}"
+        elif event_type == "button_event":
+            return f"{name}: {data.get('action', '?')}"
+        elif event_type == "node_added":
+            return f"Commissioned: {name}"
+        elif event_type == "node_removed":
+            return f"Removed: {name}"
+        elif event_type == "node_updated":
+            return f"Updated: {name}"
+        elif event_type == "command":
+            return f"{name}: {data.get('command_name', '?')}"
+        return f"{name}: {event_type}"

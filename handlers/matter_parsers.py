@@ -680,6 +680,7 @@ class SwitchParser(BaseMatterParser):
     def __init__(self):
         super().__init__()
         self.device_type = "Button"
+        self._previous_positions = {}  # Track per-endpoint positions for rotary detection
 
     def build_state(self, attributes: dict, node_id: int, available: bool) -> dict:
         state = super().build_state(attributes, node_id, available)
@@ -695,6 +696,21 @@ class SwitchParser(BaseMatterParser):
                                          SwitchAttrs.CURRENT_POSITION, 0, endpoint=ep)
                 multi_press = self.find_attr(attributes, MatterClusters.SWITCH,
                                              SwitchAttrs.MULTI_PRESS_MAX, 0, endpoint=ep)
+
+                # Detect rotary/dial position changes
+                prev = self._previous_positions.get(ep)
+                if prev is not None and current != prev:
+                    import time
+                    direction = "clockwise" if current > prev else "counter_clockwise"
+                    steps = abs(current - prev)
+                    state["last_action"] = f"dial_ep{ep}_{direction}_{steps}"
+                    state["last_action_endpoint"] = ep
+                    state["last_action_time"] = time.time()
+                    logger.info(f"[matter_{node_id}] Rotary EP{ep}: "
+                                f"{direction} {steps} step(s) (pos {prev} → {current})")
+
+                self._previous_positions[ep] = current
+
                 endpoints_with_switch.append({
                     "endpoint": ep,
                     "positions": positions,
