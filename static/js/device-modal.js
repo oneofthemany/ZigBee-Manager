@@ -14,7 +14,7 @@ import { renderMappingsTab, initMappingsTab, hasGenericContent } from './modal/m
 import { bindScheduleEvents } from './modal/schedule.js';
 import { renderOTATab, handleOTAProgress } from './modal/ota.js';
 import { renderMatterClustersTab, initMatterClustersTab } from './modal/matter-clusters.js';
-
+import { renderMatterEventsTab } from './modal/matter-events.js';
 
 // Re-export these functions so main.js (and others) can still import them from here
 export { renderOverviewTab, renderControlTab, renderBindingTab, renderCapsTab, renderAutomationTab, renderMappingsTab, saveConfig, handleOTAProgress };
@@ -32,9 +32,9 @@ export function openDeviceModal(d) {
                 <h5>${cachedDev.friendly_name}</h5>
                 <div class="text-muted small font-monospace">${
                     cachedDev.protocol === 'matter'
-                        ? (cachedDev.ip_addresses?.length
-                            ? cachedDev.ip_addresses[0]
-                            : `Node ${cachedDev.node_id || '?'}`)
+                    ? (cachedDev.ip_addresses?.length
+                        ? cachedDev.ip_addresses[0]
+                        : `Node ${cachedDev.state?.node_id || '?'}`)
                         : cachedDev.ieee
                 }</div>
             </div>
@@ -60,6 +60,7 @@ export function openDeviceModal(d) {
                 ${renderOverviewTab(cachedDev)}
             </div>
             <div class="tab-pane fade" id="tab-control">
+                ${!isZigbee ? renderMatterEventsTab(cachedDev) : ''}
                 ${renderControlTab(cachedDev)}
             </div>
             <div class="tab-pane fade" id="tab-ota">

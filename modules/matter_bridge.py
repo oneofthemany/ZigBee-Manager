@@ -15,6 +15,8 @@ import time
 import logging
 from typing import Dict, Optional, Callable, Any, List
 
+from handlers.matter_parsers import get_parser_for_node, BaseMatterParser
+
 try:
     import aiohttp
     HAS_AIOHTTP = True
@@ -31,7 +33,7 @@ logger = logging.getLogger("matter_bridge")
 class MatterDevice:
     """
     Lightweight wrapper around a matter-server node.
-    Mimics the interface that automation engine expects from ZigManDevice.
+    Delegates attribute parsing to the matter_parsers framework.
     """
 
     def __init__(self, node: dict):
@@ -42,166 +44,18 @@ class MatterDevice:
         self.last_seen = time.time()
         self._available = node.get("available", False)
 
-        # Extract basic info from Matter Basic Information cluster (0/40/*)
         attributes = node.get("attributes", {})
-        self.manufacturer = self._find_attr(attributes, 40, 2, "Unknown")   # VendorName
-        self.model = self._find_attr(attributes, 40, 4, "") or \
-                     self._find_attr(attributes, 40, 3, "Unknown")          # ProductName
-        self.friendly_name = self._find_attr(attributes, 40, 5, "") or \
-                             self.model or f"Matter {self.node_id}"         # NodeLabel
 
-        # Extract network addressing
-        self._extract_network_info(attributes)
+        # Auto-detect parser based on device attributes
+        self._parser = get_parser_for_node(attributes)
+
+        # Extract identity using parser
+        self.manufacturer = self._parser.get_manufacturer(attributes)
+        self.model = self._parser.get_model(attributes)
+        self.friendly_name = self._parser.get_friendly_name(attributes)
 
         # Build initial state
-        self._build_state(attributes)
-
-    @staticmethod
-    def _find_attr(attributes: dict, cluster: int, attr: int, default=None):
-        """
-        Search for a Matter attribute across endpoints.
-        Keys in matter-server are formatted as "endpoint/cluster/attribute".
-        """
-        # Try endpoint 0 first (Basic Information is always on EP 0)
-        for ep in [0, 1, 2]:
-            key = f"{ep}/{cluster}/{attr}"
-            if key in attributes:
-                return attributes[key]
-        return default
-
-    def _extract_network_info(self, attributes: dict):
-        """
-        Extract network addressing from Matter attributes.
-
-        Sources:
-          - Cluster 51 (General Diagnostics) attr 0: NetworkInterfaces list
-          - Cluster 53 (Thread Network Diagnostics): Thread-specific info
-          - Cluster 54 (WiFi Network Diagnostics): WiFi-specific info
-        """
-        self.ip_addresses: List[str] = []
-        self.hardware_address: str = ""
-        self.network_type: str = "unknown"  # thread, wifi, ethernet
-
-        # Determine network type from presence of diagnostic clusters
-        # Thread Network Diagnostics = cluster 53
-        thread_channel = self._find_attr(attributes, 53, 0)
-        if thread_channel is not None:
-            self.network_type = "thread"
-
-        # WiFi Network Diagnostics = cluster 54
-        wifi_bssid = self._find_attr(attributes, 54, 0)
-        if wifi_bssid is not None:
-            self.network_type = "wifi"
-
-        # Ethernet Network Diagnostics = cluster 55
-        eth_status = self._find_attr(attributes, 55, 0)
-        if eth_status is not None and self.network_type == "unknown":
-            self.network_type = "ethernet"
-
-        # General Diagnostics cluster 51, attr 0 = NetworkInterfaces
-        # This is a list of structs with Name, HardwareAddress, IPv4/6Addresses, Type
-        net_interfaces = self._find_attr(attributes, 51, 0)
-        if isinstance(net_interfaces, list):
-            for iface in net_interfaces:
-                if not isinstance(iface, dict):
-                    continue
-                # Extract hardware (MAC) address
-                hw = iface.get("hardwareAddress") or iface.get("HardwareAddress")
-                if hw and not self.hardware_address:
-                    if isinstance(hw, (bytes, bytearray)):
-                        self.hardware_address = ":".join(f"{b:02x}" for b in hw)
-                    elif isinstance(hw, str):
-                        self.hardware_address = hw
-
-                # Extract IPv6 addresses
-                for key in ("IPv6Addresses", "iPv6Addresses", "ipv6Addresses"):
-                    addrs = iface.get(key, [])
-                    if isinstance(addrs, list):
-                        for addr in addrs:
-                            if isinstance(addr, (bytes, bytearray)):
-                                addr = self._bytes_to_ipv6(addr)
-                            if isinstance(addr, str) and addr not in self.ip_addresses:
-                                self.ip_addresses.append(addr)
-
-                # Extract IPv4 addresses
-                for key in ("IPv4Addresses", "iPv4Addresses", "ipv4Addresses"):
-                    addrs = iface.get(key, [])
-                    if isinstance(addrs, list):
-                        for addr in addrs:
-                            if isinstance(addr, (bytes, bytearray)):
-                                addr = ".".join(str(b) for b in addr)
-                            if isinstance(addr, str) and addr not in self.ip_addresses:
-                                self.ip_addresses.append(addr)
-
-    @staticmethod
-    def _bytes_to_ipv6(raw: bytes) -> str:
-        """Convert 16 raw bytes to an IPv6 address string."""
-        if len(raw) != 16:
-            return raw.hex()
-        import ipaddress
-        try:
-            return str(ipaddress.IPv6Address(raw))
-        except Exception:
-            return raw.hex()
-
-    def _build_state(self, attributes: dict):
-        """Build normalised state dict from Matter attributes."""
-        self.state = {
-            "protocol": "matter",
-            "available": self._available,
-            "node_id": self.node_id,
-            "last_seen": self.last_seen,
-        }
-
-        # On/Off (cluster 6, attr 0)
-        on_off = self._find_attr(attributes, 6, 0)
-        if on_off is not None:
-            self.state["state"] = "ON" if on_off else "OFF"
-            self.state["on"] = bool(on_off)
-
-        # Level Control (cluster 8, attr 0) — 0-254
-        level = self._find_attr(attributes, 8, 0)
-        if level is not None:
-            self.state["brightness"] = int(level)
-            self.state["level"] = int(level / 2.54) if level > 0 else 0
-
-        # Color Temperature (cluster 768, attr 7) — mireds
-        color_temp = self._find_attr(attributes, 768, 7)
-        if color_temp is not None and color_temp > 0:
-            self.state["color_temp"] = int(color_temp)
-
-        # Color XY (cluster 768, attr 3 & 4)
-        color_x = self._find_attr(attributes, 768, 3)
-        color_y = self._find_attr(attributes, 768, 4)
-        if color_x is not None and color_y is not None:
-            # Matter uses 0-65535, normalise to 0-1
-            self.state["color_x"] = round(color_x / 65535, 4)
-            self.state["color_y"] = round(color_y / 65535, 4)
-
-        # Temperature Measurement (cluster 1026, attr 0) — centidegrees
-        temp = self._find_attr(attributes, 1026, 0)
-        if temp is not None:
-            self.state["temperature"] = round(temp / 100.0, 1)
-
-        # Humidity (cluster 1029, attr 0)
-        humidity = self._find_attr(attributes, 1029, 0)
-        if humidity is not None:
-            self.state["humidity"] = round(humidity / 100.0, 1)
-
-        # Occupancy (cluster 1030, attr 0)
-        occupancy = self._find_attr(attributes, 1030, 0)
-        if occupancy is not None:
-            self.state["occupancy"] = bool(occupancy & 0x01)
-
-        # Illuminance (cluster 1024, attr 0)
-        illuminance = self._find_attr(attributes, 1024, 0)
-        if illuminance is not None:
-            self.state["illuminance"] = int(illuminance)
-
-        # Contact/Door (cluster 69, attr 0) — BooleanState
-        contact = self._find_attr(attributes, 69, 0)
-        if contact is not None:
-            self.state["contact"] = bool(contact)
+        self.state = self._parser.build_state(attributes, self.node_id, self._available)
 
     def update_from_node(self, node: dict):
         """Update device from a new node snapshot."""
@@ -209,62 +63,32 @@ class MatterDevice:
         self._available = node.get("available", self._available)
         self.last_seen = time.time()
         attributes = node.get("attributes", {})
-        self._extract_network_info(attributes)
-        self._build_state(attributes)
+
+        # Rebuild state using parser
+        self.state = self._parser.build_state(attributes, self.node_id, self._available)
 
         # Re-read labels in case they changed
-        new_label = self._find_attr(attributes, 40, 5, "")
-        if new_label:
-            self.friendly_name = new_label
+        new_name = self._parser.get_friendly_name(attributes)
+        if new_name and new_name != "Matter Device":
+            self.friendly_name = new_name
 
     def is_available(self) -> bool:
         return self._available
 
     def get_role(self) -> str:
-        """Return device role for the device list."""
         return "Matter"
 
     def get_type(self) -> str:
-        """Determine device type from state keys."""
-        if "state" in self.state:
-            if "brightness" in self.state or "color_temp" in self.state:
-                return "Light"
-            return "Switch"
-        if "occupancy" in self.state:
-            return "Sensor"
-        if "temperature" in self.state:
-            return "Sensor"
-        if "contact" in self.state:
-            return "Sensor"
-        return "Matter"
+        return self._parser.get_device_type(self.node.get("attributes", {}))
 
     def get_control_commands(self) -> List[Dict[str, Any]]:
-        """Return available commands based on state capabilities."""
-        commands = []
-
-        if "state" in self.state:
-            commands.extend([
-                {"command": "on", "label": "On", "endpoint_id": 1},
-                {"command": "off", "label": "Off", "endpoint_id": 1},
-                {"command": "toggle", "label": "Toggle", "endpoint_id": 1},
-            ])
-
-        if "brightness" in self.state:
-            commands.append({
-                "command": "brightness", "label": "Brightness",
-                "type": "slider", "min": 0, "max": 100, "endpoint_id": 1
-            })
-
-        if "color_temp" in self.state:
-            commands.append({
-                "command": "color_temp", "label": "Color Temp",
-                "type": "slider", "min": 2000, "max": 6500, "endpoint_id": 1
-            })
-
-        return commands
+        return self._parser.get_commands(self.node.get("attributes", {}))
 
     def to_device_list_entry(self) -> dict:
         """Return dict matching ZigbeeService.get_device_list() format."""
+        attributes = self.node.get("attributes", {})
+        basic_info = self._parser.parse_basic_info(attributes)
+
         return {
             "ieee": self.ieee,
             "nwk": f"0x{self.node_id:04x}",
@@ -276,42 +100,17 @@ class MatterDevice:
             "state": self.state.copy(),
             "type": self.get_type(),
             "protocol": "matter",
-            "quirk": None,
-            "capabilities": self._get_capabilities(),
+            "quirk": self._parser.__class__.__name__,
+            "capabilities": self._parser.get_capabilities(attributes),
             "settings": {},
             "available": self._available,
             "config_schema": [],
             "polling_interval": 0,
-            # Matter-specific addressing
-            "node_id": self.node_id,
-            "network_type": self.network_type,
-            "ip_addresses": self.ip_addresses,
-            "hardware_address": self.hardware_address,
+            "basic_info": basic_info,
         }
 
     def _get_capabilities(self) -> list:
-        """Build capability list from state."""
-        caps = ["matter"]
-        if "state" in self.state:
-            if "brightness" in self.state or "color_temp" in self.state:
-                caps.append("light")
-            else:
-                caps.append("switch")
-        if "brightness" in self.state:
-            caps.append("level_control")
-        if "color_temp" in self.state:
-            caps.append("color_temperature")
-        if "temperature" in self.state:
-            caps.append("temperature_sensor")
-        if "humidity" in self.state:
-            caps.append("humidity_sensor")
-        if "occupancy" in self.state:
-            caps.append("motion_sensor")
-        if "contact" in self.state:
-            caps.append("contact_sensor")
-        if "illuminance" in self.state:
-            caps.append("illuminance_sensor")
-        return caps
+        return self._parser.get_capabilities(self.node.get("attributes", {}))
 
 
 # =============================================================================
@@ -617,6 +416,65 @@ class MatterBridge:
                             "new_value": attr_value,
                             "endpoint_id": int(attr_path.split("/")[0]) if "/" in attr_path else 0,
                             "cluster_id": int(attr_path.split("/")[1]) if "/" in attr_path else 0,
+                        })
+
+        elif event == "node_event":
+            # Matter cluster events (button presses, rotary turns, etc.)
+            event_data = data.get("data", {})
+            node_id = event_data.get("node_id")
+            endpoint_id = event_data.get("endpoint_id", 0)
+            cluster_id = event_data.get("cluster_id", 0)
+            event_name = event_data.get("event_name", "")
+            event_data_inner = event_data.get("event_data", {})
+
+            if node_id is not None:
+                ieee = f"matter_{node_id}"
+                if ieee in self.devices:
+                    dev = self.devices[ieee]
+                    dev.last_seen = time.time()
+
+                    # Build a human-readable action string
+                    action = dev._parser.parse_event(
+                        event_name, endpoint_id, cluster_id, event_data_inner
+                    )
+
+                    # Update device state with the latest action
+                    dev.state["last_action"] = action
+                    dev.state["last_action_endpoint"] = endpoint_id
+                    dev.state["last_action_time"] = dev.last_seen
+
+                    logger.info(
+                        f"[{ieee}] Matter event: {action} "
+                        f"(EP{endpoint_id}, cluster {cluster_id})"
+                    )
+
+                    # Emit to frontend via WebSocket
+                    if self.event_callback:
+                        await self.event_callback("device_updated", {
+                            "ieee": ieee,
+                            "data": dev.state.copy(),
+                        })
+                        # Also emit as a specific button event for automations
+                        await self.event_callback("matter_button_event", {
+                            "ieee": ieee,
+                            "node_id": node_id,
+                            "endpoint_id": endpoint_id,
+                            "action": action,
+                            "event_name": event_name,
+                            "event_data": event_data_inner,
+                        })
+
+                    # Publish to MQTT
+                    await self._publish_device_state(dev)
+
+                    # Emit debug packet
+                    if hasattr(self, '_emit_debug_packet'):
+                        await self._emit_debug_packet("button_event", node_id, {
+                            "event_name": event_name,
+                            "action": action,
+                            "endpoint_id": endpoint_id,
+                            "cluster_id": cluster_id,
+                            "event_data": event_data_inner,
                         })
 
     async def _upsert_node(self, node: dict):

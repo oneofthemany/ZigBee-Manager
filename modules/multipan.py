@@ -38,6 +38,8 @@ from pathlib import Path
 from typing import Optional, Dict, Callable
 
 from modules.pty_bridge import PTYTCPBridge
+from modules.otbr_routes import restore_thread_dataset
+
 
 logger = logging.getLogger("multipan")
 

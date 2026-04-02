@@ -4,8 +4,16 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="matter addressing patch">
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="resilience fix">
+      <change afterPath="$PROJECT_DIR$/handlers/matter_parsers.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/static/js/matter-events.js" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/handlers/__init__.py" beforeDir="false" afterPath="$PROJECT_DIR$/handlers/__init__.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/modules/matter_bridge.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/matter_bridge.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/static/js/device-modal.js" beforeDir="false" afterPath="$PROJECT_DIR$/static/js/device-modal.js" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/static/js/devices.js" beforeDir="false" afterPath="$PROJECT_DIR$/static/js/devices.js" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/static/js/modal/overview.js" beforeDir="false" afterPath="$PROJECT_DIR$/static/js/modal/overview.js" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/static/js/websocket.js" beforeDir="false" afterPath="$PROJECT_DIR$/static/js/websocket.js" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -153,14 +161,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00188" summary="using branch 4.7">
-      <option name="closed" value="true" />
-      <created>1774973578801</created>
-      <option name="number" value="00188" />
-      <option name="presentableId" value="LOCAL-00188" />
-      <option name="project" value="LOCAL" />
-      <updated>1774973578801</updated>
     </task>
     <task id="LOCAL-00189" summary="force the use of libcpc">
       <option name="closed" value="true" />
@@ -546,7 +546,15 @@
       <option name="project" value="LOCAL" />
       <updated>1775123635186</updated>
     </task>
-    <option name="localTasksCounter" value="237" />
+    <task id="LOCAL-00237" summary="resilience fix">
+      <option name="closed" value="true" />
+      <created>1775124275013</created>
+      <option name="number" value="00237" />
+      <option name="presentableId" value="LOCAL-00237" />
+      <option name="project" value="LOCAL" />
+      <updated>1775124275013</updated>
+    </task>
+    <option name="localTasksCounter" value="238" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -560,7 +568,7 @@
                   <entry key="branch">
                     <value>
                       <list>
-                        <option value="dev" />
+                        <option value="main" />
                       </list>
                     </value>
                   </entry>
@@ -573,7 +581,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="add wpan0 build to zmm auto start script to fix platformConfigureTunDevice for network host" />
     <MESSAGE value="adding wpan0 on network host ahead of podman run as well as in service" />
     <MESSAGE value="adding in removal of container ahead of port check" />
     <MESSAGE value="wpan fix for otbr" />
@@ -598,6 +605,7 @@
     <MESSAGE value="de-indent fix for _build_state" />
     <MESSAGE value="matter device addressing added" />
     <MESSAGE value="matter addressing patch" />
-    <option name="LAST_COMMIT_MESSAGE" value="matter addressing patch" />
+    <MESSAGE value="resilience fix" />
+    <option name="LAST_COMMIT_MESSAGE" value="resilience fix" />
   </component>
 </project>

@@ -118,6 +118,24 @@ export function initWS() {
                     handleLivePacket(msg.data || msg.payload);
                     break;
 
+                case "matter_button_event":
+                    const mPayload = msg.payload || msg.data || {};
+                    const eventLog = document.getElementById('matterEventLog');
+                    const actionBadge = document.getElementById('matterLastAction');
+                    const actionTime = document.getElementById('matterLastActionTime');
+                    const actionEp = document.getElementById('matterLastEp');
+                    if (eventLog) {
+                        const time = new Date().toLocaleTimeString();
+                        const line = `<div>[${time}] ${mPayload.action} (EP${mPayload.endpoint_id})</div>`;
+                        if (eventLog.querySelector('.text-muted')) eventLog.innerHTML = '';
+                        eventLog.insertAdjacentHTML('afterbegin', line);
+                        while (eventLog.children.length > 50) eventLog.lastChild.remove();
+                    }
+                    if (actionBadge) actionBadge.textContent = mPayload.action;
+                    if (actionTime) actionTime.textContent = new Date().toLocaleTimeString();
+                    if (actionEp) actionEp.textContent = mPayload.endpoint_id;
+                    break;
+
                 // handle HA Status
                 case "ha_status":
                     const statusData = msg.data || msg.payload;
