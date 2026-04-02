@@ -975,6 +975,11 @@ class ZigbeeService(
 
     async def _debounced_device_update(self, zha_device, changed_data, full_state, qos, endpoint_id):
         """Actual update logic with debounce."""
+        try:
+            await asyncio.sleep(0.05)
+        except asyncio.CancelledError:
+            return
+
         ieee = zha_device.ieee
         if not changed_data:
             return

@@ -482,9 +482,41 @@ class TemperatureMeasurementHandler(ClusterHandler, SensorReportingMixin):
                 self.device.update_state({"temperature": temp_c})
                 logger.debug(f"[{self.device.ieee}] Temperature: {temp_c}°C")
 
+                # Propagate to linked Hive receiver if this is a Hive thermostat
+                self._propagate_to_receiver(temp_c)
+
         elif attrid == self.ATTR_TOLERANCE:
-             if hasattr(value, 'value'): value = value.value
-             self.device.update_state({"temperature_tolerance": value})
+            if hasattr(value, 'value'): value = value.value
+            self.device.update_state({"temperature_tolerance": value})
+
+    def _propagate_to_receiver(self, temp_c: float):
+        """
+        Hive thermostat (SLT) → receiver (SLR) temperature propagation.
+
+        The SLT thermostat reports room temperature on 0x0402 only.
+        The SLR receiver is bound to it but only receives 0x0201 local_temperature
+        which is always 0. This bridges the gap at application level.
+        """
+        model = str(self.device.zigpy_dev.model or "").upper()
+        if "SLT" not in model:
+            return
+
+        try:
+            for ieee, dev in self.device.service.devices.items():
+                if ieee == self.device.ieee:
+                    continue
+                dev_model = str(dev.zigpy_dev.model or "").upper()
+                if "SLR" in dev_model or "RECEIVER" in dev_model:
+                    dev.update_state({
+                        "temperature": temp_c,
+                        "current_temperature": temp_c,
+                    })
+                    logger.info(
+                        f"[{self.device.ieee}] Propagated temperature "
+                        f"{temp_c}°C → receiver [{ieee}]"
+                    )
+        except Exception as e:
+            logger.warning(f"[{self.device.ieee}] Receiver propagation failed: {e}")
 
     def get_attr_name(self, attrid: int) -> str:
         if attrid == self.ATTR_MEASURED_VALUE:
@@ -839,9 +871,9 @@ class PowerConfigurationHandler(ClusterHandler):
     def parse_value(self, attrid: int, value: Any) -> Any:
         """Parse raw values before they hit device state from generic poller."""
         if attrid == self.ATTR_BATTERY_VOLTAGE:
-             return float(value) / 10 if value is not None else None
+            return float(value) / 10 if value is not None else None
         if attrid == self.ATTR_BATTERY_PERCENTAGE:
-             return min(100, round(value / 2)) if value is not None else None
+            return min(100, round(value / 2)) if value is not None else None
         return value
 
     def get_pollable_attributes(self) -> Dict[int, str]:

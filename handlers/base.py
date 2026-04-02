@@ -273,8 +273,9 @@ class ClusterHandler:
         """
         Poll the cluster for current attribute values.
 
-        NOTE: Resilience (timeouts, retries) is now handled by the CommandWrapper
-        in ZHADevice.poll, so local try/except blocks are removed.
+        Individual attribute reads are wrapped in try/except so that a single
+        unsupported attribute (e.g. 0x4000 on Hive SLR1c) does not abort the
+        entire handler poll and discard previously-successful reads.
         """
         cluster_name = CLUSTER_NAMES.get(self.cluster_id, f"0x{self.cluster_id:04X}")
         logger.info(f"[{self.device.ieee}] Polling {cluster_name}...")
@@ -282,25 +283,39 @@ class ClusterHandler:
         results = {}
 
         for attr_id, attr_name in self.get_pollable_attributes().items():
+            try:
+                result = await self.cluster.read_attributes([attr_id])
 
-            result = await self.cluster.read_attributes([attr_id])
+                logger.debug(f"[{self.device.ieee}] Poll result for 0x{attr_id:04X}: {result}")
 
-            logger.debug(f"[{self.device.ieee}] Poll result for 0x{attr_id:04X}: {result}")
+                if result and attr_id in result[0]:
+                    value = result[0][attr_id]
+                    if hasattr(value, 'value'):
+                        value = value.value
 
-            if result and attr_id in result[0]:
-                value = result[0][attr_id]
-                if hasattr(value, 'value'):
-                    value = value.value
+                    # Skip None values - device doesn't support this attribute
+                    if value is None:
+                        logger.debug(f"[{self.device.ieee}] Skipping {attr_name} - returned None")
+                        continue
 
-                # Skip None values - device doesn't support this attribute
-                if value is None:  # ← ADD THIS CHECK
-                    logger.debug(f"[{self.device.ieee}] Skipping {attr_name} - returned None")
-                    continue
+                    formatted = self.parse_value(attr_id, value)
+                    results[attr_name] = formatted
+                    results[attr_name + "_raw"] = value  # Store raw for config forms
+                    logger.info(f"[{self.device.ieee}] Polled {attr_name} = {formatted}")
 
-                formatted = self.parse_value(attr_id, value)
-                results[attr_name] = formatted
-                results[attr_name + "_raw"] = value # Store raw for config forms
-                logger.info(f"[{self.device.ieee}] Polled {attr_name} = {formatted}")
+                elif result and attr_id in result[1]:
+                    # Attribute in failure dict — unsupported or read error
+                    logger.debug(
+                        f"[{self.device.ieee}] Attribute {attr_name} (0x{attr_id:04X}) "
+                        f"read failed: {result[1][attr_id]}"
+                    )
+
+            except Exception as e:
+                logger.warning(
+                    f"[{self.device.ieee}] Failed to read {attr_name} "
+                    f"(0x{attr_id:04X}): {e}"
+                )
+                continue
 
         return results
 
