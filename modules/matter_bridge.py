@@ -66,14 +66,14 @@ class MatterDevice:
                 return attributes[key]
         return default
 
-        def _build_state(self, attributes: dict):
-            """Build normalised state dict from Matter attributes."""
-            self.state = {
-                "protocol": "matter",
-                "available": self._available,
-                "node_id": self.node_id,
-                "last_seen": self.last_seen,
-            }
+    def _build_state(self, attributes: dict):
+        """Build normalised state dict from Matter attributes."""
+        self.state = {
+            "protocol": "matter",
+            "available": self._available,
+            "node_id": self.node_id,
+            "last_seen": self.last_seen,
+        }
 
         # On/Off (cluster 6, attr 0)
         on_off = self._find_attr(attributes, 6, 0)
@@ -471,8 +471,8 @@ class MatterBridge:
                 logger.info(f"Matter: node {node['node_id']} added")
 
                 await self._emit_debug_packet("node_added", node["node_id"], {
-                "manufacturer": dev.manufacturer if ieee in self.devices else "Unknown",
-                "model": dev.model if ieee in self.devices else "Unknown",
+                    "manufacturer": dev.manufacturer if ieee in self.devices else "Unknown",
+                    "model": dev.model if ieee in self.devices else "Unknown",
                 })
 
         elif event == "node_updated":
@@ -930,56 +930,56 @@ class MatterBridge:
             ]
         }
 
-        # =========================================================================
-        # DEBUGGING
-        # =========================================================================
-        async def _emit_debug_packet(self, event_type: str, node_id: int, data: dict):
-            """Emit a Matter event as a debug packet for the live debug stream."""
-            if not self.event_callback:
-                return
+    # =========================================================================
+    # DEBUGGING
+    # =========================================================================
+    async def _emit_debug_packet(self, event_type: str, node_id: int, data: dict):
+        """Emit a Matter event as a debug packet for the live debug stream."""
+        if not self.event_callback:
+            return
 
-            import time
+        import time
 
-            ieee = f"matter_{node_id}"
-            dev = self.devices.get(ieee)
-            friendly_name = dev.friendly_name if dev else f"Node {node_id}"
+        ieee = f"matter_{node_id}"
+        dev = self.devices.get(ieee)
+        friendly_name = dev.friendly_name if dev else f"Node {node_id}"
 
-            packet = {
-                "protocol": "matter",
-                "timestamp": time.time(),
-                "ieee": ieee,
-                "friendly_name": friendly_name,
-                "direction": "RX",
-                "event": event_type,
-                "node_id": node_id,
-                "data": data,
-                # Mimic Zigbee packet fields for unified display
-                "cluster": data.get("cluster_id", 0),
-                "cluster_name": data.get("cluster_name", event_type),
-                "endpoint": data.get("endpoint_id", 0),
-                "importance": "high" if event_type in ("node_added", "node_removed", "command") else "normal",
-                "summary": _build_matter_summary(event_type, data, friendly_name),
-            }
+        packet = {
+            "protocol": "matter",
+            "timestamp": time.time(),
+            "ieee": ieee,
+            "friendly_name": friendly_name,
+            "direction": "RX",
+            "event": event_type,
+            "node_id": node_id,
+            "data": data,
+            # Mimic Zigbee packet fields for unified display
+            "cluster": data.get("cluster_id", 0),
+            "cluster_name": data.get("cluster_name", event_type),
+            "endpoint": data.get("endpoint_id", 0),
+            "importance": "high" if event_type in ("node_added", "node_removed", "command") else "normal",
+            "summary": _build_matter_summary(event_type, data, friendly_name),
+        }
 
-            try:
-                await self.event_callback("debug_packet", {"packet": packet})
-            except Exception:
-                pass
+        try:
+            await self.event_callback("debug_packet", {"packet": packet})
+        except Exception:
+            pass
 
 
-        def _build_matter_summary(event_type: str, data: dict, name: str) -> str:
-            """Build a human-readable summary for a Matter debug packet."""
-            if event_type == "attribute_updated":
-                path = data.get("attribute_path", "?")
-                new_val = data.get("new_value", "?")
-                return f"{name}: {path} → {new_val}"
-            elif event_type == "node_added":
-                return f"New Matter device commissioned: {name}"
-            elif event_type == "node_removed":
-                return f"Matter device removed: {name}"
-            elif event_type == "node_updated":
-                return f"Matter device updated: {name}"
-            elif event_type == "command":
-                cmd = data.get("command_name", "?")
-                return f"{name}: command {cmd}"
-            return f"{name}: {event_type}"
+def _build_matter_summary(event_type: str, data: dict, name: str) -> str:
+    """Build a human-readable summary for a Matter debug packet."""
+    if event_type == "attribute_updated":
+        path = data.get("attribute_path", "?")
+        new_val = data.get("new_value", "?")
+        return f"{name}: {path} → {new_val}"
+    elif event_type == "node_added":
+        return f"New Matter device commissioned: {name}"
+    elif event_type == "node_removed":
+        return f"Matter device removed: {name}"
+    elif event_type == "node_updated":
+        return f"Matter device updated: {name}"
+    elif event_type == "command":
+        cmd = data.get("command_name", "?")
+        return f"{name}: command {cmd}"
+    return f"{name}: {event_type}"
