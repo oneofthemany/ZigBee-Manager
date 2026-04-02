@@ -430,7 +430,7 @@ class ZigbeeService(
                             self.app._watchdog_monitor.stop()
                     try:
                         from modules.resilience import wrap_with_resilience
-                        self.resilience = wrap_with_resilience(self.app, self)
+                        self.resilience = wrap_with_resilience(self.app, self._emit)
                         logger.info("✅ Resilience system enabled")
                     except Exception as e:
                         logger.warning(f"Resilience not available: {e}")

@@ -4,7 +4,7 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="matter device addressing added">
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="matter addressing patch">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -153,14 +153,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00187" summary="using branch 4.7">
-      <option name="closed" value="true" />
-      <created>1774973571549</created>
-      <option name="number" value="00187" />
-      <option name="presentableId" value="LOCAL-00187" />
-      <option name="project" value="LOCAL" />
-      <updated>1774973571549</updated>
     </task>
     <task id="LOCAL-00188" summary="using branch 4.7">
       <option name="closed" value="true" />
@@ -546,7 +538,15 @@
       <option name="project" value="LOCAL" />
       <updated>1775123070300</updated>
     </task>
-    <option name="localTasksCounter" value="236" />
+    <task id="LOCAL-00236" summary="matter addressing patch">
+      <option name="closed" value="true" />
+      <created>1775123635186</created>
+      <option name="number" value="00236" />
+      <option name="presentableId" value="LOCAL-00236" />
+      <option name="project" value="LOCAL" />
+      <updated>1775123635186</updated>
+    </task>
+    <option name="localTasksCounter" value="237" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -573,7 +573,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="escape added to ZMM_PORT in HEALTHCHECK" />
     <MESSAGE value="add wpan0 build to zmm auto start script to fix platformConfigureTunDevice for network host" />
     <MESSAGE value="adding wpan0 on network host ahead of podman run as well as in service" />
     <MESSAGE value="adding in removal of container ahead of port check" />
@@ -598,6 +597,7 @@
     <MESSAGE value="thread netowrk persistence" />
     <MESSAGE value="de-indent fix for _build_state" />
     <MESSAGE value="matter device addressing added" />
-    <option name="LAST_COMMIT_MESSAGE" value="matter device addressing added" />
+    <MESSAGE value="matter addressing patch" />
+    <option name="LAST_COMMIT_MESSAGE" value="matter addressing patch" />
   </component>
 </project>
