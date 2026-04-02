@@ -4,7 +4,13 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="renamed typo" />
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="typos">
+      <change beforePath="$PROJECT_DIR$/.idea/misc.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/misc.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/modules/matter_bridge.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/matter_bridge.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/modules/multipan.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/multipan.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/routes/otbr_routes.py" beforeDir="false" afterPath="$PROJECT_DIR$/routes/otbr_routes.py" afterDir="false" />
+    </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -37,7 +43,7 @@
   <component name="GithubPullRequestsUISettings">{
   &quot;selectedUrlAndAccountId&quot;: {
     &quot;url&quot;: &quot;https://github.com/oneofthemany/ZigBee-Matter-Manager.git&quot;,
-    &quot;accountId&quot;: &quot;b00be1dc-7b4f-4311-ab84-b3d2175df6fb&quot;
+    &quot;accountId&quot;: &quot;e255082e-bca2-4e88-a50f-e3452f07b5b3&quot;
   }
 }</component>
   <component name="ProjectColorInfo">{
@@ -86,6 +92,7 @@
   </component>
   <component name="RecentsManager">
     <key name="MoveFile.RECENT_KEYS">
+      <recent name="$PROJECT_DIR$/static/js/modal" />
       <recent name="$PROJECT_DIR$/routes" />
       <recent name="$PROJECT_DIR$" />
       <recent name="$PROJECT_DIR$/mqtt" />
@@ -150,14 +157,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00183" summary="different appraach">
-      <option name="closed" value="true" />
-      <created>1774969154046</created>
-      <option name="number" value="00183" />
-      <option name="presentableId" value="LOCAL-00183" />
-      <option name="project" value="LOCAL" />
-      <updated>1774969154046</updated>
     </task>
     <task id="LOCAL-00184" summary="reverted">
       <option name="closed" value="true" />
@@ -543,7 +542,15 @@
       <option name="project" value="LOCAL" />
       <updated>1775071946309</updated>
     </task>
-    <option name="localTasksCounter" value="232" />
+    <task id="LOCAL-00232" summary="typos">
+      <option name="closed" value="true" />
+      <created>1775072679783</created>
+      <option name="number" value="00232" />
+      <option name="presentableId" value="LOCAL-00232" />
+      <option name="project" value="LOCAL" />
+      <updated>1775072679783</updated>
+    </task>
+    <option name="localTasksCounter" value="233" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -551,14 +558,25 @@
       <map>
         <entry key="MAIN">
           <value>
-            <State />
+            <State>
+              <option name="FILTERS">
+                <map>
+                  <entry key="branch">
+                    <value>
+                      <list>
+                        <option value="dev" />
+                      </list>
+                    </value>
+                  </entry>
+                </map>
+              </option>
+            </State>
           </value>
         </entry>
       </map>
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="improving run container to cater for networking requirements for otbr" />
     <MESSAGE value="network fix for pasta" />
     <MESSAGE value="networking patch - moved to network host" />
     <MESSAGE value="healthcheck fix" />
@@ -583,6 +601,7 @@
     <MESSAGE value="capsTab added after modlaBody" />
     <MESSAGE value="more debugging" />
     <MESSAGE value="renamed typo" />
-    <option name="LAST_COMMIT_MESSAGE" value="renamed typo" />
+    <MESSAGE value="typos" />
+    <option name="LAST_COMMIT_MESSAGE" value="typos" />
   </component>
 </project>

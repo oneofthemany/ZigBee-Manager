@@ -727,6 +727,9 @@ reset_sequence: true
                     "but Zigbee will still work via MultiPAN"
                 )
                 # Don't fail the whole stack for optional Thread support
+            else:
+                # Restore previously saved Thread network credentials
+                asyncio.create_task(self._restore_thread_network())
         elif not otbr_enabled:
             logger.info("OTBR not enabled in config — Thread support disabled")
         elif not self.is_otbr_available():
@@ -773,6 +776,32 @@ reset_sequence: true
         logger.info("Stopping MultiPAN RCP stack...")
         await self._stop_all()
         logger.info("MultiPAN RCP stack stopped")
+
+    async def _restore_thread_network(self):
+        """
+        Restore previously saved Thread credentials after otbr-agent is ready.
+        Runs as a fire-and-forget task — failure is non-fatal.
+        """
+        try:
+            # Brief settle time for otbr-agent D-Bus interface
+            await asyncio.sleep(3)
+
+            from otbr_routes import restore_thread_dataset
+            restored = await restore_thread_dataset()
+            if restored:
+                if self._emit:
+                    try:
+                        await self._emit("log", {
+                            "level": "INFO",
+                            "message": "Thread network restored from saved credentials",
+                            "ieee": None,
+                        })
+                    except Exception:
+                        pass
+            else:
+                logger.info("No stored Thread dataset to restore")
+        except Exception as e:
+            logger.warning(f"Thread dataset restore failed (non-fatal): {e}")
 
     async def _stop_all(self):
         """Stop all daemons in reverse order."""

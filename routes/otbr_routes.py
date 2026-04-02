@@ -2,12 +2,20 @@
 OTBR / Thread routes — status, network formation, topology, diagnostics.
 """
 import asyncio
+import json
 import logging
+import os
+import time
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 from typing import Optional
 
 logger = logging.getLogger("routes.otbr")
+
+# Persistent storage for Thread dataset — survives container restarts
+# via the /app/data volume mount
+APP_DIR = os.path.dirname(os.path.abspath(__file__))
+THREAD_DATASET_FILE = os.path.join(APP_DIR, "data", "thread_dataset.json")
 
 
 class FormNetworkRequest(BaseModel):
@@ -71,6 +79,124 @@ async def _parse_dataset() -> dict:
             normalised = key_map.get(raw_key.strip().lower(), raw_key.strip().lower().replace(" ", "_"))
             network[normalised] = val.strip()
     return network
+
+
+# =========================================================================
+# THREAD DATASET PERSISTENCE
+# =========================================================================
+
+async def save_thread_dataset() -> bool:
+    """
+    Save the active Thread dataset hex to disk for restore on next startup.
+    Called after successful network formation.
+    """
+    try:
+        hex_result = await _ot_ctl("dataset", "active", "-x")
+        if not hex_result["success"]:
+            logger.warning(f"Cannot save Thread dataset: {hex_result['error']}")
+            return False
+
+        dataset_hex = hex_result["output"].strip()
+        if not dataset_hex:
+            logger.warning("Cannot save Thread dataset: empty hex")
+            return False
+
+        network = await _parse_dataset()
+
+        os.makedirs(os.path.dirname(THREAD_DATASET_FILE), exist_ok=True)
+        payload = {
+            "dataset_hex": dataset_hex,
+            "network": network,
+            "saved_at": time.time(),
+        }
+        with open(THREAD_DATASET_FILE, "w") as f:
+            json.dump(payload, f, indent=2)
+
+        logger.info(
+            f"Thread dataset saved — network: {network.get('network_name', '?')}, "
+            f"channel: {network.get('channel', '?')}"
+        )
+        return True
+
+    except Exception as e:
+        logger.error(f"Failed to save Thread dataset: {e}")
+        return False
+
+
+def load_thread_dataset() -> Optional[dict]:
+    """Load previously saved Thread dataset from disk. Returns None if not found."""
+    if not os.path.isfile(THREAD_DATASET_FILE):
+        return None
+    try:
+        with open(THREAD_DATASET_FILE) as f:
+            data = json.load(f)
+        if data.get("dataset_hex"):
+            return data
+        return None
+    except Exception as e:
+        logger.warning(f"Failed to read Thread dataset file: {e}")
+        return None
+
+
+async def restore_thread_dataset() -> bool:
+    """
+    Restore a previously saved Thread dataset and start the Thread network.
+
+    Called from multipan.py after otbr-agent is ready. The sequence is:
+      1. Check for stored dataset
+      2. Verify Thread isn't already running (e.g. otbr-agent auto-restored)
+      3. Set the active dataset from stored hex
+      4. Bring up interface + start Thread
+      5. Wait for leader/router/child state
+    """
+    stored = load_thread_dataset()
+    if not stored:
+        logger.debug("No stored Thread dataset — skipping restore")
+        return False
+
+    dataset_hex = stored["dataset_hex"]
+    network_name = stored.get("network", {}).get("network_name", "?")
+    logger.info(f"Found stored Thread dataset: {network_name}")
+
+    # Check if Thread is already running (otbr-agent may have auto-restored)
+    state = await _ot_ctl("state")
+    if state["success"] and state["output"].strip().lower() in ("leader", "router", "child"):
+        logger.info(
+            f"Thread already active (state: {state['output'].strip()}) — "
+            f"skipping restore"
+        )
+        return True
+
+    # Restore: set dataset → ifconfig up → thread start
+    result = await _ot_ctl("dataset", "set", "active", dataset_hex)
+    if not result["success"]:
+        logger.error(f"Failed to set Thread dataset: {result['error']}")
+        return False
+
+    result = await _ot_ctl("ifconfig", "up")
+    if not result["success"]:
+        logger.error(f"Thread ifconfig up failed: {result['error']}")
+        return False
+
+    result = await _ot_ctl("thread", "start")
+    if not result["success"]:
+        logger.error(f"Thread start failed: {result['error']}")
+        return False
+
+    # Wait for the network to attach (up to 15s)
+    for i in range(15):
+        await asyncio.sleep(1)
+        state = await _ot_ctl("state")
+        if state["success"]:
+            s = state["output"].strip().lower()
+            if s in ("leader", "router", "child"):
+                logger.info(f"Thread network restored — state: {s}, network: {network_name}")
+                return True
+
+    state = await _ot_ctl("state")
+    final = state["output"].strip() if state["success"] else "unknown"
+    logger.warning(f"Thread restore: network not fully attached after 15s (state: {final})")
+    return True  # dataset is committed, it may just need more time
 
 
 def register_otbr_routes(app: FastAPI, get_zigbee_service):
@@ -169,6 +295,10 @@ def register_otbr_routes(app: FastAPI, get_zigbee_service):
         final_state = state["output"].strip() if state["success"] else "unknown"
 
         logger.info(f"Thread network formed — state: {final_state}")
+
+        # Persist dataset for auto-restore on next startup
+        await save_thread_dataset()
+
         return {"success": True, "state": final_state, "steps": steps}
 
     @app.post("/api/otbr/start")
