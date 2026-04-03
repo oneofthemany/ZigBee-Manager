@@ -1222,14 +1222,15 @@ class ZigbeeInterrogator:
     # IMPORTANT: NONE flow control first — most modern adapters (MG24, CC2652,
     # ConBee) do NOT use hardware flow control and RTS/CTS will hang.
     PREFERRED = {
-        "ezsp": [(460800, FlowControl.NONE), (115200, FlowControl.NONE),
+        "ezsp": [(460800, FlowControl.NONE), (460800, FlowControl.XONXOFF),
+                 (115200, FlowControl.NONE), (115200, FlowControl.XONXOFF),
                  (115200, FlowControl.RTSCTS), (57600, FlowControl.NONE),
-                 (57600, FlowControl.RTSCTS)],
+                 (57600, FlowControl.XONXOFF), (57600, FlowControl.RTSCTS)],
         "cpc": [(115200, FlowControl.NONE), (460800, FlowControl.NONE),
                 (230400, FlowControl.NONE)],
         "conbee": [(115200, FlowControl.NONE), (38400, FlowControl.NONE)],
         "zstack": [(115200, FlowControl.NONE), (115200, FlowControl.RTSCTS),
-                   (57600, FlowControl.NONE)],
+                   (460800, FlowControl.NONE), (57600, FlowControl.NONE)],
     }
 
     # ── Known USB VID:PID pairs for Zigbee adapters ──────────────────────
@@ -1242,7 +1243,7 @@ class ZigbeeInterrogator:
         (0x1A86, 0x55D4): ("ezsp",   "Nabu Casa SkyConnect (CH9102)"),
         # Dresden Elektronik — ConBee / RaspBee
         (0x1CF1, 0x0030): ("conbee", "Dresden Elektronik ConBee II"),
-        (0x0403, 0x6015): ("conbee", "Dresden Elektronik ConBee (FTDI)"),
+        (0x0403, 0x6015): (None,     "FTDI FT230X (ConBee I / Tube's / other)"),
         (0x1CF1, 0x0031): ("conbee", "Dresden Elektronik ConBee III"),
         # TI CC2531/CC2652 — Z-Stack
         (0x0451, 0x16A8): ("zstack", "TI CC2531 USB"),
@@ -1827,7 +1828,7 @@ class ZigbeeInterrogator:
 
         # Phase 3: all other baud rates (only if preferred didn't match)
         for baud in COMMON_BAUD_RATES:
-            for flow in [FlowControl.NONE, FlowControl.RTSCTS]:
+            for flow in [FlowControl.NONE, FlowControl.RTSCTS, FlowControl.XONXOFF]:
                 for proto_name, probe_cls in all_protos:
                     entry = (baud, flow, probe_cls, proto_name.upper())
                     if entry not in probes_to_try:
