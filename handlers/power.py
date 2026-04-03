@@ -170,3 +170,4 @@ class MeteringHandler(ClusterHandler):
                 "value_template": f"{{{{ value_json.energy_{ep} }}}}"
             }
         }]
+

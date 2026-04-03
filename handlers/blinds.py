@@ -145,3 +145,4 @@ class WindowCoveringHandler(ClusterHandler):
                 "position_closed": 0
             }
         }]
+

@@ -263,15 +263,24 @@ class ThermostatHandler(ClusterHandler):
 
         logger.info(f"[{self.device.ieee}] Writing occupied_heating_setpoint: {temperature}°C ({value} centidegrees)")
 
-        await self.cluster.write_attributes({
-            "occupied_heating_setpoint": value  # Use string name, not ID
-        })
+        for attempt in range(3):
+            try:
+                await self.cluster.write_attributes({
+                    "occupied_heating_setpoint": value
+                })
 
-        self.device.update_state({
-            "heating_setpoint": temperature,
-            "occupied_heating_setpoint": temperature,
-            "target_temp": temperature,  # Scheduler compatibility
-        })
+                self.device.update_state({
+                    "heating_setpoint": temperature,
+                    "occupied_heating_setpoint": temperature,
+                    "target_temp": temperature,
+                })
+                return
+            except Exception as e:
+                logger.warning(f"[{self.device.ieee}] set_target_temperature attempt {attempt+1}/3 failed: {e}")
+                if attempt < 2:
+                    await asyncio.sleep(2 ** attempt)
+
+        logger.error(f"[{self.device.ieee}] set_target_temperature failed after 3 attempts")
 
 
     async def set_hvac_mode(self, mode: str):
@@ -284,11 +293,19 @@ class ThermostatHandler(ClusterHandler):
 
         logger.info(f"[{self.device.ieee}] Writing system_mode: {mode} ({mode_map[mode]})")
 
-        await self.cluster.write_attributes({
-            "system_mode": mode_map[mode]  # Use string name, not ID
-        })
+        for attempt in range(3):
+            try:
+                await self.cluster.write_attributes({
+                    "system_mode": mode_map[mode]
+                })
+                self.device.update_state({"system_mode": mode})
+                return
+            except Exception as e:
+                logger.warning(f"[{self.device.ieee}] set_hvac_mode attempt {attempt+1}/3 failed: {e}")
+                if attempt < 2:
+                    await asyncio.sleep(2 ** attempt)
 
-        self.device.update_state({"system_mode": mode})
+        logger.error(f"[{self.device.ieee}] set_hvac_mode failed after 3 attempts")
 
 
     def _update_hvac_action(self):
@@ -601,3 +618,4 @@ class FanControlHandler(ClusterHandler):
         mode_map = {v: k for k, v in self.FAN_MODES.items()}
         if mode.lower() in mode_map:
             await self.cluster.write_attributes({"fan_mode": mode_map[mode.lower()]})
+

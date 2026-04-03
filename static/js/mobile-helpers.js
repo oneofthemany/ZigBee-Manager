@@ -35,8 +35,9 @@
 
 
 
+
     /* ----------------------------------------------------------
-       2. MODAL OVERSCROLL FIX
+       3. MODAL OVERSCROLL FIX
        ---------------------------------------------------------- */
 
     function fixModalOverscroll(el) {
@@ -76,7 +77,7 @@
 
 
     /* ----------------------------------------------------------
-       3. VIEWPORT HEIGHT CSS VARIABLE
+       4. VIEWPORT HEIGHT CSS VARIABLE
        ---------------------------------------------------------- */
 
     function setVH() {
@@ -92,7 +93,7 @@
 
 
     /* ----------------------------------------------------------
-       4. TAB SCROLL FADE INDICATORS
+       5. TAB SCROLL FADE INDICATORS
        ---------------------------------------------------------- */
 
     function updateTabScrollHint(tabBar) {
@@ -131,7 +132,7 @@
 
 
     /* ----------------------------------------------------------
-       5. PREVENT DOUBLE-TAP ZOOM ON CONTROLS
+       6. PREVENT DOUBLE-TAP ZOOM ON CONTROLS
        ---------------------------------------------------------- */
 
     var lastTap = 0;

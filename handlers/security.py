@@ -8,6 +8,7 @@ Zone Status Change Notification commands, NOT via attribute reports.
 """
 import logging
 from typing import Any, Dict, Optional
+import asyncio
 
 from .base import ClusterHandler, register_handler
 

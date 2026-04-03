@@ -486,8 +486,8 @@ class TemperatureMeasurementHandler(ClusterHandler, SensorReportingMixin):
                 self._propagate_to_receiver(temp_c)
 
         elif attrid == self.ATTR_TOLERANCE:
-            if hasattr(value, 'value'): value = value.value
-            self.device.update_state({"temperature_tolerance": value})
+             if hasattr(value, 'value'): value = value.value
+             self.device.update_state({"temperature_tolerance": value})
 
     def _propagate_to_receiver(self, temp_c: float):
         """
@@ -871,9 +871,9 @@ class PowerConfigurationHandler(ClusterHandler):
     def parse_value(self, attrid: int, value: Any) -> Any:
         """Parse raw values before they hit device state from generic poller."""
         if attrid == self.ATTR_BATTERY_VOLTAGE:
-            return float(value) / 10 if value is not None else None
+             return float(value) / 10 if value is not None else None
         if attrid == self.ATTR_BATTERY_PERCENTAGE:
-            return min(100, round(value / 2)) if value is not None else None
+             return min(100, round(value / 2)) if value is not None else None
         return value
 
     def get_pollable_attributes(self) -> Dict[int, str]:

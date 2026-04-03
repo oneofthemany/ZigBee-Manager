@@ -261,14 +261,7 @@ class TuyaClusterHandler(ClusterHandler):
 
     def cluster_command(self, tsn: int, command_id: int, args):
         """Handle Tuya cluster commands (data reports)."""
-        # Dedupe across ALL handler instances for this device
-        if not hasattr(self.device, '_tuya_last_tsn'):
-            self.device._tuya_last_tsn = None
-        if tsn == self.device._tuya_last_tsn:
-            return
-        self.device._tuya_last_tsn = tsn
-
-        logger.debug(f"[{self.device.ieee}] Tuya command: cmd=0x{command_id:02x}, tsn={tsn}")
+        logger.debug(f"[{self.device.ieee}] Tuya command: cmd=0x{command_id:02x}, args={args}")
 
         # Ensure base logging/debugging is called (even if we override logic later)
         super().cluster_command(tsn, command_id, args)
@@ -285,8 +278,10 @@ class TuyaClusterHandler(ClusterHandler):
             if not args:
                 return
 
-            # Get raw bytes for hashing
+            # Tuya payload structure varies, handle both formats
             data = args[0] if isinstance(args, (list, tuple)) else args
+
+            # Convert to bytes if needed
             if hasattr(data, 'serialize'):
                 data = data.serialize()
             elif isinstance(data, (list, tuple)):
@@ -294,15 +289,8 @@ class TuyaClusterHandler(ClusterHandler):
             elif not isinstance(data, bytes):
                 data = bytes(data)
 
-            # Dedupe: hash the payload to catch duplicate deliveries
-            payload_hash = hash(data)
-            if not hasattr(self.device, '_tuya_last_hash'):
-                self.device._tuya_last_hash = None
-            if payload_hash == self.device._tuya_last_hash:
-                return
-            self.device._tuya_last_hash = payload_hash
-
             self._parse_tuya_payload(data)
+
         except Exception as e:
             logger.error(f"[{self.device.ieee}] Error handling Tuya data: {e}")
 
@@ -439,8 +427,7 @@ class TuyaClusterHandler(ClusterHandler):
 
                     # 1. DROP Distance (DP9) to prevent spamming
                     if dp_id == 9 or dp_def.name == "distance":
-                        offset += 4 + dp_len
-                        continue  # Skip this DP but keep processing others
+                        return # Skip state update for distance
 
                     # 2. Prioritize Critical DPs (Presence / State)
                     qos = None
@@ -452,15 +439,6 @@ class TuyaClusterHandler(ClusterHandler):
 
                     # Prepare state update
                     state_update = {dp_def.name: value}
-
-                    # Derive occupancy/motion from radar_state for HA compatibility
-                    if dp_def.name == "radar_state":
-                        state_update["occupancy"] = value in ("presence", "move", "static", "move_and_static")
-                        state_update["motion"] = value == "move"
-                        state_update["presence"] = value in ("presence", "move", "static", "move_and_static")
-
-                    if dp_def.name == "presence":
-                        state_update["occupancy"] = value == "presence"
 
                     # SPECIAL HANDLING: For illuminance, create both attributes (ZHA pattern)
                     if dp_def.name == "illuminance":

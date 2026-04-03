@@ -89,3 +89,4 @@ class IdentifyHandler(ClusterHandler):
     async def identify(self, duration=5): await self.cluster.identify(duration)
     async def trigger_effect(self, effect_id=0, variant=0): await self.cluster.trigger_effect(effect_id, variant)
 
+

@@ -78,3 +78,37 @@ body {
 h2 {
     margin-top: 0;
     }
+
+/* Table Sorting Styles */
+.sortable-header {
+    cursor: pointer;
+    user-select: none;
+    position: relative;
+    transition: background-color 0.2s ease;
+}
+
+.sortable-header:hover {
+    background-color: #e2e6ea !important;
+}
+
+.sortable-header .sort-icon {
+    font-size: 0.75rem;
+    margin-left: 4px;
+    transition: color 0.2s ease;
+}
+
+.sortable-header.sort-asc .sort-icon {
+    color: #0d6efd !important;
+}
+
+.sortable-header.sort-desc .sort-icon {
+    color: #0d6efd !important;
+}
+
+.sortable-header.sort-asc .sort-icon::before {
+    content: "\f0de"; /* fa-sort-up */
+}
+
+.sortable-header.sort-desc .sort-icon::before {
+    content: "\f0dd"; /* fa-sort-down */
+}

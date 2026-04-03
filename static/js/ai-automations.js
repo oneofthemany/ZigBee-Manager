@@ -10,6 +10,7 @@
 import { initAutomationTab } from './modal/automation.js';
 
 let _aiConfigured = false;
+let _deviceNames = [];
 
 // ============================================================================
 // INIT — called once from automations-page.js
@@ -17,11 +18,21 @@ let _aiConfigured = false;
 
 export async function initAIAutomations() {
     try {
-        const res = await fetch('/api/ai/status');
-        const data = await res.json();
-        _aiConfigured = data.configured;
+        const [statusRes] = await Promise.all([
+            fetch('/api/ai/status'),
+        ]);
+        const statusData = await statusRes.json();
+        _aiConfigured = statusData.configured;
     } catch {
         _aiConfigured = false;
+    }
+
+    // Load NLP registry (devices, attributes, actuators)
+    try {
+        const { loadRegistry } = await import('./nlp-automation.js');
+        await loadRegistry();
+    } catch (e) {
+        console.warn('NLP registry load failed:', e);
     }
 }
 
@@ -96,15 +107,36 @@ export function renderAIPanel() {
                 </div>
             </div>
 
-            <!-- Prompt input -->
-            <div class="input-group">
-                <input type="text" class="form-control" id="ai-prompt"
-                       placeholder="Describe your automation in plain English, e.g. 'Turn on the hallway light when motion is detected after sunset'"
-                       onkeydown="if(event.key==='Enter')window._aiGenerate()">
-                <button class="btn btn-info text-white" onclick="window._aiGenerate()" id="ai-gen-btn">
-                    <i class="fas fa-magic me-1"></i> Generate
-                </button>
+            <!-- Chip-based automation builder -->
+            <div style="position:relative">
+                <div id="ai-builder" class="form-control d-flex flex-wrap align-items-center gap-1 p-2" 
+                     style="min-height:44px;cursor:text;position:relative"
+                     onclick="document.getElementById('ai-typed').focus()">
+                    <div id="ai-chips" class="d-flex flex-wrap align-items-center gap-1"></div>
+                    <input type="text" id="ai-typed" class="border-0 flex-grow-1" 
+                           style="outline:none;min-width:120px;font-size:0.9rem;background:transparent;color:inherit"
+                           placeholder="Start with 'when', 'if', 'turn on', or a device name..."
+                           onkeydown="window._aiPromptKey(event)"
+                           oninput="window._aiAutocomplete(this.value)"
+                           autocomplete="off">
+                </div>
+                <div class="d-flex gap-1 mt-1">
+                    <button class="btn btn-sm btn-success text-white flex-grow-1" onclick="window._aiGenerate()" id="ai-gen-btn"
+                            title="Build rule from your selections (instant, no LLM)">
+                        <i class="fas fa-bolt me-1"></i> Build Rule
+                    </button>
+                    <button class="btn btn-sm btn-outline-info" onclick="window._aiGenerateLLM()" id="ai-llm-btn"
+                            title="Send to LLM for complex rules (slower, requires Ollama)">
+                        <i class="fas fa-brain me-1"></i> AI
+                    </button>
+                    <button class="btn btn-sm btn-outline-secondary" onclick="window._aiClearBuilder()"
+                            title="Clear all">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                <div id="ai-autocomplete" class="list-group position-absolute w-100 shadow-sm" style="z-index:1050;max-height:220px;overflow-y:auto;display:none"></div>
             </div>
+            <div id="ai-progress" class="mt-1" style="display:none"></div>
 
             <!-- Result area -->
             <div id="ai-result" class="mt-2" style="display:none"></div>
@@ -117,25 +149,61 @@ export function renderAIPanel() {
 // ============================================================================
 
 async function _aiGenerate() {
-    const input = document.getElementById('ai-prompt');
     const btn = document.getElementById('ai-gen-btn');
     const result = document.getElementById('ai-result');
-    if (!input || !input.value.trim()) return;
+    const progress = document.getElementById('ai-progress');
+    const typed = document.getElementById('ai-typed');
 
-    const prompt = input.value.trim();
+    // Build prompt from chips + typed text
+    let prompt = '';
+    try {
+        const { getSelections } = await import('./nlp-automation.js');
+        prompt = getSelections().map(s => s.text).join(' ');
+    } catch (e) {}
+    if (typed?.value) prompt += (prompt ? ' ' : '') + typed.value.trim();
+    if (!prompt) return;
 
-    // Show loading
+    // Hide autocomplete
+    _aiHideAutocomplete();
+
+    // Show loading with countdown
     btn.disabled = true;
     btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> Generating...';
     result.style.display = 'block';
     result.innerHTML = '<div class="text-muted small"><i class="fas fa-spinner fa-spin"></i> Analysing your request and generating automation rule...</div>';
 
+    // Progress timer (ARM inference can take 30-120s)
+    let elapsed = 0;
+    if (progress) {
+        progress.style.display = 'block';
+        progress.innerHTML = `<div class="progress" style="height:3px"><div id="ai-prog-bar" class="progress-bar progress-bar-striped progress-bar-animated bg-info" style="width:0%"></div></div>
+            <div class="text-muted small mt-1" id="ai-prog-text">LLM processing on device — this may take up to 2 minutes on ARM...</div>`;
+    }
+    const progTimer = setInterval(() => {
+        elapsed++;
+        const bar = document.getElementById('ai-prog-bar');
+        const text = document.getElementById('ai-prog-text');
+        if (bar) bar.style.width = `${Math.min(elapsed / 120 * 100, 95)}%`;
+        if (text) {
+            if (elapsed < 10) text.textContent = 'Sending request to LLM...';
+            else if (elapsed < 30) text.textContent = `Model is processing (${elapsed}s)...`;
+            else if (elapsed < 60) text.textContent = `Still generating — ARM inference is slower than x86 (${elapsed}s)...`;
+            else text.textContent = `Nearly there — complex rules take longer (${elapsed}s)...`;
+        }
+    }, 1000);
+
     try {
+        // Use AbortController for 180s timeout
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 180000);
+
         const res = await fetch('/api/ai/automation', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ prompt })
+            body: JSON.stringify({ prompt }),
+            signal: controller.signal,
         });
+        clearTimeout(timeout);
         const data = await res.json();
 
         if (data.success) {
@@ -147,13 +215,262 @@ async function _aiGenerate() {
             </div>`;
         }
     } catch (e) {
+        const msg = e.name === 'AbortError'
+            ? 'Request timed out after 3 minutes. The LLM may be overloaded — try a simpler prompt or check Ollama status.'
+            : e.message;
         result.innerHTML = `<div class="alert alert-danger mb-0 py-2 small">
-            <i class="fas fa-times-circle me-1"></i> ${e.message}
+            <i class="fas fa-times-circle me-1"></i> ${msg}
         </div>`;
     } finally {
+        clearInterval(progTimer);
         btn.disabled = false;
         btn.innerHTML = '<i class="fas fa-magic me-1"></i> Generate';
+        if (progress) progress.style.display = 'none';
     }
+}
+
+// ============================================================================
+// AUTOCOMPLETE — Context-aware fuzzy search with chip-based input
+// ============================================================================
+
+let _acSelected = -1;
+let _lastResult = null;
+
+const CHIP_COLORS = {
+    device: '#3b82f6',      // blue
+    action: '#22c55e',      // green
+    trigger: '#8b5cf6',     // purple
+    connector: '#64748b',   // slate
+    condition: '#b45309',   // dark amber (better contrast)
+    attribute: '#06b6d4',   // cyan
+    time: '#db2777',        // dark pink (better contrast)
+    time_val: '#db2777',
+    duration: '#ea580c',    // dark orange (better contrast)
+    delay: '#ea580c',
+    prereq: '#6366f1',      // indigo
+};
+
+const CHIP_ICONS = {
+    device: '💡', action: '⚡', trigger: '🔔', connector: '→',
+    condition: '❓', attribute: '📊', time: '🕐', time_val: '🕐',
+    duration: '⏱', delay: '⏱', prereq: '🔒',
+};
+
+function _renderChip(type, text, index) {
+    const bg = CHIP_COLORS[type] || '#94a3b8';
+    const icon = CHIP_ICONS[type] || '';
+    return `<span class="d-inline-flex align-items-center gap-1 px-2 py-1" 
+                  style="background:${bg};color:#fff;font-size:0.78rem;font-weight:500;border-radius:20px;cursor:default;white-space:nowrap;line-height:1.4"
+                  title="${type}">
+                ${icon} ${_esc(text)}
+                <span onclick="event.stopPropagation();window._aiRemoveChip(${index})" 
+                      style="cursor:pointer;opacity:0.7;margin-left:2px;font-size:0.7rem;color:#fff"
+                      onmouseenter="this.style.opacity='1'" onmouseleave="this.style.opacity='0.7'">✕</span>
+            </span>`;
+}
+
+function _refreshChips() {
+    const container = document.getElementById('ai-chips');
+    if (!container) return;
+    import('./nlp-automation.js').then(m => {
+        const selections = m.getSelections();
+        container.innerHTML = selections.map((s, i) => _renderChip(s.type, s.text, i)).join('');
+    }).catch(() => {});
+}
+
+async function _aiRemoveChip(index) {
+    try {
+        const { removeSelection } = await import('./nlp-automation.js');
+        removeSelection(index);
+    } catch (e) {}
+    _refreshChips();
+    document.getElementById('ai-typed')?.focus();
+    // Re-trigger suggestions
+    setTimeout(() => _aiAutocomplete(document.getElementById('ai-typed')?.value || ''), 50);
+}
+
+function _aiClearBuilder() {
+    import('./nlp-automation.js').then(m => m.clearSelections()).catch(() => {});
+    const chips = document.getElementById('ai-chips');
+    const typed = document.getElementById('ai-typed');
+    if (chips) chips.innerHTML = '';
+    if (typed) { typed.value = ''; typed.placeholder = "Start with 'when', 'if', 'turn on', or a device name..."; }
+    _aiHideAutocomplete();
+    const result = document.getElementById('ai-result');
+    if (result) result.style.display = 'none';
+    const hintEl = document.getElementById('ai-progress');
+    if (hintEl) hintEl.style.display = 'none';
+}
+
+async function _aiAutocomplete(value) {
+    const dropdown = document.getElementById('ai-autocomplete');
+    const hintEl = document.getElementById('ai-progress');
+    if (!dropdown) return;
+
+    // Show hint even with empty input
+    try {
+        const { suggest } = await import('./nlp-automation.js');
+        _lastResult = suggest(value || '');
+    } catch (e) {
+        _aiHideAutocomplete();
+        return;
+    }
+
+    const { suggestions, hint, context } = _lastResult;
+
+    if (hintEl) {
+        hintEl.style.display = 'block';
+        hintEl.innerHTML = `<div class="text-muted small"><i class="fas fa-lightbulb me-1 text-warning"></i>${_esc(hint)}</div>`;
+    }
+
+    // Update placeholder based on context
+    const typed = document.getElementById('ai-typed');
+    if (typed) {
+        const placeholders = {
+            'start': "when, if, turn on...",
+            'device': "Type device name...",
+            'condition': "is on, is open, detects motion...",
+            'connector': "then, at, else, only if...",
+            'action': "turn on, turn off, toggle...",
+            'target_device': "Type device to control...",
+            'time': "9am, sunset, midnight...",
+            'duration': "5 minutes, 30 seconds...",
+        };
+        typed.placeholder = placeholders[context] || "Continue typing...";
+    }
+
+    if (!suggestions.length) {
+        _aiHideAutocomplete();
+        return;
+    }
+
+    _acSelected = -1;
+
+    dropdown.innerHTML = suggestions.map(s => {
+        const bg = CHIP_COLORS[s.type] || '#94a3b8';
+        const icon = CHIP_ICONS[s.type] || '';
+        const hintText = s.hint ? `<span class="text-muted" style="font-size:0.7rem">${_esc(s.hint)}</span>` : '';
+        const dataJson = encodeURIComponent(JSON.stringify(s));
+        return `<button class="list-group-item list-group-item-action py-1 px-2 small d-flex justify-content-between align-items-center"
+                    onclick="window._aiInsertSuggestion(decodeURIComponent('${dataJson}'))"
+                    onmouseenter="this.classList.add('active')"
+                    onmouseleave="this.classList.remove('active')">
+                    <span>${icon} <strong>${_esc(s.text)}</strong> ${hintText}</span>
+                    <span style="background:${bg};color:#fff;font-size:0.6rem;border-radius:10px;padding:2px 6px">${s.type}</span>
+                </button>`;
+    }).join('');
+    dropdown.style.display = 'block';
+}
+
+async function _aiInsertSuggestion(jsonStr) {
+    const s = typeof jsonStr === 'string' ? JSON.parse(jsonStr) : jsonStr;
+
+    // Record the selection
+    try {
+        const { recordSelection } = await import('./nlp-automation.js');
+        recordSelection(s.type, s.text, s);
+    } catch (e) {}
+
+    // Clear typed text and refresh chips
+    const typed = document.getElementById('ai-typed');
+    if (typed) typed.value = '';
+
+    _refreshChips();
+    _aiHideAutocomplete();
+
+    // Focus back and show next suggestions
+    if (typed) typed.focus();
+    setTimeout(() => _aiAutocomplete(''), 100);
+}
+
+function _aiHideAutocomplete() {
+    const dropdown = document.getElementById('ai-autocomplete');
+    if (dropdown) dropdown.style.display = 'none';
+    _acSelected = -1;
+}
+
+function _aiPromptKey(event) {
+    const dropdown = document.getElementById('ai-autocomplete');
+    const visible = dropdown && dropdown.style.display !== 'none';
+    const items = visible ? dropdown.querySelectorAll('.list-group-item') : [];
+    const typed = document.getElementById('ai-typed');
+
+    if (event.key === 'Enter') {
+        event.preventDefault();
+        if (visible && _acSelected >= 0 && items[_acSelected]) {
+            items[_acSelected].click();
+        } else if (visible && items.length) {
+            items[0].click();
+        } else if (!visible) {
+            _aiTryNLPOrGenerate();
+        }
+        return;
+    }
+
+    if (event.key === 'Tab' && visible && items.length) {
+        event.preventDefault();
+        items[_acSelected >= 0 ? _acSelected : 0].click();
+        return;
+    }
+
+    // Backspace with empty input → remove last chip
+    if (event.key === 'Backspace' && typed && !typed.value) {
+        import('./nlp-automation.js').then(m => {
+            const sels = m.getSelections();
+            if (sels.length) {
+                m.removeSelection(sels.length - 1);
+                _refreshChips();
+                setTimeout(() => _aiAutocomplete(''), 50);
+            }
+        }).catch(() => {});
+        return;
+    }
+
+    if (!visible || !items.length) return;
+
+    if (event.key === 'ArrowDown') {
+        event.preventDefault();
+        if (_acSelected >= 0) items[_acSelected].classList.remove('active');
+        _acSelected = Math.min(_acSelected + 1, items.length - 1);
+        items[_acSelected].classList.add('active');
+        items[_acSelected].scrollIntoView({ block: 'nearest' });
+    } else if (event.key === 'ArrowUp') {
+        event.preventDefault();
+        if (_acSelected >= 0) items[_acSelected].classList.remove('active');
+        _acSelected = Math.max(_acSelected - 1, 0);
+        items[_acSelected].classList.add('active');
+        items[_acSelected].scrollIntoView({ block: 'nearest' });
+    } else if (event.key === 'Escape') {
+        _aiHideAutocomplete();
+    }
+}
+
+// ============================================================================
+// BUILD — try NLP selections first, fall back to LLM
+// ============================================================================
+
+async function _aiTryNLPOrGenerate() {
+    _aiHideAutocomplete();
+
+    try {
+        const { isComplete, buildRule, clearSelections, getSelections } = await import('./nlp-automation.js');
+        const sels = getSelections();
+
+        if (isComplete()) {
+            // Build text from selections for the rule name
+            const text = sels.map(s => s.text).join(' ');
+            const rule = buildRule(text);
+            const result = document.getElementById('ai-result');
+            if (result) result.style.display = 'block';
+            _showGeneratedRule(rule, 'Built locally from your selections (no LLM needed)');
+            return;
+        }
+    } catch (e) {
+        console.debug('NLP build incomplete:', e);
+    }
+
+    // Fall back to LLM — build prompt from chips + typed text
+    _aiGenerate();
 }
 
 // ============================================================================
@@ -231,9 +548,8 @@ async function _aiSaveRule() {
             result.innerHTML = `<div class="alert alert-success mb-0 py-2 small">
                 <i class="fas fa-check-circle me-1"></i> Rule saved: <strong>${data.rule?.name || data.rule?.id}</strong>
             </div>`;
-            // Clear the prompt
-            const input = document.getElementById('ai-prompt');
-            if (input) input.value = '';
+            // Clear the builder
+            window._aiClearBuilder();
             window._aiGeneratedRule = null;
             // Refresh the rules list if the page refresh function exists
             if (typeof window._apRefresh === 'function') window._apRefresh();
@@ -474,11 +790,24 @@ function _esc(s) {
 // WINDOW HANDLERS
 // ============================================================================
 
-window._aiGenerate = _aiGenerate;
+window._aiGenerate = _aiTryNLPOrGenerate;
+window._aiGenerateLLM = _aiGenerate;
 window._aiSaveRule = _aiSaveRule;
 window._aiEditRule = _aiEditRule;
 window._aiToggleSettings = _aiToggleSettings;
 window._aiSaveSettings = _aiSaveSettings;
 window._aiProviderChanged = _aiProviderChanged;
 window._aiTestConnection = _aiTestConnection;
+window._aiAutocomplete = _aiAutocomplete;
+window._aiInsertSuggestion = _aiInsertSuggestion;
+window._aiPromptKey = _aiPromptKey;
+window._aiRemoveChip = _aiRemoveChip;
+window._aiClearBuilder = _aiClearBuilder;
 window._aiGeneratedRule = null;
+
+// Close autocomplete when clicking outside
+document.addEventListener('click', (e) => {
+    if (!e.target.closest('#ai-builder') && !e.target.closest('#ai-autocomplete')) {
+        _aiHideAutocomplete();
+    }
+});

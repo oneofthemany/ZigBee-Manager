@@ -15,8 +15,6 @@ import time
 import logging
 from typing import Dict, Optional, Callable, Any, List
 
-from handlers.matter_parsers import get_parser_for_node, BaseMatterParser
-
 try:
     import aiohttp
     HAS_AIOHTTP = True
@@ -33,7 +31,7 @@ logger = logging.getLogger("matter_bridge")
 class MatterDevice:
     """
     Lightweight wrapper around a matter-server node.
-    Delegates attribute parsing to the matter_parsers framework.
+    Mimics the interface that automation engine expects from ZigManDevice.
     """
 
     def __init__(self, node: dict):
@@ -44,18 +42,87 @@ class MatterDevice:
         self.last_seen = time.time()
         self._available = node.get("available", False)
 
+        # Extract basic info from Matter Basic Information cluster (0/40/*)
         attributes = node.get("attributes", {})
-
-        # Auto-detect parser based on device attributes
-        self._parser = get_parser_for_node(attributes)
-
-        # Extract identity using parser
-        self.manufacturer = self._parser.get_manufacturer(attributes)
-        self.model = self._parser.get_model(attributes)
-        self.friendly_name = self._parser.get_friendly_name(attributes)
+        self.manufacturer = self._find_attr(attributes, 40, 2, "Unknown")   # VendorName
+        self.model = self._find_attr(attributes, 40, 4, "") or \
+                     self._find_attr(attributes, 40, 3, "Unknown")          # ProductName
+        self.friendly_name = self._find_attr(attributes, 40, 5, "") or \
+                             self.model or f"Matter {self.node_id}"         # NodeLabel
 
         # Build initial state
-        self.state = self._parser.build_state(attributes, self.node_id, self._available)
+        self._build_state(attributes)
+
+    @staticmethod
+    def _find_attr(attributes: dict, cluster: int, attr: int, default=None):
+        """
+        Search for a Matter attribute across endpoints.
+        Keys in matter-server are formatted as "endpoint/cluster/attribute".
+        """
+        # Try endpoint 0 first (Basic Information is always on EP 0)
+        for ep in [0, 1, 2]:
+            key = f"{ep}/{cluster}/{attr}"
+            if key in attributes:
+                return attributes[key]
+        return default
+
+    def _build_state(self, attributes: dict):
+        """Build normalised state dict from Matter attributes."""
+        self.state = {
+            "protocol": "matter",
+            "available": self._available,
+            "node_id": self.node_id,
+        }
+
+        # On/Off (cluster 6, attr 0)
+        on_off = self._find_attr(attributes, 6, 0)
+        if on_off is not None:
+            self.state["state"] = "ON" if on_off else "OFF"
+            self.state["on"] = bool(on_off)
+
+        # Level Control (cluster 8, attr 0) — 0-254
+        level = self._find_attr(attributes, 8, 0)
+        if level is not None:
+            self.state["brightness"] = int(level)
+            self.state["level"] = int(level / 2.54) if level > 0 else 0
+
+        # Color Temperature (cluster 768, attr 7) — mireds
+        color_temp = self._find_attr(attributes, 768, 7)
+        if color_temp is not None and color_temp > 0:
+            self.state["color_temp"] = int(color_temp)
+
+        # Color XY (cluster 768, attr 3 & 4)
+        color_x = self._find_attr(attributes, 768, 3)
+        color_y = self._find_attr(attributes, 768, 4)
+        if color_x is not None and color_y is not None:
+            # Matter uses 0-65535, normalise to 0-1
+            self.state["color_x"] = round(color_x / 65535, 4)
+            self.state["color_y"] = round(color_y / 65535, 4)
+
+        # Temperature Measurement (cluster 1026, attr 0) — centidegrees
+        temp = self._find_attr(attributes, 1026, 0)
+        if temp is not None:
+            self.state["temperature"] = round(temp / 100.0, 1)
+
+        # Humidity (cluster 1029, attr 0)
+        humidity = self._find_attr(attributes, 1029, 0)
+        if humidity is not None:
+            self.state["humidity"] = round(humidity / 100.0, 1)
+
+        # Occupancy (cluster 1030, attr 0)
+        occupancy = self._find_attr(attributes, 1030, 0)
+        if occupancy is not None:
+            self.state["occupancy"] = bool(occupancy & 0x01)
+
+        # Illuminance (cluster 1024, attr 0)
+        illuminance = self._find_attr(attributes, 1024, 0)
+        if illuminance is not None:
+            self.state["illuminance"] = int(illuminance)
+
+        # Contact/Door (cluster 69, attr 0) — BooleanState
+        contact = self._find_attr(attributes, 69, 0)
+        if contact is not None:
+            self.state["contact"] = bool(contact)
 
     def update_from_node(self, node: dict):
         """Update device from a new node snapshot."""
@@ -63,54 +130,103 @@ class MatterDevice:
         self._available = node.get("available", self._available)
         self.last_seen = time.time()
         attributes = node.get("attributes", {})
-
-        # Rebuild state using parser
-        self.state = self._parser.build_state(attributes, self.node_id, self._available)
+        self._build_state(attributes)
 
         # Re-read labels in case they changed
-        new_name = self._parser.get_friendly_name(attributes)
-        if new_name and new_name != "Matter Device":
-            self.friendly_name = new_name
+        new_label = self._find_attr(attributes, 40, 5, "")
+        if new_label:
+            self.friendly_name = new_label
 
     def is_available(self) -> bool:
         return self._available
 
     def get_role(self) -> str:
+        """Return device role for the device list."""
         return "Matter"
 
     def get_type(self) -> str:
-        return self._parser.get_device_type(self.node.get("attributes", {}))
+        """Determine device type from state keys."""
+        if "state" in self.state:
+            if "brightness" in self.state or "color_temp" in self.state:
+                return "Light"
+            return "Switch"
+        if "occupancy" in self.state:
+            return "Sensor"
+        if "temperature" in self.state:
+            return "Sensor"
+        if "contact" in self.state:
+            return "Sensor"
+        return "Matter"
 
     def get_control_commands(self) -> List[Dict[str, Any]]:
-        return self._parser.get_commands(self.node.get("attributes", {}))
+        """Return available commands based on state capabilities."""
+        commands = []
+
+        if "state" in self.state:
+            commands.extend([
+                {"command": "on", "label": "On", "endpoint_id": 1},
+                {"command": "off", "label": "Off", "endpoint_id": 1},
+                {"command": "toggle", "label": "Toggle", "endpoint_id": 1},
+            ])
+
+        if "brightness" in self.state:
+            commands.append({
+                "command": "brightness", "label": "Brightness",
+                "type": "slider", "min": 0, "max": 100, "endpoint_id": 1
+            })
+
+        if "color_temp" in self.state:
+            commands.append({
+                "command": "color_temp", "label": "Color Temp",
+                "type": "slider", "min": 2000, "max": 6500, "endpoint_id": 1
+            })
+
+        return commands
 
     def to_device_list_entry(self) -> dict:
         """Return dict matching ZigbeeService.get_device_list() format."""
-        attributes = self.node.get("attributes", {})
-        basic_info = self._parser.parse_basic_info(attributes)
-
         return {
             "ieee": self.ieee,
             "nwk": f"0x{self.node_id:04x}",
             "friendly_name": self.friendly_name,
             "model": self.model,
             "manufacturer": self.manufacturer,
-            "lqi": 255 if self._available else 0,
+            "lqi": None,
             "last_seen_ts": self.last_seen,
             "state": self.state.copy(),
             "type": self.get_type(),
             "protocol": "matter",
-            "quirk": self._parser.__class__.__name__,
-            "capabilities": self._parser.get_capabilities(attributes),
+            "quirk": None,
+            "capabilities": self._get_capabilities(),
             "settings": {},
             "available": self._available,
             "config_schema": [],
             "polling_interval": 0,
-            "basic_info": basic_info,
         }
 
     def _get_capabilities(self) -> list:
-        return self._parser.get_capabilities(self.node.get("attributes", {}))
+        """Build capability list from state."""
+        caps = ["matter"]
+        if "state" in self.state:
+            if "brightness" in self.state or "color_temp" in self.state:
+                caps.append("light")
+            else:
+                caps.append("switch")
+        if "brightness" in self.state:
+            caps.append("level_control")
+        if "color_temp" in self.state:
+            caps.append("color_temperature")
+        if "temperature" in self.state:
+            caps.append("temperature_sensor")
+        if "humidity" in self.state:
+            caps.append("humidity_sensor")
+        if "occupancy" in self.state:
+            caps.append("motion_sensor")
+        if "contact" in self.state:
+            caps.append("contact_sensor")
+        if "illuminance" in self.state:
+            caps.append("illuminance_sensor")
+        return caps
 
 
 # =============================================================================
@@ -167,11 +283,8 @@ class MatterBridge:
             self._shutdown = False
             logger.info(f"✅ Connected to Matter server: {self.server_url}")
 
-            # Subscribe to events AND get initial node dump
-            # start_listening returns server info, then sends node data as events.
-            # Unlike get_nodes, it also subscribes to future node_added/node_updated/
-            # attribute_updated events — essential for mid-session commissioning.
-            await self._send_command("start_listening")
+            # Request initial node list
+            await self._send_command("get_nodes")
 
             # Start listener
             self._listen_task = asyncio.create_task(self._listen_loop())
@@ -234,7 +347,7 @@ class MatterBridge:
                 self._connected = True
                 logger.info(f"✅ Reconnected to Matter server: {self.server_url}")
 
-                await self._send_command("start_listening")
+                await self._send_command("get_nodes")
                 self._listen_task = asyncio.create_task(self._listen_loop())
                 return  # Success — exit loop
 
@@ -300,66 +413,28 @@ class MatterBridge:
 
     async def _handle_message(self, data: dict):
         """Process a message from matter-server."""
-        # Response to a command (e.g. start_listening, get_nodes)
+        # Response to a command (e.g. get_nodes)
         if "result" in data and "message_id" in data:
             result = data["result"]
-
             if isinstance(result, list):
-                # Node list response (from get_nodes or start_listening node dump)
-                node_count = 0
+                # Node list response
                 for node in result:
                     if isinstance(node, dict) and "node_id" in node:
                         await self._upsert_node(node)
-                        node_count += 1
-                logger.info(f"Matter: loaded {node_count} nodes")
+                logger.info(f"Matter: loaded {len(result)} nodes")
 
                 # Publish discovery for all devices after initial load
-                if node_count > 0:
-                    await self._publish_all_discovery()
-
-            elif isinstance(result, dict):
-                # Server info response from start_listening — log and continue.
-                # Node data follows as separate event messages.
-                sdk_ver = result.get("sdk_version", "?")
-                thread_set = result.get("thread_credentials_set", False)
-                bt = result.get("bluetooth_enabled", False)
-                logger.info(
-                    f"Matter server info: SDK {sdk_ver}, "
-                    f"thread_credentials={thread_set}, bluetooth={bt}"
-                )
+                await self._publish_all_discovery()
             return
 
         # Event-based messages
         event = data.get("event")
 
-        # start_listening sends node dump as event with empty event name
-        # and result containing the node list
-        if "result" in data and "event" in data:
-            result = data["result"]
-            if isinstance(result, list):
-                node_count = 0
-                for node in result:
-                    if isinstance(node, dict) and "node_id" in node:
-                        await self._upsert_node(node)
-                        node_count += 1
-                if node_count > 0:
-                    logger.info(f"Matter: loaded {node_count} nodes from event stream")
-                    await self._publish_all_discovery()
-                return
-
         if event == "node_added":
             node = data.get("data", {})
             if "node_id" in node:
                 await self._upsert_node(node)
-                node_id = node["node_id"]
-                ieee = f"matter_{node_id}"
-                dev = self.devices.get(ieee)
-                logger.info(f"Matter: node {node_id} added")
-
-                await self._emit_debug_packet("node_added", node_id, {
-                    "manufacturer": dev.manufacturer if dev else "Unknown",
-                    "model": dev.model if dev else "Unknown",
-                })
+                logger.info(f"Matter: node {node['node_id']} added")
 
         elif event == "node_updated":
             node = data.get("data", {})
@@ -375,8 +450,6 @@ class MatterBridge:
 
                 # Remove HA discovery
                 await self._remove_discovery(ieee)
-
-                await self._emit_debug_packet("node_removed", node_id, {})
 
                 if self.event_callback:
                     await self.event_callback("device_left", {"ieee": ieee})
@@ -399,10 +472,7 @@ class MatterBridge:
                     if attr_path and attr_value is not None:
                         attributes[attr_path] = attr_value
                         dev.node["attributes"] = attributes
-                        # Use parser for state building — handles rotary detection etc.
-                        dev.state = dev._parser.build_state(
-                            attributes, dev.node_id, dev._available
-                        )
+                        dev._build_state(attributes)
                         dev.last_seen = time.time()
 
                         if self.event_callback:
@@ -413,72 +483,6 @@ class MatterBridge:
 
                         # Publish state to MQTT
                         await self._publish_device_state(dev)
-
-                        await self._emit_debug_packet("attribute_updated", node_id, {
-                            "attribute_path": attr_path,
-                            "new_value": attr_value,
-                            "endpoint_id": int(attr_path.split("/")[0]) if "/" in attr_path else 0,
-                            "cluster_id": int(attr_path.split("/")[1]) if "/" in attr_path else 0,
-                        })
-
-        elif event == "node_event":
-            # Matter cluster events (button presses, rotary turns, etc.)
-            event_data = data.get("data", {})
-            node_id = event_data.get("node_id")
-            endpoint_id = event_data.get("endpoint_id", 0)
-            cluster_id = event_data.get("cluster_id", 0)
-            event_name = event_data.get("event_name", "")
-            event_data_inner = event_data.get("event_data", {})
-
-            if node_id is not None:
-                ieee = f"matter_{node_id}"
-                if ieee in self.devices:
-                    dev = self.devices[ieee]
-                    dev.last_seen = time.time()
-
-                    # Build a human-readable action string
-                    action = dev._parser.parse_event(
-                        event_name, endpoint_id, cluster_id, event_data_inner
-                    )
-
-                    # Update device state with the latest action
-                    dev.state["last_action"] = action
-                    dev.state["last_action_endpoint"] = endpoint_id
-                    dev.state["last_action_time"] = dev.last_seen
-
-                    logger.info(
-                        f"[{ieee}] Matter event: {action} "
-                        f"(EP{endpoint_id}, cluster {cluster_id})"
-                    )
-
-                    # Emit to frontend via WebSocket
-                    if self.event_callback:
-                        await self.event_callback("device_updated", {
-                            "ieee": ieee,
-                            "data": dev.state.copy(),
-                        })
-                        # Also emit as a specific button event for automations
-                        await self.event_callback("matter_button_event", {
-                            "ieee": ieee,
-                            "node_id": node_id,
-                            "endpoint_id": endpoint_id,
-                            "action": action,
-                            "event_name": event_name,
-                            "event_data": event_data_inner,
-                        })
-
-                    # Publish to MQTT
-                    await self._publish_device_state(dev)
-
-                    # Emit debug packet
-                    if hasattr(self, '_emit_debug_packet'):
-                        await self._emit_debug_packet("button_event", node_id, {
-                            "event_name": event_name,
-                            "action": action,
-                            "endpoint_id": endpoint_id,
-                            "cluster_id": cluster_id,
-                            "event_data": event_data_inner,
-                        })
 
     async def _upsert_node(self, node: dict):
         """Insert or update a Matter device."""
@@ -513,54 +517,51 @@ class MatterBridge:
     # =========================================================================
 
     async def send_command(self, node_id: int, command: str, value=None) -> dict:
-        """Send a command to a Matter device via matter-server."""
+        """
+        Send a command to a Matter device via matter-server.
+        Maps normalised commands to Matter cluster operations.
+        """
         try:
-            cluster_id = 0
-            endpoint_id = 1
-
             if command in ("on", "off", "toggle"):
-                cluster_id = 6
-                command_name = {"on": "On", "off": "Off", "toggle": "Toggle"}[command]
+                command_name = command.capitalize()
+                if command == "on":
+                    command_name = "On"
+                elif command == "off":
+                    command_name = "Off"
+                elif command == "toggle":
+                    command_name = "Toggle"
+
                 await self._send_command("device_command", {
                     "node_id": node_id,
-                    "endpoint_id": endpoint_id,
-                    "cluster_id": cluster_id,
+                    "endpoint_id": 1,
+                    "cluster_id": 6,  # OnOff
                     "command_name": command_name,
                 })
 
             elif command == "brightness":
-                cluster_id = 8
+                # Convert percentage (0-100) to Matter level (0-254)
                 level = int((value or 0) * 2.54)
                 await self._send_command("device_command", {
                     "node_id": node_id,
-                    "endpoint_id": endpoint_id,
-                    "cluster_id": cluster_id,
+                    "endpoint_id": 1,
+                    "cluster_id": 8,  # LevelControl
                     "command_name": "MoveToLevelWithOnOff",
                     "args": {"level": level, "transition_time": 5},
                 })
 
             elif command == "color_temp":
-                cluster_id = 768
+                # Convert Kelvin to mireds
                 mireds = int(1000000 / max(value or 4000, 1))
                 await self._send_command("device_command", {
                     "node_id": node_id,
-                    "endpoint_id": endpoint_id,
-                    "cluster_id": cluster_id,
+                    "endpoint_id": 1,
+                    "cluster_id": 768,  # ColorControl
                     "command_name": "MoveToColorTemperature",
                     "args": {"color_temperature_mireds": mireds, "transition_time": 5},
                 })
 
             else:
                 return {"success": False, "error": f"Unknown command: {command}"}
-
-            # Emit debug packet for TX direction
-            await self._emit_debug_packet("command", node_id, {
-                "command_name": command,
-                "value": value,
-                "endpoint_id": endpoint_id,
-                "cluster_id": cluster_id,
-                "direction": "TX",
-            })
 
             # Optimistic state update
             ieee = f"matter_{node_id}"
@@ -600,23 +601,6 @@ class MatterBridge:
     async def commission(self, code: str) -> dict:
         """Commission a Matter device using its setup code."""
         try:
-            # If OTBR is running, provide Thread credentials before commissioning
-            try:
-                import subprocess
-                result = subprocess.run(
-                    ["ot-ctl", "dataset", "active", "-x"],
-                    capture_output=True, text=True, timeout=5
-                )
-                if result.returncode == 0:
-                    dataset_hex = result.stdout.strip().split("\n")[0].strip()
-                    if dataset_hex and dataset_hex != "Done":
-                        await self._send_command("set_thread_dataset", {
-                            "dataset": dataset_hex
-                        })
-                        logger.info(f"Matter: Thread dataset provided for commissioning")
-            except Exception as e:
-                logger.debug(f"Thread dataset not available (non-fatal): {e}")
-
             await self._send_command("commission_with_code", {"code": code})
             logger.info(f"Matter: commissioning started with code {code[:8]}...")
             return {"success": True, "protocol": "matter"}
@@ -877,66 +861,3 @@ class MatterBridge:
                 for dev in self.devices.values()
             ]
         }
-
-    # =========================================================================
-    # DEBUGGING
-    # =========================================================================
-    async def _emit_debug_packet(self, event_type: str, node_id: int, data: dict):
-        """Emit a Matter event as a debug packet for the live debug stream."""
-        if not self.event_callback:
-            return
-
-        ieee = f"matter_{node_id}"
-        dev = self.devices.get(ieee)
-        friendly_name = dev.friendly_name if dev else f"Node {node_id}"
-
-        now = time.time()
-        packet = {
-            "protocol": "matter",
-            "timestamp": now,
-            "timestamp_str": time.strftime("%H:%M:%S", time.localtime(now)),
-            "ieee": ieee,
-            "friendly_name": friendly_name,
-            "direction": data.get("direction", "RX"),
-            "event": event_type,
-            "node_id": node_id,
-            "data": data,
-            # Fields for unified display with Zigbee packets
-            "cluster": data.get("cluster_id", 0),
-            "cluster_name": data.get("cluster_name", event_type),
-            "endpoint": data.get("endpoint_id", 0),
-            "importance": "high" if event_type in (
-                "node_added", "node_removed", "command", "button_event"
-            ) else "normal",
-            "summary": self._build_matter_summary(event_type, data, friendly_name),
-            # Fields the Zigbee packet analyser/renderer expects — prevent undefined errors
-            "decoded": data,
-            "message": None,
-            "profile": 0,
-            "src_ep": data.get("endpoint_id", 0),
-            "dst_ep": 0,
-        }
-
-        try:
-            await self.event_callback("debug_packet", packet)
-        except Exception:
-            pass
-
-    @staticmethod
-    def _build_matter_summary(event_type: str, data: dict, name: str) -> str:
-        """Build a human-readable summary for a Matter debug packet."""
-        if event_type == "attribute_updated":
-            path = data.get("attribute_path", "?")
-            new_val = data.get("new_value", "?")
-            return f"{name}: {path} → {new_val}"
-        elif event_type == "button_event":
-            return f"{name}: {data.get('action', '?')}"
-        elif event_type == "node_added":
-            return f"Commissioned: {name}"
-        elif event_type == "node_removed":
-            return f"Removed: {name}"
-        elif event_type == "node_updated":
-            return f"Updated: {name}"
-        elif event_type == "command":
-            return f"{name}: {data.get('command_name', '?')}"
-        return f"{name}: {event_type}"

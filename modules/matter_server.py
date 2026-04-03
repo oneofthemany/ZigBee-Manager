@@ -124,38 +124,18 @@ class MatterServerManager:
 
     async def _kill_orphans(self):
         """Kill any leftover matter-server processes from previous runs."""
-        pid_file = os.path.join(self.storage_path, "matter-server.pid")
-
-        # Check PID file from previous run
-        if os.path.exists(pid_file):
-            try:
-                old_pid = int(open(pid_file).read().strip())
-                os.kill(old_pid, signal.SIGTERM)
-                logger.warning(f"Killed previous matter-server from PID file: {old_pid}")
-                await asyncio.sleep(2)
-                try:
-                    os.kill(old_pid, signal.SIGKILL)
-                except ProcessLookupError:
-                    pass
-            except (ProcessLookupError, ValueError, OSError):
-                pass
-            try:
-                os.remove(pid_file)
-            except FileNotFoundError:
-                pass
-
         import subprocess
         killed = 0
         my_pid = os.getpid()
         child_pid = self._process.pid if self._process else None
-
+    
         # Pattern 1: match entry-point name with our port
         # Pattern 2: match module invocation with our port
         patterns = [
             f"matter-server.*--port.*{self.port}",
             f"matter_server.server.*--port.*{self.port}",
         ]
-
+    
         found_pids = set()
         for pattern in patterns:
             try:
@@ -170,7 +150,7 @@ class MatterServerManager:
                             found_pids.add(int(p))
             except Exception:
                 pass
-
+    
         # Fallback: anything holding our port
         try:
             result = subprocess.run(
@@ -184,7 +164,7 @@ class MatterServerManager:
                         found_pids.add(int(p))
         except Exception:
             pass
-
+    
         # Kill everything except ourselves and our current child
         for pid in found_pids:
             if pid == my_pid or pid == child_pid:
@@ -195,7 +175,7 @@ class MatterServerManager:
                 killed += 1
             except ProcessLookupError:
                 pass
-
+    
         if killed:
             # Give them a moment to exit gracefully
             await asyncio.sleep(2)
@@ -227,12 +207,7 @@ class MatterServerManager:
             )
 
             self._running = True
-            logger.info(f"Matter server started (PID {self._process.pid})")
-
-            # Write PID file for orphan cleanup on next start
-            pid_file = os.path.join(self.storage_path, "matter-server.pid")
-            with open(pid_file, 'w') as f:
-                f.write(str(self._process.pid))
+            logger.info(f"✅ Matter server started (PID {self._process.pid}) on port {self.port}")
 
             # Start log reader + health monitor
             self._monitor_task = asyncio.create_task(self._monitor())
@@ -300,13 +275,6 @@ class MatterServerManager:
         self._shutdown = True
         self._running = False
 
-        # Remove PID file
-        pid_file = os.path.join(self.storage_path, "matter-server.pid")
-        try:
-            os.remove(pid_file)
-        except FileNotFoundError:
-            pass
-
         if self._monitor_task:
             self._monitor_task.cancel()
             try:
@@ -317,6 +285,7 @@ class MatterServerManager:
         if self._process and self._process.returncode is None:
             logger.info(f"Stopping Matter server (PID {self._process.pid})...")
             try:
+                # Send SIGTERM to the process group
                 os.killpg(os.getpgid(self._process.pid), signal.SIGTERM)
                 try:
                     await asyncio.wait_for(self._process.wait(), timeout=10)
@@ -326,7 +295,7 @@ class MatterServerManager:
                     os.killpg(os.getpgid(self._process.pid), signal.SIGKILL)
                     await self._process.wait()
             except ProcessLookupError:
-                pass
+                pass  # Already dead
             except Exception as e:
                 logger.error(f"Error stopping Matter server: {e}")
 

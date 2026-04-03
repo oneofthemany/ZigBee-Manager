@@ -194,8 +194,8 @@ const TUYA_COMMON_DPS = {
 // =============================================================================
 
 /**
- * Parse Tuya Payload (This is the old, rough client-side implementation.
- * We will rely on the backend's rich 'tuya_dps' data if available in the packet
+ * Parse Tuya Payload (This is the old, rough client-side implementation. 
+ * We will rely on the backend's rich 'tuya_dps' data if available in the packet 
  * and only use this as a fallback).
  */
 function parseTuyaPayload(hexPayload) {
@@ -255,7 +255,7 @@ function parseTuyaPayload(hexPayload) {
 }
 
 /**
- * analyse a single Tuya DP
+ * Analyze a single Tuya DP
  */
 function analyseTuyaDP(dp) {
     const interpretation = {
@@ -331,13 +331,13 @@ export function analysePacket(packet) {
     // --- A. Tuya Analysis (Prioritise Backend Data: packet.tuya_dps) ---
     if (cid === 0xEF00) {
         analysis.summary = analysis.command;
-
+        
         if (packet.tuya_dps && packet.tuya_dps.length > 0) {
             // Use RICH, STRUCTURED DATA from backend
             analysis.tuya_analysis = {
                 dps: packet.tuya_dps
             };
-
+            
             // Build rich summary from backend data
             const summaries = packet.tuya_dps.map(dp => {
                 const name = dp.dp_def_name || `DP${dp.dp_id}`;
@@ -426,8 +426,8 @@ export function renderPacketAnalysis(packet) {
 
         dps.forEach(dp => {
             // Get the value after conversion/scaling, or fallback to parsed value
-            const finalValue = dp.parsed_value * dp.dp_def_scale + dp.dp_def_unit;
-
+            const finalValue = dp.parsed_value * dp.dp_def_scale + dp.dp_def_unit; 
+            
             // Format raw hex data
             let rawDataStr = dp.raw_hex;
             if (dp.dp_type === 0x02 && rawDataStr.length === 8) {
@@ -453,7 +453,7 @@ export function renderPacketAnalysis(packet) {
             // Row 2: Scaled/Converted Value
             html += `<div class="row g-1 small mt-1 border-top pt-1 border-secondary border-opacity-25">`;
             html += `<div class="col-md-6 text-success"><strong>Final Value:</strong> <code class="text-success text-break">${escapeHtml(dp.parsed_value * dp.dp_def_scale + dp.dp_def_unit)}</code></div>`;
-
+            
             // Show scale only if it's not 1.0
             if (dp.dp_def_scale !== 1.0) {
                 html += `<div class="col-md-6 text-muted"><strong>Scaling Applied:</strong> x${dp.dp_def_scale}</div>`;

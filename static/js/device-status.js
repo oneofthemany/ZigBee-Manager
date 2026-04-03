@@ -232,7 +232,7 @@
                 if (!isThermostat(device) && (s.temperature !== undefined || s.local_temperature !== undefined)) {
                     extras += ' ' + renderTempMini(device);
                 }
-
+                
                 // On/Off status (multi-EP aware)
                 var onOffHtml = renderOnOffStatus(device);
                 if (onOffHtml) {

@@ -343,10 +343,10 @@ class OTAManager:
                 if 0x0019 in ep.in_clusters:
                     ota_cluster = ep.in_clusters[0x0019]
                     break
-
+        
             if ota_cluster is None:
                 return {"success": False, "error": "Device has no OTA cluster"}
-
+        
             # image_notify: payload_type=0 (QueryJitter), jitter=100
             await ota_cluster.image_notify(0, 100)
             return {"success": True, "message": "Image notify sent"}

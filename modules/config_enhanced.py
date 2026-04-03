@@ -199,10 +199,10 @@ class NetworkOptimizer:
     def __init__(self):
         self.recommendations = {}
 
-    def analyse_network(self, device_count: int, router_count: int,
+    def analyze_network(self, device_count: int, router_count: int,
                         end_device_count: int, bulb_count: int = 0) -> Dict[str, Any]:
         """
-        analyse network and provide recommendations.
+        Analyze network and provide recommendations.
 
         Args:
             device_count: Total device count
@@ -261,8 +261,8 @@ class NetworkOptimizer:
         Returns:
             Optimal configuration
         """
-        # analyse network
-        recommendations = self.analyse_network(
+        # Analyze network
+        recommendations = self.analyze_network(
             device_stats.get('total', 0),
             device_stats.get('routers', 0),
             device_stats.get('end_devices', 0),

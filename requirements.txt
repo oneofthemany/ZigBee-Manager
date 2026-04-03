@@ -1,13 +1,8 @@
 fastapi
 uvicorn[standard]
-zigpy==1.1.1
-bellows==0.49.0
+zigpy
+bellows
 aiomqtt
-pyyaml
+pyaml
 zha-quirks
-pydantic
-zigpy-znp==0.14.3
-aiohttp
-python-matter-server
-python-multipart
 duckdb

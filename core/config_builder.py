@@ -3,35 +3,47 @@ Radio configuration builder mixin.
 Builds bellows (EZSP), zigpy-znp (ZNP) and zigpy-deconz config dicts
 from config.yaml settings with dynamic baud-rate / flow-control detection.
 
-Auto-detection uses the Dongle Jedi serial interrogator — it sends actual
-protocol frames (EZSP ASH reset, ZNP SYS_PING, deCONZ read firmware)
-and correctly identifies adapter family, baud rate, and flow control.
-
-This replaces the broken ControllerApplication.probe() approach which
-has timeout/port-locking issues across different bellows versions.
+Probing uses ControllerApplication.probe() from each radio library —
+the same mechanism ZHA uses. probe() performs the full protocol handshake
+(ASH reset for EZSP, ZNP SYS_PING, deCONZ device state request) and
+internally iterates over baud-rate candidates defined in each library's
+_probe_configs list. We vary flow_control ourselves for EZSP since
+bellows' built-in probe doesn't iterate flow_control.
 """
 import asyncio
 import logging
-import time
 from modules.ota import build_ota_config
 
 logger = logging.getLogger("core.config")
 
-# ── Adapter family → radio_type mapping ─────────────────────────────
-# Must match the families returned by dongle_jedi_core.AdapterFamily
-FAMILY_TO_RADIO = {
-    "Silicon Labs EZSP (Ember)": "EZSP",
-    "Silicon Labs CPC Multi-PAN (RCP)": "EZSP",
-    "Texas Instruments Z-Stack": "ZNP",
-    "Dresden Elektronik ConBee/RaspBee": "DECONZ",
-}
+# Flow-control variants to try for EZSP (bellows _probe_configs handles baud)
+EZSP_FLOW_VARIANTS = ["software", "hardware"]
 
-FAMILY_TO_FLOW_KEY = {
-    "rtscts": "hardware",
-    "xonxoff": "software",
-    "none": None,
-    "": None,
-}
+# deCONZ baud rates to try (zigpy-deconz _probe_configs may not cover all)
+DECONZ_BAUD_VARIANTS = [38400, 57600, 115200]
+
+# ── Library availability ────────────────────────────────────────────
+_BELLOWS_AVAILABLE = False
+_ZNP_AVAILABLE = False
+_DECONZ_AVAILABLE = False
+
+try:
+    from bellows.zigbee.application import ControllerApplication as EzspApp
+    _BELLOWS_AVAILABLE = True
+except ImportError:
+    EzspApp = None
+
+try:
+    from zigpy_znp.zigbee.application import ControllerApplication as ZnpApp
+    _ZNP_AVAILABLE = True
+except ImportError:
+    ZnpApp = None
+
+try:
+    from zigpy_deconz.zigbee.application import ControllerApplication as DeconzApp
+    _DECONZ_AVAILABLE = True
+except ImportError:
+    DeconzApp = None
 
 
 class ConfigBuilderMixin:
@@ -42,20 +54,16 @@ class ConfigBuilderMixin:
         return isinstance(self.port, str) and self.port.startswith("socket://")
 
     # =====================================================================
-    # RADIO PROBING — uses Dongle Jedi serial interrogator
+    # RADIO PROBING — uses ControllerApplication.probe() (ZHA approach)
     # =====================================================================
 
-    async def _probe_radio_type(self, progress_cb=None) -> dict:
-
+    async def _probe_radio_type(self) -> dict:
         """
         Detect radio type AND working serial parameters.
 
-        Priority:
-          1. Explicit radio_type in config.yaml → skip probing
-          2. Socket path → always EZSP
-          3. Auto → Dongle Jedi scans the serial port
-
-        Returns dict with radio_type, baudrate, flow_control.
+        Uses ControllerApplication.probe() from each library — the same
+        mechanism ZHA uses. Returns dict with radio_type, baudrate,
+        flow_control.
         """
         configured = self._config.get('radio_type', 'auto')
 
@@ -67,20 +75,37 @@ class ConfigBuilderMixin:
         if self._is_socket_path():
             return {"radio_type": "EZSP", "baudrate": 0, "flow_control": "none"}
 
-        # ── Auto-detect using Dongle Jedi ──
-        return await self._probe_with_jedi(progress_cb=progress_cb)
+        # ── Auto-detect: EZSP → ZNP → deCONZ ──
+        result = await self._probe_ezsp()
+        if result:
+            return result
+
+        result = await self._probe_znp()
+        if result:
+            return result
+
+        result = await self._probe_deconz()
+        if result:
+            return result
+
+        raise RuntimeError(
+            f"No compatible Zigbee radio found on {self.port}. "
+            f"Libraries: bellows={_BELLOWS_AVAILABLE}, "
+            f"zigpy-znp={_ZNP_AVAILABLE}, zigpy-deconz={_DECONZ_AVAILABLE}"
+        )
 
     def _explicit_radio_result(self, radio_type: str) -> dict:
         """Build probe result for explicitly configured radio type."""
         section_map = {"EZSP": "ezsp", "ZNP": "znp", "DECONZ": "deconz"}
         defaults_map = {
             "EZSP":   {"baudrate": 115200, "flow_control": "software"},
-            "ZNP":    {"baudrate": 115200, "flow_control": None},
-            "DECONZ": {"baudrate": 38400,  "flow_control": None},
+            "ZNP":    {"baudrate": 115200, "flow_control": "none"},
+            "DECONZ": {"baudrate": 38400,  "flow_control": "none"},
         }
         section = self._config.get(section_map[radio_type], {})
         defaults = defaults_map[radio_type]
 
+        # Resolve 'auto' / None to defaults — never pass strings through
         raw_baud = section.get('baudrate')
         raw_flow = section.get('flow_control')
         is_auto_baud = raw_baud is None or str(raw_baud).lower() == 'auto'
@@ -92,109 +117,137 @@ class ConfigBuilderMixin:
             "flow_control": defaults["flow_control"] if is_auto_flow else raw_flow,
         }
 
-    async def _probe_with_jedi(self, progress_cb=None) -> dict:
+    async def _probe_ezsp(self) -> dict | None:
         """
-        Use Dongle Jedi to probe the serial port.
+        Probe EZSP using bellows ControllerApplication.probe().
 
-        DongleJedi runs the blocking serial interrogator in a thread pool.
-        It sends actual EZSP/ZNP/deCONZ protocol frames and returns the
-        adapter family, working baud rate, and flow control.
+        probe() internally iterates bellows' _probe_configs which vary
+        baudrate (115200, 460800, 57600). We iterate flow_control
+        ourselves since bellows doesn't vary that.
+
+        On success, probe() returns the working device config dict
+        (including the baudrate that worked).
         """
-        logger.info(f"Auto-detecting radio on {self.port} using Dongle Jedi...")
-        t0 = time.monotonic()
+        if not _BELLOWS_AVAILABLE:
+            logger.debug("bellows not installed — skipping EZSP probe")
+            return None
 
-        try:
-            from modules.dongle_jedi import DongleJedi
-
-            jedi = DongleJedi()
-
-            # Progress callback: log + optional external broadcast
-            async def log_progress(progress):
-                logger.info(f"  [Jedi] {progress.message}")
-                if progress_cb:
-                    try:
-                        await progress_cb(progress)
-                    except Exception:
-                        pass  # Don't let broadcast errors kill the probe
-
-            results = await jedi.scan_async(
-                port=self.port,
-                progress_cb=log_progress,
-            )
-
-            elapsed = time.monotonic() - t0
-
-            # Filter to Zigbee adapters only
-            zigbee_results = [
-                r for r in results
-                if r.get("adapter_family", "") in FAMILY_TO_RADIO
-            ]
-
-            if not zigbee_results:
-                logger.warning(
-                    f"Dongle Jedi found no Zigbee adapter on {self.port} "
-                    f"({elapsed:.1f}s). Results: {results}"
-                )
-                raise RuntimeError(
-                    f"No Zigbee adapter detected on {self.port}. "
-                    f"Dongle Jedi scanned but found no compatible radio."
-                )
-
-            # Use the first (highest priority) result
-            best = zigbee_results[0]
-            family = best.get("adapter_family", "")
-            radio_type = FAMILY_TO_RADIO.get(family, "EZSP")
-            baud = int(best.get("baud_rate", 0)) or 115200
-            raw_flow = best.get("flow_control", "none")
-            flow = FAMILY_TO_FLOW_KEY.get(raw_flow, raw_flow)
-
+        for flow in EZSP_FLOW_VARIANTS:
             logger.info(
-                f"✅ Dongle Jedi detected: {family} on {self.port} "
-                f"@ {baud} baud / {flow} flow control ({elapsed:.1f}s)"
+                f"Probing {self.port} for EZSP with {flow} flow control "
+                f"(bellows will try multiple baud rates)..."
             )
+            try:
+                device_config = {
+                    "path": self.port,
+                    "baudrate": 115200,  # probe() overrides via _probe_configs
+                    "flow_control": flow,
+                }
+                result = await asyncio.wait_for(
+                    EzspApp.probe(device_config),
+                    timeout=30.0,
+                )
+                if result:
+                    # result is True or a dict with the working device config
+                    if isinstance(result, dict):
+                        detected_baud = int(result.get("baudrate", 115200))
+                    else:
+                        detected_baud = 115200  # bellows default
+                    logger.info(
+                        f"✅ EZSP radio detected @ {detected_baud} baud "
+                        f"/ {flow} flow control"
+                    )
+                    return {
+                        "radio_type": "EZSP",
+                        "baudrate": detected_baud,
+                        "flow_control": flow,
+                    }
+                else:
+                    logger.info(f"  EZSP probe returned False for {flow}")
+            except Exception as e:
+                logger.info(f"  EZSP probe failed with {flow}: {e}")
+            # Brief pause between flow control variants
+            await asyncio.sleep(1.0)
+        return None
 
-            # Also log extra details if available
-            if best.get("firmware_version"):
-                logger.info(f"  Firmware: {best['firmware_version']}")
-            if best.get("eui64"):
-                logger.info(f"  EUI64: {best['eui64']}")
-            if best.get("board_name"):
-                logger.info(f"  Board: {best['board_name']}")
+    async def _probe_znp(self) -> dict | None:
+        """
+        Probe ZNP using zigpy-znp ControllerApplication.probe().
 
-            return {
-                "radio_type": radio_type,
-                "baudrate": baud,
-                "flow_control": flow,
-                "adapter_family": family,
+        probe() internally handles baud rate iteration.
+        """
+        if not _ZNP_AVAILABLE:
+            logger.debug("zigpy-znp not installed — skipping ZNP probe")
+            return None
+
+        logger.info(
+            f"Probing {self.port} for ZNP "
+            f"(zigpy-znp will try multiple baud rates)..."
+        )
+        try:
+            device_config = {
+                "path": self.port,
+                "baudrate": 115200,
             }
-
-        except ImportError:
-            logger.error(
-                "Dongle Jedi not available (dongle_jedi module or "
-                "dongle_jedi_core.py missing). Cannot auto-detect radio."
+            result = await asyncio.wait_for(
+                ZnpApp.probe(device_config),
+                timeout=30.0,
             )
-            raise RuntimeError(
-                f"Cannot auto-detect radio on {self.port}: "
-                f"Dongle Jedi module not available. "
-                f"Set radio_type explicitly in config.yaml."
-            )
-        except RuntimeError:
-            raise  # Re-raise our own RuntimeErrors
+            if result:
+                if isinstance(result, dict):
+                    detected_baud = int(result.get("baudrate", 115200))
+                else:
+                    detected_baud = 115200
+                logger.info(f"✅ ZNP radio detected @ {detected_baud} baud")
+                return {
+                    "radio_type": "ZNP",
+                    "baudrate": detected_baud,
+                    "flow_control": "none",
+                }
+            else:
+                logger.info("  ZNP probe returned False")
         except Exception as e:
-            elapsed = time.monotonic() - t0
-            logger.error(f"Dongle Jedi scan failed ({elapsed:.1f}s): {e}")
-            raise RuntimeError(
-                f"Auto-detection failed on {self.port}: {e}. "
-                f"Set radio_type explicitly in config.yaml."
-            )
+            logger.info(f"  ZNP probe failed: {e}")
+        return None
+
+    async def _probe_deconz(self) -> dict | None:
+        """
+        Probe deCONZ using zigpy-deconz ControllerApplication.probe().
+        """
+        if not _DECONZ_AVAILABLE:
+            logger.debug("zigpy-deconz not installed — skipping deCONZ probe")
+            return None
+
+        for baud in DECONZ_BAUD_VARIANTS:
+            logger.info(f"Probing {self.port} for deCONZ @ {baud}...")
+            try:
+                device_config = {
+                    "path": self.port,
+                    "baudrate": baud,
+                }
+                result = await asyncio.wait_for(
+                    DeconzApp.probe(device_config),
+                    timeout=15.0,
+                )
+                if result:
+                    logger.info(f"✅ deCONZ radio detected @ {baud} baud")
+                    return {
+                        "radio_type": "DECONZ",
+                        "baudrate": baud,
+                        "flow_control": "none",
+                    }
+            except Exception as e:
+                logger.info(f"  deCONZ probe failed @ {baud}: {e}")
+            await asyncio.sleep(0.5)
+        return None
 
     # =====================================================================
     # BAUD / FLOW RESOLUTION
     # =====================================================================
 
     def _resolve_serial_params(
-            self, section_key: str, detected: dict | None,
-            default_baud: int, default_flow: str,
+        self, section_key: str, detected: dict | None,
+        default_baud: int, default_flow: str,
     ) -> tuple:
         """
         Resolve final baudrate and flow_control.
@@ -246,9 +299,6 @@ class ConfigBuilderMixin:
             f"{section_key.upper()} serial: "
             f"baudrate={final_baud}, flow_control={final_flow}"
         )
-        if final_flow == "none":
-            final_flow = None
-
         return final_baud, final_flow
 
     # =====================================================================
@@ -295,7 +345,7 @@ class ConfigBuilderMixin:
         """Build ZNP config from zigbee.znp section + probe results."""
         baud, _ = self._resolve_serial_params(
             "znp", detected,
-            default_baud=115200, default_flow=None,
+            default_baud=115200, default_flow="none",
         )
 
         ota_config = build_ota_config(self._config)

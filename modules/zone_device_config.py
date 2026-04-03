@@ -200,3 +200,4 @@ async def _apply_config(ieee, zigpy_dev, cluster_map, config_type, stop_on_first
 
     return success
 
+

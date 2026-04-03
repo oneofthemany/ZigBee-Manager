@@ -7,6 +7,7 @@ import json
 import os
 import asyncio
 from typing import Set, Optional
+import pathlib
 
 logger = logging.getLogger("device_ban")
 

@@ -153,7 +153,7 @@
   }
 
   /* ------------------------------------------------------------------ */
-  /*  Twin fire trails (post-vanish)                                      */
+  /*  Twin fire trails (post-vanish)                                    */
   /* ------------------------------------------------------------------ */
   function drawFireTrails(ctx, startX, progress, t, W, H) {
     // Two parallel trails like DeLorean tyre marks

@@ -44,13 +44,13 @@ router = APIRouter(prefix="/api/system", tags=["system"])
 # CONFIGURATION
 # ============================================================================
 
-APP_DIR = os.environ.get('ZMM_APP_DIR', '/app')
-BACKUP_DIR = os.environ.get('ZMM_BACKUP_DIR', '/app/data/backups')
+APP_DIR = "/opt/zigbee_manager"
+BACKUP_DIR = os.path.join(APP_DIR, "backups")
 MAX_BACKUPS = 10
 HEALTH_CHECK_URL = "http://localhost:8000/api/devices"
 HEALTH_CHECK_TIMEOUT = 60       # seconds to wait for healthy restart
 HEALTH_CHECK_INTERVAL = 3       # seconds between health polls
-SERVICE_NAME = "zigbee_manager"
+SERVICE_NAME = "zigbee-matter-manager"
 
 # Files/dirs to back up (relative to APP_DIR)
 BACKUP_TARGETS = [
@@ -247,6 +247,75 @@ def _validate_python() -> List[str]:
     return errors
 
 
+def _validate_python_imports() -> List[str]:
+    """
+    Try to import all application modules to catch runtime errors
+    that py_compile misses: missing imports, NameError, ImportError, etc.
+
+    Runs in a subprocess so failures don't affect the running application.
+    Returns list of error strings (empty = all valid).
+    """
+    errors = []
+
+    # Collect all .py modules relative to APP_DIR (skip __pycache__, backups, etc.)
+    modules_to_check = []
+    for py_file in Path(APP_DIR).rglob("*.py"):
+        rel = str(py_file.relative_to(APP_DIR))
+        if any(rel.startswith(exc.rstrip("/")) for exc in BACKUP_EXCLUDE):
+            continue
+        # Skip __init__.py, test files, and the main entry point
+        if py_file.name.startswith("test_") or py_file.name == "__init__.py":
+            continue
+        if rel == "main.py":
+            continue
+        modules_to_check.append(rel)
+
+    # Build a validation script that tries to import each module
+    # Using AST to check for used-but-not-imported names
+    for rel in modules_to_check:
+        try:
+            source = Path(APP_DIR, rel).read_text(encoding="utf-8")
+            tree = __import__("ast").parse(source, filename=rel)
+
+            # Collect all imported names
+            imported_names = set()
+            for node in __import__("ast").walk(tree):
+                if isinstance(node, __import__("ast").Import):
+                    for alias in node.names:
+                        imported_names.add(alias.asname or alias.name.split(".")[0])
+                elif isinstance(node, __import__("ast").ImportFrom):
+                    if node.module:
+                        imported_names.add(node.module.split(".")[0])
+                    for alias in node.names:
+                        imported_names.add(alias.asname or alias.name)
+
+            # Check for common stdlib modules used but not imported
+            # These are the most frequent causes of NameError at runtime
+            STDLIB_MODULES = {
+                "asyncio", "json", "os", "sys", "time", "logging", "re",
+                "subprocess", "shutil", "signal", "uuid", "traceback",
+                "threading", "functools", "pathlib", "datetime",
+            }
+
+            # Find module-level name usage (function calls like asyncio.create_task)
+            for node in __import__("ast").walk(tree):
+                if isinstance(node, __import__("ast").Attribute):
+                    if isinstance(node.value, __import__("ast").Name):
+                        used_module = node.value.id
+                        if used_module in STDLIB_MODULES and used_module not in imported_names:
+                            lineno = getattr(node, "lineno", "?")
+                            errors.append(
+                                f"{rel}:{lineno}: '{used_module}' used but not imported"
+                            )
+
+        except SyntaxError:
+            pass  # Already caught by _validate_python
+        except Exception as e:
+            logger.debug(f"Import validation error for {rel}: {e}")
+
+    return errors
+
+
 def _validate_js() -> List[str]:
     """
     Basic JS validation — check for obvious syntax issues.
@@ -367,18 +436,23 @@ async def _run_deploy(skip_validation: bool = False):
         if not skip_validation:
             _deploy_state.update(status="validating", message="Validating Python syntax...")
             py_errors = _validate_python()
+
+            _deploy_state.update(status="validating", message="Checking imports and references...")
+            import_errors = _validate_python_imports()
+
             js_errors = _validate_js()
-            all_errors = py_errors + js_errors
+            all_errors = py_errors + import_errors + js_errors
             _deploy_state["validation_errors"] = all_errors
 
-            if py_errors:
-                # Python syntax errors are fatal — don't restart
+            if py_errors or import_errors:
+                # Python syntax or import errors are fatal — don't restart
+                fatal_errors = py_errors + import_errors
                 _deploy_state.update(
                     status="failed",
-                    message=f"Validation failed: {len(py_errors)} Python error(s)",
+                    message=f"Validation failed: {len(fatal_errors)} Python error(s)",
                     completed_at=time.time()
                 )
-                logger.error(f"Deploy aborted — Python syntax errors: {py_errors}")
+                logger.error(f"Deploy aborted — Python errors: {fatal_errors}")
                 return
 
             if js_errors:

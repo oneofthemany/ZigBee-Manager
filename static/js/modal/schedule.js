@@ -1,10 +1,21 @@
 /**
- * HVAC Schedule Manager *
+ * HVAC Schedule Manager
+ * Location: static/js/modal/schedule.js
+ *
  * Calendar-based weekly schedule editor for thermostat devices.
+ * Renders inside the thermostat controls card and provides:
+ *   - Enable/disable toggle for the schedule
+ *   - Per-day visual calendar grid (Mon-Sun)
+ *   - Click-to-add time+temp transitions per day
+ *   - "Copy to all days" shortcut
+ *   - Upload schedule to device via set_schedule command
+ *   - LocalStorage persistence of schedules per IEEE
+ *
+ * Integration: Called from renderControlTab() in control.js
  */
 
 // ============================================================================
-// STORAGE HELPERS
+// STORAGE HELPERS  (persist schedules in browser localStorage)
 // ============================================================================
 
 const STORAGE_KEY_PREFIX = 'hvac_schedule_';
@@ -628,3 +639,4 @@ export function bindScheduleEvents(ieee) {
         };
     });
 }
+

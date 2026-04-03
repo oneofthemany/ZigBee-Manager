@@ -2,6 +2,7 @@
 MQTT Client Wrapper for Zigbee Service
 Handles connection, publishing, and Home Assistant integration (Birth Messages).
 """
+
 import json
 import asyncio
 import logging

@@ -64,36 +64,3 @@
 #logs::-webkit-scrollbar-thumb:hover {
     background: #888;
 }
-
-
-
-body {
-    background: #1e1e1e;
-    color: #d4d4d4;
-    padding: 20px;
-}
-.packet-analysis {
-    background: #252526;
-    border-radius: 5px;
-}
-.tuya-details {
-    background: #2d2d30;
-}
-.dp-item {
-    background: #1e1e1e;
-    margin-bottom: 10px;
-    padding: 10px;
-    border-radius: 3px;
-}
-.table-warning {
-    background-color: rgba(255, 193, 7, 0.1) !important;
-}
-.table-info {
-    background-color: rgba(13, 202, 240, 0.1) !important;
-}
-pre {
-    background: #000;
-    color: #9cdcfe;
-    padding: 10px;
-    border-radius: 3px;
-}

@@ -12,7 +12,6 @@ import { fetchAllDevices } from './devices.js';
 import { initGroups } from './groups.js';
 import { initMQTTExplorer, handleMQTTMessage, startMQTTStats, stopMQTTStats } from './mqtt-explorer.js';
 import { initEditor, getEditorInstance } from './editor.js';
-import { initOtbr, loadOtbrStatus } from './otbr.js';
 let editorInitialised = false;
 
 import { initSettings } from './settings.js';
@@ -222,9 +221,6 @@ document.addEventListener('DOMContentLoaded', () => {
     // Start update interval for "last seen" times
     setInterval(updateLastSeenTimes, 1000);
 
-    // Initialise Thread/OTBR
-    initOtbr();
-
     // Initialise Tabs
     loadTabs();
 
@@ -335,7 +331,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (el) el.textContent = remaining;
                 if (bar) bar.style.width = (remaining / (data.remaining || 120) * 100) + '%';
                 if (remaining <= 0) { clearInterval(iv); location.reload(); }
-            }, 1000);
+            }, 4000);
         }
     }).catch(() => {});
 

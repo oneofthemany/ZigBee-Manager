@@ -795,6 +795,195 @@ function collectFormValues() {
 }
 
 // ============================================================================
+// BACKUP & RESTORE
+// ============================================================================
+
+function renderBackupRestoreSection() {
+    // Self-insert after the SSL card in the Config tab if container doesn't exist
+    let el = document.getElementById('backupRestoreBody');
+    if (!el) {
+        const configTab = document.getElementById('settingsConfig');
+        if (!configTab) return;
+
+        const wrapper = document.createElement('div');
+        wrapper.id = 'backupRestoreBody';
+        wrapper.className = 'mt-3';
+        configTab.appendChild(wrapper);
+        el = wrapper;
+    }
+
+    el.innerHTML = `
+    <h6 class="text-uppercase text-muted fw-bold mb-3 mt-2 small">
+      <i class="fas fa-database me-1"></i> Network Backup
+    </h6>
+    <p class="text-muted small mb-3">
+      Download a full backup of your Zigbee network: config, paired devices (zigbee.db),
+      friendly names, automations, groups, zones, and device state cache.
+      Use this to migrate to a new container or recover from failure.
+    </p>
+
+    <div class="row g-3 mb-4">
+      <div class="col-md-6">
+        <div class="card border-primary">
+          <div class="card-body text-center py-4">
+            <i class="fas fa-download fa-2x text-primary mb-2"></i>
+            <h6 class="fw-semibold">Create Backup</h6>
+            <p class="text-muted small mb-3">Download a .zip containing the full network state</p>
+            <button class="btn btn-primary" onclick="window.createNetworkBackup()" id="btnCreateBackup">
+              <i class="fas fa-file-archive me-1"></i> Download Backup
+            </button>
+            <div id="backupStatus" class="small mt-2"></div>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-6">
+        <div class="card border-warning">
+          <div class="card-body text-center py-4">
+            <i class="fas fa-upload fa-2x text-warning mb-2"></i>
+            <h6 class="fw-semibold">Restore Backup</h6>
+            <p class="text-muted small mb-3">Upload a previously downloaded backup .zip</p>
+            <input type="file" id="restoreFileInput" accept=".zip" class="d-none"
+                   onchange="window.handleRestoreFile(this)">
+            <button class="btn btn-outline-warning" onclick="document.getElementById('restoreFileInput').click()">
+              <i class="fas fa-file-upload me-1"></i> Select Backup File
+            </button>
+            <div id="restoreStatus" class="small mt-2"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="restoreConfirmPanel" class="d-none mb-3">
+      <div class="alert alert-danger">
+        <i class="fas fa-exclamation-triangle me-1"></i>
+        <strong>Warning:</strong> Restoring will overwrite your current configuration,
+        device database, automations, groups, and all settings.
+        The service must be restarted afterwards.
+        <div class="mt-3">
+          <span id="restoreFileName" class="fw-semibold"></span>
+          <span id="restoreFileSize" class="text-muted ms-2"></span>
+        </div>
+        <div class="mt-3">
+          <button class="btn btn-danger btn-sm me-2" onclick="window.confirmRestore()">
+            <i class="fas fa-check me-1"></i> Confirm Restore
+          </button>
+          <button class="btn btn-outline-secondary btn-sm" onclick="window.cancelRestore()">
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+    `;
+
+    // Load backup info
+    loadBackupInfo();
+}
+
+async function loadBackupInfo() {
+    try {
+        const res = await fetch('/api/backup/info');
+        const data = await res.json();
+        if (data.success) {
+            const el = document.getElementById('backupStatus');
+            if (el) {
+                const count = data.files.filter(f => f.exists).length;
+                el.innerHTML = `<span class="text-muted">${count} files · ${data.total_size_mb} MB</span>`;
+            }
+        }
+    } catch (e) {
+        // Silent — info is optional
+    }
+}
+
+let _pendingRestoreFile = null;
+
+async function createNetworkBackup() {
+    const btn = document.getElementById('btnCreateBackup');
+    const status = document.getElementById('backupStatus');
+
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> Creating...';
+
+    try {
+        const res = await fetch('/api/backup/create');
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+        const blob = await res.blob();
+        const disposition = res.headers.get('Content-Disposition') || '';
+        const match = disposition.match(new RegExp('filename="?([^"]+)"?'));
+        const filename = match ? match[1] : `zmm_backup_${Date.now()}.zip`;
+
+        // Trigger download
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+
+        status.innerHTML = `<span class="text-success"><i class="fas fa-check me-1"></i>${filename}</span>`;
+    } catch (e) {
+        status.innerHTML = `<span class="text-danger">Backup failed: ${e.message}</span>`;
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-file-archive me-1"></i> Download Backup';
+    }
+}
+
+function handleRestoreFile(input) {
+    const file = input.files[0];
+    if (!file) return;
+
+    _pendingRestoreFile = file;
+
+    document.getElementById('restoreFileName').textContent = file.name;
+    document.getElementById('restoreFileSize').textContent =
+        `(${(file.size / (1024 * 1024)).toFixed(2)} MB)`;
+    document.getElementById('restoreConfirmPanel').classList.remove('d-none');
+}
+
+async function confirmRestore() {
+    if (!_pendingRestoreFile) return;
+
+    const status = document.getElementById('restoreStatus');
+    const panel = document.getElementById('restoreConfirmPanel');
+
+    status.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> Restoring...';
+
+    try {
+        const form = new FormData();
+        form.append('file', _pendingRestoreFile);
+
+        const res = await fetch('/api/backup/restore', { method: 'POST', body: form });
+        const data = await res.json();
+
+        if (data.success) {
+            status.innerHTML =
+                `<span class="text-success"><i class="fas fa-check me-1"></i>` +
+                `Restored ${data.restored_count} files. ` +
+                `<strong>Restart the service to apply.</strong></span>`;
+            panel.classList.add('d-none');
+        } else {
+            status.innerHTML =
+                `<span class="text-danger"><i class="fas fa-times me-1"></i>${data.error || data.message}</span>`;
+        }
+    } catch (e) {
+        status.innerHTML = `<span class="text-danger">Restore failed: ${e.message}</span>`;
+    }
+
+    _pendingRestoreFile = null;
+    document.getElementById('restoreFileInput').value = '';
+}
+
+function cancelRestore() {
+    _pendingRestoreFile = null;
+    document.getElementById('restoreConfirmPanel').classList.add('d-none');
+    document.getElementById('restoreFileInput').value = '';
+}
+
+// ============================================================================
 // EXPORT GLOBALS FOR HTML INLINE ONCLICK
 // ============================================================================
 
@@ -805,6 +994,10 @@ export async function saveSettingsConfig() {
 window.runSpectrumScan = runSpectrumScan;
 window.saveSettingsConfig = saveSettingsConfig;
 window.loadSpectrumHistory = loadSpectrumHistory;
+window.createNetworkBackup = createNetworkBackup;
+window.handleRestoreFile = handleRestoreFile;
+window.confirmRestore = confirmRestore;
+window.cancelRestore = cancelRestore;
 
 // ============================================================================
 // UTILITIES

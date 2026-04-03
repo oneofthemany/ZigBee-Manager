@@ -590,8 +590,6 @@ class ZoneManager:
         # Use _collection_loop (Handles data gathering)
         self._collection_task = asyncio.create_task(self._collection_loop())
 
-        # Add periodic neighbor scan for fresh LQI data - REMOVED AS INTERFERES WITH PACKET CAPTURE
-        #self._neighbor_scan_task = asyncio.create_task(self._periodic_neighbor_scan())
 
         logger.info("Zone manager started")
 
@@ -674,7 +672,7 @@ class ZoneManager:
     async def stop_zone(self):
         """Stop zone manager."""
         self._running = False
-
+    
         # Cancel all tasks (matching the ones created in start_zone)
         for task in [
             getattr(self, '_evaluation_task', None),
@@ -687,7 +685,7 @@ class ZoneManager:
                     await task
                 except asyncio.CancelledError:
                     pass
-
+    
         logger.info("Zone manager stopped")
 
     def _emit_calibration_progress(self, data: dict):
@@ -942,6 +940,7 @@ class ZoneManager:
                 await self.mqtt_handler.publish(f"{topic}/state", json.dumps(payload))
             except Exception as e:
                 logger.error(f"Failed to publish zone state: {e}")
+
 
     async def publish_discovery(self, zone: Zone) -> None:
         """Publish MQTT discovery for a zone."""

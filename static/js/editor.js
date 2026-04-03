@@ -808,7 +808,7 @@ window.editorTestDeploy = async function() {
             showTestRecoveryBanner('pending', data.timeout);
             setTimeout(() => {
                 window.location.reload();
-            }, 1500);
+            }, 4000);
         }
 
     } catch (e) {

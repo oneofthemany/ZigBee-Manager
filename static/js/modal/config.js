@@ -50,7 +50,7 @@ export function isAqaraTRV(d) {
     if (!man.includes('lumi') && !man.includes('aqara')) return false;
 
     // STRICT: Only accept known TRV Model signatures.
-    // do NOT check clusters here because Aqara Lights/Switches often
+    // We do NOT check clusters here because Aqara Lights/Switches often 
     // expose 0x201 (Thermostat) for internal temperature, causing false positives.
     return mod.includes('airrtc') || mod.includes('thermostat') || mod.includes('agl001');
 }
@@ -187,3 +187,4 @@ export const getClusterName = (id, defaultName) => {
     // ... (Your existing map logic, shortened for brevity if needed)
     return defaultName; // Placeholder, relying on imports usually
 };
+

@@ -98,7 +98,7 @@ class AIAutomations:
     def __init__(self, ai_assistant, automation_engine):
         self._ai = ai_assistant
         self._engine = automation_engine
-
+        
     def _build_device_context(self) -> str:
         """Build a compact device summary for the LLM system prompt."""
         lines = []

@@ -1,5 +1,5 @@
 """
-Zigbee & Matter Cluster Handlers Package
+Zigbee Cluster Handlers Package
 """
 import logging
 
@@ -29,19 +29,6 @@ from .lighting import *
 from .lightlink import *
 from .general import *
 from .sonoff_quirk import *
-from .generic import *
-
-
-# ── Matter Device Parsers ──────────────────────────────────────────────
-from .matter_parsers import (
-    BaseMatterParser,
-    SwitchParser as MatterSwitchParser,
-    LightParser as MatterLightParser,
-    SensorParser as MatterSensorParser,
-    IkeaParser,
-    IkeaSwitchParser,
-    get_parser_for_node,
-)
 
 # Re-export commonly used handlers for convenience
 from .security import (
@@ -115,16 +102,6 @@ from .generic import GenericClusterHandler
 
 # Public API
 __all__ = [
-
-    # Matter Parsers
-    "BaseMatterParser",
-    "MatterSwitchParser",
-    "MatterLightParser",
-    "MatterSensorParser",
-    "IkeaParser",
-    "IkeaSwitchParser",
-    "get_parser_for_node",
-
     # Base
     "ClusterHandler",
     "LocalDataCluster",
@@ -209,10 +186,11 @@ def print_registered_handlers():
 
 
 # Log registered handlers at import time
-logger.info(f"Loaded {len(HANDLER_REGISTRY)} Zigbee cluster handlers + Matter parser framework")
+logger.info(f"Loaded {len(HANDLER_REGISTRY)} cluster handlers")
 
 # Print handlers in debug mode
 if logger.isEnabledFor(logging.DEBUG):
     for cluster_id, handler_cls in sorted(HANDLER_REGISTRY.items()):
         logger.debug(f"  Cluster 0x{cluster_id:04X}: {handler_cls.__name__}")
+
 

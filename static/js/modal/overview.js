@@ -58,9 +58,7 @@ export function renderOverviewTab(device) {
     const ignoredKeys = [
         'last_seen', 'power_source', 'manufacturer', 'model', 'available',
         'pir_o_to_u_delay', 'on', 'state', 'brightness', 'level', 'on_with_timed_off', 'action',
-        'linkquality', 'update_available', 'update_state', 'device', 'device_type',
-        // Matter internal keys — shown in Clusters tab instead
-        'switch_endpoints', 'protocol',
+        'linkquality', 'update_available', 'update_state', 'device', 'device_type'
     ];
 
     // Define sensor-specific keys that should only appear for devices with those capabilities
@@ -154,16 +152,6 @@ export function renderOverviewTab(device) {
         let rows = Object.keys(groupData).sort().map(k => {
             let val = groupData[k];
             if (typeof val === 'boolean') val = val ? 'True' : 'False';
-            else if (Array.isArray(val)) val = `${val.length} item(s)`;
-            else if (typeof val === 'object' && val !== null) val = JSON.stringify(val);
-
-            // Matter event formatting
-            if (k === 'last_action') {
-                val = `<span class="badge bg-primary">${val}</span>`;
-            }
-            if (k === 'last_action_time') {
-                val = new Date(val * 1000).toLocaleTimeString();
-            }
 
             // Check if value is a long hex/binary string that needs wrapping
             const needsWrap = typeof val === 'string' && val.length > 40;

@@ -913,6 +913,9 @@ window.sendGroupColor = async function(groupId, hexColor, saturation) {
 
     // If saturation is provided from the slider, update it
     if (saturation !== null && saturation !== undefined) {
+        // If we don't have a color yet, we might need to get current color
+        // or just send saturation if the backend supports it.
+        // For now, let's assume we send it as part of hs_color
         if (!command.hs_color) {
             const picker = document.getElementById(`groupColorPicker_${groupId}`);
             return window.sendGroupColor(groupId, picker.value, saturation);

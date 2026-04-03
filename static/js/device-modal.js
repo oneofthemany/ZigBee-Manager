@@ -13,8 +13,7 @@ import { renderAutomationTab, initAutomationTab } from './modal/automation.js';
 import { renderMappingsTab, initMappingsTab, hasGenericContent } from './modal/mappings.js';
 import { bindScheduleEvents } from './modal/schedule.js';
 import { renderOTATab, handleOTAProgress } from './modal/ota.js';
-import { renderMatterClustersTab, initMatterClustersTab } from './modal/matter-clusters.js';
-import { renderMatterEventsTab } from './modal/matter-events.js';
+
 
 // Re-export these functions so main.js (and others) can still import them from here
 export { renderOverviewTab, renderControlTab, renderBindingTab, renderCapsTab, renderAutomationTab, renderMappingsTab, saveConfig, handleOTAProgress };
@@ -30,16 +29,10 @@ export function openDeviceModal(d) {
         <div class="mb-3 d-flex justify-content-between align-items-center">
             <div>
                 <h5>${cachedDev.friendly_name}</h5>
-                <div class="text-muted small font-monospace">${
-                    cachedDev.protocol === 'matter'
-                    ? (cachedDev.ip_addresses?.length
-                        ? cachedDev.ip_addresses[0]
-                        : `Node ${cachedDev.state?.node_id || '?'}`)
-                        : cachedDev.ieee
-                }</div>
+                <div class="text-muted small font-monospace">${cachedDev.ieee}</div>
             </div>
             <div>
-                ${!isZigbee ? `<span class="badge bg-info me-1">${cachedDev.network_type === 'thread' ? 'Thread' : cachedDev.network_type === 'wifi' ? 'WiFi' : 'Matter'}</span>` : ''}
+                ${!isZigbee ? '<span class="badge bg-info me-1">Matter</span>' : ''}
                 <span class="badge bg-secondary">${cachedDev.manufacturer}</span>
                 <span class="badge bg-secondary">${cachedDev.model}</span>
             </div>
@@ -50,7 +43,7 @@ export function openDeviceModal(d) {
             <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-control">Control</button></li>
             <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-ota"></i>OTA</button></li>
             ${isZigbee ? '<li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-binding">Binding</button></li>' : ''}
-            <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-caps">Clusters</button></li>
+            ${isZigbee ? '<li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-caps">Clusters</button></li>' : ''}
             <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-automation">Automation</button></li>
             ${isZigbee ? '<li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-mappings">Mappings</button></li>' : ''}
         </ul>
@@ -60,7 +53,6 @@ export function openDeviceModal(d) {
                 ${renderOverviewTab(cachedDev)}
             </div>
             <div class="tab-pane fade" id="tab-control">
-                ${!isZigbee ? renderMatterEventsTab(cachedDev) : ''}
                 ${renderControlTab(cachedDev)}
             </div>
             <div class="tab-pane fade" id="tab-ota">
@@ -70,10 +62,10 @@ export function openDeviceModal(d) {
             <div class="tab-pane fade" id="tab-binding">
                 ${renderBindingTab(cachedDev)}
             </div>
-            ` : ''}
             <div class="tab-pane fade" id="tab-caps">
-                ${isZigbee ? renderCapsTab(cachedDev) : renderMatterClustersTab(cachedDev)}
+                ${renderCapsTab(cachedDev)}
             </div>
+            ` : ''}
             <div class="tab-pane fade" id="tab-automation">
                 ${renderAutomationTab(cachedDev)}
             </div>
@@ -86,15 +78,6 @@ export function openDeviceModal(d) {
     `;
 
     modalBody.innerHTML = html;
-
-    if (!isZigbee) {
-        const capsTab = modalBody.querySelector('[data-bs-target="#tab-caps"]');
-        if (capsTab) {
-            capsTab.addEventListener('shown.bs.tab', () => {
-                initMatterClustersTab(cachedDev.state?.node_id);
-            });
-        }
-    }
 
     // Bind schedule calendar events for thermostat devices
     if (hasCluster(cachedDev, 0x0201)) {
@@ -124,7 +107,6 @@ export function openDeviceModal(d) {
 
 export function refreshModalState(device) {
     console.log("4. Refreshing Modal Content for:", device.friendly_name);
-    const isZigbee = !device.protocol || device.protocol === 'zigbee';
 
     // Update Overview Tab if it exists
     const overviewTab = document.getElementById('tab-overview');
@@ -141,7 +123,7 @@ export function refreshModalState(device) {
             updateControlValues(device);
         } else {
             // Full re-render if no active interaction
-            controlTab.innerHTML = (!isZigbee ? renderMatterEventsTab(device) : '') + renderControlTab(device);
+            controlTab.innerHTML = renderControlTab(device);
             // Re-bind schedule events after re-render
             if (hasCluster(device, 0x0201)) {
                 bindScheduleEvents(device.ieee);
@@ -166,3 +148,4 @@ export function getDeviceStateHtml(d) {
 
 // Global exposure
 window.getDeviceStateHtml = getDeviceStateHtml;
+
