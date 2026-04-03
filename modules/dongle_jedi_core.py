@@ -121,8 +121,14 @@ class AdapterInfo:
 def open_serial(port: str, baud: int, flow: FlowControl, timeout: float = READ_TIMEOUT) -> serial.Serial:
     """Open a serial port with specified parameters.
 
-    Includes a robust hardware reset sequence to ensure EFR32 adapters are booted
-    into the application and not stuck in the Gecko Bootloader when the OS connects.
+    CDC ACM devices (ttyACM*) — e.g. ZBT-2, SkyConnect — map DTR assertion
+    to a chip reset which enters the Gecko Bootloader.  Never toggle DTR/RTS
+    on these; protocol-level resets (ASH RST, CPC SABM) are sufficient.
+
+    UART bridge devices (ttyUSB* via CP210x, CH340, FTDI) have DTR/RTS wired
+    to GPIO and *could* benefit from a reset, but repeated toggling during
+    probe sweeps causes the same bootloader-entry problem.  We deassert both
+    lines on open and leave them alone — the protocol probe handles the rest.
     """
     ser = serial.Serial()
     ser.port = port
@@ -134,22 +140,26 @@ def open_serial(port: str, baud: int, flow: FlowControl, timeout: float = READ_T
     ser.write_timeout = timeout
     ser.xonxoff = (flow == FlowControl.XONXOFF)
 
-    # Pre-set to avoid accidental bootloader entry if OS allows
+    # Deassert DTR and RTS *before* open to avoid accidental bootloader entry.
+    # On EFR32 (MG21/MG24): DTR assertion = reset, RTS assertion = boot select.
+    # Both must stay deasserted to keep the chip in normal application mode.
     ser.dtr = False
     ser.rts = False
 
     ser.open()
 
-    # Hardware Reset Sequence into Application Mode
-    # DTR = Reset (active low). RTS = Boot (active low).
-    # True asserts the line (pulls it low).
-    ser.dtr = True   # Hold in Reset
-    ser.rts = False  # Ensure Boot pin is high (App mode)
-    time.sleep(0.05)
-    ser.dtr = False  # Release Reset
-    time.sleep(0.15) # Allow firmware to boot up
+    # Explicitly deassert again after open — some drivers re-assert on open()
+    try:
+        ser.dtr = False
+        ser.rts = False
+    except (serial.SerialException, OSError):
+        pass  # Some CDC ACM drivers don't support explicit line control
 
-    # Now enable RTS/CTS if requested
+    # Small settle time for USB enumeration jitter
+    time.sleep(0.05)
+
+    # Now enable RTS/CTS if requested (this sets the flow-control mode flag
+    # on the driver — it does NOT assert RTS as a GPIO signal)
     if flow == FlowControl.RTSCTS:
         ser.rtscts = True
 
@@ -477,7 +487,10 @@ class EZSPProbe:
 
                 # Refine from product string
                 prod_lower = product.lower()
-                if "skyconnect" in prod_lower or "nabu" in prod_lower:
+                if "zbt" in prod_lower:
+                    model = product.upper()
+                    info.board_name = f"Nabu Casa {model} (EFR32MG21)"
+                elif "skyconnect" in prod_lower or "nabu" in prod_lower:
                     info.board_name = "Nabu Casa SkyConnect (EFR32MG21)"
                 elif "elelabs" in prod_lower:
                     info.board_name = "Elelabs Zigbee adapter (EFR32)"
@@ -1753,10 +1766,45 @@ class ZigbeeInterrogator:
         # ── USB product string pre-detection for CPC/RCP devices ──
         if _usb_info and _usb_info.product:
             product_lower = _usb_info.product.lower()
+            mfg_lower = (_usb_info.manufacturer or "").lower()
+
+            # ── Nabu Casa ZBT-2 / ZBT-1 — EZSP NCP on CDC ACM ──
+            # These run EZSP firmware at 460800 with software flow control.
+            # CDC ACM: must NOT toggle DTR/RTS (handled in open_serial).
+            is_nabu_zbt = (
+                    "zbt" in product_lower
+                    or ("nabu" in mfg_lower and "ttyACM" in port)
+            )
+            if is_nabu_zbt:
+                print(f"  ⚡ Nabu Casa ZBT detected — trying EZSP at 460800 (sw flow)...")
+                for try_flow in [FlowControl.XONXOFF, FlowControl.NONE]:
+                    ezsp_ser = self._try_probe(port, 460800, try_flow, EZSPProbe, "EZSP")
+                    if ezsp_ser:
+                        print(f"  → EZSP detected at 460800, flow={try_flow.value}")
+                        ezsp_ser.close()
+                        verified_flow = self.verify_flow_control(port, 460800, EZSPProbe, try_flow)
+                        info = AdapterInfo(port=port, baud_rate=460800, flow_control=verified_flow)
+                        ser2 = None
+                        try:
+                            ser2 = open_serial(port, 460800, verified_flow)
+                            flush_port(ser2)
+                            EZSPProbe.interrogate(ser2, info)
+                        except Exception as exc:
+                            logging.warning("Interrogation error: %s", exc)
+                        finally:
+                            if ser2:
+                                try:
+                                    ser2.close()
+                                except Exception:
+                                    pass
+                        self.results.append(info)
+                        return info
+                print("  → No EZSP response at 460800 — falling through to full scan")
+
             is_mg24_dongle = (
                     "mg24" in product_lower
                     or ("multipan" in product_lower.replace("-", "").replace(" ", ""))
-                    or ("rcp" in product_lower and "sonoff" in (_usb_info.manufacturer or "").lower())
+                    or ("rcp" in product_lower and "sonoff" in mfg_lower)
             )
             if is_mg24_dongle:
                 # MG24 could be running EZSP (stock) or MultiPAN RCP.
@@ -1771,11 +1819,10 @@ class ZigbeeInterrogator:
                 else:
                     print("  → No EZSP response — assuming MultiPAN RCP firmware")
                     vid_pid = f"{_usb_info.vid:04X}:{_usb_info.pid:04X}" if _usb_info.vid and _usb_info.pid else ""
-                    mfg = (_usb_info.manufacturer or "").lower()
                     chip = "MG24" if "mg24" in product_lower else "MG21" if "mg21" in product_lower else ""
-                    if "sonoff" in product_lower or "sonoff" in mfg:
+                    if "sonoff" in product_lower or "sonoff" in mfg_lower:
                         board = f"SONOFF Zigbee Dongle {chip} (Multi-PAN)".strip()
-                    elif "skyconnect" in product_lower or "nabu" in mfg:
+                    elif "skyconnect" in product_lower or "nabu" in mfg_lower:
                         board = "Nabu Casa SkyConnect (Multi-PAN)"
                     else:
                         board = f"{_usb_info.manufacturer or ''} {_usb_info.product} (Multi-PAN RCP)".strip()
