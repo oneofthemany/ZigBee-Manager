@@ -19,6 +19,7 @@ Usage:
 """
 
 import argparse
+import asyncio
 import glob
 import json
 import logging
@@ -40,6 +41,14 @@ try:
 except ImportError:
     print("ERROR: pyserial is required.  Install with:  pip install pyserial")
     sys.exit(1)
+
+# bellows (EZSP) — optional, used for CDC ACM probe when available
+_BELLOWS_AVAILABLE = False
+try:
+    from bellows.zigbee.application import ControllerApplication as _BellowsApp
+    _BELLOWS_AVAILABLE = True
+except ImportError:
+    _BellowsApp = None
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1515,6 +1524,138 @@ class ZigbeeInterrogator:
                         pass
         return None
 
+    # ── Bellows-based EZSP probe (for CDC ACM devices) ─────────────────
+
+    def _bellows_ezsp_probe(self, port: str,
+                            usb_info=None) -> Optional[AdapterInfo]:
+        """
+        Probe for EZSP using bellows ControllerApplication.probe().
+
+        This is the same mechanism config_builder / ZHA uses and handles
+        CDC ACM ports correctly (no DTR manipulation). Returns AdapterInfo
+        on success, None on failure.
+
+        Called from a synchronous thread context (run_in_executor), so
+        we create a fresh event loop for the async probe.
+        """
+        if not _BELLOWS_AVAILABLE:
+            return None
+
+        # bellows flow_control naming: "software" = XON/XOFF, "hardware" = RTS/CTS
+        flow_variants = [
+            ("software", FlowControl.XONXOFF),
+            ("none",     FlowControl.NONE),
+            ("hardware", FlowControl.RTSCTS),
+        ]
+
+        print("  ┌─ Bellows EZSP Probe (ASH protocol handshake) ────────")
+
+        for bellows_flow, jedi_flow in flow_variants:
+            print(f"  │ Trying bellows probe, flow={bellows_flow}...",
+                  end="", flush=True)
+            device_config = {
+                "path": port,
+                "baudrate": 115200,  # probe() iterates bauds internally
+                "flow_control": bellows_flow,
+            }
+            try:
+                loop = asyncio.new_event_loop()
+                try:
+                    result = loop.run_until_complete(
+                        asyncio.wait_for(
+                            _BellowsApp.probe(device_config),
+                            timeout=15.0,
+                        )
+                    )
+                finally:
+                    loop.close()
+
+                if result:
+                    if isinstance(result, dict):
+                        detected_baud = int(result.get("baudrate", 115200))
+                    else:
+                        detected_baud = 115200
+                    print(f" DETECTED @ {detected_baud} baud!")
+
+                    # Build AdapterInfo
+                    vid_pid = ""
+                    board_name = ""
+                    if usb_info:
+                        if usb_info.vid and usb_info.pid:
+                            vid_pid = f"{usb_info.vid:04X}:{usb_info.pid:04X}"
+                        prod = (usb_info.product or "").lower()
+                        mfg = usb_info.manufacturer or ""
+                        if "zbt" in prod:
+                            board_name = f"Nabu Casa {usb_info.product.upper()} (EFR32MG21)"
+                        elif "skyconnect" in prod or "nabu" in (mfg or "").lower():
+                            board_name = "Nabu Casa SkyConnect (EFR32MG21)"
+                        elif "sonoff" in prod:
+                            board_name = "SONOFF Zigbee Coordinator"
+                        else:
+                            board_name = f"{mfg} {usb_info.product or ''}".strip()
+
+                    info = AdapterInfo(
+                        port=port,
+                        adapter_family=AdapterFamily.EZSP,
+                        baud_rate=detected_baud,
+                        flow_control=jedi_flow,
+                        hardware_id=vid_pid,
+                        board_name=board_name,
+                    )
+                    info.extra["Detection Method"] = "bellows ControllerApplication.probe()"
+
+                    # Interrogate via bellows for version/EUI-64
+                    print("  │ Querying firmware version...", end="", flush=True)
+                    try:
+                        loop2 = asyncio.new_event_loop()
+                        try:
+                            app = loop2.run_until_complete(
+                                asyncio.wait_for(
+                                    _BellowsApp.new(
+                                        config={
+                                            "device": {
+                                                "path": port,
+                                                "baudrate": detected_baud,
+                                                "flow_control": bellows_flow,
+                                            },
+                                            "database_path": "",
+                                        },
+                                        auto_form=False,
+                                        start_radio=True,
+                                    ),
+                                    timeout=15.0,
+                                )
+                            )
+                            if hasattr(app, '_ezsp') and app._ezsp:
+                                ezsp = app._ezsp
+                                ver = getattr(ezsp, 'ezsp_version', None)
+                                if ver:
+                                    info.firmware_version = f"EZSP v{ver}"
+                            if app.state and app.state.node_info:
+                                ieee = app.state.node_info.ieee
+                                if ieee:
+                                    info.eui64 = str(ieee)
+                            loop2.run_until_complete(app.shutdown())
+                            print(f" {info.firmware_version or 'ok'}")
+                        finally:
+                            loop2.close()
+                    except Exception as exc:
+                        print(f" (interrogation skipped: {exc})")
+
+                    print("  └─────────────────────────────────────────────────────")
+                    self.results.append(info)
+                    return info
+                else:
+                    print(" no")
+            except asyncio.TimeoutError:
+                print(" timeout")
+            except Exception as exc:
+                print(f" error: {exc}")
+
+        print("  │ bellows probe: no EZSP detected")
+        print("  └─────────────────────────────────────────────────────")
+        return None
+
     # ── Flow control verification ──────────────────────────────────────
 
     def _test_flow_mode(self, port: str, baud: int, flow: FlowControl,
@@ -1769,37 +1910,20 @@ class ZigbeeInterrogator:
             mfg_lower = (_usb_info.manufacturer or "").lower()
 
             # ── Nabu Casa ZBT-2 / ZBT-1 — EZSP NCP on CDC ACM ──
-            # These run EZSP firmware at 460800 with software flow control.
-            # CDC ACM: must NOT toggle DTR/RTS (handled in open_serial).
+            # CDC ACM devices (ttyACM*) assert DTR on kernel open() which
+            # resets EFR32 into the Gecko Bootloader. Raw pyserial probing
+            # can't prevent this. Use bellows ControllerApplication.probe()
+            # which handles the ASH handshake correctly via serial_asyncio.
             is_nabu_zbt = (
                     "zbt" in product_lower
                     or ("nabu" in mfg_lower and "ttyACM" in port)
             )
             if is_nabu_zbt:
-                print(f"  ⚡ Nabu Casa ZBT detected — trying EZSP at 460800 (sw flow)...")
-                for try_flow in [FlowControl.XONXOFF, FlowControl.NONE]:
-                    ezsp_ser = self._try_probe(port, 460800, try_flow, EZSPProbe, "EZSP")
-                    if ezsp_ser:
-                        print(f"  → EZSP detected at 460800, flow={try_flow.value}")
-                        ezsp_ser.close()
-                        verified_flow = self.verify_flow_control(port, 460800, EZSPProbe, try_flow)
-                        info = AdapterInfo(port=port, baud_rate=460800, flow_control=verified_flow)
-                        ser2 = None
-                        try:
-                            ser2 = open_serial(port, 460800, verified_flow)
-                            flush_port(ser2)
-                            EZSPProbe.interrogate(ser2, info)
-                        except Exception as exc:
-                            logging.warning("Interrogation error: %s", exc)
-                        finally:
-                            if ser2:
-                                try:
-                                    ser2.close()
-                                except Exception:
-                                    pass
-                        self.results.append(info)
-                        return info
-                print("  → No EZSP response at 460800 — falling through to full scan")
+                print(f"  ⚡ Nabu Casa ZBT detected — using bellows probe...")
+                result = self._bellows_ezsp_probe(port, usb_info=_usb_info)
+                if result:
+                    return result
+                print("  → bellows probe failed — falling through to raw scan")
 
             is_mg24_dongle = (
                     "mg24" in product_lower
@@ -1809,11 +1933,20 @@ class ZigbeeInterrogator:
             if is_mg24_dongle:
                 # MG24 could be running EZSP (stock) or MultiPAN RCP.
                 # Quick EZSP probe — if it responds, it's NCP firmware, not RCP.
-                # EZSP probe is safe for CPC state (wrong protocol = no response).
                 print("  ⚡ MG24 detected — quick EZSP check before assuming MultiPAN...")
-                ezsp_ser = self._try_probe(port, 115200, FlowControl.NONE, EZSPProbe, "EZSP")
-                if ezsp_ser:
-                    ezsp_ser.close()
+                ezsp_found = False
+                if "ttyACM" in port and _BELLOWS_AVAILABLE:
+                    # CDC ACM: use bellows probe (raw serial DTR issue)
+                    result = self._bellows_ezsp_probe(port, usb_info=_usb_info)
+                    if result:
+                        return result
+                else:
+                    # ttyUSB: raw probe is safe
+                    ezsp_ser = self._try_probe(port, 115200, FlowControl.NONE, EZSPProbe, "EZSP")
+                    if ezsp_ser:
+                        ezsp_ser.close()
+                        ezsp_found = True
+                if ezsp_found:
                     print("  → EZSP responded — running NCP firmware, not MultiPAN")
                     # Fall through to normal probe flow
                 else:
@@ -1840,6 +1973,18 @@ class ZigbeeInterrogator:
                     info.extra["Detection Method"] = "USB product string + EZSP negative probe"
                     self.results.append(info)
                     return info
+
+        # ── CDC ACM: try bellows probe before raw serial sweep ──
+        # On ttyACM devices, the kernel cdc_acm driver asserts DTR during
+        # open() which resets EFR32 chips into the bootloader. Raw pyserial
+        # probing fails. bellows handles this correctly via serial_asyncio.
+        is_cdc_acm = "ttyACM" in port
+        if is_cdc_acm and _BELLOWS_AVAILABLE:
+            print("  CDC ACM port — trying bellows EZSP probe first...")
+            result = self._bellows_ezsp_probe(port, usb_info=_usb_info)
+            if result:
+                return result
+            print("  → bellows probe negative — continuing with raw serial sweep")
 
         # ── Determine probe order based on USB hints ──
         likely = candidate.get("likely_family") if candidate else None
