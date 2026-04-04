@@ -32,10 +32,10 @@
 
         var host = window.location.hostname;
         var isLocalhost = (host === 'localhost' || host === '127.0.0.1' || host === '::1');
-        if (window.location.protocol === 'https:' && !isLocalhost) {
-            console.log('[PWA] Skipping SW registration — HTTPS on non-localhost');
-            return;
-        }
+if (window.location.protocol !== 'https:' && !isLocalhost) {
+    console.log('[PWA] Skipping SW registration — requires HTTPS or localhost');
+    return;
+}
 
         navigator.serviceWorker.register('/sw.js', { scope: '/' })
             .then(function (reg) {
