@@ -473,6 +473,14 @@ async def service_worker():
         headers={'Service-Worker-Allowed': '/'}
     )
 
+@app.get("/manifest.json")
+async def manifest():
+    """Serve PWA manifest from root scope."""
+    return FileResponse(
+        'static/manifest.json',
+        media_type='application/manifest+json'
+    )
+
 # ============================================================================
 # REGISTER ALL ROUTE MODULES
 # ============================================================================

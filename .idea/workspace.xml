@@ -4,8 +4,9 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="improved restore function to cater for mqtt in config yaml">
-      <change beforePath="$PROJECT_DIR$/routes/system_routes.py" beforeDir="false" afterPath="$PROJECT_DIR$/routes/system_routes.py" afterDir="false" />
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="system health added to system routes">
+      <change beforePath="$PROJECT_DIR$/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/main.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/static/index.html" beforeDir="false" afterPath="$PROJECT_DIR$/static/index.html" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -154,14 +155,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00197" summary="removing sudo from otbr agent to troubleshoot">
-      <option name="closed" value="true" />
-      <created>1775036344360</created>
-      <option name="number" value="00197" />
-      <option name="presentableId" value="LOCAL-00197" />
-      <option name="project" value="LOCAL" />
-      <updated>1775036344360</updated>
     </task>
     <task id="LOCAL-00198" summary="adding /var/lib/thread dir and permissions for OTBR to run">
       <option name="closed" value="true" />
@@ -547,7 +540,15 @@
       <option name="project" value="LOCAL" />
       <updated>1775388780900</updated>
     </task>
-    <option name="localTasksCounter" value="246" />
+    <task id="LOCAL-00246" summary="system health added to system routes">
+      <option name="closed" value="true" />
+      <created>1775389140418</created>
+      <option name="number" value="00246" />
+      <option name="presentableId" value="LOCAL-00246" />
+      <option name="project" value="LOCAL" />
+      <updated>1775389140418</updated>
+    </task>
+    <option name="localTasksCounter" value="247" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -574,7 +575,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="otbr final touches" />
     <MESSAGE value="route registration added for otbr" />
     <MESSAGE value="moved otbr to routes" />
     <MESSAGE value="further updates to otbr" />
@@ -599,6 +599,7 @@
     <MESSAGE value="backup over network function" />
     <MESSAGE value="improved restore function" />
     <MESSAGE value="improved restore function to cater for mqtt in config yaml" />
-    <option name="LAST_COMMIT_MESSAGE" value="improved restore function to cater for mqtt in config yaml" />
+    <MESSAGE value="system health added to system routes" />
+    <option name="LAST_COMMIT_MESSAGE" value="system health added to system routes" />
   </component>
 </project>
