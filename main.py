@@ -55,6 +55,7 @@ port = int(os.environ.get("ZMM_PORT", 8000))
 
 # Import route registrations
 from routes import (
+    register_backup_routes,
     register_config_routes,
     register_device_routes,
     register_network_routes,
@@ -490,6 +491,7 @@ register_websocket_routes(app)
 register_zone_routes(app, lambda: zigbee_service.zone_manager, lambda: zigbee_service.devices)
 register_ota_routes(app, lambda: zigbee_service.ota_manager)
 register_automation_routes(app, lambda: zigbee_service.automation)
+register_backup_routes(app, get_zigbee_service)
 
 # ============================================================================
 # POST-SETUP ZIGBEE HOT-START SERVICES
