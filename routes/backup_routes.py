@@ -10,11 +10,12 @@ import logging
 import os
 import shutil
 import zipfile
+import httpx
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI, UploadFile, File
+from fastapi import FastAPI, UploadFile, File, Form, Request
 from fastapi.responses import StreamingResponse
 
 logger = logging.getLogger("routes.backup")
@@ -127,22 +128,45 @@ def register_backup_routes(app: FastAPI, get_zigbee_service):
             traceback.print_exc()
             return {"success": False, "error": str(e)}
 
+
     @app.post("/api/backup/restore")
-    async def restore_backup(file: UploadFile = File(...)):
+    async def restore_backup(
+            file: Optional[UploadFile] = File(None),
+            url: Optional[str] = Form(None),
+    ):
         """
-        Restore a full network backup from an uploaded .zip file.
+        Restore a full network backup from either:
+          - a directly uploaded .zip file (multipart form)
+          - a remote URL (the server fetches the zip itself)
         Overwrites config, data files, groups, and zigbee.db.
         A restart is required after restore to apply the new database.
         """
-        if not file.filename.endswith(".zip"):
-            return {"success": False, "error": "File must be a .zip archive"}
-
-        try:
+        # --- Acquire the zip bytes from whichever source was provided ---
+        if file is not None:
+            if not file.filename.endswith(".zip"):
+                return {"success": False, "error": "File must be a .zip archive"}
             contents = await file.read()
+
+        elif url is not None:
+            logger.info(f"Fetching backup from remote URL: {url}")
+            try:
+                async with httpx.AsyncClient(timeout=30.0) as client:
+                    resp = await client.get(url)
+                    resp.raise_for_status()
+                    contents = resp.content
+            except httpx.HTTPStatusError as e:
+                return {"success": False, "error": f"Remote fetch failed (HTTP {e.response.status_code}): {url}"}
+            except Exception as e:
+                return {"success": False, "error": f"Failed to fetch backup from URL: {e}"}
+
+        else:
+            return {"success": False, "error": "Provide either a file upload or a 'url' field"}
+
+        # --- Shared restore logic ---
+        try:
             buffer = io.BytesIO(contents)
 
             with zipfile.ZipFile(buffer, "r") as zf:
-                # Validate: must contain manifest
                 names = zf.namelist()
                 if "backup_manifest.json" not in names:
                     return {
@@ -150,7 +174,6 @@ def register_backup_routes(app: FastAPI, get_zigbee_service):
                         "error": "Invalid backup: missing backup_manifest.json",
                     }
 
-                # Read manifest
                 manifest = json.loads(zf.read("backup_manifest.json"))
                 logger.info(
                     f"Restoring backup from {manifest.get('created_at', 'unknown')} "
@@ -158,7 +181,6 @@ def register_backup_routes(app: FastAPI, get_zigbee_service):
                     f"zip entries: {[n for n in names if n != 'backup_manifest.json']})"
                 )
 
-                # Safety: only extract files that are in our known manifest
                 allowed = set(BACKUP_MANIFEST)
                 restored = []
                 errors = []
@@ -166,28 +188,40 @@ def register_backup_routes(app: FastAPI, get_zigbee_service):
                 for entry in names:
                     if entry == "backup_manifest.json":
                         continue
-
                     if entry not in allowed:
                         logger.warning(f"Skipping unknown file in backup: {entry}")
                         continue
 
                     target = os.path.join(APP_DIR, entry)
-
                     try:
-                        # Ensure parent directory exists
                         os.makedirs(os.path.dirname(target), exist_ok=True)
-
-                        # Extract
                         data = zf.read(entry)
                         with open(target, "wb") as f:
                             f.write(data)
-
                         restored.append(entry)
                         logger.info(f"Restored: {entry} ({len(data)} bytes)")
-
                     except Exception as e:
                         errors.append({"file": entry, "error": str(e)})
                         logger.error(f"Failed to restore {entry}: {e}")
+
+            # After extracting all files, fix up config.yaml if needed
+            config_target = os.path.join(APP_DIR, "config/config.yaml")
+            if os.path.isfile(config_target):
+                try:
+                    import yaml as _yaml
+                    with open(config_target, "r") as f:
+                        cfg = _yaml.safe_load(f) or {}
+
+                    mqtt = cfg.setdefault("mqtt", {})
+                    if "enabled" not in mqtt:
+                        # Infer: if broker_host is set, MQTT was intended to be enabled
+                        mqtt["enabled"] = bool(mqtt.get("broker_host", ""))
+                        with open(config_target, "w") as f:
+                            _yaml.dump(cfg, f, default_flow_style=False, sort_keys=False)
+                        logger.info("Patched mqtt.enabled into restored config.yaml")
+                except Exception as e:
+                    logger.warning(f"Could not patch config.yaml after restore: {e}")
+
 
             result = {
                 "success": len(errors) == 0,
