@@ -798,11 +798,7 @@ function collectFormValues() {
 // BACKUP & RESTORE
 // ============================================================================
 
-// Single state object — no more dual-variable confusion
-let _restore = {
-    mode: 'file',   // 'file' | 'url'
-    file: null,
-};
+let _pendingRestoreFile = null;
 
 function renderBackupRestoreSection() {
     let el = document.getElementById('backupRestoreBody');
@@ -846,51 +842,23 @@ function renderBackupRestoreSection() {
       <!-- RESTORE -->
       <div class="col-md-6">
         <div class="card border-warning h-100">
-          <div class="card-body py-4">
-            <div class="text-center mb-3">
-              <i class="fas fa-upload fa-2x text-warning mb-2"></i>
-              <h6 class="fw-semibold">Restore Backup</h6>
-            </div>
-
-            <!-- Mode toggle -->
-            <div class="btn-group btn-group-sm w-100 mb-3" role="group">
-              <button type="button" class="btn btn-outline-secondary active" id="restoreModeFileBtn"
-                      onclick="window.setRestoreMode('file')">
-                <i class="fas fa-file-upload me-1"></i> Upload File
-              </button>
-              <button type="button" class="btn btn-outline-secondary" id="restoreModeUrlBtn"
-                      onclick="window.setRestoreMode('url')">
-                <i class="fas fa-link me-1"></i> From URL
-              </button>
-            </div>
-
-            <!-- File mode -->
-            <div id="restoreFileSection">
-              <input type="file" id="restoreFileInput" accept=".zip" class="d-none"
-                     onchange="window.handleRestoreFile(this)">
-              <button class="btn btn-outline-warning w-100"
-                      onclick="document.getElementById('restoreFileInput').click()">
-                <i class="fas fa-folder-open me-1"></i> Select .zip File
-              </button>
-            </div>
-
-            <!-- URL mode -->
-            <div id="restoreUrlSection" style="display:none">
-              <input type="text" id="restoreUrlInput" class="form-control form-control-sm"
-                     placeholder="http://old-zmm-ip:8000/api/backup/create">
-              <div class="form-text">
-                Point at another ZMM instance's <code>/api/backup/create</code> —
-                the server fetches the zip directly, so your browser stays out of the transfer.
-              </div>
-            </div>
-
-            <div id="restoreStatus" class="small mt-2 text-center"></div>
+          <div class="card-body text-center py-4">
+            <i class="fas fa-upload fa-2x text-warning mb-2"></i>
+            <h6 class="fw-semibold">Restore Backup</h6>
+            <p class="text-muted small mb-3">Upload a previously downloaded backup .zip</p>
+            <input type="file" id="restoreFileInput" accept=".zip" class="d-none"
+                   onchange="window.handleRestoreFile(this)">
+            <button class="btn btn-outline-warning"
+                    onclick="document.getElementById('restoreFileInput').click()">
+              <i class="fas fa-file-upload me-1"></i> Select Backup File
+            </button>
+            <div id="restoreStatus" class="small mt-2"></div>
           </div>
         </div>
       </div>
     </div>
 
-    <!-- Confirm panel — shown after file selected or URL entered -->
+    <!-- Confirm panel -->
     <div id="restoreConfirmPanel" class="d-none mb-3">
       <div class="alert alert-danger mb-0">
         <i class="fas fa-exclamation-triangle me-1"></i>
@@ -964,34 +932,11 @@ async function createNetworkBackup() {
     }
 }
 
-function setRestoreMode(mode) {
-    _restore.mode = mode;
-    _restore.file = null;
-    document.getElementById('restoreConfirmPanel').classList.add('d-none');
-    document.getElementById('restoreFileInput').value = '';
-    document.getElementById('restoreStatus').innerHTML = '';
-
-    const isFile = mode === 'file';
-    document.getElementById('restoreFileSection').style.display = isFile ? 'block' : 'none';
-    document.getElementById('restoreUrlSection').style.display = isFile ? 'none' : 'block';
-    document.getElementById('restoreModeFileBtn').classList.toggle('active', isFile);
-    document.getElementById('restoreModeUrlBtn').classList.toggle('active', !isFile);
-
-    // For URL mode, show the confirm panel immediately (no file picker step needed)
-    if (!isFile) {
-        document.getElementById('restoreFileName').textContent = 'Remote URL restore';
-        document.getElementById('restoreFileSize').textContent = '';
-        document.getElementById('restoreConfirmPanel').classList.remove('d-none');
-    }
-}
-
 function handleRestoreFile(input) {
     const file = input.files[0];
     if (!file) return;
 
-    _restore.file = file;
-    _restore.mode = 'file';
-
+    _pendingRestoreFile = file;
     document.getElementById('restoreFileName').textContent = file.name;
     document.getElementById('restoreFileSize').textContent =
         `(${(file.size / (1024 * 1024)).toFixed(2)} MB)`;
@@ -999,30 +944,19 @@ function handleRestoreFile(input) {
 }
 
 async function confirmRestore() {
-    const formData = new FormData();
-    const status = document.getElementById('restoreStatus');
-
-    if (_restore.mode === 'url') {
-        const url = document.getElementById('restoreUrlInput')?.value?.trim();
-        if (!url) {
-            showSettingsAlert('danger', 'Enter a URL to restore from.');
-            return;
-        }
-        formData.append('url', url);
-        if (status) status.innerHTML = '<span class="text-muted"><i class="fas fa-spinner fa-spin me-1"></i> Fetching from remote…</span>';
-    } else {
-        if (!_restore.file) {
-            showSettingsAlert('danger', 'Select a backup file first.');
-            return;
-        }
-        formData.append('file', _restore.file);
-        if (status) status.innerHTML = '<span class="text-muted"><i class="fas fa-spinner fa-spin me-1"></i> Uploading…</span>';
+    if (!_pendingRestoreFile) {
+        showSettingsAlert('danger', 'Select a backup file first.');
+        return;
     }
 
+    const formData = new FormData();
+    formData.append('file', _pendingRestoreFile);
+
+    const status = document.getElementById('restoreStatus');
+    if (status) status.innerHTML = '<span class="text-muted"><i class="fas fa-spinner fa-spin me-1"></i> Restoring…</span>';
+
     const controller = new AbortController();
-    // URL mode needs longer — server makes an outbound HTTP request
-    const timeoutMs = _restore.mode === 'url' ? 45000 : 30000;
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    const timer = setTimeout(() => controller.abort(), 30000);
 
     try {
         const resp = await fetch('/api/backup/restore', {
@@ -1045,7 +979,6 @@ async function confirmRestore() {
     } catch (e) {
         clearTimeout(timer);
         if (e.name === 'AbortError' || e.message.toLowerCase().includes('network')) {
-            // Server likely restarting — connection drop is expected
             showSettingsAlert('warning', 'Connection lost — restore likely succeeded. Waiting for server…');
             if (status) status.innerHTML = '';
             pollForRestart(window.location.origin);
@@ -1074,12 +1007,10 @@ function pollForRestart(baseUrl, attempts = 20) {
 }
 
 function cancelRestore() {
-    _restore = { mode: 'file', file: null };
+    _pendingRestoreFile = null;
     document.getElementById('restoreConfirmPanel').classList.add('d-none');
     document.getElementById('restoreFileInput').value = '';
     document.getElementById('restoreStatus').innerHTML = '';
-    // Reset to file mode visually
-    setRestoreMode('file');
 }
 
 // ============================================================================
@@ -1095,7 +1026,6 @@ window.saveSettingsConfig = saveSettingsConfig;
 window.loadSpectrumHistory = loadSpectrumHistory;
 window.createNetworkBackup = createNetworkBackup;
 window.handleRestoreFile = handleRestoreFile;
-window.setRestoreMode = setRestoreMode;
 window.confirmRestore = confirmRestore;
 window.cancelRestore = cancelRestore;
 
