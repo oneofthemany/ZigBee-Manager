@@ -798,13 +798,13 @@ function collectFormValues() {
 // BACKUP & RESTORE
 // ============================================================================
 
+let _pendingRestoreFile = null;
+
 function renderBackupRestoreSection() {
-    // Self-insert after the SSL card in the Config tab if container doesn't exist
     let el = document.getElementById('backupRestoreBody');
     if (!el) {
         const configTab = document.getElementById('settingsConfig');
         if (!configTab) return;
-
         const wrapper = document.createElement('div');
         wrapper.id = 'backupRestoreBody';
         wrapper.className = 'mt-3';
@@ -823,8 +823,10 @@ function renderBackupRestoreSection() {
     </p>
 
     <div class="row g-3 mb-4">
+
+      <!-- CREATE -->
       <div class="col-md-6">
-        <div class="card border-primary">
+        <div class="card border-primary h-100">
           <div class="card-body text-center py-4">
             <i class="fas fa-download fa-2x text-primary mb-2"></i>
             <h6 class="fw-semibold">Create Backup</h6>
@@ -836,15 +838,18 @@ function renderBackupRestoreSection() {
           </div>
         </div>
       </div>
+
+      <!-- RESTORE -->
       <div class="col-md-6">
-        <div class="card border-warning">
+        <div class="card border-warning h-100">
           <div class="card-body text-center py-4">
             <i class="fas fa-upload fa-2x text-warning mb-2"></i>
             <h6 class="fw-semibold">Restore Backup</h6>
             <p class="text-muted small mb-3">Upload a previously downloaded backup .zip</p>
             <input type="file" id="restoreFileInput" accept=".zip" class="d-none"
                    onchange="window.handleRestoreFile(this)">
-            <button class="btn btn-outline-warning" onclick="document.getElementById('restoreFileInput').click()">
+            <button class="btn btn-outline-warning"
+                    onclick="document.getElementById('restoreFileInput').click()">
               <i class="fas fa-file-upload me-1"></i> Select Backup File
             </button>
             <div id="restoreStatus" class="small mt-2"></div>
@@ -853,18 +858,19 @@ function renderBackupRestoreSection() {
       </div>
     </div>
 
+    <!-- Confirm panel -->
     <div id="restoreConfirmPanel" class="d-none mb-3">
-      <div class="alert alert-danger">
+      <div class="alert alert-danger mb-0">
         <i class="fas fa-exclamation-triangle me-1"></i>
         <strong>Warning:</strong> Restoring will overwrite your current configuration,
         device database, automations, groups, and all settings.
         The service must be restarted afterwards.
-        <div class="mt-3">
+        <div class="mt-2">
           <span id="restoreFileName" class="fw-semibold"></span>
           <span id="restoreFileSize" class="text-muted ms-2"></span>
         </div>
-        <div class="mt-3">
-          <button class="btn btn-danger btn-sm me-2" onclick="window.confirmRestore()">
+        <div class="mt-3 d-flex gap-2">
+          <button class="btn btn-danger btn-sm" onclick="window.confirmRestore()">
             <i class="fas fa-check me-1"></i> Confirm Restore
           </button>
           <button class="btn btn-outline-secondary btn-sm" onclick="window.cancelRestore()">
@@ -875,7 +881,6 @@ function renderBackupRestoreSection() {
     </div>
     `;
 
-    // Load backup info
     loadBackupInfo();
 }
 
@@ -890,12 +895,8 @@ async function loadBackupInfo() {
                 el.innerHTML = `<span class="text-muted">${count} files · ${data.total_size_mb} MB</span>`;
             }
         }
-    } catch (e) {
-        // Silent — info is optional
-    }
+    } catch (_) { /* silent */ }
 }
-
-let _pendingRestoreFile = null;
 
 async function createNetworkBackup() {
     const btn = document.getElementById('btnCreateBackup');
@@ -910,10 +911,9 @@ async function createNetworkBackup() {
 
         const blob = await res.blob();
         const disposition = res.headers.get('Content-Disposition') || '';
-        const match = disposition.match(new RegExp('filename="?([^"]+)"?'));
+        const match = disposition.match(/filename="?([^"]+)"?/);
         const filename = match ? match[1] : `zmm_backup_${Date.now()}.zip`;
 
-        // Trigger download
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
@@ -937,7 +937,6 @@ function handleRestoreFile(input) {
     if (!file) return;
 
     _pendingRestoreFile = file;
-
     document.getElementById('restoreFileName').textContent = file.name;
     document.getElementById('restoreFileSize').textContent =
         `(${(file.size / (1024 * 1024)).toFixed(2)} MB)`;
@@ -945,42 +944,73 @@ function handleRestoreFile(input) {
 }
 
 async function confirmRestore() {
-    if (!_pendingRestoreFile) return;
-
-    const status = document.getElementById('restoreStatus');
-    const panel = document.getElementById('restoreConfirmPanel');
-
-    status.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> Restoring...';
-
-    try {
-        const form = new FormData();
-        form.append('file', _pendingRestoreFile);
-
-        const res = await fetch('/api/backup/restore', { method: 'POST', body: form });
-        const data = await res.json();
-
-        if (data.success) {
-            status.innerHTML =
-                `<span class="text-success"><i class="fas fa-check me-1"></i>` +
-                `Restored ${data.restored_count} files. ` +
-                `<strong>Restart the service to apply.</strong></span>`;
-            panel.classList.add('d-none');
-        } else {
-            status.innerHTML =
-                `<span class="text-danger"><i class="fas fa-times me-1"></i>${data.error || data.message}</span>`;
-        }
-    } catch (e) {
-        status.innerHTML = `<span class="text-danger">Restore failed: ${e.message}</span>`;
+    if (!_pendingRestoreFile) {
+        showSettingsAlert('danger', 'Select a backup file first.');
+        return;
     }
 
-    _pendingRestoreFile = null;
-    document.getElementById('restoreFileInput').value = '';
+    const formData = new FormData();
+    formData.append('file', _pendingRestoreFile);
+
+    const status = document.getElementById('restoreStatus');
+    if (status) status.innerHTML = '<span class="text-muted"><i class="fas fa-spinner fa-spin me-1"></i> Restoring…</span>';
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 30000);
+
+    try {
+        const resp = await fetch('/api/backup/restore', {
+            method: 'POST',
+            body: formData,
+            signal: controller.signal,
+        });
+        clearTimeout(timer);
+
+        const result = await resp.json();
+        if (result.success) {
+            showSettingsAlert('success', `Restored ${result.restored_count} files. Waiting for restart…`);
+            if (status) status.innerHTML = '';
+            pollForRestart(window.location.origin);
+        } else {
+            showSettingsAlert('danger', `Restore failed: ${result.error}`);
+            if (status) status.innerHTML = '';
+        }
+
+    } catch (e) {
+        clearTimeout(timer);
+        if (e.name === 'AbortError' || e.message.toLowerCase().includes('network')) {
+            showSettingsAlert('warning', 'Connection lost — restore likely succeeded. Waiting for server…');
+            if (status) status.innerHTML = '';
+            pollForRestart(window.location.origin);
+        } else {
+            showSettingsAlert('danger', `Restore failed: ${e.message}`);
+            if (status) status.innerHTML = '';
+        }
+    }
+}
+
+function pollForRestart(baseUrl, attempts = 20) {
+    let tries = 0;
+    const iv = setInterval(async () => {
+        try {
+            const r = await fetch(`${baseUrl}/api/system/health`);
+            if (r.ok) {
+                clearInterval(iv);
+                window.location.href = baseUrl;
+            }
+        } catch (_) {}
+        if (++tries >= attempts) {
+            clearInterval(iv);
+            showSettingsAlert('danger', 'Server did not come back. Check the address manually.');
+        }
+    }, 2000);
 }
 
 function cancelRestore() {
     _pendingRestoreFile = null;
     document.getElementById('restoreConfirmPanel').classList.add('d-none');
     document.getElementById('restoreFileInput').value = '';
+    document.getElementById('restoreStatus').innerHTML = '';
 }
 
 // ============================================================================
