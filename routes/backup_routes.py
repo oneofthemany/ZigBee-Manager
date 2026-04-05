@@ -99,6 +99,10 @@ def register_backup_routes(app: FastAPI, get_zigbee_service):
                         })
                     else:
                         skipped.append(rel_path)
+                        logger.debug(f"Backup skip (not found): {full}")
+
+                if skipped:
+                    logger.info(f"Backup skipped {len(skipped)} missing files: {skipped}")
 
                 meta["included"] = len(included)
                 meta["skipped"] = skipped
@@ -150,7 +154,8 @@ def register_backup_routes(app: FastAPI, get_zigbee_service):
                 manifest = json.loads(zf.read("backup_manifest.json"))
                 logger.info(
                     f"Restoring backup from {manifest.get('created_at', 'unknown')} "
-                    f"({manifest.get('included', '?')} files)"
+                    f"({manifest.get('included', '?')} files, "
+                    f"zip entries: {[n for n in names if n != 'backup_manifest.json']})"
                 )
 
                 # Safety: only extract files that are in our known manifest
