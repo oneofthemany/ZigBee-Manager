@@ -4,8 +4,9 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="backup over network function">
-      <change beforePath="$PROJECT_DIR$/static/js/settings.js" beforeDir="false" afterPath="$PROJECT_DIR$/static/js/settings.js" afterDir="false" />
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="improved restore function">
+      <change beforePath="$PROJECT_DIR$/modules/dongle_jedi.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/dongle_jedi.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/routes/backup_routes.py" beforeDir="false" afterPath="$PROJECT_DIR$/routes/backup_routes.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -154,14 +155,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00195" summary="adding port in use information to build">
-      <option name="closed" value="true" />
-      <created>1775035620329</created>
-      <option name="number" value="00195" />
-      <option name="presentableId" value="LOCAL-00195" />
-      <option name="project" value="LOCAL" />
-      <updated>1775035620331</updated>
     </task>
     <task id="LOCAL-00196" summary="adding sudo to lsof and ss commands">
       <option name="closed" value="true" />
@@ -547,7 +540,15 @@
       <option name="project" value="LOCAL" />
       <updated>1775386838413</updated>
     </task>
-    <option name="localTasksCounter" value="244" />
+    <task id="LOCAL-00244" summary="improved restore function">
+      <option name="closed" value="true" />
+      <created>1775388252668</created>
+      <option name="number" value="00244" />
+      <option name="presentableId" value="LOCAL-00244" />
+      <option name="project" value="LOCAL" />
+      <updated>1775388252668</updated>
+    </task>
+    <option name="localTasksCounter" value="245" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -574,7 +575,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="slirp4netns trial" />
     <MESSAGE value="adding in sysctl for ipv6 and ipv4" />
     <MESSAGE value="otbr final touches" />
     <MESSAGE value="route registration added for otbr" />
@@ -599,6 +599,7 @@
     <MESSAGE value="backup fixes" />
     <MESSAGE value="added httpx for backup over network function" />
     <MESSAGE value="backup over network function" />
-    <option name="LAST_COMMIT_MESSAGE" value="backup over network function" />
+    <MESSAGE value="improved restore function" />
+    <option name="LAST_COMMIT_MESSAGE" value="improved restore function" />
   </component>
 </project>

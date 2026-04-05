@@ -532,9 +532,11 @@ class DongleJedi:
             }
 
         # ── Check 2: Integration mode configured? ──
-        # If mqtt section has no 'enabled' key, setup hasn't been run
         mqtt_conf = config.get("mqtt", {})
-        if "enabled" not in mqtt_conf:
+        # Consider MQTT configured if: 'enabled' key present, OR broker_host is set
+        # (older configs written before 'enabled' was introduced won't have the key)
+        mqtt_configured = "enabled" in mqtt_conf or bool(mqtt_conf.get("broker_host", ""))
+        if not mqtt_configured:
             return {
                 "needs_setup": True,
                 "reason": "mqtt_not_configured",

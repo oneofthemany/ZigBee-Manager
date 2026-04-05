@@ -204,6 +204,25 @@ def register_backup_routes(app: FastAPI, get_zigbee_service):
                         errors.append({"file": entry, "error": str(e)})
                         logger.error(f"Failed to restore {entry}: {e}")
 
+            # After extracting all files, fix up config.yaml if needed
+            config_target = os.path.join(APP_DIR, "config/config.yaml")
+            if os.path.isfile(config_target):
+                try:
+                    import yaml as _yaml
+                    with open(config_target, "r") as f:
+                        cfg = _yaml.safe_load(f) or {}
+
+                    mqtt = cfg.setdefault("mqtt", {})
+                    if "enabled" not in mqtt:
+                        # Infer: if broker_host is set, MQTT was intended to be enabled
+                        mqtt["enabled"] = bool(mqtt.get("broker_host", ""))
+                        with open(config_target, "w") as f:
+                            _yaml.dump(cfg, f, default_flow_style=False, sort_keys=False)
+                        logger.info("Patched mqtt.enabled into restored config.yaml")
+                except Exception as e:
+                    logger.warning(f"Could not patch config.yaml after restore: {e}")
+
+
             result = {
                 "success": len(errors) == 0,
                 "restored": restored,
