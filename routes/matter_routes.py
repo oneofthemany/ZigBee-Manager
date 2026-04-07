@@ -50,7 +50,7 @@ def register_matter_routes(app: FastAPI, get_zigbee_service, get_matter_server, 
         try:
             import subprocess
             r = subprocess.run(["ot-ctl", "state"], capture_output=True, text=True, timeout=5)
-            thread_state = r.stdout.strip().lower() if r.returncode == 0 else "disabled"
+            thread_state = r.stdout.strip().split("\n")[0].strip().lower() if r.returncode == 0 else "disabled"
             result["thread_ready"] = thread_state in ("leader", "router", "child")
             result["thread_state"] = thread_state
         except Exception:
