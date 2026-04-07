@@ -14,10 +14,6 @@ from modules.zigbee_debug import get_debugger
 logger = logging.getLogger("routes.system")
 
 
-@app.get("/api/system/health")
-async def health_check():
-    return {"status": "ok"}
-
 def register_system_routes(app: FastAPI, get_zigbee_service, get_mqtt_service, get_manager):
     """Register system management routes."""
 
@@ -183,6 +179,11 @@ def register_system_routes(app: FastAPI, get_zigbee_service, get_mqtt_service, g
             return {"error": "Queue not available"}
         except Exception as e:
             return {"error": str(e)}
+
+
+    @app.get("/api/system/health")
+    async def health_check():
+        return {"status": "ok"}
 
     # ---- MQTT Explorer ----
 

@@ -4,11 +4,8 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="manifest updates for install chrome web apk">
-      <change beforePath="$PROJECT_DIR$/core/service.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/service.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/main.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/modules/automation.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/automation.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/modules/matter_bridge.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/matter_bridge.py" afterDir="false" />
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="matter automations update">
+      <change beforePath="$PROJECT_DIR$/routes/system_routes.py" beforeDir="false" afterPath="$PROJECT_DIR$/routes/system_routes.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -157,14 +154,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00199" summary="adding /var/lib/thread dir and permissions for OTBR to run">
-      <option name="closed" value="true" />
-      <created>1775037354656</created>
-      <option name="number" value="00199" />
-      <option name="presentableId" value="LOCAL-00199" />
-      <option name="project" value="LOCAL" />
-      <updated>1775037354656</updated>
     </task>
     <task id="LOCAL-00200" summary="adding back in --device /dev/net/tun:/dev/net/tun&#10;&#10;required by platformConfigureTunDevice in otbr agent">
       <option name="closed" value="true" />
@@ -550,7 +539,15 @@
       <option name="project" value="LOCAL" />
       <updated>1775390453642</updated>
     </task>
-    <option name="localTasksCounter" value="248" />
+    <task id="LOCAL-00248" summary="matter automations update">
+      <option name="closed" value="true" />
+      <created>1775550534337</created>
+      <option name="number" value="00248" />
+      <option name="presentableId" value="LOCAL-00248" />
+      <option name="project" value="LOCAL" />
+      <updated>1775550534338</updated>
+    </task>
+    <option name="localTasksCounter" value="249" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -577,7 +574,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="moved otbr to routes" />
     <MESSAGE value="further updates to otbr" />
     <MESSAGE value="otbr conf update" />
     <MESSAGE value="thread dataset added to commissioning matter bridge" />
@@ -602,6 +598,7 @@
     <MESSAGE value="improved restore function to cater for mqtt in config yaml" />
     <MESSAGE value="system health added to system routes" />
     <MESSAGE value="manifest updates for install chrome web apk" />
-    <option name="LAST_COMMIT_MESSAGE" value="manifest updates for install chrome web apk" />
+    <MESSAGE value="matter automations update" />
+    <option name="LAST_COMMIT_MESSAGE" value="matter automations update" />
   </component>
 </project>
