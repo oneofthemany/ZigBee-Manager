@@ -822,6 +822,15 @@ def get_parser_for_node(attributes: dict) -> BaseMatterParser:
       3. Device type parser
       4. Base parser (fallback)
     """
+
+    try:
+        from modules.matter_definitions import get_definition_store, DefinitionParser
+        defn = get_definition_store().find_for_node(attributes)
+        if defn:
+            return DefinitionParser(defn)
+    except ImportError:
+        pass
+
     base = BaseMatterParser()
 
     # Detect vendor

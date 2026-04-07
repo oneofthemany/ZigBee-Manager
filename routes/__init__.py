@@ -15,6 +15,7 @@ from routes.websocket_routes import register_websocket_routes, manager, broadcas
 from routes.otbr_routes import register_otbr_routes
 from routes.matter_attribute_routes import register_matter_attribute_routes
 from routes.backup_routes import register_backup_routes
+from routes.matter_definitions_routes import register_matter_definition_routes
 
 
 __all__ = [
@@ -29,6 +30,7 @@ __all__ = [
     'register_ota_routes',
     'register_otbr_routes',
     'register_matter_attribute_routes',
+    'register_matter_definition_routes',
     'register_test_recovery_routes',
     'register_websocket_routes',
     'manager',
