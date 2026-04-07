@@ -529,6 +529,7 @@ class MatterBridge:
                             "endpoint_id": endpoint_id,
                             "cluster_id": cluster_id,
                             "event_data": event_data_inner,
+                            "_raw": event_data,
                         })
 
     async def _upsert_node(self, node: dict):
