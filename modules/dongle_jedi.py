@@ -480,7 +480,7 @@ class DongleJedi:
 
         # Write back
         with open(config_path, "w") as f:
-            config["setup_completed"] = Trueconfig["setup_completed"] = True
+            config["setup_completed"] = True
             yaml.dump(config, f, default_flow_style=False, sort_keys=False)
 
         return mqtt
