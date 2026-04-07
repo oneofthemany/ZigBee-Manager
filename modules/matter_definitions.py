@@ -625,19 +625,130 @@ class DefinitionParser:
         return f"{prefix}_{role}_{action}"
 
 
-    def handle_event(self, endpoint_id: int, event_name: str, event_data: dict) -> Optional[str]:
-        """Process a Matter event and update action state keys. Returns the action string."""
-        action = self.parse_event(event_name, endpoint_id, 59, event_data)
+    def handle_event(self, endpoint_id: int, event_name: str, event_data: dict) -> Optional[tuple]:
+        """Process a Matter event and update action state keys. Returns (state_key, action_value)."""
+        ep_info = self._def.get("endpoints", {}).get(str(endpoint_id), {})
+        role = ep_info.get("role", "unknown")
+        group = ep_info.get("group", "")
+        prefix = group if group else f"ep{endpoint_id}"
 
-        # Find which state_key maps to this endpoint as event_action
+        # Standard switch event mapping
+        action = event_name.lower().replace(" ", "_")
+        event_map = {
+            "switchlatched": "latched",
+            "initialpress": "press",
+            "longpress": "hold",
+            "shortrelease": "single",
+            "longrelease": "release",
+            "multipressongoing": "multi_press",
+            "multipresscomplete": "multi",
+            # Boolean State
+            "statechange": "state_change",
+            # Door Lock
+            "doorlockalarm": "alarm",
+            "doorstatechange": "door_change",
+            "lockoperation": "lock_op",
+            "lockoperationerror": "lock_error",
+            "lockuserchange": "user_change",
+            # Smoke CO
+            "smokealarm": "smoke",
+            "coalarm": "co",
+            "lowbattery": "low_battery",
+            "hardwarefault": "hw_fault",
+            "endofservice": "end_of_service",
+            "selftestcomplete": "self_test",
+            "alarmmuted": "muted",
+            "muteended": "unmuted",
+            "allclear": "all_clear",
+            # Power Source
+            "wiredfaultchange": "wired_fault",
+            "batfaultchange": "bat_fault",
+            # General Diagnostics
+            "bootreason": "boot",
+        }
+        action = event_map.get(action, action)
+
+        # MultiPressComplete: extract press count
+        if action == "multi":
+            count = event_data.get("totalNumberOfPressesCounted",
+                                   event_data.get("total_number_of_presses_counted", 0))
+            if role == "rotary":
+                # Rotary: count = rotation steps
+                prev = event_data.get("previousPosition",
+                                      event_data.get("previous_position"))
+                new_pos = event_data.get("newPosition",
+                                         event_data.get("new_position"))
+                if prev is not None and new_pos is not None:
+                    direction = "cw" if new_pos > prev else "ccw"
+                    action = f"rotate_{direction}_{count}"
+                else:
+                    action = f"rotate_{count}"
+            else:
+                if count == 2: action = "double"
+                elif count == 3: action = "triple"
+                elif count > 3: action = f"multi_{count}"
+
+        # InitialPress with newPosition for latching/rotary
+        if action == "press" and role == "rotary":
+            new_pos = event_data.get("newPosition", event_data.get("new_position"))
+            if new_pos is not None:
+                action = f"position_{new_pos}"
+
+        # SwitchLatched
+        if action == "latched":
+            new_pos = event_data.get("newPosition", event_data.get("new_position"))
+            if new_pos is not None:
+                action = f"position_{new_pos}"
+
+        # Boolean State
+        if action == "state_change":
+            val = event_data.get("stateValue", event_data.get("state_value"))
+            action = "open" if val else "closed"
+
+        # Find matching event_action state key for this endpoint
         for state_key, mapping in self._def.get("state_mapping", {}).items():
             if mapping.get("type") == "event_action" and mapping.get("ep") == endpoint_id:
-                # Extract just the action part (strip the prefix from parse_event)
-                short_action = action.rsplit("_", 1)[-1] if "_" in action else action
-                self._action_states[state_key] = short_action
-                return state_key, short_action
+                self._action_states[state_key] = action
+                return state_key, action
 
-        return None
+        # No explicit event_action mapping — use generic key
+        generic_key = f"{prefix}_{role}_action"
+        self._action_states[generic_key] = action
+        return generic_key, action
+
+    def parse_event(self, event_name: str, endpoint_id: int,
+                    cluster_id: int, event_data: dict) -> str:
+        """Build action string for last_action state key."""
+        ep_info = self._def.get("endpoints", {}).get(str(endpoint_id), {})
+        role = ep_info.get("role", "button")
+        group = ep_info.get("group", "")
+        prefix = group if group else f"ep{endpoint_id}"
+
+        action = event_name.lower().replace(" ", "_")
+        event_map = {
+            "switchlatched": "latched", "initialpress": "press",
+            "longpress": "hold", "shortrelease": "single",
+            "longrelease": "release", "multipressongoing": "multi_press",
+            "multipresscomplete": "multi", "statechange": "state_change",
+            "doorlockalarm": "alarm", "lockoperation": "lock_op",
+        }
+        action = event_map.get(action, action)
+
+        if action == "multi":
+            count = event_data.get("totalNumberOfPressesCounted",
+                                   event_data.get("total_number_of_presses_counted", 0))
+            if role == "rotary":
+                action = f"rotate_{count}"
+            elif count == 2: action = "double"
+            elif count == 3: action = "triple"
+            elif count > 3: action = f"multi_{count}"
+
+        if action in ("press", "latched") and role == "rotary":
+            new_pos = event_data.get("newPosition", event_data.get("new_position"))
+            if new_pos is not None:
+                action = f"position_{new_pos}"
+
+        return f"{prefix}_{role}_{action}"
 
 # =============================================================================
 # SINGLETON STORE

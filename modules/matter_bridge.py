@@ -457,14 +457,81 @@ class MatterBridge:
                             "cluster_id": int(attr_path.split("/")[1]) if "/" in attr_path else 0,
                         })
 
+
         elif event == "node_event":
-            # Matter cluster events (button presses, rotary turns, etc.)
             event_data = data.get("data", {})
             node_id = event_data.get("node_id")
             endpoint_id = event_data.get("endpoint_id", 0)
             cluster_id = event_data.get("cluster_id", 0)
+            event_id = event_data.get("event_id", 0)
+            event_data_inner = event_data.get("data", {}) or {}
+            event_data_inner["event_id"] = event_id
+
+            # Complete Matter event ID → name mapping (per spec)
+            MATTER_EVENT_NAMES = {
+                # Switch cluster (59) — §1.13.7
+                59: {
+                    0: "SwitchLatched",
+                    1: "InitialPress",
+                    2: "LongPress",
+                    3: "ShortRelease",
+                    4: "LongRelease",
+                    5: "MultiPressOngoing",
+                    6: "MultiPressComplete",
+                },
+                # Boolean State (69) — §1.7.7
+                69: {
+                    0: "StateChange",
+                },
+                # Door Lock (257) — §5.2.11
+                257: {
+                    0: "DoorLockAlarm",
+                    1: "DoorStateChange",
+                    2: "LockOperation",
+                    3: "LockOperationError",
+                    4: "LockUserChange",
+                },
+                # Smoke CO Alarm (92) — §2.11.8
+                92: {
+                    0: "SmokeAlarm",
+                    1: "COAlarm",
+                    2: "LowBattery",
+                    3: "HardwareFault",
+                    4: "EndOfService",
+                    5: "SelfTestComplete",
+                    6: "AlarmMuted",
+                    7: "MuteEnded",
+                    8: "InterconnectSmokeAlarm",
+                    9: "InterconnectCOAlarm",
+                    10: "AllClear",
+                },
+                # Power Source (47) — §11.7.7
+                47: {
+                    0: "WiredFaultChange",
+                    1: "BatFaultChange",
+                    2: "BatChargeFaultChange",
+                },
+                # General Diagnostics (51) — §11.11.8
+                51: {
+                    0: "HardwareFaultChange",
+                    1: "RadioFaultChange",
+                    2: "NetworkFaultChange",
+                    3: "BootReason",
+                },
+                # Window Covering (258) — no standard events but some vendors emit
+                # Thermostat (513) — no standard events
+                # OTA (41/42)
+                41: {
+                    0: "StateTransition",
+                    1: "VersionApplied",
+                    2: "DownloadError",
+                },
+            }
+
             event_name = event_data.get("event_name", "")
-            event_data_inner = event_data.get("event_data", {})
+            if not event_name:
+                cluster_events = MATTER_EVENT_NAMES.get(cluster_id, {})
+                event_name = cluster_events.get(event_id, f"event_{event_id}")
 
 
             if node_id is not None:

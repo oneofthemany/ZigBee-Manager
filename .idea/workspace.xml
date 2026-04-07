@@ -4,12 +4,13 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="new matter definitions">
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="raw data added to debug">
       <change afterPath="$PROJECT_DIR$/config/matter_definitions/bilresa.json" afterDir="false" />
       <change afterPath="$PROJECT_DIR$/config/matter_definitions/ikea_e2490_bilresa.json" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/static/js/modal/matter-endpoints.js" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/modules/matter_bridge.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/matter_bridge.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/modules/matter_definitions.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/matter_definitions.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/static/js/device-modal.js" beforeDir="false" afterPath="$PROJECT_DIR$/static/js/device-modal.js" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/static/js/deploy-animation.js" beforeDir="false" afterPath="$PROJECT_DIR$/static/js/deploy-animation.js" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -159,46 +160,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00213" summary="removal of conatiner removal process as dealt with using the teardown script for any updates">
-      <option name="closed" value="true" />
-      <created>1775047837636</created>
-      <option name="number" value="00213" />
-      <option name="presentableId" value="LOCAL-00213" />
-      <option name="project" value="LOCAL" />
-      <updated>1775047837636</updated>
-    </task>
-    <task id="LOCAL-00214" summary="removal of restart for otbr">
-      <option name="closed" value="true" />
-      <created>1775051531986</created>
-      <option name="number" value="00214" />
-      <option name="presentableId" value="LOCAL-00214" />
-      <option name="project" value="LOCAL" />
-      <updated>1775051531986</updated>
-    </task>
-    <task id="LOCAL-00215" summary="slirp4netns trial">
-      <option name="closed" value="true" />
-      <created>1775052339656</created>
-      <option name="number" value="00215" />
-      <option name="presentableId" value="LOCAL-00215" />
-      <option name="project" value="LOCAL" />
-      <updated>1775052339656</updated>
-    </task>
-    <task id="LOCAL-00216" summary="adding in sysctl for ipv6 and ipv4">
-      <option name="closed" value="true" />
-      <created>1775052837905</created>
-      <option name="number" value="00216" />
-      <option name="presentableId" value="LOCAL-00216" />
-      <option name="project" value="LOCAL" />
-      <updated>1775052837905</updated>
-    </task>
-    <task id="LOCAL-00217" summary="adding in sysctl for ipv6 and ipv4">
-      <option name="closed" value="true" />
-      <created>1775052969176</created>
-      <option name="number" value="00217" />
-      <option name="presentableId" value="LOCAL-00217" />
-      <option name="project" value="LOCAL" />
-      <updated>1775052969176</updated>
     </task>
     <task id="LOCAL-00218" summary="otbr final touches">
       <option name="closed" value="true" />
@@ -552,7 +513,47 @@
       <option name="project" value="LOCAL" />
       <updated>1775568542069</updated>
     </task>
-    <option name="localTasksCounter" value="262" />
+    <task id="LOCAL-00262" summary="matter ep definitions frontend scan">
+      <option name="closed" value="true" />
+      <created>1775573786479</created>
+      <option name="number" value="00262" />
+      <option name="presentableId" value="LOCAL-00262" />
+      <option name="project" value="LOCAL" />
+      <updated>1775573786479</updated>
+    </task>
+    <task id="LOCAL-00263" summary="comment out text">
+      <option name="closed" value="true" />
+      <created>1775578537077</created>
+      <option name="number" value="00263" />
+      <option name="presentableId" value="LOCAL-00263" />
+      <option name="project" value="LOCAL" />
+      <updated>1775578537077</updated>
+    </task>
+    <task id="LOCAL-00264" summary="adding in action buttons to matter def">
+      <option name="closed" value="true" />
+      <created>1775578560258</created>
+      <option name="number" value="00264" />
+      <option name="presentableId" value="LOCAL-00264" />
+      <option name="project" value="LOCAL" />
+      <updated>1775578560258</updated>
+    </task>
+    <task id="LOCAL-00265" summary="removal of debugging moving to packet level debug">
+      <option name="closed" value="true" />
+      <created>1775579074038</created>
+      <option name="number" value="00265" />
+      <option name="presentableId" value="LOCAL-00265" />
+      <option name="project" value="LOCAL" />
+      <updated>1775579074038</updated>
+    </task>
+    <task id="LOCAL-00266" summary="raw data added to debug">
+      <option name="closed" value="true" />
+      <created>1775579145131</created>
+      <option name="number" value="00266" />
+      <option name="presentableId" value="LOCAL-00266" />
+      <option name="project" value="LOCAL" />
+      <updated>1775579145131</updated>
+    </task>
+    <option name="localTasksCounter" value="267" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -579,11 +580,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="matter device addressing added" />
-    <MESSAGE value="matter addressing patch" />
-    <MESSAGE value="resilience fix" />
-    <MESSAGE value="matter improvements" />
-    <MESSAGE value="back up and restore added" />
     <MESSAGE value="backup fixes" />
     <MESSAGE value="added httpx for backup over network function" />
     <MESSAGE value="backup over network function" />
@@ -604,6 +600,11 @@
     <MESSAGE value="ble check added for matter commissioning" />
     <MESSAGE value="attribute fix for matter automations" />
     <MESSAGE value="new matter definitions" />
-    <option name="LAST_COMMIT_MESSAGE" value="new matter definitions" />
+    <MESSAGE value="matter ep definitions frontend scan" />
+    <MESSAGE value="comment out text" />
+    <MESSAGE value="adding in action buttons to matter def" />
+    <MESSAGE value="removal of debugging moving to packet level debug" />
+    <MESSAGE value="raw data added to debug" />
+    <option name="LAST_COMMIT_MESSAGE" value="raw data added to debug" />
   </component>
 </project>
