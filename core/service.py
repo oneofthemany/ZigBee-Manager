@@ -1523,7 +1523,10 @@ class ZigbeeService(
     async def permit_join(self, duration=240, ieee=None):
         if duration == 0:
             self.pairing_expiration = 0
-            await self.app.permit(0)
+            try:
+                await self.app.permit(0)
+            except Exception as e:
+                logger.warning(f"permit(0) failed: {e}")
             self._emit_sync("pairing_status", {"enabled": False, "remaining": 0})
             return {"success": True, "enabled": False}
 
