@@ -480,6 +480,7 @@ class DongleJedi:
 
         # Write back
         with open(config_path, "w") as f:
+            config["setup_completed"] = Trueconfig["setup_completed"] = True
             yaml.dump(config, f, default_flow_style=False, sort_keys=False)
 
         return mqtt
@@ -490,16 +491,6 @@ class DongleJedi:
 
     @staticmethod
     def needs_setup(config_path: str = "./config/config.yaml") -> dict:
-        """
-        Check whether the setup wizard should be shown.
-
-        Now checks BOTH coordinator AND integration/MQTT configuration.
-
-        Returns dict with:
-            needs_setup: bool
-            reason: str
-            current_port: str
-        """
         import yaml
 
         if not os.path.exists(config_path):
@@ -512,10 +503,18 @@ class DongleJedi:
         with open(config_path, "r") as f:
             config = yaml.safe_load(f) or {}
 
+        # Primary gate: setup wizard writes this flag on completion
+        if not config.get("setup_completed", False):
+            return {
+                "needs_setup": True,
+                "reason": "setup_not_completed",
+                "current_port": config.get("zigbee", {}).get("port", ""),
+            }
+
+        # Secondary: port must still exist
         zigbee = config.get("zigbee", {})
         port = zigbee.get("port", "")
 
-        # ── Check 1: Coordinator port ──
         if not port:
             return {
                 "needs_setup": True,
@@ -523,7 +522,6 @@ class DongleJedi:
                 "current_port": "",
             }
 
-        # Port configured but doesn't exist
         if not port.startswith("socket://") and not os.path.exists(port):
             return {
                 "needs_setup": True,
@@ -531,19 +529,6 @@ class DongleJedi:
                 "current_port": port,
             }
 
-        # ── Check 2: Integration mode configured? ──
-        mqtt_conf = config.get("mqtt", {})
-        # Consider MQTT configured if: 'enabled' key present, OR broker_host is set
-        # (older configs written before 'enabled' was introduced won't have the key)
-        mqtt_configured = "enabled" in mqtt_conf or bool(mqtt_conf.get("broker_host", ""))
-        if not mqtt_configured:
-            return {
-                "needs_setup": True,
-                "reason": "mqtt_not_configured",
-                "current_port": port,
-            }
-
-        # All configured
         return {
             "needs_setup": False,
             "reason": "configured",

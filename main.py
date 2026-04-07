@@ -356,11 +356,6 @@ async def lifespan(app: FastAPI):
     if hasattr(zigbee_service, 'group_manager'):
         logger.info("Group manager initialized")
 
-    if mqtt_enabled:
-        mqtt_service.group_command_callback = zigbee_service.group_manager.handle_mqtt_group_command
-        logger.info("Wired GroupManager callback to MQTT Service")
-    logger.info("Wired GroupManager callback to MQTT Service")
-
     # ── System Monitor & Telemetry ──
     system_monitor = SystemMonitor(
         interval=30,

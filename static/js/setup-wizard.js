@@ -143,6 +143,8 @@
             reasonText = `The configured port <code>${currentPort}</code> is not present. The adapter may have been unplugged or the port changed.`;
         } else if (reason === 'mqtt_not_configured') {
             reasonText = 'Your coordinator is detected but MQTT integration needs to be configured.';
+        } else if (reason === 'setup_not_completed') {
+            reasonText = 'Welcome! Let\'s set up your Zigbee coordinator and configure the application.';
         } else {
             reasonText = 'Let\'s configure your Zigbee Matter Manager.';
         }
