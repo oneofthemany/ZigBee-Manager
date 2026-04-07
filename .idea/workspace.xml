@@ -4,8 +4,9 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="update t button enable disable for matter pair">
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="update thread_state to &quot;leader\ndone&quot;">
       <change beforePath="$PROJECT_DIR$/routes/matter_routes.py" beforeDir="false" afterPath="$PROJECT_DIR$/routes/matter_routes.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/static/js/actions.js" beforeDir="false" afterPath="$PROJECT_DIR$/static/js/actions.js" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -154,14 +155,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00209" summary="adding wpan0 on network host ahead of podman run as well as in service">
-      <option name="closed" value="true" />
-      <created>1775045402595</created>
-      <option name="number" value="00209" />
-      <option name="presentableId" value="LOCAL-00209" />
-      <option name="project" value="LOCAL" />
-      <updated>1775045402595</updated>
     </task>
     <task id="LOCAL-00210" summary="adding in removal of container ahead of port check">
       <option name="closed" value="true" />
@@ -547,7 +540,15 @@
       <option name="project" value="LOCAL" />
       <updated>1775560098134</updated>
     </task>
-    <option name="localTasksCounter" value="258" />
+    <task id="LOCAL-00258" summary="update thread_state to &quot;leader\ndone&quot;">
+      <option name="closed" value="true" />
+      <created>1775560916983</created>
+      <option name="number" value="00258" />
+      <option name="presentableId" value="LOCAL-00258" />
+      <option name="project" value="LOCAL" />
+      <updated>1775560916983</updated>
+    </task>
+    <option name="localTasksCounter" value="259" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -574,7 +575,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="renamed typo" />
     <MESSAGE value="typos" />
     <MESSAGE value="thread netowrk persistence" />
     <MESSAGE value="de-indent fix for _build_state" />
@@ -599,6 +599,7 @@
     <MESSAGE value="permit join fix" />
     <MESSAGE value="improvement for matter commisioning button enablement" />
     <MESSAGE value="update t button enable disable for matter pair" />
-    <option name="LAST_COMMIT_MESSAGE" value="update t button enable disable for matter pair" />
+    <MESSAGE value="update thread_state to &quot;leader\ndone&quot;" />
+    <option name="LAST_COMMIT_MESSAGE" value="update thread_state to &quot;leader\ndone&quot;" />
   </component>
 </project>

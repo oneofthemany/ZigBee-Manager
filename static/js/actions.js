@@ -780,11 +780,30 @@ export async function cleanupOrphans() {
  * Commission a Matter device via setup code
  */
 export async function matterCommission() {
+    // Pre-flight BLE check
+    let bleWarning = '';
+    try {
+        const bleRes = await fetch("/api/matter/ble-check");
+        const ble = await bleRes.json();
+
+        if (!ble.ble_available) {
+            bleWarning = '\n\n⚠️ Bluetooth adapter not detected. BLE commissioning may fail.';
+        } else if (ble.tips && ble.tips.length > 0) {
+            bleWarning = '\n\n⚠️ ' + ble.tips.join('\n⚠️ ');
+        }
+    } catch (e) {
+        // Non-fatal — continue anyway
+    }
+
     const code = prompt(
         "Enter Matter setup code:\n\n" +
-        "This can be:\n" +
         "• Manual pairing code (e.g. 3476-610-1411)\n" +
-        "• QR code string (e.g. MT:Y3.13OTB00KA0648G00)"
+        "• QR code string (e.g. MT:Y3.13OTB00KA0648G00)\n\n" +
+        "Before commissioning, ensure:\n" +
+        "✓ Device is in pairing mode (hold its button)\n" +
+        "✓ No other BLE scans running on the host\n" +
+        "✓ Device is within Bluetooth range" +
+        bleWarning
     );
     if (!code || !code.trim()) return;
 
@@ -802,9 +821,27 @@ export async function matterCommission() {
                 level: "INFO",
                 message: "Matter device commissioning started"
             });
-            alert("Matter commissioning started. The device should appear shortly.");
+            alert(
+                "Matter commissioning started.\n\n" +
+                "The device should appear shortly. If it doesn't:\n" +
+                "1. On the host, run: bluetoothctl scan off\n" +
+                "2. Then: bluetoothctl scan le\n" +
+                "3. Put the device back in pairing mode\n" +
+                "4. Try commissioning again"
+            );
         } else {
-            alert("Commission failed: " + data.error);
+            const error = data.error || 'Unknown error';
+            let troubleshoot = '';
+            if (error.includes('BLE') || error.includes('Timeout') || error.includes('ble')) {
+                troubleshoot = '\n\nBLE Troubleshooting:\n' +
+                    '1. On the host run:\n' +
+                    '   bluetoothctl scan off\n' +
+                    '   bluetoothctl discoverable off\n' +
+                    '   bluetoothctl scan le\n' +
+                    '2. Put the device in pairing mode again\n' +
+                    '3. Retry commissioning';
+            }
+            alert("Commission failed: " + error + troubleshoot);
         }
     } catch (e) {
         console.error("Matter commission error:", e);

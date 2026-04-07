@@ -12,6 +12,38 @@ logger = logging.getLogger("routes.matter")
 def register_matter_routes(app: FastAPI, get_zigbee_service, get_matter_server, get_matter_bridge):
     """Register Matter integration routes."""
 
+    @app.get("/api/matter/ble-check")
+    async def ble_check():
+        """Pre-flight BLE check for Matter commissioning."""
+        import subprocess
+        result = {"ble_available": False, "adapter": None, "scanning": False, "tips": []}
+
+        try:
+            # Check adapter via bluetoothctl
+            r = subprocess.run(
+                ["bluetoothctl", "show"],
+                capture_output=True, text=True, timeout=5
+            )
+            if r.returncode == 0 and "Powered: yes" in r.stdout:
+                result["ble_available"] = True
+                for line in r.stdout.splitlines():
+                    if "Name:" in line:
+                        result["adapter"] = line.split("Name:")[1].strip()
+                    if "Discovering: yes" in line:
+                        result["scanning"] = True
+            else:
+                result["tips"].append("Bluetooth adapter not powered on")
+
+            if result["scanning"]:
+                result["tips"].append("Host BLE scan is active — this may interfere with commissioning")
+
+        except FileNotFoundError:
+            result["tips"].append("bluetoothctl not available in container")
+        except Exception as e:
+            result["tips"].append(f"BLE check failed: {e}")
+
+        return result
+
     @app.post("/api/matter/commission")
     async def matter_commission(request: MatterCommissionRequest):
         """Commission a Matter device using setup code."""
