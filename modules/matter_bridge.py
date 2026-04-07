@@ -27,6 +27,22 @@ logger = logging.getLogger("matter_bridge")
 
 
 # =============================================================================
+# MATTER CAPABILITIES
+# =============================================================================
+
+class MatterCapabilities:
+    """Thin wrapper matching DeviceCapabilities interface for automation engine."""
+    def __init__(self, caps_list):
+        self._capabilities = set(caps_list or [])
+
+    def has_capability(self, capability: str) -> bool:
+        return capability in self._capabilities
+
+    def get_capabilities(self):
+        return self._capabilities
+
+
+# =============================================================================
 # MATTER DEVICE WRAPPER
 # =============================================================================
 
@@ -81,6 +97,11 @@ class MatterDevice:
 
     def get_type(self) -> str:
         return self._parser.get_device_type(self.node.get("attributes", {}))
+
+    @property
+    def capabilities(self):
+        caps = self._parser.get_capabilities(self.node.get("attributes", {}))
+        return MatterCapabilities(caps)
 
     def get_control_commands(self) -> List[Dict[str, Any]]:
         return self._parser.get_commands(self.node.get("attributes", {}))

@@ -4,9 +4,17 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="update thread_state to &quot;leader\ndone&quot;">
-      <change beforePath="$PROJECT_DIR$/routes/matter_routes.py" beforeDir="false" afterPath="$PROJECT_DIR$/routes/matter_routes.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/static/js/actions.js" beforeDir="false" afterPath="$PROJECT_DIR$/static/js/actions.js" afterDir="false" />
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="ble check added for matter commissioning">
+      <change afterPath="$PROJECT_DIR$/config/matter_definitions/bilresa.json" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/matter_definitions/ikea_e2490_bilresa.json" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/modules/matter_definitions.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/routes/matter_definitions_routes.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/handlers/matter_parsers.py" beforeDir="false" afterPath="$PROJECT_DIR$/handlers/matter_parsers.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/main.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/modules/automation.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/automation.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/modules/matter_bridge.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/matter_bridge.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/routes/__init__.py" beforeDir="false" afterPath="$PROJECT_DIR$/routes/__init__.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -89,6 +97,7 @@
   </component>
   <component name="RecentsManager">
     <key name="MoveFile.RECENT_KEYS">
+      <recent name="$PROJECT_DIR$/config/matter_definitions" />
       <recent name="$PROJECT_DIR$/static/js/modal" />
       <recent name="$PROJECT_DIR$/routes" />
       <recent name="$PROJECT_DIR$" />
@@ -155,14 +164,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00210" summary="adding in removal of container ahead of port check">
-      <option name="closed" value="true" />
-      <created>1775046225621</created>
-      <option name="number" value="00210" />
-      <option name="presentableId" value="LOCAL-00210" />
-      <option name="project" value="LOCAL" />
-      <updated>1775046225621</updated>
     </task>
     <task id="LOCAL-00211" summary="adding in removal of container ahead of port check">
       <option name="closed" value="true" />
@@ -548,7 +549,15 @@
       <option name="project" value="LOCAL" />
       <updated>1775560916983</updated>
     </task>
-    <option name="localTasksCounter" value="259" />
+    <task id="LOCAL-00259" summary="ble check added for matter commissioning">
+      <option name="closed" value="true" />
+      <created>1775561925474</created>
+      <option name="number" value="00259" />
+      <option name="presentableId" value="LOCAL-00259" />
+      <option name="project" value="LOCAL" />
+      <updated>1775561925474</updated>
+    </task>
+    <option name="localTasksCounter" value="260" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -575,7 +584,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="typos" />
     <MESSAGE value="thread netowrk persistence" />
     <MESSAGE value="de-indent fix for _build_state" />
     <MESSAGE value="matter device addressing added" />
@@ -600,6 +608,7 @@
     <MESSAGE value="improvement for matter commisioning button enablement" />
     <MESSAGE value="update t button enable disable for matter pair" />
     <MESSAGE value="update thread_state to &quot;leader\ndone&quot;" />
-    <option name="LAST_COMMIT_MESSAGE" value="update thread_state to &quot;leader\ndone&quot;" />
+    <MESSAGE value="ble check added for matter commissioning" />
+    <option name="LAST_COMMIT_MESSAGE" value="ble check added for matter commissioning" />
   </component>
 </project>

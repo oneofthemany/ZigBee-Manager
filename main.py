@@ -50,6 +50,7 @@ from modules.system_monitor import SystemMonitor
 from modules.telemetry_collector import TelemetryCollector
 from modules.telemetry_api import register_telemetry_routes
 from modules.dongle_jedi_api import register_setup_routes
+from modules.matter_definitions import DefinitionStore
 
 port = int(os.environ.get("ZMM_PORT", 8000))
 
@@ -66,6 +67,7 @@ from routes import (
     register_ota_routes,
     register_otbr_routes,
     register_matter_attribute_routes,
+    register_matter_definition_routes,
     register_test_recovery_routes,
     register_websocket_routes,
     manager, broadcast_event,
@@ -374,6 +376,24 @@ async def lifespan(app: FastAPI):
     register_telemetry_routes(app, lambda: system_monitor)
     zigbee_service.telemetry_collector = telemetry_collector
 
+
+    # Merge Matter devices into automation engine's device registry
+    if matter_bridge:
+        original_getter = zigbee_service.automation._get_devices
+        original_names = zigbee_service.automation._get_names
+        def merged_devices():
+            devs = dict(original_getter())
+            devs.update(matter_bridge.devices)
+            return devs
+        def merged_names():
+            names = dict(original_names())
+            for ieee, dev in matter_bridge.devices.items():
+                names[ieee] = dev.friendly_name
+            return names
+        zigbee_service.automation._get_devices = merged_devices
+        zigbee_service.automation._get_names = merged_names
+        logger.info("Wired Matter devices into automation engine")
+
     # ──  Recovery ──
     from modules.test_recovery import get_test_recovery_manager
     trm = get_test_recovery_manager(broadcast_event)
@@ -495,6 +515,7 @@ register_group_routes(app, get_zigbee_service, get_manager)
 register_editor_routes(app, get_zigbee_service)
 register_otbr_routes(app, get_zigbee_service)
 register_matter_attribute_routes(app, get_matter_bridge)
+register_matter_definition_routes(app, get_matter_bridge)
 register_test_recovery_routes(app, get_manager)
 register_websocket_routes(app)
 register_zone_routes(app, lambda: zigbee_service.zone_manager, lambda: zigbee_service.devices)

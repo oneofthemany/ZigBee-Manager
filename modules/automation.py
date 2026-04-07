@@ -1428,6 +1428,7 @@ class AutomationEngine:
         attrs = []
         for k, v in state.items():
             if k in skip or k.endswith("_raw") or k.startswith("attr_"): continue
+            if isinstance(v, (list, dict)): continue
             a = {"attribute":k,"current_value":v,"type":self._type(v)}
             if isinstance(v, bool):
                 a["operators"]=["eq","neq"]; a["value_options"]=["true","false"]
@@ -1475,6 +1476,7 @@ class AutomationEngine:
         attrs = []
         for k, v in state.items():
             if k.endswith("_raw") or k.startswith("attr_"): continue
+            if isinstance(v, (list, dict)): continue
             a = {"attribute": k, "current_value": v, "type": self._type(v),
                  "operators": ["eq", "neq", "in", "nin"] if isinstance(v, str) else
                  ["eq", "neq"] if isinstance(v, bool) else
@@ -1593,7 +1595,8 @@ class AutomationEngine:
             {"ieee": ieee, "friendly_name": names.get(ieee, ieee),
              "model": getattr(d, "model", "Unknown"),
              "state_keys": [k for k in (d.state or {}).keys()
-                            if not k.endswith("_raw") and not k.startswith("attr_")]}
+                            if not k.endswith("_raw") and not k.startswith("attr_")
+                            and not isinstance((d.state or {}).get(k), (list, dict))]}
             for ieee, d in devices.items()
         ], key=lambda x: x.get("friendly_name", ""))
 
