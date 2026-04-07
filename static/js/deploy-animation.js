@@ -49,7 +49,7 @@
     div.innerHTML = `
       <canvas id="bee-canvas"></canvas>
       <div id="bee-flash"></div>
-      <div id="bee-msg">DEPLOYING... 88 MPH</div>
+      //<div id="bee-msg">DEPLOYING... 88 MPH</div>
       <div id="bee-speed"></div>
     `;
     document.body.appendChild(div);
