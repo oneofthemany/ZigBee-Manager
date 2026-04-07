@@ -828,20 +828,37 @@ export async function checkMatterStatus() {
             if (!data.enabled) {
                 badge.className = 'badge bg-secondary ms-1';
                 badge.textContent = 'Not configured';
-                if (btn) btn.disabled = true;
             } else if (data.connected) {
                 badge.className = 'badge bg-success ms-1';
                 badge.textContent = `Matter: ${data.device_count} devices`;
-                if (btn) {
-                    const threadOk = data.thread_ready !== false;
-                    btn.disabled = !threadOk;
-                    btn.title = threadOk ? 'Commission a Matter device' : 'Thread network not formed — go to OTBR tab to create one';
-                }
             } else {
                 badge.className = 'badge bg-warning ms-1';
                 badge.textContent = 'Matter: Disconnected';
-                if (btn) btn.disabled = true;
             }
+        }
+
+        if (btn) {
+            const matterOk = data.enabled && data.connected;
+            const threadOk = data.thread_ready !== false;
+            const enabled = matterOk && threadOk;
+
+            btn.classList.toggle('disabled', !enabled);
+            btn.setAttribute('aria-disabled', !enabled);
+
+            if (!data.enabled) {
+                btn.title = 'Matter is not configured';
+            } else if (!data.connected) {
+                btn.title = 'Matter server is disconnected';
+            } else if (!threadOk) {
+                btn.title = 'Thread network not formed — create one in the OTBR tab first';
+            } else {
+                btn.title = 'Commission a Matter device';
+            }
+
+            // Block click when disabled (dropdown items ignore .disabled without this)
+            btn.onclick = enabled
+                ? (e) => { e.preventDefault(); matterCommission(); }
+                : (e) => { e.preventDefault(); e.stopPropagation(); };
         }
     } catch (e) {
         if (badge) {
