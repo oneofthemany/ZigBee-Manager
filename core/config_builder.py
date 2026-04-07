@@ -283,7 +283,7 @@ class ConfigBuilderMixin:
                 "key": network_key,
                 "update_id": True,
             },
-            "topology_scan_period": self._config.get('topology_scan_interval', 0),
+            "topology_scan_period": self._config.get('topology_scan_interval', 120) or 120,
         }
 
         if ota_config:
@@ -311,7 +311,7 @@ class ConfigBuilderMixin:
                 "key": network_key,
                 "update_id": True,
             },
-            "topology_scan_period": self._config.get('topology_scan_interval', 0),
+            "topology_scan_period": self._config.get('topology_scan_interval', 120) or 120,
         }
 
         if ota_config:
@@ -339,7 +339,7 @@ class ConfigBuilderMixin:
                 "key": network_key,
                 "update_id": True,
             },
-            "topology_scan_period": self._config.get('topology_scan_interval', 0),
+            "topology_scan_period": self._config.get('topology_scan_interval', 120) or 120,
         }
 
         if ota_config:
