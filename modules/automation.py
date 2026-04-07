@@ -68,11 +68,13 @@ class AutomationEngine:
     def __init__(self, device_registry_getter: Callable[[], Dict],
                  friendly_names_getter: Callable[[], Dict],
                  event_emitter: Optional[Callable] = None,
-                 group_manager_getter: Optional[Callable] = None):
+                 group_manager_getter: Optional[Callable] = None,
+                 matter_device_getter: Optional[Callable] = None):
         self._get_devices = device_registry_getter
         self._get_names = friendly_names_getter
         self._event_emitter = event_emitter
         self._get_group_manager = group_manager_getter
+        self._get_matter_devices = matter_device_getter or (lambda: {})
 
         self.rules: List[Dict[str, Any]] = []
         self._source_index: Dict[str, List[str]] = {}
@@ -93,6 +95,20 @@ class AutomationEngine:
 
         self._load_rules()
         logger.info(f"Automation engine initialised with {len(self.rules)} rule(s)")
+
+    def _get_all_devices(self) -> Dict:
+        """Merged view of Zigbee + Matter devices."""
+        merged = dict(self._get_devices())
+        merged.update(self._get_matter_devices())
+        return merged
+
+    def _get_all_names(self) -> Dict:
+        """Merged friendly names: Zigbee names + Matter device friendly_name attrs."""
+        names = dict(self._get_names())
+        for ieee, dev in self._get_matter_devices().items():
+            if ieee not in names:
+                names[ieee] = getattr(dev, 'friendly_name', ieee)
+        return names
 
 
         # =========================================================================
@@ -167,8 +183,8 @@ class AutomationEngine:
             Runs the same state-machine transition logic as evaluate().
             """
             now = time.time()
-            devices = self._get_devices()
-            names = self._get_names()
+            devices = self._get_all_devices()
+            names = self._get_all_names()
 
             for rule in self.rules:
                 if not rule.get("enabled", True):
@@ -478,7 +494,7 @@ class AutomationEngine:
             return {"success": False, "error": "source_ieee required"}
         if len(self._source_index.get(source, [])) >= MAX_RULES_PER_DEVICE:
             return {"success": False, "error": f"Max {MAX_RULES_PER_DEVICE} rules"}
-        if source not in self._get_devices():
+        if source not in self._get_all_devices():
             return {"success": False, "error": f"Source not found: {source}"}
 
         rule = {
@@ -611,8 +627,8 @@ class AutomationEngine:
 
         self._stats["evaluations"] += 1
         now = time.time()
-        devices = self._get_devices()
-        names = self._get_names()
+        devices = self._get_all_devices()
+        names = self._get_all_names()
         source_name = names.get(source_ieee, source_ieee)
 
         source_device = devices.get(source_ieee)
@@ -1031,8 +1047,8 @@ class AutomationEngine:
         command = step["command"]
         value = step.get("value")
         endpoint_id = step.get("endpoint_id")
-        devices = self._get_devices()
-        names = self._get_names()
+        devices = self._get_all_devices()
+        names = self._get_all_names()
 
         # ── GROUP TARGET ROUTING ──
         if target_ieee.startswith("group:"):
@@ -1351,8 +1367,8 @@ class AutomationEngine:
                 return ieee_or_group, None
             return f"\U0001F517 {gm.groups[gid]['name']}", self._get_group_state(gid)
 
-        devices = self._get_devices()
-        names = self._get_names()
+        devices = self._get_all_devices()
+        names = self._get_all_names()
         dev = devices.get(ieee_or_group)
         if not dev:
             return names.get(ieee_or_group, ieee_or_group), None
@@ -1452,8 +1468,8 @@ class AutomationEngine:
                     "state": gstate, "attributes": attrs}
 
         # ── NORMAL DEVICE ──
-        devices = self._get_devices()
-        names = self._get_names()
+        devices = self._get_all_devices()
+        names = self._get_all_names()
         if ieee not in devices: return {}
         state = devices[ieee].state or {}
         attrs = []
@@ -1470,18 +1486,27 @@ class AutomationEngine:
                 "state": state, "attributes": attrs}
 
     def get_target_actions(self, ieee):
-        d = self._get_devices().get(ieee)
+        d = self._get_all_devices().get(ieee)
         return d.get_control_commands() if d and hasattr(d,"get_control_commands") else []
 
     def get_actuator_devices(self):
-        devices = self._get_devices(); names = self._get_names()
+        devices = self._get_all_devices(); names = self._get_all_names()
         out = []
         for ieee, dev in devices.items():
             caps = getattr(dev, "capabilities", None)
-            if not caps: continue
-            hc = getattr(caps, "has_capability", lambda x: False)
-            if not any(hc(c) for c in ["on_off", "light", "switch", "cover",
-                                       "window_covering", "thermostat", "fan_control"]):
+            if caps:
+                # Zigbee device — capabilities object with has_capability()
+                hc = getattr(caps, "has_capability", lambda x: False)
+                if not any(hc(c) for c in ["on_off", "light", "switch", "cover",
+                                           "window_covering", "thermostat", "fan_control"]):
+                    continue
+            elif hasattr(dev, "_get_capabilities"):
+                # Matter device — capabilities as a list
+                cap_list = dev._get_capabilities()
+                if not any(c in cap_list for c in ["on_off", "light", "switch", "cover",
+                                                   "window_covering", "thermostat", "fan_control"]):
+                    continue
+            else:
                 continue
             out.append({"ieee": ieee, "friendly_name": names.get(ieee, ieee),
                         "model": getattr(dev, "model", "Unknown"),
@@ -1563,7 +1588,7 @@ class AutomationEngine:
 
 
     def get_all_devices_summary(self):
-        devices = self._get_devices(); names = self._get_names()
+        devices = self._get_all_devices(); names = self._get_all_names()
         out = sorted([
             {"ieee": ieee, "friendly_name": names.get(ieee, ieee),
              "model": getattr(d, "model", "Unknown"),

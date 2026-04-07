@@ -286,6 +286,12 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.error(f"Failed to start Matter bridge: {e}")
 
+        # Wire Matter state changes into the automation engine
+        matter_bridge._automation_evaluator = (
+            lambda ieee, data: zigbee_service.automation.evaluate(ieee, data)
+        )
+        logger.info("Wired Matter bridge → automation evaluator")
+
     # Spectrum monitor — wait for radio to be ready, detect support
     spectrum_interval = get_conf('zigbee', 'spectrum_scan_interval', 3600)
     if spectrum_interval > 0:

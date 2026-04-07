@@ -175,7 +175,8 @@ class ZigbeeService(
             device_registry_getter=lambda: self.devices,
             friendly_names_getter=lambda: self.friendly_names,
             event_emitter=self.callback,
-            group_manager_getter=lambda: getattr(self, 'group_manager', None)
+            group_manager_getter=lambda: getattr(self, 'group_manager', None),
+            matter_device_getter=lambda: self._get_matter_devices(),
         )
 
         # OTA firmware update manager
@@ -189,6 +190,15 @@ class ZigbeeService(
 
     async def _default_event_callback(self, event_type: str, data: dict):
         pass
+
+    def _get_matter_devices(self):
+        """Return Matter device registry for automation engine merged view."""
+        try:
+            from main import get_matter_bridge
+            mb = get_matter_bridge()
+            return mb.devices if mb else {}
+        except Exception:
+            return {}
 
     def _load_json(self, f):
         if os.path.exists(f):

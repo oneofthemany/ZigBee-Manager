@@ -36,13 +36,14 @@ class MatterDevice:
     Delegates attribute parsing to the matter_parsers framework.
     """
 
-    def __init__(self, node: dict):
+    def __init__(self, node: dict, bridge: "MatterBridge" = None):
         self.node = node
         self.node_id = node.get("node_id", 0)
         self.ieee = f"matter_{self.node_id}"
         self.state: Dict[str, Any] = {}
         self.last_seen = time.time()
         self._available = node.get("available", False)
+        self._bridge = bridge
 
         attributes = node.get("attributes", {})
 
@@ -112,6 +113,12 @@ class MatterDevice:
     def _get_capabilities(self) -> list:
         return self._parser.get_capabilities(self.node.get("attributes", {}))
 
+    async def send_command(self, command, value=None, endpoint_id=None):
+        """Proxy command to MatterBridge.send_command for automation engine compatibility."""
+        if not self._bridge:
+            return {"success": False, "error": "No bridge reference"}
+        return await self._bridge.send_command(self.node_id, command, value)
+
 
 # =============================================================================
 # MATTER BRIDGE
@@ -137,6 +144,7 @@ class MatterBridge:
         self._connected = False
         self._shutdown = False
         self._msg_id = 0
+        self._automation_evaluator: Optional[Callable] = None
 
         # Friendly name overrides (loaded from data/matter_names.json)
         self._friendly_names: Dict[str, str] = {}
@@ -414,6 +422,13 @@ class MatterBridge:
                         # Publish state to MQTT
                         await self._publish_device_state(dev)
 
+                        # Trigger automation evaluation for Matter devices
+                        if self._automation_evaluator:
+                            try:
+                                await self._automation_evaluator(ieee, dev.state.copy())
+                            except Exception as ae:
+                                logger.debug(f"Automation eval error for {ieee}: {ae}")
+
                         await self._emit_debug_packet("attribute_updated", node_id, {
                             "attribute_path": attr_path,
                             "new_value": attr_value,
@@ -470,6 +485,13 @@ class MatterBridge:
                     # Publish to MQTT
                     await self._publish_device_state(dev)
 
+                    # Trigger automation evaluation for Matter events
+                    if self._automation_evaluator:
+                        try:
+                            await self._automation_evaluator(ieee, dev.state.copy())
+                        except Exception as ae:
+                            logger.debug(f"Automation eval error for {ieee}: {ae}")
+
                     # Emit debug packet
                     if hasattr(self, '_emit_debug_packet'):
                         await self._emit_debug_packet("button_event", node_id, {
@@ -490,7 +512,7 @@ class MatterBridge:
             old_state = dev.state.copy()
             dev.update_from_node(node)
         else:
-            dev = MatterDevice(node)
+            dev = MatterDevice(node, bridge=self)
             self.devices[ieee] = dev
             old_state = {}
 
@@ -507,6 +529,13 @@ class MatterBridge:
 
         # Publish state to MQTT
         await self._publish_device_state(dev)
+
+        # Trigger automation evaluation on state change
+        if dev.state != old_state and self._automation_evaluator:
+            try:
+                await self._automation_evaluator(ieee, dev.state.copy())
+            except Exception as ae:
+                logger.debug(f"Automation eval error for {ieee}: {ae}")
 
     # =========================================================================
     # DEVICE COMMANDS
