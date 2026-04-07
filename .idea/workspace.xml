@@ -4,7 +4,10 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="multipan fix for apply config" />
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="permit join fix">
+      <change beforePath="$PROJECT_DIR$/routes/matter_routes.py" beforeDir="false" afterPath="$PROJECT_DIR$/routes/matter_routes.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/static/js/actions.js" beforeDir="false" afterPath="$PROJECT_DIR$/static/js/actions.js" afterDir="false" />
+    </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -152,14 +155,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00206" summary="healthcheck fix">
-      <option name="closed" value="true" />
-      <created>1775042688853</created>
-      <option name="number" value="00206" />
-      <option name="presentableId" value="LOCAL-00206" />
-      <option name="project" value="LOCAL" />
-      <updated>1775042688853</updated>
     </task>
     <task id="LOCAL-00207" summary="escape added to ZMM_PORT in HEALTHCHECK">
       <option name="closed" value="true" />
@@ -545,7 +540,15 @@
       <option name="project" value="LOCAL" />
       <updated>1775558444574</updated>
     </task>
-    <option name="localTasksCounter" value="255" />
+    <task id="LOCAL-00255" summary="permit join fix">
+      <option name="closed" value="true" />
+      <created>1775558935990</created>
+      <option name="number" value="00255" />
+      <option name="presentableId" value="LOCAL-00255" />
+      <option name="project" value="LOCAL" />
+      <updated>1775558935990</updated>
+    </task>
+    <option name="localTasksCounter" value="256" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -572,7 +575,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="otbr attributes added" />
     <MESSAGE value="capsTab added after modlaBody" />
     <MESSAGE value="more debugging" />
     <MESSAGE value="renamed typo" />
@@ -597,6 +599,7 @@
     <MESSAGE value="broken line fix" />
     <MESSAGE value="topology scan fix" />
     <MESSAGE value="multipan fix for apply config" />
-    <option name="LAST_COMMIT_MESSAGE" value="multipan fix for apply config" />
+    <MESSAGE value="permit join fix" />
+    <option name="LAST_COMMIT_MESSAGE" value="permit join fix" />
   </component>
 </project>

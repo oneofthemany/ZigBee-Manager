@@ -832,7 +832,11 @@ export async function checkMatterStatus() {
             } else if (data.connected) {
                 badge.className = 'badge bg-success ms-1';
                 badge.textContent = `Matter: ${data.device_count} devices`;
-                if (btn) btn.disabled = false;
+                if (btn) {
+                    const threadOk = data.thread_ready !== false;
+                    btn.disabled = !threadOk;
+                    btn.title = threadOk ? 'Commission a Matter device' : 'Thread network not formed — go to OTBR tab to create one';
+                }
             } else {
                 badge.className = 'badge bg-warning ms-1';
                 badge.textContent = 'Matter: Disconnected';

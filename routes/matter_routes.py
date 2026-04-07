@@ -46,6 +46,18 @@ def register_matter_routes(app: FastAPI, get_zigbee_service, get_matter_server, 
         if matter_bridge:
             result.update(matter_bridge.get_status())
 
+        # Thread network status for frontend gate
+        try:
+            import subprocess
+            r = subprocess.run(["ot-ctl", "state"], capture_output=True, text=True, timeout=5)
+            thread_state = r.stdout.strip().lower() if r.returncode == 0 else "disabled"
+            result["thread_ready"] = thread_state in ("leader", "router", "child")
+            result["thread_state"] = thread_state
+        except Exception:
+            result["thread_ready"] = False
+            result["thread_state"] = "unavailable"
+
+
         return result
 
     @app.get("/api/multipan/status")
