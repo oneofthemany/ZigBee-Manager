@@ -376,7 +376,7 @@ class DongleJedi:
         # Map adapter family → radio_type for zigpy
         family_to_radio = {
             "Silicon Labs EZSP (Ember)": "ezsp",
-            "Silicon Labs CPC Multi-PAN (RCP)": "ezsp",   # Uses zigbeed socket
+            "Silicon Labs CPC Multi-PAN (RCP)": "auto",  # Must auto-detect to trigger MultiPAN stack
             "Texas Instruments Z-Stack": "znp",
             "Dresden Elektronik ConBee/RaspBee": "deconz",
         }
