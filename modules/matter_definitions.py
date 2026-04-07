@@ -251,7 +251,7 @@ def scan_endpoints(attributes: dict) -> dict:
 
         ep_data = endpoints[ep]
         if cluster not in ep_data["clusters"]:
-            from matter_parsers import BaseMatterParser
+            from handlers.matter_parsers import BaseMatterParser
             ep_data["clusters"][cluster] = {
                 "cluster_id": cluster,
                 "cluster_name": BaseMatterParser.CLUSTER_NAMES.get(cluster, f"Cluster {cluster}"),
@@ -269,7 +269,7 @@ def scan_endpoints(attributes: dict) -> dict:
             for entry in type_list:
                 if isinstance(entry, dict):
                     dt = entry.get("0", entry.get(0, 0))
-                    from matter_parsers import MATTER_DEVICE_TYPES
+                    from handlers.matter_parsers import MATTER_DEVICE_TYPES
                     ep_data["device_types"].append({
                         "type_id": dt,
                         "type_name": MATTER_DEVICE_TYPES.get(dt, f"Type {dt}"),
@@ -351,7 +351,7 @@ def generate_definition_draft(attributes: dict) -> dict:
     Auto-generate a definition draft from raw attributes.
     The user can then refine it via the UI.
     """
-    from matter_parsers import BaseMatterParser, BasicInfoAttrs
+    from handlers.matter_parsers import BaseMatterParser, BasicInfoAttrs
 
     base = BaseMatterParser()
     vendor_name = base.find_attr(attributes, 40, BasicInfoAttrs.VENDOR_NAME, "Unknown")

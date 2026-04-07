@@ -4,17 +4,12 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="ble check added for matter commissioning">
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="new matter definitions">
       <change afterPath="$PROJECT_DIR$/config/matter_definitions/bilresa.json" afterDir="false" />
       <change afterPath="$PROJECT_DIR$/config/matter_definitions/ikea_e2490_bilresa.json" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/modules/matter_definitions.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/routes/matter_definitions_routes.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/handlers/matter_parsers.py" beforeDir="false" afterPath="$PROJECT_DIR$/handlers/matter_parsers.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/main.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/modules/automation.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/automation.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/modules/matter_bridge.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/matter_bridge.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/routes/__init__.py" beforeDir="false" afterPath="$PROJECT_DIR$/routes/__init__.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/static/js/modal/matter-endpoints.js" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/modules/matter_definitions.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/matter_definitions.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/static/js/device-modal.js" beforeDir="false" afterPath="$PROJECT_DIR$/static/js/device-modal.js" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -164,22 +159,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00211" summary="adding in removal of container ahead of port check">
-      <option name="closed" value="true" />
-      <created>1775046947231</created>
-      <option name="number" value="00211" />
-      <option name="presentableId" value="LOCAL-00211" />
-      <option name="project" value="LOCAL" />
-      <updated>1775046947231</updated>
-    </task>
-    <task id="LOCAL-00212" summary="wpan fix for otbr">
-      <option name="closed" value="true" />
-      <created>1775046965746</created>
-      <option name="number" value="00212" />
-      <option name="presentableId" value="LOCAL-00212" />
-      <option name="project" value="LOCAL" />
-      <updated>1775046965746</updated>
     </task>
     <task id="LOCAL-00213" summary="removal of conatiner removal process as dealt with using the teardown script for any updates">
       <option name="closed" value="true" />
@@ -557,7 +536,23 @@
       <option name="project" value="LOCAL" />
       <updated>1775561925474</updated>
     </task>
-    <option name="localTasksCounter" value="260" />
+    <task id="LOCAL-00260" summary="attribute fix for matter automations">
+      <option name="closed" value="true" />
+      <created>1775568522711</created>
+      <option name="number" value="00260" />
+      <option name="presentableId" value="LOCAL-00260" />
+      <option name="project" value="LOCAL" />
+      <updated>1775568522711</updated>
+    </task>
+    <task id="LOCAL-00261" summary="new matter definitions">
+      <option name="closed" value="true" />
+      <created>1775568542069</created>
+      <option name="number" value="00261" />
+      <option name="presentableId" value="LOCAL-00261" />
+      <option name="project" value="LOCAL" />
+      <updated>1775568542069</updated>
+    </task>
+    <option name="localTasksCounter" value="262" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -584,8 +579,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="thread netowrk persistence" />
-    <MESSAGE value="de-indent fix for _build_state" />
     <MESSAGE value="matter device addressing added" />
     <MESSAGE value="matter addressing patch" />
     <MESSAGE value="resilience fix" />
@@ -609,6 +602,8 @@
     <MESSAGE value="update t button enable disable for matter pair" />
     <MESSAGE value="update thread_state to &quot;leader\ndone&quot;" />
     <MESSAGE value="ble check added for matter commissioning" />
-    <option name="LAST_COMMIT_MESSAGE" value="ble check added for matter commissioning" />
+    <MESSAGE value="attribute fix for matter automations" />
+    <MESSAGE value="new matter definitions" />
+    <option name="LAST_COMMIT_MESSAGE" value="new matter definitions" />
   </component>
 </project>
