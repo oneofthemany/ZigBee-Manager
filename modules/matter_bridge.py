@@ -465,7 +465,6 @@ class MatterBridge:
             cluster_id = event_data.get("cluster_id", 0)
             event_name = event_data.get("event_name", "")
             event_data_inner = event_data.get("event_data", {})
-            logger.info(f"[DEBUG] Raw node_event data keys: {list(event_data.keys())} full: {event_data}")
 
 
             if node_id is not None:
