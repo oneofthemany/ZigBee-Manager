@@ -465,6 +465,8 @@ class MatterBridge:
             cluster_id = event_data.get("cluster_id", 0)
             event_name = event_data.get("event_name", "")
             event_data_inner = event_data.get("event_data", {})
+            logger.info(f"[DEBUG] Raw node_event data keys: {list(event_data.keys())} full: {event_data}")
+
 
             if node_id is not None:
                 ieee = f"matter_{node_id}"
@@ -481,6 +483,13 @@ class MatterBridge:
                     dev.state["last_action"] = action
                     dev.state["last_action_endpoint"] = endpoint_id
                     dev.state["last_action_time"] = dev.last_seen
+
+                    # Definition-based event → update per-endpoint action state keys
+                    if hasattr(dev._parser, 'handle_event'):
+                        result = dev._parser.handle_event(endpoint_id, event_name, event_data_inner)
+                        if result:
+                            state_key, action_value = result
+                            dev.state[state_key] = action_value
 
                     logger.info(
                         f"[{ieee}] Matter event: {action} "

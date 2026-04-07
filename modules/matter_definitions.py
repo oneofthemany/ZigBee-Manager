@@ -449,6 +449,7 @@ class DefinitionParser:
         self._def = definition
         self.device_type = definition.get("device_type", "Matter")
         self._previous_positions = {}
+        self._action_states = {}
 
     def find_attr(self, attributes: dict, cluster: int, attr: int,
                   default=None, endpoint: int = None):
@@ -528,6 +529,12 @@ class DefinitionParser:
                 state[state_key] = round(value / 2) if isinstance(value, int) else value
             else:
                 state[state_key] = value
+            if transform == "event_action":
+                # Event-driven — initialise with empty string, events will populate it
+                if state_key not in self._action_states:
+                    self._action_states[state_key] = ""
+                state[state_key] = self._action_states.get(state_key, "")
+                continue
 
         return state
 
@@ -617,6 +624,20 @@ class DefinitionParser:
 
         return f"{prefix}_{role}_{action}"
 
+
+    def handle_event(self, endpoint_id: int, event_name: str, event_data: dict) -> Optional[str]:
+        """Process a Matter event and update action state keys. Returns the action string."""
+        action = self.parse_event(event_name, endpoint_id, 59, event_data)
+
+        # Find which state_key maps to this endpoint as event_action
+        for state_key, mapping in self._def.get("state_mapping", {}).items():
+            if mapping.get("type") == "event_action" and mapping.get("ep") == endpoint_id:
+                # Extract just the action part (strip the prefix from parse_event)
+                short_action = action.rsplit("_", 1)[-1] if "_" in action else action
+                self._action_states[state_key] = short_action
+                return state_key, short_action
+
+        return None
 
 # =============================================================================
 # SINGLETON STORE
