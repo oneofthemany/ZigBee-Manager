@@ -13,7 +13,6 @@ from modules.zigbee_debug import get_debugger
 
 logger = logging.getLogger("routes.system")
 
-
 def register_system_routes(app: FastAPI, get_zigbee_service, get_mqtt_service, get_manager):
     """Register system management routes."""
 
