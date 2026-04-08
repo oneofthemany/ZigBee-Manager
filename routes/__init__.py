@@ -16,7 +16,7 @@ from routes.otbr_routes import register_otbr_routes
 from routes.matter_attribute_routes import register_matter_attribute_routes
 from routes.backup_routes import register_backup_routes
 from routes.matter_definitions_routes import register_matter_definition_routes
-from rotary_bindings_routes import register_rotary_binding_routes
+from routes.rotary_bindings_routes import register_rotary_binding_routes
 
 
 __all__ = [
