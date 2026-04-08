@@ -352,7 +352,7 @@ def generate_definition_draft(attributes: dict) -> dict:
     If an existing definition is found, merge new scan data into it
     while preserving rotary_bindings, event_actions, and user edits.
     """
-    from matter_parsers import BaseMatterParser, BasicInfoAttrs
+    from handlers.matter_parsers import BaseMatterParser, BasicInfoAttrs
 
     base = BaseMatterParser()
     vendor_name = base.find_attr(attributes, 40, BasicInfoAttrs.VENDOR_NAME, "Unknown")
