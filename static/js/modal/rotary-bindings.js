@@ -100,6 +100,8 @@ export async function initRotaryBindings(sourceIeee, endpoints) {
                 group: group,
                 eps: [],
                 maxPositions: ep.switch_info?.positions || 18,
+                mode: 'step',      // default for paired EPs
+                stepSize: 25,
             };
         }
         groups[group].eps.push(ep);
@@ -161,9 +163,9 @@ function _renderBindingCard(group, rotaryKey, existing, sourceIeee, targetDevice
                         </select>
                     </div>
                     <div class="col-md-3">
-                        <label class="form-label mb-0">Positions</label>
+                        <label class="form-label mb-0">${group.mode === 'step' ? 'Step Size' : 'Positions'}</label>
                         <input type="number" class="form-control form-control-sm" id="rb-pos-${rotaryKey}"
-                               value="${existing?.max_positions || maxPos}" min="1" max="100">
+                               value="${existing?.step_size || group.stepSize || maxPos}" min="1" max="254">
                     </div>
                 </div>
                 <div class="row g-2 mb-2">
@@ -244,19 +246,35 @@ window._rbCmdChanged = function (rotaryKey) {
 window._rbSave = async function (sourceIeee, rotaryKey, ep, maxPositions) {
     const targetIeee = document.getElementById(`rb-target-${rotaryKey}`)?.value;
     const command = document.getElementById(`rb-cmd-${rotaryKey}`)?.value;
-    const positions = parseInt(document.getElementById(`rb-pos-${rotaryKey}`)?.value || maxPositions);
+    const stepSize = parseInt(document.getElementById(`rb-pos-${rotaryKey}`)?.value || '25');
     const min = parseFloat(document.getElementById(`rb-min-${rotaryKey}`)?.value || '0');
     const max = parseFloat(document.getElementById(`rb-max-${rotaryKey}`)?.value || '254');
     const invert = document.getElementById(`rb-invert-${rotaryKey}`)?.checked || false;
 
-    if (!targetIeee) {
-        alert('Select a target device.');
-        return;
-    }
-    if (!command) {
-        alert('Select a command.');
-        return;
-    }
+    if (!targetIeee) { alert('Select a target device.'); return; }
+    if (!command) { alert('Select a command.'); return; }
+
+    // Get CW/CCW EPs from the definition's rotary_bindings
+    let mode = 'step', cwEp = ep, ccwEp = 0;
+    try {
+        const defRes = await fetch('/api/matter/definitions');
+        const defData = await defRes.json();
+        if (defData.success) {
+            for (const d of defData.definitions) {
+                const detailRes = await fetch(`/api/matter/definitions/${d.filename}`);
+                const detail = await detailRes.json();
+                if (detail.success) {
+                    const rb = detail.definition?.rotary_bindings?.[rotaryKey];
+                    if (rb) {
+                        mode = rb.mode || 'step';
+                        cwEp = rb.cw_ep || ep;
+                        ccwEp = rb.ccw_ep || 0;
+                        break;
+                    }
+                }
+            }
+        }
+    } catch (e) { /* use defaults */ }
 
     try {
         const res = await fetch('/api/rotary-bindings', {
@@ -265,8 +283,12 @@ window._rbSave = async function (sourceIeee, rotaryKey, ep, maxPositions) {
             body: JSON.stringify({
                 source_ieee: sourceIeee,
                 rotary_key: rotaryKey,
-                ep: ep,
-                max_positions: positions,
+                ep: cwEp,
+                max_positions: maxPositions,
+                mode: mode,
+                cw_ep: cwEp,
+                ccw_ep: ccwEp,
+                step_size: stepSize,
                 target: {
                     ieee: targetIeee,
                     command: command,
@@ -276,29 +298,13 @@ window._rbSave = async function (sourceIeee, rotaryKey, ep, maxPositions) {
                 },
             }),
         });
-
         const data = await res.json();
         if (data.success) {
-            // Update card visual
             const card = document.getElementById(`rb-card-${rotaryKey}`);
             if (card) {
                 card.className = card.className.replace('border-secondary', 'border-success');
                 const badge = card.querySelector('.card-header .badge:last-child');
-                if (badge) {
-                    badge.className = 'badge bg-success';
-                    badge.textContent = 'Bound';
-                }
-            }
-            // Brief success feedback
-            const btn = event?.target?.closest('button');
-            if (btn) {
-                const origHtml = btn.innerHTML;
-                btn.innerHTML = '<i class="fas fa-check me-1"></i> Saved';
-                btn.classList.replace('btn-success', 'btn-outline-success');
-                setTimeout(() => {
-                    btn.innerHTML = origHtml;
-                    btn.classList.replace('btn-outline-success', 'btn-success');
-                }, 1500);
+                if (badge) { badge.className = 'badge bg-success'; badge.textContent = 'Bound'; }
             }
         } else {
             alert('Save failed: ' + (data.error || 'Unknown error'));

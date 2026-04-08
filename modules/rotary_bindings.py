@@ -375,13 +375,18 @@ class RotaryBindingManager:
     # ── Binding CRUD ──────────────────────────────────────────────────
 
     def add_binding(self, source_ieee: str, rotary_key: str, ep: int,
-                    max_positions: int, target: dict) -> dict:
-        """Add or update a rotary binding. Also saves to the definition file."""
+                    max_positions: int, target: dict,
+                    mode: str = "step", cw_ep: int = 0, ccw_ep: int = 0,
+                    step_size: int = 25) -> dict:
         binding = RotaryBinding({
             "source_ieee": source_ieee,
             "source_ep": ep,
             "rotary_key": rotary_key,
             "max_positions": max_positions,
+            "mode": mode,
+            "cw_ep": cw_ep,
+            "ccw_ep": ccw_ep,
+            "step_size": step_size,
             "target_ieee": target.get("ieee", ""),
             "target_command": target.get("command", "brightness"),
             "target_endpoint": target.get("endpoint"),
@@ -445,42 +450,51 @@ class RotaryBindingManager:
         }
 
     def save_to_definition(self, definition_store, source_ieee: str):
-        """
-        Save current bindings back to the definition file for a specific device.
-        Finds the matching definition and updates its rotary_bindings section.
-        """
-        # Find bindings for this source
+        """Save current bindings back to the definition file."""
         device_bindings = [b for b in self._all_bindings if b.source_ieee == source_ieee]
         if not device_bindings:
             return False
 
-        # Find the definition file
+        # Find definition by iterating all and checking rotary_key match
+        # OR by source_ieee in any rotary_binding
         defn = None
         fname = None
         for f, d in definition_store._by_file.items():
-            # Match by checking if any binding matches this definition
+            # Check if any existing rotary_binding matches
             rb = d.get("rotary_bindings", {})
-            # Also check state_mapping for rotary keys
-            sm = d.get("state_mapping", {})
-            rotary_keys_in_def = set(rb.keys()) | {k for k, v in sm.items()
-                                                   if v.get("type") in ("position", "event_action")
-                                                   and "rotary" in k}
-            binding_keys = {b.rotary_key for b in device_bindings}
-            if rotary_keys_in_def & binding_keys:
-                defn = d
-                fname = f
+            for rk, rv in rb.items():
+                if rv.get("source_ieee") == source_ieee:
+                    defn = d
+                    fname = f
+                    break
+
+            # Also check by rotary_key names matching binding keys
+            if not defn:
+                binding_keys = {b.rotary_key for b in device_bindings}
+                sm_rotary_keys = {k for k in d.get("state_mapping", {})
+                                  if "rotary" in k}
+                rb_keys = set(rb.keys())
+                if binding_keys & (rb_keys | sm_rotary_keys):
+                    defn = d
+                    fname = f
+
+            if defn:
                 break
 
         if not defn or not fname:
-            logger.warning(f"No definition found to save rotary bindings for {source_ieee}")
+            logger.warning(f"No definition found for {source_ieee}")
             return False
 
-        # Update rotary_bindings in the definition
+        # Ensure rotary_bindings section exists
         if "rotary_bindings" not in defn:
             defn["rotary_bindings"] = {}
 
         for b in device_bindings:
             defn["rotary_bindings"][b.rotary_key] = {
+                "mode": b.mode,
+                "cw_ep": b.cw_ep,
+                "ccw_ep": b.ccw_ep,
+                "step_size": b.step_size,
                 "positions": b.max_positions,
                 "description": b.description,
                 "source_ieee": b.source_ieee,
@@ -497,7 +511,6 @@ class RotaryBindingManager:
                 },
             }
 
-        # Save
         definition_store.save(defn, fname)
         logger.info(f"Saved {len(device_bindings)} rotary binding(s) to {fname}")
         return True

@@ -37,6 +37,10 @@ class AddBindingRequest(BaseModel):
     rotary_key: str = Field(..., description="Rotary state key from definition")
     ep: int = Field(..., description="Source endpoint ID")
     max_positions: int = Field(18, description="Total positions on the rotary")
+    mode: str = Field("step", description="'step' or 'position'")
+    cw_ep: int = Field(0, description="Clockwise endpoint ID")
+    ccw_ep: int = Field(0, description="Counter-clockwise endpoint ID")
+    step_size: int = Field(25, description="Value change per click")
     target: BindingTarget
 
 
@@ -82,10 +86,13 @@ def register_rotary_binding_routes(app: FastAPI, get_definition_store, get_bindi
             ep=request.ep,
             max_positions=request.max_positions,
             target=request.target.model_dump(),
+            mode=request.mode,
+            cw_ep=request.cw_ep,
+            ccw_ep=request.ccw_ep,
+            step_size=request.step_size,
         )
 
         if result.get("success"):
-            # Persist to definition file
             mgr.save_to_definition(store, request.source_ieee)
 
         return result
