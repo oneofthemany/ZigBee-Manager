@@ -28,18 +28,20 @@
         background:white;opacity:0;
       }
       #bee-msg {
+        display:none;
         position:absolute;top:42%;left:50%;
-        transform:translate(-50%,-50%) scale(0);
-        font-family:'Courier New',monospace;font-size:2rem;font-weight:bold;
-        color:#f5a623;white-space:nowrap;opacity:0;letter-spacing:4px;
-        text-shadow:0 0 30px #ff8800, 0 0 60px #ff4400;
+        //transform:translate(-50%,-50%) scale(0);
+        //font-family:'Courier New',monospace;font-size:2rem;font-weight:bold;
+        //color:#f5a623;white-space:nowrap;opacity:0;letter-spacing:4px;
+        //text-shadow:0 0 30px #ff8800, 0 0 60px #ff4400;
       }
       #bee-speed {
+        display:none;
         position:absolute;top:52%;left:50%;
-        transform:translate(-50%,-50%);
-        font-family:'Courier New',monospace;font-size:1rem;
-        color:#4af;white-space:nowrap;opacity:0;letter-spacing:2px;
-        text-shadow:0 0 15px #4af;
+        //transform:translate(-50%,-50%);
+        //font-family:'Courier New',monospace;font-size:1rem;
+        //color:#4af;white-space:nowrap;opacity:0;letter-spacing:2px;
+        //text-shadow:0 0 15px #4af;
       }
     `;
     document.head.appendChild(style);
@@ -644,7 +646,7 @@
 
       // ── Speed readout ──
       if (progress > 0.05 && progress < 0.55) {
-        drawSpeedometer(ctx, speed, W, H);
+        //drawSpeedometer(ctx, speed, W, H);
       }
 
       // ── THE FLASH (at vanish point) ──
