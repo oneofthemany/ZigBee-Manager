@@ -28,6 +28,7 @@ ALLOWED_DIRS = [
     "static/js/modal",
     "static/css",
     "config",
+    "config/matter_definitions",
     "docs",
     "data",
 ]
