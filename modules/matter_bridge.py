@@ -557,6 +557,44 @@ class MatterBridge:
                             state_key, action_value = result
                             dev.state[state_key] = action_value
 
+                    # Dispatch to rotary binding manager
+                    try:
+                        from modules.rotary_bindings import get_rotary_binding_manager
+                        rbm = get_rotary_binding_manager()
+                        if rbm._all_bindings:
+                            # Extract position from event data
+                            new_pos = event_data_inner.get("newPosition",
+                                                           event_data_inner.get("new_position"))
+                            if new_pos is not None:
+                                # Find max_positions from device parser/definition
+                                max_pos = None
+                                if hasattr(dev._parser, '_def'):
+                                    ep_info = dev._parser._def.get("endpoints", {}).get(str(endpoint_id), {})
+                                    sm = dev._parser._def.get("state_mapping", {})
+                                    for k, v in sm.items():
+                                        if v.get("ep") == endpoint_id and "rotary" in k:
+                                            rb = dev._parser._def.get("rotary_bindings", {}).get(k, {})
+                                            max_pos = rb.get("positions", v.get("positions"))
+                                            rotary_key = k
+                                            break
+
+                                if max_pos is None:
+                                    # Fallback: get from switch cluster attr 0
+                                    max_pos = event_data_inner.get("totalNumberOfPressesCounted", 18)
+
+                                await rbm.on_rotary_event(
+                                    source_ieee=ieee,
+                                    endpoint_id=endpoint_id,
+                                    position=new_pos,
+                                    max_positions=max_pos,
+                                    rotary_key=locals().get('rotary_key'),
+                                )
+                    except ImportError:
+                        pass
+                    except Exception as e:
+                        logger.debug(f"Rotary binding dispatch error: {e}")
+
+
                     logger.info(
                         f"[{ieee}] Matter event: {action} "
                         f"(EP{endpoint_id}, cluster {cluster_id})"

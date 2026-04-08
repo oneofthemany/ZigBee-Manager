@@ -51,6 +51,7 @@ from modules.telemetry_collector import TelemetryCollector
 from modules.telemetry_api import register_telemetry_routes
 from modules.dongle_jedi_api import register_setup_routes
 from modules.matter_definitions import DefinitionStore
+from modules.rotary_bindings import get_rotary_binding_manager
 
 port = int(os.environ.get("ZMM_PORT", 8000))
 
@@ -62,6 +63,7 @@ from routes import (
     register_network_routes,
     register_system_routes,
     register_matter_routes,
+    register_rotary_binding_routes,
     register_group_routes,
     register_editor_routes,
     register_ota_routes,
@@ -394,6 +396,18 @@ async def lifespan(app: FastAPI):
         zigbee_service.automation._get_names = merged_names
         logger.info("Wired Matter devices into automation engine")
 
+
+    # Rotary binding manager
+    if matter_bridge:
+        from modules.matter_definitions import get_definition_store
+        rbm = get_rotary_binding_manager()
+        rbm.set_dispatchers(
+            zigbee_send=zigbee_service.send_command,
+            matter_send=matter_bridge.send_command,
+        )
+        rbm.load_from_definitions(get_definition_store())
+        logger.info(f"Rotary binding manager: {len(rbm._all_bindings)} binding(s)")
+
     # ──  Recovery ──
     from modules.test_recovery import get_test_recovery_manager
     trm = get_test_recovery_manager(broadcast_event)
@@ -512,15 +526,26 @@ register_network_routes(app, get_zigbee_service)
 register_system_routes(app, get_zigbee_service, get_mqtt_service, get_manager)
 register_matter_routes(app, get_zigbee_service, get_matter_server, get_matter_bridge)
 register_group_routes(app, get_zigbee_service, get_manager)
-register_editor_routes(app, get_zigbee_service)
+register_rotary_binding_routes(app,
+    get_definition_store=lambda: get_definition_store(),
+    get_binding_manager=lambda: get_rotary_binding_manager(),
+)
 register_otbr_routes(app, get_zigbee_service)
 register_matter_attribute_routes(app, get_matter_bridge)
 register_matter_definition_routes(app, get_matter_bridge)
+register_rotary_binding_routes(app, get_definition_store, get_binding_manager)
 register_test_recovery_routes(app, get_manager)
 register_websocket_routes(app)
-register_zone_routes(app, lambda: zigbee_service.zone_manager, lambda: zigbee_service.devices)
-register_ota_routes(app, lambda: zigbee_service.ota_manager)
-register_automation_routes(app, lambda: zigbee_service.automation)
+register_zone_routes(app,
+    lambda: zigbee_service.zone_manager,
+    lambda: zigbee_service.devices
+)
+register_ota_routes(app,
+    lambda: zigbee_service.ota_manager
+)
+register_automation_routes(app,
+    lambda: zigbee_service.automation
+)
 register_backup_routes(app, get_zigbee_service)
 
 # ============================================================================

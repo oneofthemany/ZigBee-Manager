@@ -9,6 +9,12 @@
  *   4. Saves definitions to config/matter_definitions/
  */
 
+ // ============================================================================
+ // IMPORTS
+ // ============================================================================
+
+ import { renderRotaryBindingsSection, initRotaryBindings } from './rotary-bindings.js';
+
 // ============================================================================
 // STATE
 // ============================================================================
@@ -63,6 +69,10 @@ window._matterScanEndpoints = async function (nodeId) {
 
     body.innerHTML = '<div class="text-center py-3"><i class="fas fa-spinner fa-spin"></i> Scanning endpoints...</div>';
 
+    // Init rotary bindings UI
+    const sourceIeee = `matter_${nodeId}`;
+    initRotaryBindings(sourceIeee, data.endpoints);
+
     try {
         const res = await fetch(`/api/matter/nodes/${nodeId}/scan-endpoints`);
         const data = await res.json();
@@ -99,6 +109,7 @@ function _renderScanResults(data, nodeId) {
         ` : ''}
         <div class="row g-2">
             ${eps.map(ep => _renderEndpointCard(ep)).join('')}
+            ${renderRotaryBindingsSection(data.ieee || `matter_${nodeId}`, eps)}
         </div>
     `;
 }
