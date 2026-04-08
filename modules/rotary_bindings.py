@@ -41,6 +41,12 @@ class RotaryBinding:
         self.rotary_key = data.get("rotary_key", "")
         self.max_positions = data.get("max_positions", 18)
 
+        # Step mode (paired directional EPs)
+        self.mode = data.get("mode", "position")  # "step" or "position"
+        self.cw_ep = data.get("cw_ep", 0)
+        self.ccw_ep = data.get("ccw_ep", 0)
+        self.step_size = data.get("step_size", 25)
+
         # Target
         self.target_ieee = data.get("target_ieee", "")
         self.target_command = data.get("target_command", "brightness")
@@ -50,8 +56,8 @@ class RotaryBinding:
 
         # Behaviour
         self.enabled = data.get("enabled", True)
-        self.wrap = data.get("wrap", False)  # Wrap around at max position
-        self.invert = data.get("invert", False)  # Reverse direction
+        self.wrap = data.get("wrap", False)
+        self.invert = data.get("invert", False)
         self.description = data.get("description", "")
 
         # Tracking
@@ -90,6 +96,10 @@ class RotaryBinding:
             "source_ep": self.source_ep,
             "rotary_key": self.rotary_key,
             "max_positions": self.max_positions,
+            "mode": self.mode,
+            "cw_ep": self.cw_ep,
+            "ccw_ep": self.ccw_ep,
+            "step_size": self.step_size,
             "target_ieee": self.target_ieee,
             "target_command": self.target_command,
             "target_endpoint": self.target_endpoint,
@@ -186,9 +196,13 @@ class RotaryBindingManager:
 
                 b = RotaryBinding({
                     "source_ieee": source_ieee,
-                    "source_ep": ep,
+                    "source_ep": binding_data.get("cw_ep", ep),
                     "rotary_key": rotary_key,
-                    "max_positions": max_positions,
+                    "max_positions": binding_data.get("positions", 18),
+                    "mode": binding_data.get("mode", "position"),
+                    "cw_ep": binding_data.get("cw_ep", 0),
+                    "ccw_ep": binding_data.get("ccw_ep", 0),
+                    "step_size": binding_data.get("step_size", 25),
                     "target_ieee": target.get("ieee", ""),
                     "target_command": target.get("command", "brightness"),
                     "target_endpoint": target.get("endpoint"),
@@ -219,64 +233,99 @@ class RotaryBindingManager:
         rb = defn.get("rotary_bindings", {}).get(rotary_key, {})
         return rb.get("ep")
 
+
     async def on_rotary_event(
             self,
             source_ieee: str,
             endpoint_id: int,
-            position: int,
+            position: int = None,
             max_positions: int = None,
             rotary_key: str = None,
+            steps: int = 1,
     ):
         """
-        Handle a rotary position change event.
-        Called from matter_bridge.py when a Switch cluster event indicates rotation.
+        Handle a rotary event.
+
+        Two modes:
+          - "step" mode (IKEA paired EPs): cw_ep fires → increment, ccw_ep fires → decrement
+          - "position" mode (absolute encoder): position 0-N maps to min-max
         """
         self._stats["events_received"] += 1
 
-        # Find bindings for this source
-        key = f"{source_ieee}:{endpoint_id}"
-        bindings = self._bindings.get(key, [])
+        # Find matching binding by checking both cw_ep and ccw_ep
+        matching_bindings = []
+        direction = None
 
-        if not bindings and rotary_key:
-            # Try matching by rotary_key across all bindings
-            bindings = [b for b in self._all_bindings
-                        if b.rotary_key == rotary_key and b.source_ieee == source_ieee]
-
-        if not bindings:
-            return
-
-        for binding in bindings:
+        for binding in self._all_bindings:
+            if binding.source_ieee != source_ieee:
+                continue
             if not binding.enabled:
                 continue
 
-            # Use binding's max_positions, override with event if provided
-            max_pos = max_positions or binding.max_positions
+            mode = binding.mode
 
-            # Skip if position hasn't changed
-            if binding.last_position == position:
-                continue
+            if mode == "step":
+                if binding.cw_ep == endpoint_id:
+                    direction = "cw"
+                    matching_bindings.append(binding)
+                elif binding.ccw_ep == endpoint_id:
+                    direction = "ccw"
+                    matching_bindings.append(binding)
+            else:
+                # Position mode — match by source_ep
+                key = f"{source_ieee}:{endpoint_id}"
+                if key == f"{binding.source_ieee}:{binding.source_ep}":
+                    matching_bindings.append(binding)
 
-            binding.last_position = position
+        if not matching_bindings:
+            return
 
+        for binding in matching_bindings:
             # Throttle
             now = time.monotonic()
             throttle_key = f"{binding.target_ieee}:{binding.target_command}"
             last = self._last_dispatch.get(throttle_key, 0)
             if (now - last) * 1000 < self._throttle_ms:
                 continue
-
-            # Interpolate
-            value = binding.interpolate(position)
-            binding.last_value = value
-            binding.last_sent = time.time()
             self._last_dispatch[throttle_key] = now
 
-            logger.info(
-                f"Rotary binding: {source_ieee} EP{endpoint_id} pos={position}/{max_pos} "
-                f"→ {binding.target_ieee} {binding.target_command}={value}"
-            )
+            if binding.mode == "step":
+                # Step mode: increment/decrement current value
+                current = binding.last_value
+                if current is None:
+                    current = (binding.target_min + binding.target_max) / 2
 
-            # Dispatch command
+                step = binding.step_size * steps
+                if direction == "ccw":
+                    step = -step
+                if binding.invert:
+                    step = -step
+
+                new_value = current + step
+                # Clamp
+                new_value = max(binding.target_min, min(new_value, binding.target_max))
+                # Round for integer commands
+                if binding.target_command in ("brightness", "level", "position", "volume", "color_temp"):
+                    new_value = int(round(new_value))
+
+                binding.last_value = new_value
+                binding.last_sent = time.time()
+
+                logger.info(
+                    f"Rotary step: {source_ieee} EP{endpoint_id} {direction} "
+                    f"→ {binding.target_ieee} {binding.target_command}={new_value} "
+                    f"(step={step})"
+                )
+
+                await self._dispatch(binding, new_value)
+
+            else:
+                # Position mode (absolute encoder)
+                if position is None:
+                    continue
+                value = binding.interpolate(position)
+                binding.last_value = value
+                binding.last_sent = time.time()
             await self._dispatch(binding, value)
 
     async def _dispatch(self, binding: RotaryBinding, value: Any):
