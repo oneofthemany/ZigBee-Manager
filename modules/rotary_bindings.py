@@ -114,7 +114,7 @@ class RotaryBinding:
 
 # Known command → default ranges
 COMMAND_DEFAULTS = {
-    "brightness":        {"min": 0, "max": 254, "label": "Brightness"},
+    "brightness":        {"min": 0, "max": 100, "label": "Brightness %"},
     "level":             {"min": 0, "max": 100, "label": "Level %"},
     "color_temp":        {"min": 153, "max": 500, "label": "Color Temp (mireds)"},
     "color_temp_kelvin": {"min": 2000, "max": 6500, "label": "Color Temp (K)"},

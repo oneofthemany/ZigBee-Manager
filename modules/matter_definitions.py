@@ -350,7 +350,7 @@ def generate_definition_draft(attributes: dict) -> dict:
     """
     Auto-generate a definition draft from raw attributes.
     If an existing definition is found, merge new scan data into it
-    while preserving rotary_bindings, event_actions, and user edits.
+    while preserving rotary_bindings targets and user edits.
     """
     from handlers.matter_parsers import BaseMatterParser, BasicInfoAttrs
 
@@ -361,13 +361,12 @@ def generate_definition_draft(attributes: dict) -> dict:
     part_number = base.find_attr(attributes, 40, BasicInfoAttrs.PART_NUMBER, "")
     device_type = base.get_device_type(attributes)
 
-    # Check for existing definition to preserve user customisations
     store = get_definition_store()
     existing = store.find(vendor_id, part_number or product_name)
 
     scan = scan_endpoints(attributes)
 
-    # Build endpoint map from scan
+    # ── Phase 1: Build endpoint map from SCAN (not existing definition) ──
     endpoint_map = {}
     state_mapping = {}
     capabilities = set(["matter"])
@@ -377,6 +376,7 @@ def generate_definition_draft(attributes: dict) -> dict:
         if ep_id == 0:
             continue
 
+        # Always use scan-detected role — never override from existing
         role = ep_info.get("role", "unknown")
         label = ep_info.get("label", f"EP{ep_id}")
         group = ""
@@ -385,13 +385,18 @@ def generate_definition_draft(attributes: dict) -> dict:
                 group = tag["label"]
                 break
 
-        # If existing definition has this EP, preserve its role/label/group
+        # Only preserve existing LABEL (user may have renamed), not role
         if existing:
             existing_ep = existing.get("endpoints", {}).get(str(ep_id))
             if existing_ep:
-                role = existing_ep.get("role", role)
-                label = existing_ep.get("label", label)
-                group = existing_ep.get("group", group)
+                # Keep user-customised label if they changed it
+                ex_label = existing_ep.get("label", "")
+                if ex_label and "EP" not in ex_label and "Dial" not in ex_label:
+                    label = ex_label
+                # Keep user-customised group
+                ex_group = existing_ep.get("group", "")
+                if ex_group:
+                    group = ex_group
 
         endpoint_map[str(ep_id)] = {
             "role": role,
@@ -399,35 +404,32 @@ def generate_definition_draft(attributes: dict) -> dict:
             "group": group,
         }
 
-        # Auto-generate state mappings for new endpoints only
+        # State mapping for switch endpoints
         switch_info = ep_info.get("switch_info")
         if switch_info:
             safe_group = group if group else f"ep{ep_id}"
-
-            if "rotary" in role:
+            if role == "rotary":
                 state_key = f"{safe_group}_rotary"
-                if state_key not in (existing or {}).get("state_mapping", {}):
-                    state_mapping[state_key] = {
-                        "ep": ep_id, "cluster": 59, "attr": 1,
-                        "type": "position", "description": f"{label} position",
-                    }
+                state_mapping[state_key] = {
+                    "ep": ep_id, "cluster": 59, "attr": 1,
+                    "type": "position", "description": f"{label} position",
+                }
                 capabilities.add("rotary")
             elif role in ("button", "toggle"):
                 state_key = f"{safe_group}_button"
-                if state_key not in (existing or {}).get("state_mapping", {}):
-                    state_mapping[state_key] = {
-                        "ep": ep_id, "cluster": 59, "attr": 1,
-                        "type": "position", "description": f"{label} position",
-                    }
+                state_mapping[state_key] = {
+                    "ep": ep_id, "cluster": 59, "attr": 1,
+                    "type": "position", "description": f"{label} position",
+                }
                 capabilities.add("button")
 
-    # Auto-detect paired rotary endpoints (two rotary EPs in same group = CW/CCW)
+    # ── Phase 2: Detect paired rotary EPs (CW/CCW) ──
+    # Group rotary endpoints by group name
     rotary_bindings = {}
     groups_with_rotary = {}
     for ep_id_str, ep_info in endpoint_map.items():
-        role = ep_info.get("role", "")
-        group = ep_info.get("group", "")
-        if "rotary" in role and group:
+        if ep_info.get("role") == "rotary" and ep_info.get("group"):
+            group = ep_info["group"]
             if group not in groups_with_rotary:
                 groups_with_rotary[group] = []
             groups_with_rotary[group].append(int(ep_id_str))
@@ -436,7 +438,6 @@ def generate_definition_draft(attributes: dict) -> dict:
         eps.sort()
         rotary_key = f"{group}_rotary"
         if len(eps) >= 2:
-            # Paired: lower EP = CW, higher EP = CCW
             endpoint_map[str(eps[0])]["role"] = "rotary_cw"
             endpoint_map[str(eps[0])]["label"] = f"Dial {group} CW (EP{eps[0]})"
             endpoint_map[str(eps[1])]["role"] = "rotary_ccw"
@@ -454,11 +455,11 @@ def generate_definition_draft(attributes: dict) -> dict:
                 "target": None,
             }
 
-            # Update state mapping to use CW ep
             if rotary_key in state_mapping:
                 state_mapping[rotary_key]["ep"] = eps[0]
+
+            capabilities.add("rotary")
         else:
-            # Single rotary EP — position mode
             rotary_bindings[rotary_key] = {
                 "mode": "position",
                 "positions": 18,
@@ -468,9 +469,11 @@ def generate_definition_draft(attributes: dict) -> dict:
                 "target": None,
             }
 
-    # Auto-generate event_action entries for button endpoints
+    # ── Phase 3: Event actions for button-only EPs ──
+    # Only create for actual buttons, not rotary_cw/ccw
     for ep_id_str, ep_info in endpoint_map.items():
-        if ep_info.get("role") == "button":
+        role = ep_info.get("role", "")
+        if role == "button":
             group = ep_info.get("group", ep_id_str)
             action_key = f"{group}_button_action"
             if action_key not in state_mapping:
@@ -484,14 +487,13 @@ def generate_definition_draft(attributes: dict) -> dict:
     # Battery
     bat = base.find_attr(attributes, 47, 12)
     if bat is not None:
-        if "battery" not in (existing or {}).get("state_mapping", {}):
-            state_mapping["battery"] = {
-                "ep": 0, "cluster": 47, "attr": 12,
-                "type": "battery", "description": "Battery percentage",
-            }
+        state_mapping["battery"] = {
+            "ep": 0, "cluster": 47, "attr": 12,
+            "type": "battery", "description": "Battery percentage",
+        }
         capabilities.add("battery")
 
-    # Build the draft
+    # ── Phase 4: Build draft ──
     draft = {
         "vendor_id": vendor_id,
         "product_id": part_number or product_name,
@@ -502,22 +504,34 @@ def generate_definition_draft(attributes: dict) -> dict:
         "state_mapping": state_mapping,
         "rotary_bindings": rotary_bindings,
         "capabilities": sorted(list(capabilities)),
-        "_draft": True,
-        "_generated_at": time.time(),
     }
 
+    # ── Phase 5: Merge existing — only preserve targets and user data ──
+    if existing:
+        # Preserve existing state_mapping entries the scan didn't produce
+        # (e.g. event_actions the user manually added)
+        for sk, sv in existing.get("state_mapping", {}).items():
+            if sk not in draft["state_mapping"]:
+                draft["state_mapping"][sk] = sv
 
-    # Merge rotary_bindings: existing targets take priority
-    if existing.get("rotary_bindings"):
-        for rk, rv in existing["rotary_bindings"].items():
-            if rk in draft.get("rotary_bindings", {}):
-                # Preserve existing target binding but update structure
-                if rv.get("target"):
-                    draft["rotary_bindings"][rk]["target"] = rv["target"]
-                if rv.get("source_ieee"):
-                    draft["rotary_bindings"][rk]["source_ieee"] = rv["source_ieee"]
-            else:
-                draft.setdefault("rotary_bindings", {})[rk] = rv
+        # Preserve rotary binding TARGETS (the user-configured part)
+        if existing.get("rotary_bindings"):
+            for rk, rv in existing["rotary_bindings"].items():
+                if rk in draft["rotary_bindings"]:
+                    if rv.get("target"):
+                        draft["rotary_bindings"][rk]["target"] = rv["target"]
+                    if rv.get("source_ieee"):
+                        draft["rotary_bindings"][rk]["source_ieee"] = rv["source_ieee"]
+                else:
+                    draft["rotary_bindings"][rk] = rv
+
+        # Merge capabilities
+        existing_caps = set(existing.get("capabilities", []))
+        draft["capabilities"] = sorted(list(existing_caps | capabilities))
+
+        # Preserve device_type if user changed it
+        if existing.get("device_type") and existing["device_type"] != "Matter":
+            draft["device_type"] = existing["device_type"]
 
     return draft
 

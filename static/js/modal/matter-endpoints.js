@@ -121,11 +121,12 @@ function _renderEndpointCard(ep) {
     }
 
     const roleColors = {
-        button: 'warning', rotary: 'info', toggle: 'primary',
-        switch: 'secondary', root: 'dark', unknown: 'secondary',
+        button: 'warning', rotary: 'info', rotary_cw: 'info', rotary_ccw: 'info',
+        toggle: 'primary', switch: 'secondary', root: 'dark', unknown: 'secondary',
     };
     const roleIcons = {
-        button: 'fa-hand-pointer', rotary: 'fa-sync-alt', toggle: 'fa-toggle-on',
+        button: 'fa-hand-pointer', rotary: 'fa-sync-alt', rotary_cw: 'fa-sync-alt',
+        rotary_ccw: 'fa-sync-alt', toggle: 'fa-toggle-on',
         switch: 'fa-power-off', root: 'fa-server', unknown: 'fa-question',
     };
 
@@ -310,7 +311,7 @@ function _renderDefEditor(container, defn, isEdit) {
                                     <td><code>${ep}</code></td>
                                     <td>
                                         <select class="form-select form-select-sm def-ep-role">
-                                            ${['button', 'rotary', 'toggle', 'switch', 'sensor', 'unknown']
+                                            ${['button', 'rotary', 'rotary_cw', 'rotary_ccw', 'toggle', 'switch', 'sensor', 'unknown']
                                                 .map(r => `<option ${info.role === r ? 'selected' : ''}>${r}</option>`)
                                                 .join('')}
                                         </select>
@@ -363,7 +364,7 @@ function _renderDefEditor(container, defn, isEdit) {
 }
 
 function _renderStateMappingRow(key, m) {
-    const types = ['raw', 'position', 'battery', 'boolean', 'on_off', 'temperature', 'percentage'];
+    const types = ['raw', 'position', 'event_action', 'battery', 'boolean', 'on_off', 'temperature', 'percentage'];
     return `
         <tr>
             <td><input type="text" class="form-control form-control-sm def-sm-key" value="${key}"></td>
@@ -392,9 +393,6 @@ function _renderStateMappingRow(key, m) {
 window._matterAddStateRow = function () {
     const tbody = document.getElementById('defStateRows');
     if (!tbody) return;
-    const row = document.createElement('tr');
-    row.innerHTML = _renderStateMappingRow('new_key', { ep: 1, cluster: 59, attr: 1, type: 'position', description: '' });
-    // Extract inner content (the row already wraps in <tr>)
     const temp = document.createElement('tbody');
     temp.innerHTML = _renderStateMappingRow('new_key', { ep: 1, cluster: 59, attr: 1, type: 'position', description: '' });
     tbody.appendChild(temp.firstElementChild);
@@ -442,6 +440,7 @@ function _collectDefFromForm() {
         device_type: document.getElementById('defDeviceType')?.value || 'Matter',
         endpoints: {},
         state_mapping: {},
+        rotary_bindings: _currentDraft?.rotary_bindings || {},
         capabilities: _currentDraft?.capabilities || ['matter'],
     };
 
@@ -473,7 +472,7 @@ function _collectDefFromForm() {
     const caps = new Set(['matter']);
     Object.values(defn.endpoints).forEach(ep => {
         if (ep.role === 'button') caps.add('button');
-        if (ep.role === 'rotary') caps.add('rotary');
+        if (ep.role === 'rotary' || ep.role === 'rotary_cw' || ep.role === 'rotary_ccw') caps.add('rotary');
         if (ep.role === 'toggle') caps.add('switch');
     });
     // Keep battery if present in state_mapping
