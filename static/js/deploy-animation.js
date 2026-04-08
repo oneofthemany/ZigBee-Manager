@@ -49,6 +49,7 @@
     div.innerHTML = `
       <canvas id="bee-canvas"></canvas>
       <div id="bee-flash"></div>
+      <div id="bee-msg">DEPLOYING... 88 MPH</div>
       <div id="bee-speed"></div>
     `;
     document.body.appendChild(div);
@@ -673,7 +674,7 @@
         msg.style.opacity = sc.toString();
         msg.style.transform = 'translate(-50%,-50%) scale(' + (0.4 + sc * 0.6) + ')';
         speedEl.style.opacity = (sc * 0.7).toString();
-        //speedEl.textContent = 'TEMPORAL DEPLOYMENT SUCCESSFUL';
+        speedEl.textContent = 'TEMPORAL DEPLOYMENT SUCCESSFUL';
       } else {
         msg.style.opacity = '0';
         speedEl.style.opacity = '0';
