@@ -522,6 +522,7 @@ async def manifest():
 
 register_config_routes(app, get_zigbee_service)
 register_device_routes(app, get_zigbee_service, get_matter_bridge)
+register_editor_routes(app, get_zigbee_service)
 register_network_routes(app, get_zigbee_service)
 register_system_routes(app, get_zigbee_service, get_mqtt_service, get_manager)
 register_matter_routes(app, get_zigbee_service, get_matter_server, get_matter_bridge)
