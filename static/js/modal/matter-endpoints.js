@@ -69,10 +69,6 @@ window._matterScanEndpoints = async function (nodeId) {
 
     body.innerHTML = '<div class="text-center py-3"><i class="fas fa-spinner fa-spin"></i> Scanning endpoints...</div>';
 
-    // Init rotary bindings UI
-    const sourceIeee = `matter_${nodeId}`;
-    initRotaryBindings(sourceIeee, data.endpoints);
-
     try {
         const res = await fetch(`/api/matter/nodes/${nodeId}/scan-endpoints`);
         const data = await res.json();
@@ -83,6 +79,11 @@ window._matterScanEndpoints = async function (nodeId) {
         }
 
         body.innerHTML = _renderScanResults(data, nodeId);
+
+        // Init rotary bindings UI
+        const sourceIeee = `matter_${nodeId}`;
+        initRotaryBindings(sourceIeee, data.endpoints);
+
     } catch (e) {
         body.innerHTML = `<div class="alert alert-danger small">Error: ${e.message}</div>`;
     }
