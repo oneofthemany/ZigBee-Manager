@@ -764,6 +764,20 @@ class MatterBridge:
     async def commission(self, code: str) -> dict:
         """Commission a Matter device using its setup code."""
         try:
+            # Prepare BLE adapter for commissioning
+            try:
+                import subprocess
+                subprocess.run(["bluetoothctl", "scan", "off"], capture_output=True, timeout=3)
+                subprocess.run(["bluetoothctl", "discoverable", "off"], capture_output=True, timeout=3)
+                self._ble_scan_proc = subprocess.Popen(
+                    ["bluetoothctl", "scan", "le"],
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+                )
+                await asyncio.sleep(2)
+                logger.info("BLE adapter prepared for Matter commissioning")
+            except Exception as e:
+                logger.debug(f"BLE prep skipped: {e}")
+
             # If OTBR is running, provide Thread credentials before commissioning
             try:
                 import subprocess
@@ -773,20 +787,54 @@ class MatterBridge:
                 )
                 if result.returncode == 0:
                     dataset_hex = result.stdout.strip().split("\n")[0].strip()
-                    if dataset_hex and dataset_hex != "Done":
-                        await self._send_command("set_thread_dataset", {
-                            "dataset": dataset_hex
-                        })
-                        logger.info(f"Matter: Thread dataset provided for commissioning")
+                    if (dataset_hex
+                            and not dataset_hex.startswith("Error")
+                            and dataset_hex != "Done"):
+                        # Strip any non-hex characters
+                        dataset_hex = ''.join(c for c in dataset_hex if c in '0123456789abcdefABCDEF')
+                        if len(dataset_hex) >= 10:
+                            await self._send_command("set_thread_dataset", {
+                                "dataset": dataset_hex
+                            })
+                            logger.info("Matter: Thread dataset provided for commissioning")
+                        else:
+                            logger.warning(f"Thread dataset too short after cleaning: '{dataset_hex}'")
             except Exception as e:
                 logger.debug(f"Thread dataset not available (non-fatal): {e}")
+
+            # Keep resilience watchdog fed during commissioning
+            self._commissioning = True
+
+            async def _feed_watchdog():
+                while getattr(self, '_commissioning', False):
+                    try:
+                        app = getattr(self, '_app_resilience', None)
+                        if app:
+                            app.last_watchdog_feed = time.time()
+                    except Exception:
+                        pass
+                    await asyncio.sleep(10)
+
+            feed_task = asyncio.create_task(_feed_watchdog())
 
             await self._send_command("commission_with_code", {"code": code})
             logger.info(f"Matter: commissioning started with code {code[:8]}...")
             return {"success": True, "protocol": "matter"}
+
         except Exception as e:
             logger.error(f"Matter commission failed: {e}")
             return {"success": False, "error": str(e)}
+
+        finally:
+            # Clean up BLE scan
+            if hasattr(self, '_ble_scan_proc') and self._ble_scan_proc:
+                self._ble_scan_proc.terminate()
+                self._ble_scan_proc = None
+
+            # Stop watchdog feeding
+            self._commissioning = False
+            if 'feed_task' in locals():
+                feed_task.cancel()
 
     async def remove_node(self, node_id: int) -> dict:
         """Remove a Matter node."""
