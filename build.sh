@@ -431,9 +431,9 @@ RUN pip install --no-cache-dir --upgrade pip \
 COPY . .
 
 # Required directories
-RUN mkdir -p /data /app/data/matter /app/data/backups /app/logs /app/config /var/lib/thread \
+RUN mkdir -p /data /app/data/matter /app/data/backups /app/logs /app/config/matter_definitions /var/lib/thread \
         /usr/local/lib/python3.11/site-packages/credentials/development/paa-root-certs \
- && chown -R ${HOST_UID}:${HOST_GID} /app /data /app/data /app/logs /app/config \
+ && chown -R ${HOST_UID}:${HOST_GID} /app /data /app/data /app/logs /app/config /app/config/matter_definitions \
         /usr/local/lib/python3.11/site-packages/credentials /var/lib/thread
 
 ENV ZMM_BACKUP_DIR=/app/data/backups
@@ -490,6 +490,7 @@ prepare_data_dirs() {
 
     local dirs=(
         "$DATA_DIR/config"
+        "$DATA_DIR/config/matter_definitions"
         "$DATA_DIR/data"
         "$DATA_DIR/data/matter"
         "$DATA_DIR/logs"
