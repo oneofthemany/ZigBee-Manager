@@ -50,7 +50,7 @@ from modules.system_monitor import SystemMonitor
 from modules.telemetry_collector import TelemetryCollector
 from modules.telemetry_api import register_telemetry_routes
 from modules.dongle_jedi_api import register_setup_routes
-from modules.matter_definitions import DefinitionStore
+from modules.matter_definitions import get_definition_store
 from modules.rotary_bindings import get_rotary_binding_manager
 
 port = int(os.environ.get("ZMM_PORT", 8000))
@@ -295,6 +295,11 @@ async def lifespan(app: FastAPI):
             lambda ieee, data: zigbee_service.automation.evaluate(ieee, data)
         )
         logger.info("Wired Matter bridge → automation evaluator")
+
+
+    if matter_bridge and hasattr(zigbee_service, 'resilience') and zigbee_service.resilience:
+        matter_bridge._app_resilience = zigbee_service.resilience
+        logger.info("Wired resilience manager → Matter bridge")
 
     # Spectrum monitor — wait for radio to be ready, detect support
     spectrum_interval = get_conf('zigbee', 'spectrum_scan_interval', 3600)
