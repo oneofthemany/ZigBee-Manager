@@ -484,6 +484,13 @@ class ZigbeeService(
                 })
                 logger.info(f"Zigbee network started successfully on {self.port} ({radio_type})")
 
+
+                # Reset resilience watchdog after successful start
+                if hasattr(self, 'resilience') and self.resilience:
+                    self.resilience.last_watchdog_feed = time.time()
+                    self.resilience.update_state("connected", "startup_complete")
+                    logger.info("Resilience watchdog reset after successful startup")
+
                 # Announce all devices to HA
                 self._announce_task = asyncio.create_task(self.announce_all_devices())
 

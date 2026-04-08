@@ -357,6 +357,11 @@ class WatchdogMonitor:
         while self._running:
             try:
                 await asyncio.sleep(self.check_interval)
+
+                # Don't check watchdog until we've been connected at least once
+                if self.resilience.state == ConnectionState.DISCONNECTED:
+                    continue
+
                 age = time.time() - self.resilience.last_watchdog_feed
 
                 if age > self.resilience.watchdog_timeout:
