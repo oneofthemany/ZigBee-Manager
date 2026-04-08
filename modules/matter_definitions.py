@@ -421,6 +421,66 @@ def generate_definition_draft(attributes: dict) -> dict:
                     }
                 capabilities.add("button")
 
+    # Auto-detect paired rotary endpoints (two rotary EPs in same group = CW/CCW)
+    rotary_bindings = {}
+    groups_with_rotary = {}
+    for ep_id_str, ep_info in endpoint_map.items():
+        role = ep_info.get("role", "")
+        group = ep_info.get("group", "")
+        if "rotary" in role and group:
+            if group not in groups_with_rotary:
+                groups_with_rotary[group] = []
+            groups_with_rotary[group].append(int(ep_id_str))
+
+    for group, eps in groups_with_rotary.items():
+        eps.sort()
+        rotary_key = f"{group}_rotary"
+        if len(eps) >= 2:
+            # Paired: lower EP = CW, higher EP = CCW
+            endpoint_map[str(eps[0])]["role"] = "rotary_cw"
+            endpoint_map[str(eps[0])]["label"] = f"Dial {group} CW (EP{eps[0]})"
+            endpoint_map[str(eps[1])]["role"] = "rotary_ccw"
+            endpoint_map[str(eps[1])]["label"] = f"Dial {group} CCW (EP{eps[1]})"
+
+            rotary_bindings[rotary_key] = {
+                "mode": "step",
+                "cw_ep": eps[0],
+                "ccw_ep": eps[1],
+                "step_size": 25,
+                "positions": 18,
+                "description": f"Dial {group}",
+                "source_ieee": "",
+                "ep": eps[0],
+                "target": None,
+            }
+
+            # Update state mapping to use CW ep
+            if rotary_key in state_mapping:
+                state_mapping[rotary_key]["ep"] = eps[0]
+        else:
+            # Single rotary EP — position mode
+            rotary_bindings[rotary_key] = {
+                "mode": "position",
+                "positions": 18,
+                "description": f"Dial {group}",
+                "source_ieee": "",
+                "ep": eps[0],
+                "target": None,
+            }
+
+    # Auto-generate event_action entries for button endpoints
+    for ep_id_str, ep_info in endpoint_map.items():
+        if ep_info.get("role") == "button":
+            group = ep_info.get("group", ep_id_str)
+            action_key = f"{group}_button_action"
+            if action_key not in state_mapping:
+                state_mapping[action_key] = {
+                    "ep": int(ep_id_str), "cluster": 59, "attr": -1,
+                    "type": "event_action",
+                    "description": f"{ep_info.get('label', '')} action",
+                    "value_options": ["press", "single", "double", "triple", "hold", "release"],
+                }
+
     # Battery
     bat = base.find_attr(attributes, 47, 12)
     if bat is not None:
@@ -440,31 +500,24 @@ def generate_definition_draft(attributes: dict) -> dict:
         "device_type": device_type,
         "endpoints": endpoint_map,
         "state_mapping": state_mapping,
+        "rotary_bindings": rotary_bindings,
         "capabilities": sorted(list(capabilities)),
         "_draft": True,
         "_generated_at": time.time(),
     }
 
-    # Merge with existing: existing values take priority
-    if existing:
-        # Preserve existing endpoints (user may have set rotary_cw/ccw roles)
-        for ep_key, ep_val in existing.get("endpoints", {}).items():
-            draft["endpoints"][ep_key] = ep_val
 
-        # Preserve ALL existing state_mapping (including event_actions)
-        for sk, sv in existing.get("state_mapping", {}).items():
-            draft["state_mapping"][sk] = sv
-
-        # Preserve rotary_bindings entirely
-        if "rotary_bindings" in existing:
-            draft["rotary_bindings"] = existing["rotary_bindings"]
-
-        # Preserve capabilities
-        existing_caps = set(existing.get("capabilities", []))
-        draft["capabilities"] = sorted(list(existing_caps | capabilities))
-
-        # Preserve device_type if user changed it
-        draft["device_type"] = existing.get("device_type", device_type)
+    # Merge rotary_bindings: existing targets take priority
+    if existing.get("rotary_bindings"):
+        for rk, rv in existing["rotary_bindings"].items():
+            if rk in draft.get("rotary_bindings", {}):
+                # Preserve existing target binding but update structure
+                if rv.get("target"):
+                    draft["rotary_bindings"][rk]["target"] = rv["target"]
+                if rv.get("source_ieee"):
+                    draft["rotary_bindings"][rk]["source_ieee"] = rv["source_ieee"]
+            else:
+                draft.setdefault("rotary_bindings", {})[rk] = rv
 
     return draft
 
