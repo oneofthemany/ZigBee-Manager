@@ -536,6 +536,11 @@ class DefinitionParser:
                 state[state_key] = self._action_states.get(state_key, "")
                 continue
 
+        # Always include event_action keys so automation builder sees them
+        for state_key, mapping in self._def.get("state_mapping", {}).items():
+            if mapping.get("type") == "event_action":
+                state[state_key] = self._action_states.get(state_key, "")
+
         return state
 
     def get_commands(self, attributes: dict) -> List[dict]:
