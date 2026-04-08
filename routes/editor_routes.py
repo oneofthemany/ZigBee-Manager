@@ -280,8 +280,8 @@ def register_editor_routes(app: FastAPI, get_zigbee_service):
     @app.delete("/api/editor/file")
     async def delete_file(path: str):
         """Delete a file within the project."""
-        full = (Path(APP_DIR) / path).resolve()
-        if not str(full).startswith(str(Path(APP_DIR).resolve())):
+        full = (PROJECT_ROOT / path).resolve()
+        if not str(full).startswith(str(PROJECT_ROOT.resolve())):
             raise HTTPException(403, "Path outside project directory")
         if not full.exists():
             raise HTTPException(404, f"File not found: {path}")
