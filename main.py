@@ -526,14 +526,13 @@ register_network_routes(app, get_zigbee_service)
 register_system_routes(app, get_zigbee_service, get_mqtt_service, get_manager)
 register_matter_routes(app, get_zigbee_service, get_matter_server, get_matter_bridge)
 register_group_routes(app, get_zigbee_service, get_manager)
-register_rotary_binding_routes(app,
-    get_definition_store=lambda: get_definition_store(),
-    get_binding_manager=lambda: get_rotary_binding_manager(),
-)
 register_otbr_routes(app, get_zigbee_service)
 register_matter_attribute_routes(app, get_matter_bridge)
 register_matter_definition_routes(app, get_matter_bridge)
-register_rotary_binding_routes(app, get_definition_store, get_binding_manager)
+register_rotary_binding_routes(app,
+   get_definition_store=lambda: get_definition_store(),
+   get_binding_manager=lambda: get_rotary_binding_manager(),
+)
 register_test_recovery_routes(app, get_manager)
 register_websocket_routes(app)
 register_zone_routes(app,
