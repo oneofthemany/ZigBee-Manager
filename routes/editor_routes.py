@@ -276,6 +276,25 @@ def register_editor_routes(app: FastAPI, get_zigbee_service):
 
         return {"success": True, "backups": backups[:50]}
 
+
+    @app.delete("/api/editor/file")
+    async def delete_file(path: str):
+        """Delete a file within the project."""
+        full = (Path(APP_DIR) / path).resolve()
+        if not str(full).startswith(str(Path(APP_DIR).resolve())):
+            raise HTTPException(403, "Path outside project directory")
+        if not full.exists():
+            raise HTTPException(404, f"File not found: {path}")
+        if full.is_dir():
+            raise HTTPException(400, "Cannot delete directories")
+
+        try:
+            full.unlink()
+            return {"success": True, "message": f"Deleted: {path}"}
+        except Exception as e:
+            raise HTTPException(500, f"Delete failed: {e}")
+
+
     @app.post("/api/editor/restore")
     async def restore_backup(data: dict):
         """Restore a file from backup."""
