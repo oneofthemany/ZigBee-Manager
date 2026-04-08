@@ -128,6 +128,7 @@ export function renderDeviceTable() {
         if (!d.last_seen_ts) d.last_seen_ts = Date.now();
 
         const tr = document.createElement('tr');
+        tr.dataset.ieee = d.ieee;
 
         // Quirk Badge Logic
         let quirkHtml = '';
@@ -200,6 +201,37 @@ export function renderDeviceTable() {
 }
 
 /**
+ * update states on device row as opposed to whole table render
+ */
+
+function updateDeviceRow(device) {
+    const row = document.querySelector(`tr[data-ieee="${device.ieee}"]`);
+    if (!row) {
+        // Device not in table yet — need full render
+        renderDeviceTable();
+        return;
+    }
+
+    // Update status badge
+    const statusBadge = row.querySelector('.device-status');
+    if (statusBadge) {
+        statusBadge.className = `badge device-status ${device.available ? 'bg-success' : 'bg-danger'}`;
+        statusBadge.textContent = device.available ? 'Online' : 'Offline';
+    }
+
+    // Update state badges
+    const stateCell = row.querySelector('.device-state');
+    if (stateCell && window.getDeviceStateHtml) {
+        stateCell.innerHTML = window.getDeviceStateHtml(device);
+    }
+
+    // Update LQI
+    const lqiCell = row.querySelector('.device-lqi');
+    if (lqiCell) lqiCell.textContent = device.lqi || '';
+}
+
+
+/**
  * Handle incoming WebSocket device update events
  */
 export function handleDeviceUpdate(payload) {
@@ -224,8 +256,8 @@ export function handleDeviceUpdate(payload) {
         // Update the cache as well
         state.deviceCache[payload.ieee] = state.devices[devIndex];
 
-        // 3. Update the background table row
-        renderDeviceTable();
+        // Update only this device's row, not the entire table
+        updateDeviceRow(state.devices[devIndex]);
 
         // Update router list if device type changed or availability changed
         populateRouterList();

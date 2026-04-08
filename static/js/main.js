@@ -334,7 +334,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 const bar = document.getElementById('testProgressBar');
                 if (el) el.textContent = remaining;
                 if (bar) bar.style.width = (remaining / (data.remaining || 120) * 100) + '%';
-                if (remaining <= 0) { clearInterval(iv); location.reload(); }
+                if (remaining <= 0) {
+                    clearInterval(iv);
+                    fetch('/api/editor/test-status').then(r => r.json()).then(d => {
+                        if (d.pending) location.reload();
+                        else document.getElementById('testRecoveryBanner')?.remove();
+                    }).catch(() => location.reload());
+                }
             }, 1000);
         }
     }).catch(() => {});
