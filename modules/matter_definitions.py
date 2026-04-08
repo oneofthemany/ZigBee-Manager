@@ -349,9 +349,10 @@ def scan_endpoints(attributes: dict) -> dict:
 def generate_definition_draft(attributes: dict) -> dict:
     """
     Auto-generate a definition draft from raw attributes.
-    The user can then refine it via the UI.
+    If an existing definition is found, merge new scan data into it
+    while preserving rotary_bindings, event_actions, and user edits.
     """
-    from handlers.matter_parsers import BaseMatterParser, BasicInfoAttrs
+    from matter_parsers import BaseMatterParser, BasicInfoAttrs
 
     base = BaseMatterParser()
     vendor_name = base.find_attr(attributes, 40, BasicInfoAttrs.VENDOR_NAME, "Unknown")
@@ -360,9 +361,13 @@ def generate_definition_draft(attributes: dict) -> dict:
     part_number = base.find_attr(attributes, 40, BasicInfoAttrs.PART_NUMBER, "")
     device_type = base.get_device_type(attributes)
 
+    # Check for existing definition to preserve user customisations
+    store = get_definition_store()
+    existing = store.find(vendor_id, part_number or product_name)
+
     scan = scan_endpoints(attributes)
 
-    # Build endpoint map
+    # Build endpoint map from scan
     endpoint_map = {}
     state_mapping = {}
     capabilities = set(["matter"])
@@ -370,17 +375,23 @@ def generate_definition_draft(attributes: dict) -> dict:
     for ep_info in scan["endpoints"]:
         ep_id = ep_info["endpoint_id"]
         if ep_id == 0:
-            continue  # Skip root
+            continue
 
         role = ep_info.get("role", "unknown")
         label = ep_info.get("label", f"EP{ep_id}")
-
-        # Find group from tags
         group = ""
         for tag in ep_info.get("tags", []):
             if tag.get("label"):
                 group = tag["label"]
                 break
+
+        # If existing definition has this EP, preserve its role/label/group
+        if existing:
+            existing_ep = existing.get("endpoints", {}).get(str(ep_id))
+            if existing_ep:
+                role = existing_ep.get("role", role)
+                label = existing_ep.get("label", label)
+                group = existing_ep.get("group", group)
 
         endpoint_map[str(ep_id)] = {
             "role": role,
@@ -388,40 +399,40 @@ def generate_definition_draft(attributes: dict) -> dict:
             "group": group,
         }
 
-        if ep_info.get("switch_info"):
-            endpoint_map[str(ep_id)]["switch_info"] = ep_info["switch_info"]
-
-        # Auto-generate state mappings
+        # Auto-generate state mappings for new endpoints only
         switch_info = ep_info.get("switch_info")
         if switch_info:
-            safe_label = label.lower().replace(" ", "_").replace("'", "")
-            safe_label = "".join(c for c in safe_label if c.isalnum() or c == "_")
+            safe_group = group if group else f"ep{ep_id}"
 
-            if role == "rotary":
-                state_key = f"{group}_rotary" if group else f"ep{ep_id}_rotary"
-                state_mapping[state_key] = {
-                    "ep": ep_id, "cluster": 59, "attr": 1,
-                    "type": "position", "description": f"{label} position",
-                }
+            if "rotary" in role:
+                state_key = f"{safe_group}_rotary"
+                if state_key not in (existing or {}).get("state_mapping", {}):
+                    state_mapping[state_key] = {
+                        "ep": ep_id, "cluster": 59, "attr": 1,
+                        "type": "position", "description": f"{label} position",
+                    }
                 capabilities.add("rotary")
             elif role in ("button", "toggle"):
-                state_key = f"{group}_button" if group else f"ep{ep_id}_button"
-                state_mapping[state_key] = {
-                    "ep": ep_id, "cluster": 59, "attr": 1,
-                    "type": "position", "description": f"{label} position",
-                }
+                state_key = f"{safe_group}_button"
+                if state_key not in (existing or {}).get("state_mapping", {}):
+                    state_mapping[state_key] = {
+                        "ep": ep_id, "cluster": 59, "attr": 1,
+                        "type": "position", "description": f"{label} position",
+                    }
                 capabilities.add("button")
 
     # Battery
     bat = base.find_attr(attributes, 47, 12)
     if bat is not None:
-        state_mapping["battery"] = {
-            "ep": 0, "cluster": 47, "attr": 12,
-            "type": "battery", "description": "Battery percentage",
-        }
+        if "battery" not in (existing or {}).get("state_mapping", {}):
+            state_mapping["battery"] = {
+                "ep": 0, "cluster": 47, "attr": 12,
+                "type": "battery", "description": "Battery percentage",
+            }
         capabilities.add("battery")
 
-    return {
+    # Build the draft
+    draft = {
         "vendor_id": vendor_id,
         "product_id": part_number or product_name,
         "model": product_name,
@@ -434,6 +445,28 @@ def generate_definition_draft(attributes: dict) -> dict:
         "_generated_at": time.time(),
     }
 
+    # Merge with existing: existing values take priority
+    if existing:
+        # Preserve existing endpoints (user may have set rotary_cw/ccw roles)
+        for ep_key, ep_val in existing.get("endpoints", {}).items():
+            draft["endpoints"][ep_key] = ep_val
+
+        # Preserve ALL existing state_mapping (including event_actions)
+        for sk, sv in existing.get("state_mapping", {}).items():
+            draft["state_mapping"][sk] = sv
+
+        # Preserve rotary_bindings entirely
+        if "rotary_bindings" in existing:
+            draft["rotary_bindings"] = existing["rotary_bindings"]
+
+        # Preserve capabilities
+        existing_caps = set(existing.get("capabilities", []))
+        draft["capabilities"] = sorted(list(existing_caps | capabilities))
+
+        # Preserve device_type if user changed it
+        draft["device_type"] = existing.get("device_type", device_type)
+
+    return draft
 
 # =============================================================================
 # DEFINITION-BASED PARSER
