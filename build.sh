@@ -498,7 +498,7 @@ run_container() {
         --restart unless-stopped
         --device /dev/net/tun:/dev/net/tun
         --volume /dev/shm:/dev/shm
-        --volume /run/dbus:/run/dbus
+        --volume /run/dbus:/run/dbus:ro
         --volume "${DATA_DIR}/config:/app/config:Z"
         --volume "${DATA_DIR}/data:/app/data:Z"
         --volume "${DATA_DIR}/logs:/app/logs:Z"
