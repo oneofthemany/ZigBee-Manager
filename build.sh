@@ -500,13 +500,12 @@ run_container() {
         --sysctl net.ipv6.conf.all.disable_ipv6=0
         --sysctl net.ipv6.conf.all.forwarding=1
         --sysctl net.ipv4.conf.all.forwarding=1
-        --restart unless-stopped
         --device /dev/net/tun:/dev/net/tun
         --volume /dev/shm:/dev/shm
         --volume /run/dbus:/run/dbus
-        --volume "${DATA_DIR}/config:/app/config:Z"
-        --volume "${DATA_DIR}/data:/app/data:Z"
-        --volume "${DATA_DIR}/logs:/app/logs:Z"
+        --volume "${DATA_DIR}/config:/app/config"
+        --volume "${DATA_DIR}/data:/app/data"
+        --volume "${DATA_DIR}/logs:/app/logs"
     )
 
     ok "Networking: host (ZMM: ${host_port}, Matter: ${host_matter_port})"
