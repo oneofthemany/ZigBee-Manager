@@ -118,7 +118,7 @@ class MatterDevice:
             "model": self.model,
             "manufacturer": self.manufacturer,
             "lqi": 255 if self._available else 0,
-            "last_seen_ts": self.last_seen,
+            "last_seen_ts": self.last_seen * 1000,
             "state": self.state.copy(),
             "type": self.get_type(),
             "protocol": "matter",

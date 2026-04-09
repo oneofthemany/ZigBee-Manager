@@ -245,7 +245,7 @@ export function handleDeviceUpdate(payload) {
         //console.log("2. Current Open Device:", state.currentDeviceIeee);
 
         // Update metadata if present
-        if (payload.data.last_seen) state.devices[devIndex].last_seen_ts = payload.data.last_seen;
+        if (payload.data.last_seen) state.devices[devIndex].last_seen_ts = payload.data.last_seen * 1000;
         if (payload.data.available !== undefined) state.devices[devIndex].available = payload.data.available;
         if (payload.data.lqi !== undefined) state.devices[devIndex].lqi = payload.data.lqi;
 
