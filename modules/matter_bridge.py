@@ -329,9 +329,9 @@ class MatterBridge:
 
     async def _handle_message(self, data: dict):
         """Process a message from matter-server."""
-        # Response to a command (e.g. start_listening, get_nodes)
-        if "result" in data and "message_id" in data:
-            result = data["result"]
+        if not isinstance(data, dict):
+            logger.debug(f"Skipping non-dict message: {type(data).__name__}")
+            return
 
             if isinstance(result, list):
                 # Node list response (from get_nodes or start_listening node dump)
@@ -576,9 +576,6 @@ class MatterBridge:
                         pass
                     except Exception as e:
                         logger.debug(f"Rotary binding dispatch error: {e}")
-                    except Exception as e:
-                        logger.debug(f"Rotary binding dispatch error: {e}")
-
 
                     logger.info(
                         f"[{ieee}] Matter event: {action} "
