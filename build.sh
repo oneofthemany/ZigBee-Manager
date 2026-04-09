@@ -492,6 +492,9 @@ run_container() {
         --cap-add=NET_ADMIN
         --cap-add=NET_RAW
         --cap-add=SYS_ADMIN
+        --sysctl net.ipv6.conf.all.disable_ipv6=0
+        --sysctl net.ipv6.conf.all.forwarding=1
+        --sysctl net.ipv4.conf.all.forwarding=1
         --restart unless-stopped
         --device /dev/net/tun:/dev/net/tun
         --volume /dev/shm:/dev/shm
