@@ -2,12 +2,10 @@
 # =============================================================================
 # Zigbee Matter Manager — Container Build & Deploy Script
 # Supports: Podman (preferred) and Docker
-# Internal port: 8000 (fixed). External port: auto-detected.
 #
-# Device access strategy:
-#   Build: bake host UID:GID into image (--build-arg HOST_UID/HOST_GID)
-#   Run:   --group-add <dialout GID> + --security-opt label=disable
-#   No --userns keep-id, no --privileged, no UID remapping headaches.
+# Runs as a privileged container (required for OTBR network namespaces,
+# ipset, iptables, and Thread border routing).
+# Uses --network=host for direct Thread/mDNS/IPv6 access.
 # =============================================================================
 
 set -euo pipefail
@@ -36,7 +34,9 @@ DATA_DIR="${ZMM_DATA_DIR:-$HOME/.zigbee-matter-manager}"
 # PRE-FLIGHT: dialout group membership
 # =============================================================================
 check_dialout_group() {
-    # Determine the correct serial-device group for this distro
+    # Container runs as root so device access inside is guaranteed.
+    # We still detect the group for informational purposes and to help
+    # the host user manage the container (e.g. podman exec).
     local serial_group=""
     if getent group dialout &>/dev/null; then
         serial_group="dialout"
@@ -44,41 +44,16 @@ check_dialout_group() {
         serial_group="uucp"
     else
         warn "No dialout or uucp group found on this system."
-        warn "Device access may fail. Continuing anyway..."
-        DIALOUT_GID=""
         return 0
     fi
 
     DIALOUT_GID=$(getent group "$serial_group" | cut -d: -f3)
     ok "Serial device group: ${BOLD}${serial_group}${NC} (GID ${DIALOUT_GID})"
 
-    # Check if current user is a member
-    if id -nG "$USER" 2>/dev/null | grep -qw "$serial_group"; then
-        ok "User ${BOLD}${USER}${NC} is in the ${BOLD}${serial_group}${NC} group"
-        return 0
+    if ! id -nG "$USER" 2>/dev/null | grep -qw "$serial_group"; then
+        warn "User ${BOLD}${USER}${NC} is NOT in ${BOLD}${serial_group}${NC}."
+        warn "Not required for the container, but recommended for host-side device access."
     fi
-
-    # User is NOT in the group — add them
-    warn "User ${BOLD}${USER}${NC} is NOT in the ${BOLD}${serial_group}${NC} group."
-    info "Adding ${USER} to ${serial_group}..."
-
-    if [[ $EUID -eq 0 ]]; then
-        usermod -aG "$serial_group" "$USER"
-    else
-        sudo usermod -aG "$serial_group" "$USER"
-    fi
-
-    echo
-    echo -e "${RED}${BOLD}═══════════════════════════════════════════════════════${NC}"
-    echo -e "${RED}${BOLD}  ACTION REQUIRED: Log out and log back in, then      ${NC}"
-    echo -e "${RED}${BOLD}  re-run this script.                                 ${NC}"
-    echo -e "${RED}${BOLD}                                                      ${NC}"
-    echo -e "${RED}${BOLD}  The group change only takes effect after a new       ${NC}"
-    echo -e "${RED}${BOLD}  login session. A full logout/login is required —     ${NC}"
-    echo -e "${RED}${BOLD}  opening a new terminal is NOT sufficient.            ${NC}"
-    echo -e "${RED}${BOLD}═══════════════════════════════════════════════════════${NC}"
-    echo
-    exit 1
 }
 
 # =============================================================================
@@ -119,18 +94,14 @@ get_port_process() {
     local port=$1
     local proc=""
 
-    # Try lsof first (cleanest output if installed)
     if command -v lsof &>/dev/null; then
         proc=$(sudo lsof -i :"${port}" -sTCP:LISTEN 2>/dev/null | awk 'NR==2 {print $1" (PID: "$2")"}')
     fi
 
-    # Fallback to ss (standard on modern Linux)
     if [[ -z "$proc" ]] && command -v ss &>/dev/null; then
-        # Parses the bizarre ss output: users:(("process_name",pid=1234,fd=X))
         proc=$(sudo ss -lptn "sport = :${port}" 2>/dev/null | grep -o 'users:((".*"))' | sed 's/users:(("//; s/",pid=/ (PID: /; s/,.*//' | head -n 1)
     fi
 
-    # Return the process, or a fallback warning if permissions blocked the lookup
     if [[ -n "$proc" ]]; then
         echo "$proc"
     else
@@ -149,23 +120,18 @@ find_free_port() {
     echo "$port"
 }
 
-pick_host_port() {
+check_host_port() {
+    # With --network=host the container binds directly to host ports.
+    # Verify the port is free; if not, find an alternative and pass via env var.
     local preferred=$1
     if port_in_use "$preferred"; then
-        # 1. Find out who is hogging the port
         local blocker
         blocker=$(get_port_process "$preferred")
-
-        # 2. Tell the user exactly what is blocking it
         warn "Port ${preferred} is currently blocked by: ${BOLD}${blocker}${NC}" >&2
         warn "Scanning for the next available port..." >&2
-
-        # 3. Find and report the new port
         local found
         found=$(find_free_port "$((preferred + 1))")
         warn "Using port ${BOLD}${found}${NC} instead." >&2
-
-        # 4. Return the safely found port to stdout
         echo "$found"
     else
         echo "$preferred"
@@ -219,7 +185,6 @@ detect_usb_coordinator() {
             real_dev=$(readlink -f "$dev")
             local label
             label=$(basename "$dev")
-            # Match common coordinator USB identifiers
             if echo "$label" | grep -qiE 'cp210|ezsp|zigbee|silabs|ember|ch340|ch341|cc253|cc265|conbee|raspbee|sonoff|tube|slzb|zzh'; then
                 found_devices+=("$real_dev")
                 found_labels+=("$label → $real_dev")
@@ -227,7 +192,7 @@ detect_usb_coordinator() {
         done
     fi
 
-    # Also check raw /dev/ttyACM* and /dev/ttyUSB* if nothing found by-id
+    # Fallback to raw /dev/ttyACM* and /dev/ttyUSB*
     if [[ ${#found_devices[@]} -eq 0 ]]; then
         for dev in /dev/ttyACM0 /dev/ttyACM1 /dev/ttyUSB0 /dev/ttyUSB1; do
             if [[ -c "$dev" ]]; then
@@ -308,12 +273,8 @@ _prompt_manual_usb() {
 # =============================================================================
 write_containerfile() {
     cat > "$APP_DIR/Containerfile" << 'DOCKERFILE'
-# 1. PINNED TO DEBIAN BOOKWORM
+# Zigbee Matter Manager — Root Container
 FROM python:3.11-slim-bookworm
-
-ARG HOST_UID=1000
-ARG HOST_GID=1000
-ARG HOST_DIALOUT_GID=20
 
 # System deps
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -384,9 +345,7 @@ RUN echo '#!/bin/sh' > /usr/local/bin/sudo && \
     echo 'if echo "$*" | grep -Eq "/proc/sys|sysctl"; then exit 0; fi' >> /usr/local/bin/sudo && \
     echo 'exec /usr/bin/sudo "$@"' >> /usr/local/bin/sudo && \
     chmod +x /usr/local/bin/sudo && \
-    # Fetch exact v4.7.1 tag (no .0 at the end for Git!)
     git clone --depth 1 --branch v4.7.1 https://github.com/SiliconLabs/cpc-daemon.git /tmp/cpc-daemon && \
-    # Force the compiled version string to be 4.7.1.0 to perfectly match the .deb daemon
     sed -i 's/VERSION 4\.7\.1\b/VERSION 4.7.1.0/g' /tmp/cpc-daemon/CMakeLists.txt && \
     git clone --depth=1 https://github.com/openthread/ot-br-posix /tmp/otbr && \
     cd /tmp/otbr && \
@@ -410,15 +369,6 @@ RUN echo '#!/bin/sh' > /usr/local/bin/sudo && \
 RUN systemctl disable otbr-agent 2>/dev/null || true
 RUN rm -rf ${SDK_DIR} /tmp/otbr /tmp/cpc-daemon
 
-# Create app user with the HOST's exact UID:GID + dialout group membership.
-RUN groupadd -g "$HOST_GID" -o appgroup \
- && if ! getent group "$HOST_DIALOUT_GID" >/dev/null 2>&1; then \
-        groupadd -g "$HOST_DIALOUT_GID" hostdialout; \
-    fi \
- && SERIAL_GROUP=$(getent group "$HOST_DIALOUT_GID" | cut -d: -f1) \
- && useradd -u "$HOST_UID" -g "$HOST_GID" -G "$SERIAL_GROUP" \
-        -d /app -s /bin/bash -o appuser
-
 WORKDIR /app
 
 # Dependencies first (layer cache)
@@ -431,20 +381,16 @@ RUN pip install --no-cache-dir --upgrade pip \
 COPY . .
 
 # Required directories
-RUN mkdir -p /data /app/data/matter /app/data/backups /app/logs /app/config/matter_definitions /var/lib/thread \
-        /usr/local/lib/python3.11/site-packages/credentials/development/paa-root-certs \
- && chown -R ${HOST_UID}:${HOST_GID} /app /data /app/data /app/logs /app/config /app/config/matter_definitions \
-        /usr/local/lib/python3.11/site-packages/credentials /var/lib/thread
+RUN mkdir -p /data /app/data/matter /app/data/backups /app/logs /app/config /var/lib/thread \
+        /usr/local/lib/python3.11/site-packages/credentials/development/paa-root-certs
 
 ENV ZMM_BACKUP_DIR=/app/data/backups
 ENV ZMM_APP_DIR=/app
 
-USER appuser
-
 EXPOSE 8000 5580
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
-    CMD curl -f http://localhost:\${ZMM_PORT:-8000}/api/status || exit 1
+    CMD curl -f http://localhost:${ZMM_PORT:-8000}/api/status || exit 1
 
 CMD ["python", "main.py"]
 DOCKERFILE
@@ -456,18 +402,8 @@ DOCKERFILE
 # =============================================================================
 build_image() {
     info "Building image ${BOLD}${IMAGE_NAME}${NC} ..."
-    info "  UID:GID = ${HOST_UID}:${HOST_GID}, Dialout GID = ${DIALOUT_GID:-?}"
-    local build_args=(
-        --build-arg "HOST_UID=${HOST_UID}"
-        --build-arg "HOST_GID=${HOST_GID}"
-    )
-
-    if [[ -n "${DIALOUT_GID:-}" ]]; then
-        build_args+=(--build-arg "HOST_DIALOUT_GID=${DIALOUT_GID}")
-    fi
 
     "$RUNTIME" build \
-        "${build_args[@]}" \
         --format docker \
         --tag "${IMAGE_NAME}:latest" \
         --file "$APP_DIR/Containerfile" \
@@ -479,31 +415,14 @@ build_image() {
 # PREPARE DATA DIRECTORIES
 # =============================================================================
 prepare_data_dirs() {
-    # Reclaim ownership — previous runs with :Z or different UID may have
-    # changed ownership to root/container user
-    if [[ -d "$DATA_DIR" ]]; then
-        if ! [[ -w "$DATA_DIR" ]]; then
-            info "Reclaiming ownership of ${DATA_DIR}..."
-            sudo chown -R "$(id -u):$(id -g)" "$DATA_DIR"
-        fi
-    fi
-
     local dirs=(
         "$DATA_DIR/config"
-        "$DATA_DIR/config/matter_definitions"
         "$DATA_DIR/data"
         "$DATA_DIR/data/matter"
         "$DATA_DIR/logs"
     )
     for d in "${dirs[@]}"; do
         mkdir -p "$d"
-    done
-
-    # Ensure all subdirs are writable (catches partial ownership issues)
-    for d in "${dirs[@]}"; do
-        if ! [[ -w "$d" ]]; then
-            sudo chown -R "$(id -u):$(id -g)" "$d"
-        fi
     done
 
     # Seed config.yaml
@@ -551,77 +470,6 @@ DBUS_POLICY
     ok "OTBR D-Bus policy installed"
 }
 
-
-# =============================================================================
-# DEVICE BIND-MOUNT (Podman rootless workaround)
-# =============================================================================
-# Rootless Podman can't access /dev/ device nodes directly via --device.
-# Workaround: bind-mount the device into /mnt/devices/ with correct ownership,
-# then pass the bind-mounted path to --device instead:
-# https://github.com/containers/podman/discussions/22379
-# =============================================================================
-DEVICE_MOUNT_DIR="/mnt/devices"
-
-prepare_device_mount() {
-    # Only needed for Podman (Docker doesn't have this issue)
-    if [[ "$RUNTIME" != "podman" ]]; then
-        return 0
-    fi
-
-    if [[ -z "${USB_DEVICE:-}" ]]; then
-        return 0
-    fi
-
-    local real_dev
-    real_dev=$(readlink -f "$USB_DEVICE")
-    local dev_basename
-    dev_basename=$(basename "$real_dev")
-    local mount_path="${DEVICE_MOUNT_DIR}/${dev_basename}"
-
-    info "Setting up device bind-mount for rootless Podman..."
-
-    # Create the mount directory if it doesn't exist
-    if [[ ! -d "$DEVICE_MOUNT_DIR" ]]; then
-        info "Creating ${DEVICE_MOUNT_DIR} ..."
-        sudo mkdir -p "$DEVICE_MOUNT_DIR"
-        sudo chown root:root "$DEVICE_MOUNT_DIR"
-        sudo chmod 755 "$DEVICE_MOUNT_DIR"
-    fi
-
-    # Clean up any stale mount at this path
-    if mountpoint -q "$mount_path" 2>/dev/null; then
-        info "Removing stale bind-mount at ${mount_path} ..."
-        sudo umount "$mount_path"
-    fi
-
-    # Create the mount-point file (touch, not mkdir — it's a device node)
-    if [[ ! -e "$mount_path" ]]; then
-        sudo touch "$mount_path"
-    fi
-
-    # Bind-mount the real device node
-    sudo mount --bind "$real_dev" "$mount_path"
-
-    # Set ownership so the rootless Podman user can access it
-    sudo chown "$(id -u):${DIALOUT_GID:-$(id -g)}" "$mount_path"
-
-    # Store the mapped path for run_container to use
-    DEVICE_MOUNT_PATH="$mount_path"
-
-    ok "Device bind-mounted: ${real_dev} → ${mount_path}"
-}
-
-# =============================================================================
-# TEARDOWN CLEANUP
-# =============================================================================
-cleanup_device_mount() {
-    if [[ -n "${DEVICE_MOUNT_PATH:-}" ]] && mountpoint -q "$DEVICE_MOUNT_PATH" 2>/dev/null; then
-        info "Unmounting device bind-mount: ${DEVICE_MOUNT_PATH}"
-        sudo umount "$DEVICE_MOUNT_PATH"
-        sudo rm -f "$DEVICE_MOUNT_PATH"
-    fi
-}
-
 # =============================================================================
 # RUN CONTAINER
 # =============================================================================
@@ -635,9 +483,6 @@ run_container() {
         "$RUNTIME" rm -f "$CONTAINER_NAME"
     fi
 
-    # Clean up any stale wpan0 from previous host-network attempts
-    sudo ip link del wpan0 2>/dev/null || true
-
     local run_args=(
         --detach
         --name "$CONTAINER_NAME"
@@ -647,51 +492,32 @@ run_container() {
         --cap-add=NET_ADMIN
         --cap-add=NET_RAW
         --cap-add=SYS_ADMIN
-        --sysctl net.ipv6.conf.all.disable_ipv6=0
-        --sysctl net.ipv6.conf.all.forwarding=1
-        --sysctl net.ipv4.conf.all.forwarding=1
         --restart unless-stopped
         --device /dev/net/tun:/dev/net/tun
         --volume /dev/shm:/dev/shm
         --volume /run/dbus:/run/dbus
-        --volume "${DATA_DIR}/config:/app/config"
-        --volume "${DATA_DIR}/data:/app/data"
-        --volume "${DATA_DIR}/logs:/app/logs"
+        --volume "${DATA_DIR}/config:/app/config:Z"
+        --volume "${DATA_DIR}/data:/app/data:Z"
+        --volume "${DATA_DIR}/logs:/app/logs:Z"
     )
 
-    ok "Networking: slirp4netns (ZMM: ${host_port}→${INTERNAL_PORT}, Matter: ${host_matter_port}→${MATTER_INTERNAL_PORT})"
-
-    # ── UID mapping: keep host UID inside container (Podman only) ──
-    if [[ "$RUNTIME" == "podman" ]]; then
-        run_args+=(--userns=keep-id)
-    fi
+    ok "Networking: host (ZMM: ${host_port}, Matter: ${host_matter_port})"
 
     # ── Bluetooth for Matter commissioning ──
     if [[ -e /dev/hci0 ]]; then
-        run_args+=(
-            -v /var/run/dbus:/var/run/dbus
-            --device /dev/hci0:/dev/hci0
-        )
+        run_args+=(--device /dev/hci0:/dev/hci0)
         ok "Bluetooth adapter available for Matter commissioning"
     fi
 
-    # ── USB device passthrough ──
+    # ── USB device passthrough (direct — root container has full access) ──
     if [[ -n "${USB_DEVICE:-}" ]]; then
         local real_dev
         real_dev=$(readlink -f "$USB_DEVICE")
+        run_args+=(--device "${real_dev}:${real_dev}")
 
-        if [[ "$RUNTIME" == "podman" && -n "${DEVICE_MOUNT_PATH:-}" ]]; then
-            run_args+=(--device "${DEVICE_MOUNT_PATH}:${real_dev}")
-            ok "Using bind-mounted device: ${DEVICE_MOUNT_PATH} → ${real_dev}"
-
-            if [[ "$USB_DEVICE" != "$real_dev" ]]; then
-                run_args+=(--device "${DEVICE_MOUNT_PATH}:${USB_DEVICE}")
-            fi
-        else
-            run_args+=(--device "${real_dev}:${real_dev}")
-            if [[ "$USB_DEVICE" != "$real_dev" ]]; then
-                run_args+=(--device "${USB_DEVICE}:${USB_DEVICE}")
-            fi
+        # If the original path was a symlink, also map that
+        if [[ "$USB_DEVICE" != "$real_dev" ]]; then
+            run_args+=(--device "${USB_DEVICE}:${USB_DEVICE}")
         fi
     fi
 
@@ -700,12 +526,6 @@ run_container() {
         run_args+=(-v /dev/bus/usb:/dev/bus/usb)
         ok "Mounted /dev/bus/usb for USB device reset support"
     fi
-
-    # ── Device access: --group-add for dialout, disable SELinux label ──
-    if [[ -n "${DIALOUT_GID:-}" ]]; then
-        run_args+=(--group-add "${DIALOUT_GID}")
-    fi
-    run_args+=(--security-opt label=disable)
 
     info "Starting container '${CONTAINER_NAME}' ..."
     "$RUNTIME" run "${run_args[@]}" "${IMAGE_NAME}:latest"
@@ -735,134 +555,29 @@ install_autostart() {
         return
     fi
 
-    if [[ "$RUNTIME" == "podman" ]]; then
-        local unit_dir="$HOME/.config/systemd/user"
-        mkdir -p "$unit_dir"
+    local runtime_bin
+    runtime_bin=$(which "$RUNTIME")
 
-        # Write the ExecStartPre helper script
-        local pre_script="/usr/local/bin/zmm-remount-device.sh"
-        local mount_path="/mnt/devices/ttyUSB0"
-        local invoking_uid
-        invoking_uid=$(id -u)
-        local invoking_gid
-        invoking_gid="${DIALOUT_GID:-$(id -g)}"
-
-        sudo tee "$pre_script" > /dev/null << SCRIPT
-#!/bin/bash
-# Recreates the bind mount at the fixed path the container was built with.
-# Scans for any /dev/ttyUSB* or /dev/ttyACM* and mounts the first found
-# at /mnt/devices/ttyUSB0 — the path baked into the container config.
-set -e
-
-MOUNT_PATH="${mount_path}"
-MOUNT_DIR="\$(dirname \$MOUNT_PATH)"
-DEVICE=""
-
-for dev in /dev/ttyUSB* /dev/ttyACM*; do
-    if [[ -c "\$dev" ]]; then
-        DEVICE="\$dev"
-        break
-    fi
-done
-
-if [[ -z "\$DEVICE" ]]; then
-    echo "zmm-remount: ERROR — no serial device found" >&2
-    exit 1
-fi
-
-echo "zmm-remount: found \$DEVICE"
-
-# Tear down stale mount if present
-if mountpoint -q "\$MOUNT_PATH" 2>/dev/null; then
-    echo "zmm-remount: unmounting stale \$MOUNT_PATH"
-    umount "\$MOUNT_PATH"
-fi
-
-# Ensure mount dir and mount point file exist
-mkdir -p "\$MOUNT_DIR"
-touch "\$MOUNT_PATH"
-
-# Bind-mount the found device at the fixed path
-mount --bind "\$DEVICE" "\$MOUNT_PATH"
-
-# Set ownership so rootless Podman can access it
-chown ${invoking_uid}:${invoking_gid} "\$MOUNT_PATH"
-chmod 660 "\$MOUNT_PATH"
-
-
-echo "zmm-remount: \$DEVICE → \$MOUNT_PATH OK"
-SCRIPT
-        sudo chmod +x "$pre_script"
-        bash_bin=$(which bash)
-
-        # Allow script to run without password prompt from systemd user unit
-        sudo tee /etc/sudoers.d/zmm-remount > /dev/null << EOF
-                $USER ALL=(ALL) NOPASSWD: $bash_bin $pre_script
-EOF
-        sudo chmod 440 /etc/sudoers.d/zmm-remount
-        ok "Device remount script written: ${pre_script}"
-
-        info "Generating podman systemd unit..."
-        "$RUNTIME" generate systemd \
-            --name "$CONTAINER_NAME" \
-            --restart-policy=always \
-            --new \
-            > "$unit_dir/container-${CONTAINER_NAME}.service" 2>/dev/null || {
-
-            cat > "$unit_dir/container-${CONTAINER_NAME}.service" << UNIT
+    local unit_file="/etc/systemd/system/${CONTAINER_NAME}.service"
+    sudo tee "$unit_file" > /dev/null << UNIT
 [Unit]
 Description=Zigbee Matter Manager Container
-After=network.target
+After=network-online.target
+Wants=network-online.target
 
 [Service]
 Restart=always
 RestartSec=10
-ExecStartPre=-/usr/bin/podman rm -f ${CONTAINER_NAME}
-ExecStart=/usr/bin/podman start -a ${CONTAINER_NAME}
-ExecStop=/usr/bin/podman stop -t 15 ${CONTAINER_NAME}
-
-[Install]
-WantedBy=default.target
-UNIT
-        }
-
-        local bash_bin
-        bash_bin=$(which bash)
-
-        # Inject ExecStartPre remount before the first ExecStart line
-        sed -i "/^ExecStart=/i ExecStartPre=sudo -n ${bash_bin} ${pre_script}" \
-            "$unit_dir/container-${CONTAINER_NAME}.service"
-
-        systemctl --user daemon-reload
-        systemctl --user enable "container-${CONTAINER_NAME}.service"
-
-        if command -v loginctl &>/dev/null; then
-            loginctl enable-linger "$USER" 2>/dev/null || true
-        fi
-
-        ok "Podman user systemd unit enabled."
-        info "The container will start automatically at boot."
-    else
-        local unit_file="/etc/systemd/system/${CONTAINER_NAME}.service"
-        sudo tee "$unit_file" > /dev/null << UNIT
-[Unit]
-Description=Zigbee Matter Manager Container
-After=network.target docker.service
-Requires=docker.service
-
-[Service]
-Restart=always
-RestartSec=10
-ExecStart=/usr/bin/docker start -a ${CONTAINER_NAME}
-ExecStop=/usr/bin/docker stop -t 15 ${CONTAINER_NAME}
+ExecStart=${runtime_bin} start -a ${CONTAINER_NAME}
+ExecStop=${runtime_bin} stop -t 15 ${CONTAINER_NAME}
 
 [Install]
 WantedBy=multi-user.target
 UNIT
-        sudo systemctl daemon-reload
-        sudo systemctl enable "${CONTAINER_NAME}.service"
-        ok "Docker systemd unit enabled."
-    fi
+
+    sudo systemctl daemon-reload
+    sudo systemctl enable "${CONTAINER_NAME}.service"
+    ok "Systemd unit installed and enabled: ${unit_file}"
 }
 
 # =============================================================================
@@ -875,7 +590,6 @@ ${BOLD}Usage:${NC} $0 [OPTIONS]
 ${BOLD}Options:${NC}
   --port   PORT      Preferred host port  (default: ${INTERNAL_PORT})
   --usb    DEVICE    Zigbee USB device    (default: auto-detect)
-  --uid    UID:GID   Container user ID    (default: current user $(id -u):$(id -g))
   --dir    PATH      App clone directory  (default: ${APP_DIR})
   --data   PATH      Persistent data dir  (default: ${DATA_DIR})
   --branch NAME      Git branch           (default: ${REPO_BRANCH})
@@ -897,14 +611,11 @@ EOF
 PREFERRED_PORT=$INTERNAL_PORT
 INSTALL_AUTOSTART=true
 FORCE_REBUILD=false
-HOST_UID=$(id -u)
-HOST_GID=$(id -g)
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --port)         PREFERRED_PORT="$2";    shift 2 ;;
         --usb)          USB_DEVICE="$2";        shift 2 ;;
-        --uid)          HOST_UID="${2%%:*}"; HOST_GID="${2##*:}"; shift 2 ;;
         --dir)          APP_DIR="$2";           shift 2 ;;
         --data)         DATA_DIR="$2";          shift 2 ;;
         --branch)       REPO_BRANCH="$2";       shift 2 ;;
@@ -927,7 +638,7 @@ echo
 
 # Step 1: Pre-flight checks
 check_deps
-check_dialout_group     # ← exits here if user needs to re-login
+check_dialout_group
 detect_runtime
 
 # Step 2: Get the code
@@ -938,9 +649,9 @@ if [[ -z "${USB_DEVICE:-}" ]]; then
     detect_usb_coordinator
 fi
 
-# Step 4: Ports
-HOST_PORT=$(pick_host_port "$PREFERRED_PORT")
-HOST_MATTER_PORT=$(pick_host_port "$MATTER_INTERNAL_PORT")
+# Step 4: Ports (--network=host — verify ports are free on host)
+HOST_PORT=$(check_host_port "$PREFERRED_PORT")
+HOST_MATTER_PORT=$(check_host_port "$MATTER_INTERNAL_PORT")
 
 # Step 5: Build
 write_containerfile
@@ -951,15 +662,11 @@ else
     info "Image exists — skipping build (use --rebuild to force)."
 fi
 
-# Step 6: Prepare data dirs + device mount
+# Step 6: Prepare data dirs
 prepare_data_dirs
 
-# Step 6.5: OTBR D-Bus policy on host
+# Step 7: OTBR D-Bus policy on host
 prepare_otbr_dbus_policy
-
-# Step 7: Bind-mount device for rootless Podman
-prepare_device_mount
-
 
 # Step 8: Run
 run_container "$HOST_PORT" "$HOST_MATTER_PORT"
@@ -986,7 +693,7 @@ echo -e "  ${BOLD}Config:${NC}         ${DATA_DIR}/config/config.yaml"
 echo -e "  ${BOLD}Logs:${NC}           ${RUNTIME} logs -f ${CONTAINER_NAME}"
 echo -e "  ${BOLD}Data:${NC}           ${DATA_DIR}/"
 echo -e "  ${BOLD}Runtime:${NC}        ${RUNTIME}"
-echo -e "  ${BOLD}Container UID:${NC}  ${HOST_UID}:${HOST_GID}"
+echo -e "  ${BOLD}Network:${NC}        host"
 echo
 echo -e "  ${BOLD}Commands:${NC}"
 echo -e "    ${RUNTIME} logs -f ${CONTAINER_NAME}        # Follow logs"
