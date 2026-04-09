@@ -8,6 +8,10 @@
 # Uses --network=host for direct Thread/mDNS/IPv6 access.
 # =============================================================================
 
+CURRENT_USER=$(whoami)
+export XDG_RUNTIME_DIR=/run/user/$(id -u "$CURRENT_USER")
+export DBUS_SESSION_BUS_ADDRESS="unix:path=${XDG_RUNTIME_DIR}/bus"
+
 set -euo pipefail
 
 # ── Colours ──────────────────────────────────────────────────────────────────
@@ -498,7 +502,7 @@ run_container() {
         --restart unless-stopped
         --device /dev/net/tun:/dev/net/tun
         --volume /dev/shm:/dev/shm
-        --volume /run/dbus:/run/dbus:ro
+        --volume /run/dbus:/run/dbus
         --volume "${DATA_DIR}/config:/app/config:Z"
         --volume "${DATA_DIR}/data:/app/data:Z"
         --volume "${DATA_DIR}/logs:/app/logs:Z"
