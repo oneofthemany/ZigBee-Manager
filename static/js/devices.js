@@ -232,7 +232,7 @@ function updateDeviceRow(device) {
  */
 export function handleDeviceUpdate(payload) {
     // DEBUG LOGGING: Log the payload as JSON
-    console.log("1. WebSocket Update Received:", payload.ieee, "\nPayload:", JSON.stringify(payload, null, 2));
+    //console.log("1. WebSocket Update Received:", payload.ieee, "\nPayload:", JSON.stringify(payload, null, 2));
 
     // 1. Find the device in the array
     const devIndex = state.devices.findIndex(d => d.ieee === payload.ieee);
@@ -242,7 +242,7 @@ export function handleDeviceUpdate(payload) {
         // We merge the new data into the existing state object to preserve existing keys
         state.devices[devIndex].state = { ...state.devices[devIndex].state, ...payload.data };
         // DEBUG LOGGING:
-        console.log("2. Current Open Device:", state.currentDeviceIeee);
+        //console.log("2. Current Open Device:", state.currentDeviceIeee);
 
         // Update metadata if present
         if (payload.data.last_seen) state.devices[devIndex].last_seen_ts = payload.data.last_seen;
@@ -258,7 +258,7 @@ export function handleDeviceUpdate(payload) {
         // Update router list if device type changed or availability changed
         populateRouterList();
         // DEBUG LOGGING:
-        console.log("3. MATCH! Attempting to refresh modal...");
+        //console.log("3. MATCH! Attempting to refresh modal...");
 
         // 4. Refresh the modal if it is open for THIS device
         if (state.currentDeviceIeee === payload.ieee) {
