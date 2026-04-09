@@ -4,24 +4,11 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="raw data added to debug">
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="updated to be root container due to networking requirements for matter">
       <change afterPath="$PROJECT_DIR$/config/matter_definitions/bilresa.json" afterDir="false" />
       <change afterPath="$PROJECT_DIR$/config/matter_definitions/ikea_e2490_bilresa.json" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/modules/rotary_bindings.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/routes/rotary_bindings_routes.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/static/js/modal/rotary-bindings.js" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/caches/deviceStreaming.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/caches/deviceStreaming.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/build.sh" beforeDir="false" afterPath="$PROJECT_DIR$/build.sh" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/main.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/modules/matter_bridge.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/matter_bridge.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/modules/matter_definitions.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/matter_definitions.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/routes/__init__.py" beforeDir="false" afterPath="$PROJECT_DIR$/routes/__init__.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/routes/system_routes.py" beforeDir="false" afterPath="$PROJECT_DIR$/routes/system_routes.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/static/js/deploy-animation.js" beforeDir="false" afterPath="$PROJECT_DIR$/static/js/deploy-animation.js" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/static/js/devices.js" beforeDir="false" afterPath="$PROJECT_DIR$/static/js/devices.js" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/static/js/main.js" beforeDir="false" afterPath="$PROJECT_DIR$/static/js/main.js" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/static/js/modal/matter-endpoints.js" beforeDir="false" afterPath="$PROJECT_DIR$/static/js/modal/matter-endpoints.js" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -52,12 +39,12 @@
     &quot;assignee&quot;: &quot;oneofthemany&quot;
   }
 }</component>
-  <component name="GithubPullRequestsUISettings"><![CDATA[{
-  "selectedUrlAndAccountId": {
-    "url": "https://github.com/oneofthemany/ZigBee-Matter-Manager.git",
-    "accountId": "b00be1dc-7b4f-4311-ab84-b3d2175df6fb"
+  <component name="GithubPullRequestsUISettings">{
+  &quot;selectedUrlAndAccountId&quot;: {
+    &quot;url&quot;: &quot;https://github.com/oneofthemany/ZigBee-Matter-Manager.git&quot;,
+    &quot;accountId&quot;: &quot;b00be1dc-7b4f-4311-ab84-b3d2175df6fb&quot;
   }
-}]]></component>
+}</component>
   <component name="ProjectColorInfo">{
   &quot;associatedIndex&quot;: 2
 }</component>
@@ -171,214 +158,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00218" summary="otbr final touches">
-      <option name="closed" value="true" />
-      <created>1775061256853</created>
-      <option name="number" value="00218" />
-      <option name="presentableId" value="LOCAL-00218" />
-      <option name="project" value="LOCAL" />
-      <updated>1775061256853</updated>
-    </task>
-    <task id="LOCAL-00219" summary="route registration added for otbr">
-      <option name="closed" value="true" />
-      <created>1775062139384</created>
-      <option name="number" value="00219" />
-      <option name="presentableId" value="LOCAL-00219" />
-      <option name="project" value="LOCAL" />
-      <updated>1775062139384</updated>
-    </task>
-    <task id="LOCAL-00220" summary="moved otbr to routes">
-      <option name="closed" value="true" />
-      <created>1775063154873</created>
-      <option name="number" value="00220" />
-      <option name="presentableId" value="LOCAL-00220" />
-      <option name="project" value="LOCAL" />
-      <updated>1775063154873</updated>
-    </task>
-    <task id="LOCAL-00221" summary="further updates to otbr">
-      <option name="closed" value="true" />
-      <created>1775065194045</created>
-      <option name="number" value="00221" />
-      <option name="presentableId" value="LOCAL-00221" />
-      <option name="project" value="LOCAL" />
-      <updated>1775065194045</updated>
-    </task>
-    <task id="LOCAL-00222" summary="further updates to otbr">
-      <option name="closed" value="true" />
-      <created>1775065332148</created>
-      <option name="number" value="00222" />
-      <option name="presentableId" value="LOCAL-00222" />
-      <option name="project" value="LOCAL" />
-      <updated>1775065332148</updated>
-    </task>
-    <task id="LOCAL-00223" summary="otbr conf update">
-      <option name="closed" value="true" />
-      <created>1775066141318</created>
-      <option name="number" value="00223" />
-      <option name="presentableId" value="LOCAL-00223" />
-      <option name="project" value="LOCAL" />
-      <updated>1775066141318</updated>
-    </task>
-    <task id="LOCAL-00224" summary="thread dataset added to commissioning matter bridge">
-      <option name="closed" value="true" />
-      <created>1775067022284</created>
-      <option name="number" value="00224" />
-      <option name="presentableId" value="LOCAL-00224" />
-      <option name="project" value="LOCAL" />
-      <updated>1775067022284</updated>
-    </task>
-    <task id="LOCAL-00225" summary="thread dataset added to commissioning matter bridge">
-      <option name="closed" value="true" />
-      <created>1775067031837</created>
-      <option name="number" value="00225" />
-      <option name="presentableId" value="LOCAL-00225" />
-      <option name="project" value="LOCAL" />
-      <updated>1775067031837</updated>
-    </task>
-    <task id="LOCAL-00226" summary="wording change for setup">
-      <option name="closed" value="true" />
-      <created>1775067575623</created>
-      <option name="number" value="00226" />
-      <option name="presentableId" value="LOCAL-00226" />
-      <option name="project" value="LOCAL" />
-      <updated>1775067575623</updated>
-    </task>
-    <task id="LOCAL-00227" summary="listening fixes for authentication phase">
-      <option name="closed" value="true" />
-      <created>1775069538300</created>
-      <option name="number" value="00227" />
-      <option name="presentableId" value="LOCAL-00227" />
-      <option name="project" value="LOCAL" />
-      <updated>1775069538300</updated>
-    </task>
-    <task id="LOCAL-00228" summary="otbr attributes added">
-      <option name="closed" value="true" />
-      <created>1775070197256</created>
-      <option name="number" value="00228" />
-      <option name="presentableId" value="LOCAL-00228" />
-      <option name="project" value="LOCAL" />
-      <updated>1775070197256</updated>
-    </task>
-    <task id="LOCAL-00229" summary="capsTab added after modlaBody">
-      <option name="closed" value="true" />
-      <created>1775070294859</created>
-      <option name="number" value="00229" />
-      <option name="presentableId" value="LOCAL-00229" />
-      <option name="project" value="LOCAL" />
-      <updated>1775070294859</updated>
-    </task>
-    <task id="LOCAL-00230" summary="more debugging">
-      <option name="closed" value="true" />
-      <created>1775071436614</created>
-      <option name="number" value="00230" />
-      <option name="presentableId" value="LOCAL-00230" />
-      <option name="project" value="LOCAL" />
-      <updated>1775071436614</updated>
-    </task>
-    <task id="LOCAL-00231" summary="renamed typo">
-      <option name="closed" value="true" />
-      <created>1775071946309</created>
-      <option name="number" value="00231" />
-      <option name="presentableId" value="LOCAL-00231" />
-      <option name="project" value="LOCAL" />
-      <updated>1775071946309</updated>
-    </task>
-    <task id="LOCAL-00232" summary="typos">
-      <option name="closed" value="true" />
-      <created>1775072679783</created>
-      <option name="number" value="00232" />
-      <option name="presentableId" value="LOCAL-00232" />
-      <option name="project" value="LOCAL" />
-      <updated>1775072679783</updated>
-    </task>
-    <task id="LOCAL-00233" summary="thread netowrk persistence">
-      <option name="closed" value="true" />
-      <created>1775121740882</created>
-      <option name="number" value="00233" />
-      <option name="presentableId" value="LOCAL-00233" />
-      <option name="project" value="LOCAL" />
-      <updated>1775121740882</updated>
-    </task>
-    <task id="LOCAL-00234" summary="de-indent fix for _build_state">
-      <option name="closed" value="true" />
-      <created>1775121782199</created>
-      <option name="number" value="00234" />
-      <option name="presentableId" value="LOCAL-00234" />
-      <option name="project" value="LOCAL" />
-      <updated>1775121782199</updated>
-    </task>
-    <task id="LOCAL-00235" summary="matter device addressing added">
-      <option name="closed" value="true" />
-      <created>1775123070300</created>
-      <option name="number" value="00235" />
-      <option name="presentableId" value="LOCAL-00235" />
-      <option name="project" value="LOCAL" />
-      <updated>1775123070300</updated>
-    </task>
-    <task id="LOCAL-00236" summary="matter addressing patch">
-      <option name="closed" value="true" />
-      <created>1775123635186</created>
-      <option name="number" value="00236" />
-      <option name="presentableId" value="LOCAL-00236" />
-      <option name="project" value="LOCAL" />
-      <updated>1775123635186</updated>
-    </task>
-    <task id="LOCAL-00237" summary="resilience fix">
-      <option name="closed" value="true" />
-      <created>1775124275013</created>
-      <option name="number" value="00237" />
-      <option name="presentableId" value="LOCAL-00237" />
-      <option name="project" value="LOCAL" />
-      <updated>1775124275013</updated>
-    </task>
-    <task id="LOCAL-00238" summary="matter improvements">
-      <option name="closed" value="true" />
-      <created>1775133394255</created>
-      <option name="number" value="00238" />
-      <option name="presentableId" value="LOCAL-00238" />
-      <option name="project" value="LOCAL" />
-      <updated>1775133394255</updated>
-    </task>
-    <task id="LOCAL-00239" summary="back up and restore added">
-      <option name="closed" value="true" />
-      <created>1775384999485</created>
-      <option name="number" value="00239" />
-      <option name="presentableId" value="LOCAL-00239" />
-      <option name="project" value="LOCAL" />
-      <updated>1775384999486</updated>
-    </task>
-    <task id="LOCAL-00240" summary="backup fixes">
-      <option name="closed" value="true" />
-      <created>1775385239843</created>
-      <option name="number" value="00240" />
-      <option name="presentableId" value="LOCAL-00240" />
-      <option name="project" value="LOCAL" />
-      <updated>1775385239843</updated>
-    </task>
-    <task id="LOCAL-00241" summary="backup fixes">
-      <option name="closed" value="true" />
-      <created>1775385714613</created>
-      <option name="number" value="00241" />
-      <option name="presentableId" value="LOCAL-00241" />
-      <option name="project" value="LOCAL" />
-      <updated>1775385714613</updated>
-    </task>
-    <task id="LOCAL-00242" summary="added httpx for backup over network function">
-      <option name="closed" value="true" />
-      <created>1775385916955</created>
-      <option name="number" value="00242" />
-      <option name="presentableId" value="LOCAL-00242" />
-      <option name="project" value="LOCAL" />
-      <updated>1775385916955</updated>
-    </task>
-    <task id="LOCAL-00243" summary="backup over network function">
-      <option name="closed" value="true" />
-      <created>1775386838413</created>
-      <option name="number" value="00243" />
-      <option name="presentableId" value="LOCAL-00243" />
-      <option name="project" value="LOCAL" />
-      <updated>1775386838413</updated>
     </task>
     <task id="LOCAL-00244" summary="improved restore function">
       <option name="closed" value="true" />
@@ -564,7 +343,215 @@
       <option name="project" value="LOCAL" />
       <updated>1775579145131</updated>
     </task>
-    <option name="localTasksCounter" value="267" />
+    <task id="LOCAL-00267" summary="matter definitions dir added">
+      <option name="closed" value="true" />
+      <created>1775648696872</created>
+      <option name="number" value="00267" />
+      <option name="presentableId" value="LOCAL-00267" />
+      <option name="project" value="LOCAL" />
+      <updated>1775648696873</updated>
+    </task>
+    <task id="LOCAL-00268" summary="new rotary bindings">
+      <option name="closed" value="true" />
+      <created>1775648722460</created>
+      <option name="number" value="00268" />
+      <option name="presentableId" value="LOCAL-00268" />
+      <option name="project" value="LOCAL" />
+      <updated>1775648722460</updated>
+    </task>
+    <task id="LOCAL-00269" summary="line removed">
+      <option name="closed" value="true" />
+      <created>1775648735525</created>
+      <option name="number" value="00269" />
+      <option name="presentableId" value="LOCAL-00269" />
+      <option name="project" value="LOCAL" />
+      <updated>1775648735525</updated>
+    </task>
+    <task id="LOCAL-00270" summary="retention of states for action buttons">
+      <option name="closed" value="true" />
+      <created>1775648761061</created>
+      <option name="number" value="00270" />
+      <option name="presentableId" value="LOCAL-00270" />
+      <option name="project" value="LOCAL" />
+      <updated>1775648761061</updated>
+    </task>
+    <task id="LOCAL-00271" summary="rotary bindings">
+      <option name="closed" value="true" />
+      <created>1775648795289</created>
+      <option name="number" value="00271" />
+      <option name="presentableId" value="LOCAL-00271" />
+      <option name="project" value="LOCAL" />
+      <updated>1775648795289</updated>
+    </task>
+    <task id="LOCAL-00272" summary="frontend reload fixed">
+      <option name="closed" value="true" />
+      <created>1775648824889</created>
+      <option name="number" value="00272" />
+      <option name="presentableId" value="LOCAL-00272" />
+      <option name="project" value="LOCAL" />
+      <updated>1775648824889</updated>
+    </task>
+    <task id="LOCAL-00273" summary="removal of text">
+      <option name="closed" value="true" />
+      <created>1775648855573</created>
+      <option name="number" value="00273" />
+      <option name="presentableId" value="LOCAL-00273" />
+      <option name="project" value="LOCAL" />
+      <updated>1775648855573</updated>
+    </task>
+    <task id="LOCAL-00274" summary="xml push">
+      <option name="closed" value="true" />
+      <created>1775648881251</created>
+      <option name="number" value="00274" />
+      <option name="presentableId" value="LOCAL-00274" />
+      <option name="project" value="LOCAL" />
+      <updated>1775648881251</updated>
+    </task>
+    <task id="LOCAL-00275" summary="routes fix for rotaory">
+      <option name="closed" value="true" />
+      <created>1775650682908</created>
+      <option name="number" value="00275" />
+      <option name="presentableId" value="LOCAL-00275" />
+      <option name="project" value="LOCAL" />
+      <updated>1775650682908</updated>
+    </task>
+    <task id="LOCAL-00276" summary="source tree after body inner">
+      <option name="closed" value="true" />
+      <created>1775650702377</created>
+      <option name="number" value="00276" />
+      <option name="presentableId" value="LOCAL-00276" />
+      <option name="project" value="LOCAL" />
+      <updated>1775650702377</updated>
+    </task>
+    <task id="LOCAL-00277" summary="duplicate rotary bindings registration">
+      <option name="closed" value="true" />
+      <created>1775650726133</created>
+      <option name="number" value="00277" />
+      <option name="presentableId" value="LOCAL-00277" />
+      <option name="project" value="LOCAL" />
+      <updated>1775650726133</updated>
+    </task>
+    <task id="LOCAL-00278" summary="adding in matter definitions">
+      <option name="closed" value="true" />
+      <created>1775650928642</created>
+      <option name="number" value="00278" />
+      <option name="presentableId" value="LOCAL-00278" />
+      <option name="project" value="LOCAL" />
+      <updated>1775650928642</updated>
+    </task>
+    <task id="LOCAL-00279" summary="editor routes removed in error">
+      <option name="closed" value="true" />
+      <created>1775651344136</created>
+      <option name="number" value="00279" />
+      <option name="presentableId" value="LOCAL-00279" />
+      <option name="project" value="LOCAL" />
+      <updated>1775651344136</updated>
+    </task>
+    <task id="LOCAL-00280" summary="reinstating text">
+      <option name="closed" value="true" />
+      <created>1775651534195</created>
+      <option name="number" value="00280" />
+      <option name="presentableId" value="LOCAL-00280" />
+      <option name="project" value="LOCAL" />
+      <updated>1775651534195</updated>
+    </task>
+    <task id="LOCAL-00281" summary="removal of text">
+      <option name="closed" value="true" />
+      <created>1775652946664</created>
+      <option name="number" value="00281" />
+      <option name="presentableId" value="LOCAL-00281" />
+      <option name="project" value="LOCAL" />
+      <updated>1775652946664</updated>
+    </task>
+    <task id="LOCAL-00282" summary="update commission to be aware of resilience watchdog">
+      <option name="closed" value="true" />
+      <created>1775654914199</created>
+      <option name="number" value="00282" />
+      <option name="presentableId" value="LOCAL-00282" />
+      <option name="project" value="LOCAL" />
+      <updated>1775654914200</updated>
+    </task>
+    <task id="LOCAL-00283" summary="get_definition_store bug fix">
+      <option name="closed" value="true" />
+      <created>1775657008237</created>
+      <option name="number" value="00283" />
+      <option name="presentableId" value="LOCAL-00283" />
+      <option name="project" value="LOCAL" />
+      <updated>1775657008237</updated>
+    </task>
+    <task id="LOCAL-00284" summary="improved rotary bindings for ep clock and anti clock">
+      <option name="closed" value="true" />
+      <created>1775659059165</created>
+      <option name="number" value="00284" />
+      <option name="presentableId" value="LOCAL-00284" />
+      <option name="project" value="LOCAL" />
+      <updated>1775659059166</updated>
+    </task>
+    <task id="LOCAL-00285" summary="improved roary bindings definitions">
+      <option name="closed" value="true" />
+      <created>1775662865222</created>
+      <option name="number" value="00285" />
+      <option name="presentableId" value="LOCAL-00285" />
+      <option name="project" value="LOCAL" />
+      <updated>1775662865222</updated>
+    </task>
+    <task id="LOCAL-00286" summary="improved definitions update">
+      <option name="closed" value="true" />
+      <created>1775662938528</created>
+      <option name="number" value="00286" />
+      <option name="presentableId" value="LOCAL-00286" />
+      <option name="project" value="LOCAL" />
+      <updated>1775662938528</updated>
+    </task>
+    <task id="LOCAL-00287" summary="added handlers to from matter_parsers import BaseMatterParser, BasicInfoAttrs">
+      <option name="closed" value="true" />
+      <created>1775663826167</created>
+      <option name="number" value="00287" />
+      <option name="presentableId" value="LOCAL-00287" />
+      <option name="project" value="LOCAL" />
+      <updated>1775663826167</updated>
+    </task>
+    <task id="LOCAL-00288" summary="improvements to boot with matter">
+      <option name="closed" value="true" />
+      <created>1775665857216</created>
+      <option name="number" value="00288" />
+      <option name="presentableId" value="LOCAL-00288" />
+      <option name="project" value="LOCAL" />
+      <updated>1775665857217</updated>
+    </task>
+    <task id="LOCAL-00289" summary="rotary bindings">
+      <option name="closed" value="true" />
+      <created>1775665877791</created>
+      <option name="number" value="00289" />
+      <option name="presentableId" value="LOCAL-00289" />
+      <option name="project" value="LOCAL" />
+      <updated>1775665877791</updated>
+    </task>
+    <task id="LOCAL-00290" summary="delete function added">
+      <option name="closed" value="true" />
+      <created>1775665890714</created>
+      <option name="number" value="00290" />
+      <option name="presentableId" value="LOCAL-00290" />
+      <option name="project" value="LOCAL" />
+      <updated>1775665890714</updated>
+    </task>
+    <task id="LOCAL-00291" summary="project root not app dir for delete">
+      <option name="closed" value="true" />
+      <created>1775666074342</created>
+      <option name="number" value="00291" />
+      <option name="presentableId" value="LOCAL-00291" />
+      <option name="project" value="LOCAL" />
+      <updated>1775666074342</updated>
+    </task>
+    <task id="LOCAL-00292" summary="updated to be root container due to networking requirements for matter">
+      <option name="closed" value="true" />
+      <created>1775730653514</created>
+      <option name="number" value="00292" />
+      <option name="presentableId" value="LOCAL-00292" />
+      <option name="project" value="LOCAL" />
+      <updated>1775730653515</updated>
+    </task>
+    <option name="localTasksCounter" value="293" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -591,31 +578,42 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="backup fixes" />
-    <MESSAGE value="added httpx for backup over network function" />
-    <MESSAGE value="backup over network function" />
-    <MESSAGE value="improved restore function" />
-    <MESSAGE value="improved restore function to cater for mqtt in config yaml" />
-    <MESSAGE value="system health added to system routes" />
-    <MESSAGE value="manifest updates for install chrome web apk" />
-    <MESSAGE value="matter automations update" />
-    <MESSAGE value="moved system health inside" />
-    <MESSAGE value="setup improvements" />
-    <MESSAGE value="broken line fix" />
-    <MESSAGE value="topology scan fix" />
-    <MESSAGE value="multipan fix for apply config" />
-    <MESSAGE value="permit join fix" />
-    <MESSAGE value="improvement for matter commisioning button enablement" />
-    <MESSAGE value="update t button enable disable for matter pair" />
-    <MESSAGE value="update thread_state to &quot;leader\ndone&quot;" />
-    <MESSAGE value="ble check added for matter commissioning" />
-    <MESSAGE value="attribute fix for matter automations" />
-    <MESSAGE value="new matter definitions" />
-    <MESSAGE value="matter ep definitions frontend scan" />
-    <MESSAGE value="comment out text" />
-    <MESSAGE value="adding in action buttons to matter def" />
-    <MESSAGE value="removal of debugging moving to packet level debug" />
     <MESSAGE value="raw data added to debug" />
-    <option name="LAST_COMMIT_MESSAGE" value="raw data added to debug" />
+    <MESSAGE value="matter definitions dir added" />
+    <MESSAGE value="new rotary bindings" />
+    <MESSAGE value="line removed" />
+    <MESSAGE value="retention of states for action buttons" />
+    <MESSAGE value="frontend reload fixed" />
+    <MESSAGE value="xml push" />
+    <MESSAGE value="routes fix for rotaory" />
+    <MESSAGE value="source tree after body inner" />
+    <MESSAGE value="duplicate rotary bindings registration" />
+    <MESSAGE value="adding in matter definitions" />
+    <MESSAGE value="editor routes removed in error" />
+    <MESSAGE value="reinstating text" />
+    <MESSAGE value="removal of text" />
+    <MESSAGE value="update commission to be aware of resilience watchdog" />
+    <MESSAGE value="get_definition_store bug fix" />
+    <MESSAGE value="improved rotary bindings for ep clock and anti clock" />
+    <MESSAGE value="improved roary bindings definitions" />
+    <MESSAGE value="improved definitions update" />
+    <MESSAGE value="added handlers to from matter_parsers import BaseMatterParser, BasicInfoAttrs" />
+    <MESSAGE value="improvements to boot with matter" />
+    <MESSAGE value="rotary bindings" />
+    <MESSAGE value="delete function added" />
+    <MESSAGE value="project root not app dir for delete" />
+    <MESSAGE value="updated to be root container due to networking requirements for matter" />
+    <option name="LAST_COMMIT_MESSAGE" value="updated to be root container due to networking requirements for matter" />
+  </component>
+  <component name="XDebuggerManager">
+    <breakpoint-manager>
+      <breakpoints>
+        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
+          <url>file://$PROJECT_DIR$/core/service.py</url>
+          <line>484</line>
+          <option name="timeStamp" value="1" />
+        </line-breakpoint>
+      </breakpoints>
+    </breakpoint-manager>
   </component>
 </project>
