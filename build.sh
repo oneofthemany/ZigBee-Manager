@@ -491,6 +491,7 @@ run_container() {
         --detach
         --name "$CONTAINER_NAME"
         --network=slirp4netns
+        --security-opt label=disable
         --publish "${host_port}:${INTERNAL_PORT}"
         --publish "${host_matter_port}:${MATTER_INTERNAL_PORT}"
         --cap-add=NET_ADMIN
