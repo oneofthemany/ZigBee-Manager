@@ -193,10 +193,9 @@
             // Skip already-enhanced rows
             if (tr.dataset.enhanced === 'true') return;
 
-            // Find the IEEE address from the row to look up device data
-            var ieeeCell = tr.querySelector('td:nth-child(3) .font-monospace');
-            if (!ieeeCell) return;
-            var ieee = ieeeCell.textContent.trim();
+            // Use data-ieee attribute (works for both Zigbee and Matter)
+            var ieee = tr.dataset.ieee;
+            if (!ieee) return;
 
             var device = window.state.deviceCache[ieee];
             if (!device) return;
@@ -283,6 +282,8 @@
             }
         });
     }
+
+    window._enhanceDeviceTable = enhanceDeviceTable;
 
     // ----------------------------------------------------------
     // 7. OBSERVE TABLE CHANGES

@@ -207,27 +207,23 @@ export function renderDeviceTable() {
 function updateDeviceRow(device) {
     const row = document.querySelector(`tr[data-ieee="${device.ieee}"]`);
     if (!row) {
-        // Device not in table yet — need full render
         renderDeviceTable();
         return;
     }
 
-    // Update status badge
-    const statusBadge = row.querySelector('.device-status');
-    if (statusBadge) {
-        statusBadge.className = `badge device-status ${device.available ? 'bg-success' : 'bg-danger'}`;
-        statusBadge.textContent = device.available ? 'Online' : 'Offline';
+    // Update last seen
+    const lastSeenCell = row.querySelector('.last-seen');
+    if (lastSeenCell && device.last_seen_ts) {
+        lastSeenCell.dataset.ts = device.last_seen_ts;
     }
 
-    // Update state badges
-    const stateCell = row.querySelector('.device-state');
-    if (stateCell && window.getDeviceStateHtml) {
-        stateCell.innerHTML = window.getDeviceStateHtml(device);
-    }
+    // Mark for re-enhancement
+    row.dataset.enhanced = 'false';
 
-    // Update LQI
-    const lqiCell = row.querySelector('.device-lqi');
-    if (lqiCell) lqiCell.textContent = device.lqi || '';
+    // Directly trigger device-status.js enhancement
+    if (window._enhanceDeviceTable) {
+        window._enhanceDeviceTable();
+    }
 }
 
 
@@ -236,7 +232,7 @@ function updateDeviceRow(device) {
  */
 export function handleDeviceUpdate(payload) {
     // DEBUG LOGGING: Log the payload as JSON
-    //console.log("1. WebSocket Update Received:", payload.ieee, "\nPayload:", JSON.stringify(payload, null, 2));
+    console.log("1. WebSocket Update Received:", payload.ieee, "\nPayload:", JSON.stringify(payload, null, 2));
 
     // 1. Find the device in the array
     const devIndex = state.devices.findIndex(d => d.ieee === payload.ieee);
@@ -246,7 +242,7 @@ export function handleDeviceUpdate(payload) {
         // We merge the new data into the existing state object to preserve existing keys
         state.devices[devIndex].state = { ...state.devices[devIndex].state, ...payload.data };
         // DEBUG LOGGING:
-        //console.log("2. Current Open Device:", state.currentDeviceIeee);
+        console.log("2. Current Open Device:", state.currentDeviceIeee);
 
         // Update metadata if present
         if (payload.data.last_seen) state.devices[devIndex].last_seen_ts = payload.data.last_seen;
@@ -262,7 +258,7 @@ export function handleDeviceUpdate(payload) {
         // Update router list if device type changed or availability changed
         populateRouterList();
         // DEBUG LOGGING:
-        //console.log("3. MATCH! Attempting to refresh modal...");
+        console.log("3. MATCH! Attempting to refresh modal...");
 
         // 4. Refresh the modal if it is open for THIS device
         if (state.currentDeviceIeee === payload.ieee) {
