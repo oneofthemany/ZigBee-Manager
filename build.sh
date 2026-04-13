@@ -385,7 +385,7 @@ RUN pip install --no-cache-dir --upgrade pip \
 COPY . .
 
 # Required directories
-RUN mkdir -p /data /app/data/matter /app/data/backups /app/logs /app/config /var/lib/thread \
+RUN mkdir -p /data /app/data/matter /app/data/backups /app/data/certs /app/logs /app/config /var/lib/thread \
         /usr/local/lib/python3.11/site-packages/credentials/development/paa-root-certs
 
 ENV ZMM_BACKUP_DIR=/app/data/backups
@@ -505,6 +505,7 @@ run_container() {
         --volume /run/dbus:/run/dbus
         --volume "${DATA_DIR}/config:/app/config"
         --volume "${DATA_DIR}/data:/app/data"
+        --volume "${DATA_DIR}/data/certs:/app/data/certs"
         --volume "${DATA_DIR}/logs:/app/logs"
     )
 

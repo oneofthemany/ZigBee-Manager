@@ -276,7 +276,7 @@ class ConfigBuilderMixin:
 
         conf = {
             "device": device_conf,
-            "database_path": "zigbee.db",
+            "database_path": "./data/zigbee.db",
             "ezsp_config": ezsp_conf,
             "network": {
                 "channel": self._config.get('channel', 25),
@@ -305,7 +305,7 @@ class ConfigBuilderMixin:
                 "path": self.port,
                 "baudrate": baud,
             },
-            "database_path": "zigbee.db",
+            "database_path": "./data/zigbee.db",
             "network": {
                 "channel": self._config.get('channel', 25),
                 "key": network_key,
@@ -333,7 +333,7 @@ class ConfigBuilderMixin:
                 "path": self.port,
                 "baudrate": baud,
             },
-            "database_path": "zigbee.db",
+            "database_path": "./data/zigbee.db",
             "network": {
                 "channel": self._config.get('channel', 25),
                 "key": network_key,

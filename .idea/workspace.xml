@@ -4,11 +4,13 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="updated to be root container due to networking requirements for matter">
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="debugging remove from prod">
       <change afterPath="$PROJECT_DIR$/config/matter_definitions/bilresa.json" afterDir="false" />
       <change afterPath="$PROJECT_DIR$/config/matter_definitions/ikea_e2490_bilresa.json" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/build.sh" beforeDir="false" afterPath="$PROJECT_DIR$/build.sh" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/config/config.yaml" beforeDir="false" afterPath="$PROJECT_DIR$/config/config.yaml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/core/config_builder.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/config_builder.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -69,7 +71,7 @@
     &quot;cidr.known.project.marker&quot;: &quot;true&quot;,
     &quot;git-widget-placeholder&quot;: &quot;main&quot;,
     &quot;kotlin-language-version-configured&quot;: &quot;true&quot;,
-    &quot;last_opened_file_path&quot;: &quot;/var/home/smu02/StudioProjects/ZigBee-Manager&quot;,
+    &quot;last_opened_file_path&quot;: &quot;/var/home/smu02/StudioProjects/Music-Therapy&quot;,
     &quot;project.structure.last.edited&quot;: &quot;SDKs&quot;,
     &quot;project.structure.proportion&quot;: &quot;0.0&quot;,
     &quot;project.structure.side.proportion&quot;: &quot;0.2&quot;,
@@ -158,78 +160,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00244" summary="improved restore function">
-      <option name="closed" value="true" />
-      <created>1775388252668</created>
-      <option name="number" value="00244" />
-      <option name="presentableId" value="LOCAL-00244" />
-      <option name="project" value="LOCAL" />
-      <updated>1775388252668</updated>
-    </task>
-    <task id="LOCAL-00245" summary="improved restore function to cater for mqtt in config yaml">
-      <option name="closed" value="true" />
-      <created>1775388780900</created>
-      <option name="number" value="00245" />
-      <option name="presentableId" value="LOCAL-00245" />
-      <option name="project" value="LOCAL" />
-      <updated>1775388780900</updated>
-    </task>
-    <task id="LOCAL-00246" summary="system health added to system routes">
-      <option name="closed" value="true" />
-      <created>1775389140418</created>
-      <option name="number" value="00246" />
-      <option name="presentableId" value="LOCAL-00246" />
-      <option name="project" value="LOCAL" />
-      <updated>1775389140418</updated>
-    </task>
-    <task id="LOCAL-00247" summary="manifest updates for install chrome web apk">
-      <option name="closed" value="true" />
-      <created>1775390453642</created>
-      <option name="number" value="00247" />
-      <option name="presentableId" value="LOCAL-00247" />
-      <option name="project" value="LOCAL" />
-      <updated>1775390453642</updated>
-    </task>
-    <task id="LOCAL-00248" summary="matter automations update">
-      <option name="closed" value="true" />
-      <created>1775550534337</created>
-      <option name="number" value="00248" />
-      <option name="presentableId" value="LOCAL-00248" />
-      <option name="project" value="LOCAL" />
-      <updated>1775550534338</updated>
-    </task>
-    <task id="LOCAL-00249" summary="moved system health inside">
-      <option name="closed" value="true" />
-      <created>1775551390393</created>
-      <option name="number" value="00249" />
-      <option name="presentableId" value="LOCAL-00249" />
-      <option name="project" value="LOCAL" />
-      <updated>1775551390393</updated>
-    </task>
-    <task id="LOCAL-00250" summary="setup improvements">
-      <option name="closed" value="true" />
-      <created>1775554390451</created>
-      <option name="number" value="00250" />
-      <option name="presentableId" value="LOCAL-00250" />
-      <option name="project" value="LOCAL" />
-      <updated>1775554390451</updated>
-    </task>
-    <task id="LOCAL-00251" summary="broken line fix">
-      <option name="closed" value="true" />
-      <created>1775554962047</created>
-      <option name="number" value="00251" />
-      <option name="presentableId" value="LOCAL-00251" />
-      <option name="project" value="LOCAL" />
-      <updated>1775554962047</updated>
-    </task>
-    <task id="LOCAL-00252" summary="broken line fix">
-      <option name="closed" value="true" />
-      <created>1775555363895</created>
-      <option name="number" value="00252" />
-      <option name="presentableId" value="LOCAL-00252" />
-      <option name="project" value="LOCAL" />
-      <updated>1775555363895</updated>
     </task>
     <task id="LOCAL-00253" summary="topology scan fix">
       <option name="closed" value="true" />
@@ -551,7 +481,79 @@
       <option name="project" value="LOCAL" />
       <updated>1775730653515</updated>
     </task>
-    <option name="localTasksCounter" value="293" />
+    <task id="LOCAL-00293" summary="workspace">
+      <option name="closed" value="true" />
+      <created>1775734741295</created>
+      <option name="number" value="00293" />
+      <option name="presentableId" value="LOCAL-00293" />
+      <option name="project" value="LOCAL" />
+      <updated>1775734741295</updated>
+    </task>
+    <task id="LOCAL-00294" summary="__security option added for dbus bug">
+      <option name="closed" value="true" />
+      <created>1775736444934</created>
+      <option name="number" value="00294" />
+      <option name="presentableId" value="LOCAL-00294" />
+      <option name="project" value="LOCAL" />
+      <updated>1775736444934</updated>
+    </task>
+    <task id="LOCAL-00295" summary="read only to dbus">
+      <option name="closed" value="true" />
+      <created>1775736967240</created>
+      <option name="number" value="00295" />
+      <option name="presentableId" value="LOCAL-00295" />
+      <option name="project" value="LOCAL" />
+      <updated>1775736967240</updated>
+    </task>
+    <task id="LOCAL-00296" summary="removal of ro - needs to be open">
+      <option name="closed" value="true" />
+      <created>1775737873807</created>
+      <option name="number" value="00296" />
+      <option name="presentableId" value="LOCAL-00296" />
+      <option name="project" value="LOCAL" />
+      <updated>1775737873807</updated>
+    </task>
+    <task id="LOCAL-00297" summary="sec option added">
+      <option name="closed" value="true" />
+      <created>1775738298024</created>
+      <option name="number" value="00297" />
+      <option name="presentableId" value="LOCAL-00297" />
+      <option name="project" value="LOCAL" />
+      <updated>1775738298025</updated>
+    </task>
+    <task id="LOCAL-00298" summary="removal of :Z as no longer needed due to sec option">
+      <option name="closed" value="true" />
+      <created>1775738447132</created>
+      <option name="number" value="00298" />
+      <option name="presentableId" value="LOCAL-00298" />
+      <option name="project" value="LOCAL" />
+      <updated>1775738447132</updated>
+    </task>
+    <task id="LOCAL-00299" summary="handle_message fix">
+      <option name="closed" value="true" />
+      <created>1775750996890</created>
+      <option name="number" value="00299" />
+      <option name="presentableId" value="LOCAL-00299" />
+      <option name="project" value="LOCAL" />
+      <updated>1775750996890</updated>
+    </task>
+    <task id="LOCAL-00300" summary="device status updated to be responsive per row and not the entire page">
+      <option name="closed" value="true" />
+      <created>1775753671678</created>
+      <option name="number" value="00300" />
+      <option name="presentableId" value="LOCAL-00300" />
+      <option name="project" value="LOCAL" />
+      <updated>1775753671678</updated>
+    </task>
+    <task id="LOCAL-00301" summary="debugging remove from prod">
+      <option name="closed" value="true" />
+      <created>1775753708264</created>
+      <option name="number" value="00301" />
+      <option name="presentableId" value="LOCAL-00301" />
+      <option name="project" value="LOCAL" />
+      <updated>1775753708265</updated>
+    </task>
+    <option name="localTasksCounter" value="302" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -578,15 +580,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="raw data added to debug" />
-    <MESSAGE value="matter definitions dir added" />
-    <MESSAGE value="new rotary bindings" />
-    <MESSAGE value="line removed" />
-    <MESSAGE value="retention of states for action buttons" />
-    <MESSAGE value="frontend reload fixed" />
-    <MESSAGE value="xml push" />
-    <MESSAGE value="routes fix for rotaory" />
-    <MESSAGE value="source tree after body inner" />
     <MESSAGE value="duplicate rotary bindings registration" />
     <MESSAGE value="adding in matter definitions" />
     <MESSAGE value="editor routes removed in error" />
@@ -603,7 +596,16 @@
     <MESSAGE value="delete function added" />
     <MESSAGE value="project root not app dir for delete" />
     <MESSAGE value="updated to be root container due to networking requirements for matter" />
-    <option name="LAST_COMMIT_MESSAGE" value="updated to be root container due to networking requirements for matter" />
+    <MESSAGE value="workspace" />
+    <MESSAGE value="__security option added for dbus bug" />
+    <MESSAGE value="read only to dbus" />
+    <MESSAGE value="removal of ro - needs to be open" />
+    <MESSAGE value="sec option added" />
+    <MESSAGE value="removal of :Z as no longer needed due to sec option" />
+    <MESSAGE value="handle_message fix" />
+    <MESSAGE value="device status updated to be responsive per row and not the entire page" />
+    <MESSAGE value="debugging remove from prod" />
+    <option name="LAST_COMMIT_MESSAGE" value="debugging remove from prod" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
