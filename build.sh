@@ -422,6 +422,7 @@ prepare_data_dirs() {
     local dirs=(
         "$DATA_DIR/config"
         "$DATA_DIR/data"
+        "$DATA_DIR/data/certs"
         "$DATA_DIR/data/matter"
         "$DATA_DIR/logs"
     )
