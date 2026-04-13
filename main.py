@@ -671,8 +671,8 @@ if __name__ == "__main__":
     }
 
     if ssl_enabled:
-        kwargs["ssl_certfile"] = ssl_config.get('certfile', 'certs/cert.pem')
-        kwargs["ssl_keyfile"] = ssl_config.get('keyfile', 'certs/key.pem')
+        kwargs["ssl_certfile"] = ssl_config.get('certfile', './data/certs/cert.pem')
+        kwargs["ssl_keyfile"] = ssl_config.get('keyfile', './data/certs/key.pem')
         logger.info(f"Starting with SSL on https://{host}:{port}")
     else:
         logger.info(f"Starting on http://{host}:{port}")
