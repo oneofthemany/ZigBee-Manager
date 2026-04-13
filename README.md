@@ -47,9 +47,19 @@ The system is designed for production-grade home automation — running 40+ devi
 
 ## ⚡ Quick Start
 
+### Podman Container
+```bash
+# curl bash automated install
+curl -fsSL https://raw.githubusercontent.com/oneofthemany/ZigBee-Matter-Manager/main/build.sh | bash
+
+# if you know the device
+curl -fsSL https://raw.githubusercontent.com/oneofthemany/ZigBee-Matter-Manager/main/build.sh | bash -s -- --usb /dev/ttyUSB0
+```
+
+### Python VENV
 ```bash
 # Clone the repository
-git clone https://github.com/oneofthemany/ZigBee-Matter-Manager.git
+git clone https://github.com/oneofthemany/ZigBee-Matter-Manager/tree/venv.git
 cd ZigBee-Matter-Manager
 
 # Run the automated deployment (sets up venv, systemd service, user)
@@ -67,8 +77,8 @@ On first boot, if `channel`, `pan_id`, `extended_pan_id`, or `network_key` are a
 
 - Linux (Ubuntu/Debian recommended)
 - Python 3.8+
-- An MQTT broker (e.g. Mosquitto)
-- A supported Zigbee coordinator (EZSP or ZNP USB stick)
+- An MQTT broker (e.g. Mosquitto) - for Home Assistant support
+- A supported Zigbee coordinator (EZSP, ZNP USB stick)
 - **Optional for Matter:** `python-matter-server[server]` pip package, IPv6-enabled network
 
 ---
