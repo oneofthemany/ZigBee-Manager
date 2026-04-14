@@ -83,3 +83,9 @@ class MatterCommissionRequest(BaseModel):
 
 class MatterRemoveRequest(BaseModel):
     node_id: int
+
+
+class DiscoverAttributesRequest(BaseModel):
+    ieee: str
+    endpoint_id: int
+    cluster_id: int
