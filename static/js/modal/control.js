@@ -211,6 +211,26 @@ export function updateControlValues(device) {
             setpointEl.textContent = `${Number(rawTarget).toFixed(1)}°C`;
         }
     }
+
+    // Update thermostat badge (heating/standby/off)
+    const badgeEl = document.querySelector(`[data-thermostat-badge="${ieee}"]`);
+    if (badgeEl) {
+        const hvacAction = s.hvac_action || 'idle';
+        const sysMode = s.system_mode || 'off';
+        let badgeHtml;
+        if (hvacAction === 'heating') {
+            badgeHtml = '<span class="badge bg-danger"><i class="fas fa-fire"></i> Heating</span>';
+        } else if (sysMode === 'off' || hvacAction === 'off') {
+            badgeHtml = '<span class="badge bg-dark"><i class="fas fa-power-off"></i> Off</span>';
+        } else {
+            badgeHtml = '<span class="badge bg-warning text-dark"><i class="fas fa-pause"></i> Standby</span>';
+        }
+        // Only update the first child (badge), preserve battery badge if present
+        const existingBadge = badgeEl.querySelector('.badge:first-child');
+        if (existingBadge) {
+            existingBadge.outerHTML = badgeHtml;
+        }
+    }
 }
 
 export function renderControlTab(device) {
@@ -287,7 +307,7 @@ export function renderControlTab(device) {
         const targetTemp = Number(rawTarget).toFixed(1);
         const systemMode = s.system_mode || 'off';
         const runningState = s.running_state || 0;
-        const piDemand = s.pi_heating_demand || 0;
+        const piDemand = s.heating_demand || s.pi_heating_demand || 0;
         const battery = s.battery || 0;
 
         const modeMap = {
@@ -297,65 +317,166 @@ export function renderControlTab(device) {
         const currentModeName = modeMap[systemMode] || systemMode;
         const isHeating = (runningState & 0x0001) || (String(runningState).includes("heat"));
 
-        html += `
-        <div class="col-12">
-            <div class="card">
-                <div class="card-header bg-light d-flex justify-content-between align-items-center">
-                    <strong><i class="fas fa-thermometer-half"></i> Thermostat</strong>
-                    <div>
-                        ${isHeating
-                            ? '<span class="badge bg-danger"><i class="fas fa-fire"></i> Heating</span>'
-                            : '<span class="badge bg-secondary"><i class="fas fa-pause"></i> Idle</span>'}
-                        ${battery > 0 && battery < 20
-                            ? `<span class="badge bg-warning text-dark ms-1"><i class="fas fa-battery-quarter"></i> ${battery}%</span>`
-                            : ''}
+        const hvacAction = s.hvac_action || 'idle';
+
+        let thermostatBadge;
+        if (isHeating) {
+            thermostatBadge = '<span class="badge bg-danger"><i class="fas fa-fire"></i> Heating</span>';
+        } else if (systemMode === 'off' || hvacAction === 'off') {
+            thermostatBadge = '<span class="badge bg-dark"><i class="fas fa-power-off"></i> Off</span>';
+        } else {
+            thermostatBadge = '<span class="badge bg-warning text-dark"><i class="fas fa-pause"></i> Standby</span>';
+        }
+
+        // Detect Hive receiver — simplified controls
+        const isHiveReceiver = (device.model || '').toUpperCase().includes('SLR') ||
+                               (device.model || '').toUpperCase().includes('RECEIVER');
+
+        if (isHiveReceiver) {
+            // --- HIVE RECEIVER: full heating controls ---
+            html += `
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                        <strong><i class="fas fa-fire-alt"></i> Heatlink</strong>
+                        <div data-thermostat-badge="${device.ieee}">
+                            ${thermostatBadge}
+                        </div>
                     </div>
-                </div>
-                <div class="card-body">
-                    <div class="row g-3">
-                        <div class="col-md-6">
-                            <div class="text-center p-3 bg-light rounded">
-                                <small class="text-muted d-block mb-1">Current</small>
-                                <h2 class="mb-0" data-thermostat-current>${currentTemp}°C</h2>
+                    <div class="card-body">
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <div class="text-center p-3 bg-light rounded">
+                                    <small class="text-muted d-block mb-1">Current</small>
+                                    <h2 class="mb-0" data-thermostat-current>${currentTemp}°C</h2>
+                                </div>
                             </div>
-                        </div>
-                        <div class="col-md-6">
-                            <div class="text-center p-3 bg-primary bg-opacity-10 rounded">
-                                <small class="text-muted d-block mb-1">Target</small>
-                                <h2 class="mb-0 text-primary" data-thermostat-setpoint="${device.ieee}">${targetTemp}°C</h2>
+                            <div class="col-md-6">
+                                <div class="text-center p-3 bg-primary bg-opacity-10 rounded">
+                                    <small class="text-muted d-block mb-1">Target</small>
+                                    <h2 class="mb-0 text-primary" data-thermostat-setpoint="${device.ieee}">${targetTemp}°C</h2>
+                                </div>
                             </div>
-                        </div>
-                        <div class="col-12">
-                            <label class="form-label fw-bold"><i class="fas fa-cog"></i> Mode</label>
-                            <select id="hvac-mode-${device.ieee}" class="form-select"
-                                    onchange="window.setHvacMode('${device.ieee}', this.value)">
-                                <option value="off" ${String(systemMode).toLowerCase() === 'off' ? 'selected' : ''}>Off</option>
-                                <option value="heat" ${String(systemMode).toLowerCase() === 'heat' ? 'selected' : ''}>Heat</option>
-                                <option value="auto" ${String(systemMode).toLowerCase() === 'auto' ? 'selected' : ''}>Auto</option>
-                            </select>
-                        </div>
-                        <div class="col-12">
-                            <label class="form-label fw-bold"><i class="fas fa-sliders-h"></i> Set Target</label>
-                            <div class="input-group">
-                                <button class="btn btn-outline-secondary" onclick="window.adjustThermostat('${device.ieee}', -0.5)">−</button>
-                                <input type="number" id="thermostat-setpoint-${device.ieee}" class="form-control text-center"
-                                       value="${targetTemp}" step="0.5" min="5" max="35">
-                                <button class="btn btn-outline-secondary" onclick="window.adjustThermostat('${device.ieee}', 0.5)">+</button>
-                                <button class="btn btn-primary" onclick="window.setThermostatTemp('${device.ieee}')">Set</button>
+                            <div class="col-12">
+                                <label class="form-label fw-bold"><i class="fas fa-sliders-h"></i> Set Target</label>
+                                <div class="input-group">
+                                    <button class="btn btn-outline-secondary" onclick="window.adjustThermostat('${device.ieee}', -0.5)">−</button>
+                                    <input type="number" id="thermostat-setpoint-${device.ieee}" class="form-control text-center"
+                                           value="${targetTemp}" step="0.5" min="5" max="35">
+                                    <button class="btn btn-outline-secondary" onclick="window.adjustThermostat('${device.ieee}', 0.5)">+</button>
+                                    <button class="btn btn-primary" onclick="window.setThermostatTemp('${device.ieee}')">Set</button>
+                                </div>
                             </div>
-                        </div>
-                        ${piDemand > 0 ? `
-                        <div class="col-12">
-                            <label class="form-label small text-muted">Heat Demand: ${piDemand}%</label>
-                            <div class="progress" style="height: 8px;">
-                                <div class="progress-bar bg-danger" style="width: ${piDemand}%"></div>
+                            <div class="col-12">
+                                <label class="form-label fw-bold"><i class="fas fa-cog"></i> Mode</label>
+                                <select id="hvac-mode-${device.ieee}" class="form-select"
+                                        onchange="window.setHvacMode('${device.ieee}', this.value)">
+                                    <option value="off" ${String(systemMode).toLowerCase() === 'off' ? 'selected' : ''}>Off</option>
+                                    <option value="heat" ${String(systemMode).toLowerCase() === 'heat' ? 'selected' : ''}>Heat</option>
+                                    <option value="auto" ${String(systemMode).toLowerCase() === 'auto' ? 'selected' : ''}>Auto</option>
+                                </select>
                             </div>
-                        </div>` : ''}
+                            ${piDemand > 0 ? `
+                            <div class="col-12">
+                                <label class="form-label small text-muted">Heat Demand: ${piDemand}%</label>
+                                <div class="progress" style="height: 8px;">
+                                    <div class="progress-bar bg-danger" style="width: ${piDemand}%"></div>
+                                </div>
+                            </div>` : ''}
+                        </div>
                     </div>
                 </div>
             </div>
-        </div>
-        ${renderScheduleSection(device.ieee)}`;
+            ${renderScheduleSection(device.ieee)}`;
+        } else {
+            const isHiveThermostat = (device.model || '').toUpperCase().includes('SLT');
+
+            if (isHiveThermostat) {
+                // --- HIVE THERMOSTAT: read-only temperature sensor ---
+                html += `
+                <div class="col-12">
+                    <div class="card">
+                        <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                            <strong><i class="fas fa-thermometer-half"></i> Thermostat</strong>
+                            <div>
+                                ${battery > 0
+                                    ? `<span class="badge bg-${battery < 20 ? 'warning text-dark' : 'success'}"><i class="fas fa-battery-${battery < 20 ? 'quarter' : 'full'}"></i> ${battery}%</span>`
+                                    : ''}
+                            </div>
+                        </div>
+                        <div class="card-body text-center">
+                            <div class="p-3 bg-light rounded">
+                                <small class="text-muted d-block mb-1">Room Temperature</small>
+                                <h1 class="mb-0" data-thermostat-current>${currentTemp}°C</h1>
+                            </div>
+                            <div class="small text-muted mt-2 fst-italic">
+                                <i class="fas fa-info-circle"></i>
+                                Temperature sensor — heating is controlled via the Heatlink.
+                            </div>
+                        </div>
+                    </div>
+                </div>`;
+            } else {
+                // --- STANDARD THERMOSTAT: full controls ---
+                html += `
+                <div class="col-12">
+                    <div class="card">
+                        <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                            <strong><i class="fas fa-thermometer-half"></i> Thermostat</strong>
+                            <div data-thermostat-badge="${device.ieee}">
+                                ${thermostatBadge}
+                                ${battery > 0 && battery < 20
+                                    ? `<span class="badge bg-warning text-dark ms-1"><i class="fas fa-battery-quarter"></i> ${battery}%</span>`
+                                    : ''}
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            <div class="row g-3">
+                                <div class="col-md-6">
+                                    <div class="text-center p-3 bg-light rounded">
+                                        <small class="text-muted d-block mb-1">Current</small>
+                                        <h2 class="mb-0" data-thermostat-current>${currentTemp}°C</h2>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="text-center p-3 bg-primary bg-opacity-10 rounded">
+                                        <small class="text-muted d-block mb-1">Target</small>
+                                        <h2 class="mb-0 text-primary" data-thermostat-setpoint="${device.ieee}">${targetTemp}°C</h2>
+                                    </div>
+                                </div>
+                                <div class="col-12">
+                                    <label class="form-label fw-bold"><i class="fas fa-cog"></i> Mode</label>
+                                    <select id="hvac-mode-${device.ieee}" class="form-select"
+                                            onchange="window.setHvacMode('${device.ieee}', this.value)">
+                                        <option value="off" ${String(systemMode).toLowerCase() === 'off' ? 'selected' : ''}>Off</option>
+                                        <option value="heat" ${String(systemMode).toLowerCase() === 'heat' ? 'selected' : ''}>Heat</option>
+                                        <option value="auto" ${String(systemMode).toLowerCase() === 'auto' ? 'selected' : ''}>Auto</option>
+                                    </select>
+                                </div>
+                                <div class="col-12">
+                                    <label class="form-label fw-bold"><i class="fas fa-sliders-h"></i> Set Target</label>
+                                    <div class="input-group">
+                                        <button class="btn btn-outline-secondary" onclick="window.adjustThermostat('${device.ieee}', -0.5)">−</button>
+                                        <input type="number" id="thermostat-setpoint-${device.ieee}" class="form-control text-center"
+                                               value="${targetTemp}" step="0.5" min="5" max="35">
+                                        <button class="btn btn-outline-secondary" onclick="window.adjustThermostat('${device.ieee}', 0.5)">+</button>
+                                        <button class="btn btn-primary" onclick="window.setThermostatTemp('${device.ieee}')">Set</button>
+                                    </div>
+                                </div>
+                                ${piDemand > 0 ? `
+                                <div class="col-12">
+                                    <label class="form-label small text-muted">Heat Demand: ${piDemand}%</label>
+                                    <div class="progress" style="height: 8px;">
+                                        <div class="progress-bar bg-danger" style="width: ${piDemand}%"></div>
+                                    </div>
+                                </div>` : ''}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                ${renderScheduleSection(device.ieee)}`;
+            }
+        }
     }
 
     // --- On/Off, Level, Color Clusters ---
