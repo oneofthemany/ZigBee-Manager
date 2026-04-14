@@ -215,6 +215,7 @@ function updateDeviceRow(device) {
     const lastSeenCell = row.querySelector('.last-seen');
     if (lastSeenCell && device.last_seen_ts) {
         lastSeenCell.dataset.ts = device.last_seen_ts;
+        lastSeenCell.innerText = timeAgo(device.last_seen_ts);
     }
 
     // Mark for re-enhancement
@@ -245,7 +246,7 @@ export function handleDeviceUpdate(payload) {
         //console.log("2. Current Open Device:", state.currentDeviceIeee);
 
         // Update metadata if present
-        if (payload.data.last_seen) state.devices[devIndex].last_seen_ts = payload.data.last_seen * 1000;
+        if (payload.data.last_seen) state.devices[devIndex].last_seen_ts = payload.data.last_seen;
         if (payload.data.available !== undefined) state.devices[devIndex].available = payload.data.available;
         if (payload.data.lqi !== undefined) state.devices[devIndex].lqi = payload.data.lqi;
 
@@ -339,7 +340,7 @@ window.enablePermitJoinDevice = async function(ieee, name) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 duration: 120,
-                ieee: ieee
+                target_ieee: ieee
             })
         });
 
