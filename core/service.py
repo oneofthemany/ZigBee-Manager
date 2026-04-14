@@ -127,6 +127,7 @@ class ZigbeeService(
 
         # Pairing state
         self.pairing_expiration = 0
+        self._permit_join_via = None  # IEEE of device used for targeted permit join
 
         # Banning
         self.ban_manager = get_ban_manager()
@@ -663,6 +664,33 @@ class ZigbeeService(
         else:
             self.devices[ieee] = ZigManDevice(self, device)
             self.devices[ieee].last_seen = int(time.time() * 1000)
+
+        # --- Auto-pair Hive thermostat ↔ receiver ---
+        # Model is now known at this point (unlike device_joined where it's None)
+        if self._permit_join_via:
+            new_model = str(device.model or "").upper()
+            via_ieee = self._permit_join_via
+
+            if via_ieee in self.devices:
+                via_model = str(self.devices[via_ieee].zigpy_dev.model or "").upper()
+
+                # SLT thermostat joined via SLR receiver
+                if "SLT" in new_model and ("SLR" in via_model or "RECEIVER" in via_model):
+                    self.device_settings.setdefault(via_ieee, {})["paired_thermostat"] = ieee
+                    self.device_settings.setdefault(ieee, {})["paired_receiver"] = via_ieee
+                    self._save_json("./data/device_settings.json", self.device_settings)
+                    logger.info(
+                        f"🔗 Auto-paired thermostat [{ieee}] ↔ receiver [{via_ieee}]"
+                    )
+
+                # SLR receiver joined via SLT thermostat (reverse)
+                elif ("SLR" in new_model or "RECEIVER" in new_model) and "SLT" in via_model:
+                    self.device_settings.setdefault(ieee, {})["paired_thermostat"] = via_ieee
+                    self.device_settings.setdefault(via_ieee, {})["paired_receiver"] = ieee
+                    self._save_json("./data/device_settings.json", self.device_settings)
+                    logger.info(
+                        f"🔗 Auto-paired receiver [{ieee}] ↔ thermostat [{via_ieee}]"
+                    )
 
         asyncio.create_task(self._async_device_initialized(ieee))
         self._rebuild_name_maps()
@@ -1441,6 +1469,117 @@ class ZigbeeService(
         except Exception as e:
             return {"success": False, "error": str(e)}
 
+    async def discover_cluster_attributes(self, ieee, endpoint_id, cluster_id):
+        """Discover attributes and their access control on a device cluster."""
+        if ieee not in self.devices:
+            return {"success": False, "error": "Device not found"}
+
+        try:
+            zigpy_dev = self.devices[ieee].zigpy_dev
+            ep = zigpy_dev.endpoints.get(endpoint_id)
+            if not ep:
+                return {"success": False, "error": f"Endpoint {endpoint_id} not found"}
+
+            cluster = ep.in_clusters.get(cluster_id) or ep.out_clusters.get(cluster_id)
+            if not cluster:
+                return {"success": False, "error": f"Cluster 0x{cluster_id:04X} not found"}
+
+            # Step 1: Discover which attributes exist on the device
+            discovered_ids = set()
+            try:
+                async with asyncio.timeout(10.0):
+                    result = await cluster.discover_attributes(0, 255)
+                if result:
+                    for item in result:
+                        attr_id = item if isinstance(item, int) else getattr(item, 'attrid', item)
+                        discovered_ids.add(attr_id)
+            except Exception as e:
+                logger.warning(f"[{ieee}] Discover attributes failed: {e}")
+                # Fallback: use zigpy cluster definition
+                discovered_ids = set(cluster.attributes.keys())
+
+            # Step 2: Read all discovered attributes and test write access
+            attributes = []
+            for attr_id in sorted(discovered_ids):
+                #if attr_id > 0xF000:
+                    #continue  # Skip most manufacturer-specific
+
+                # Get name from zigpy definition
+                name = f"0x{attr_id:04X}"
+                attr_type = ""
+                if attr_id in cluster.attributes:
+                    attr_def = cluster.attributes[attr_id]
+                    if hasattr(attr_def, 'name'):
+                        name = attr_def.name
+                    if hasattr(attr_def, 'type') and attr_def.type:
+                        attr_type = attr_def.type.__name__
+
+                # Read value
+                readable = False
+                value = None
+                try:
+                    async with asyncio.timeout(5.0):
+                        read_result = await cluster.read_attributes([attr_id])
+                    if read_result and attr_id in read_result[0]:
+                        val = read_result[0][attr_id]
+                        if hasattr(val, 'value'):
+                            val = val.value
+                        value = val
+                        readable = True
+                except Exception:
+                    pass
+
+                # Write test: write current value back (non-destructive)
+                writable = None
+                if readable and value is not None:
+                    try:
+                        async with asyncio.timeout(5.0):
+                            write_result = await cluster.write_attributes({attr_id: value})
+                        if write_result and len(write_result) > 0:
+                            status = write_result[0]
+                            if hasattr(status, '__iter__'):
+                                writable = all(
+                                    getattr(s, 'status', s) == 0 for s in status
+                                )
+                            elif status == 0 or (hasattr(status, 'status') and status.status == 0):
+                                writable = True
+                            else:
+                                writable = False
+                    except Exception:
+                        writable = False
+
+                # Serialize value safely
+                safe_value = None
+                if value is not None:
+                    try:
+                        safe_value = prepare_for_json({0: value})[0]
+                    except Exception:
+                        safe_value = str(value)
+
+                attributes.append({
+                    "id": f"0x{attr_id:04X}",
+                    "id_int": attr_id,
+                    "name": name,
+                    "type": attr_type,
+                    "readable": readable,
+                    "writable": writable,
+                    "value": safe_value,
+                })
+
+            return {
+                "success": True,
+                "ieee": ieee,
+                "endpoint_id": endpoint_id,
+                "cluster_id": f"0x{cluster_id:04X}",
+                "attributes": attributes,
+            }
+
+        except asyncio.TimeoutError:
+            return {"success": False, "error": "Discovery timed out"}
+        except Exception as e:
+            logger.error(f"[{ieee}] Attribute discovery failed: {e}")
+            return {"success": False, "error": str(e)}
+
     async def bind_devices(self, source_ieee, target_ieee, cluster_id):
         """Bind a source device to a target device."""
         if source_ieee not in self.devices or target_ieee not in self.devices:
@@ -1530,6 +1669,7 @@ class ZigbeeService(
     async def permit_join(self, duration=240, ieee=None):
         if duration == 0:
             self.pairing_expiration = 0
+            self._permit_join_via = None
             try:
                 await self.app.permit(0)
             except Exception as e:
@@ -1540,6 +1680,7 @@ class ZigbeeService(
         self.pairing_expiration = time.time() + duration
 
         if ieee:
+            self._permit_join_via = ieee
             if ieee not in self.devices:
                 return {"success": False, "error": "Target device not found"}
             try:
@@ -1550,6 +1691,7 @@ class ZigbeeService(
             except Exception as e:
                 return {"success": False, "error": str(e)}
         else:
+            self._permit_join_via = None
             try:
                 await self.app.permit(duration)
                 self._emit_sync("pairing_status", {"enabled": True, "remaining": duration})
