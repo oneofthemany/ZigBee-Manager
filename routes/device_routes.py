@@ -8,7 +8,7 @@ from fastapi import FastAPI
 from models import (
     DeviceRequest, RenameRequest, ConfigureRequest, CommandRequest,
     AttributeReadRequest, BindRequest, PermitJoinRequest,
-    BanRequest, UnbanRequest, TouchlinkRequest
+    BanRequest, UnbanRequest, TouchlinkRequest, DiscoverAttributesRequest
 )
 from modules.zone_device_config import configure_zone_device_reporting, remove_aggressive_reporting
 
@@ -157,6 +157,13 @@ def register_device_routes(app: FastAPI, get_zigbee_service, get_matter_bridge):
         """Read a specific attribute from a device."""
         return await get_zigbee_service().read_attribute(
             request.ieee, request.endpoint_id, request.cluster_id, request.attribute
+        )
+
+    @app.post("/api/device/discover_attributes")
+    async def discover_attributes(request: DiscoverAttributesRequest):
+        """Discover attributes and their access control on a device cluster."""
+        return await get_zigbee_service().discover_cluster_attributes(
+            request.ieee, request.endpoint_id, request.cluster_id
         )
 
     @app.post("/api/device/bind")
