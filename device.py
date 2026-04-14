@@ -669,7 +669,7 @@ class ZigManDevice:
         if self.ieee not in self.service.device_settings:
             self.service.device_settings[self.ieee] = {}
         self.service.device_settings[self.ieee]['preferred_endpoints'] = self._preferred_endpoints
-        self.service._save_json("device_settings.json", self.service.device_settings)
+        self.service._save_json("./data/device_settings.json", self.service.device_settings)
         logger.info(f"[{self.ieee}] Pinned {attribute} to Endpoint {endpoint_id}")
 
     def is_available(self) -> bool:
