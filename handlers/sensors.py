@@ -496,25 +496,41 @@ class TemperatureMeasurementHandler(ClusterHandler, SensorReportingMixin):
         The SLT thermostat reports room temperature on 0x0402 only.
         The SLR receiver is bound to it but only receives 0x0201 local_temperature
         which is always 0. This bridges the gap at application level.
+
+        Uses device_settings paired_receiver to target the correct receiver
+        in multi-zone setups.
         """
         model = str(self.device.zigpy_dev.model or "").upper()
         if "SLT" not in model:
             return
 
         try:
-            for ieee, dev in self.device.service.devices.items():
-                if ieee == self.device.ieee:
-                    continue
-                dev_model = str(dev.zigpy_dev.model or "").upper()
-                if "SLR" in dev_model or "RECEIVER" in dev_model:
-                    dev.update_state({
-                        "temperature": temp_c,
-                        "current_temperature": temp_c,
-                    })
-                    logger.info(
-                        f"[{self.device.ieee}] Propagated temperature "
-                        f"{temp_c}°C → receiver [{ieee}]"
-                    )
+            # Find specific paired receiver from device_settings
+            settings = self.device.service.device_settings.get(self.device.ieee, {})
+            paired_ieee = settings.get("paired_receiver")
+
+            if paired_ieee and paired_ieee in self.device.service.devices:
+                dev = self.device.service.devices[paired_ieee]
+                dev.update_state({
+                    "local_temperature": temp_c,
+                    "internal_temperature": temp_c,
+                    "current_temperature": temp_c,
+                    "temperature": temp_c,
+                })
+                logger.info(
+                    f"[{self.device.ieee}] Propagated temperature "
+                    f"{temp_c}°C → paired receiver [{paired_ieee}]"
+                )
+            elif paired_ieee:
+                logger.warning(
+                    f"[{self.device.ieee}] Paired receiver [{paired_ieee}] "
+                    f"not found in device list"
+                )
+            else:
+                logger.debug(
+                    f"[{self.device.ieee}] No paired_receiver in device_settings. "
+                    f"Temperature not propagated."
+                )
         except Exception as e:
             logger.warning(f"[{self.device.ieee}] Receiver propagation failed: {e}")
 
