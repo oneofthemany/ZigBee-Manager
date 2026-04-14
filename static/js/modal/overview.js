@@ -61,6 +61,10 @@ export function renderOverviewTab(device) {
         'linkquality', 'update_available', 'update_state', 'device', 'device_type',
         // Matter internal keys — shown in Clusters tab instead
         'switch_endpoints', 'protocol',
+        // HVAC derived/alias keys — canonical keys are: local_temperature, occupied_heating_setpoint, system_mode
+        'hvac_action', //'running_state',
+        'current_temperature', 'local_temperature', 'internal_temperature',
+        'heating_setpoint', 'target_temp', 'temperature_setpoint',
     ];
 
     // Define sensor-specific keys that should only appear for devices with those capabilities
