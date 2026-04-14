@@ -162,6 +162,27 @@
     color: #f87171;
 }
 
+.zbm-heating-off {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    font-size: 0.65rem;
+    font-weight: 600;
+    color: #6b7280;
+    background: rgba(107, 114, 128, 0.1);
+    padding: 1px 5px;
+    border-radius: 3px;
+}
+
+.zbm-heating-off i {
+    font-size: 0.6rem;
+}
+
+[data-theme="dark"] .zbm-heating-off {
+    background: rgba(107, 114, 128, 0.15);
+    color: #9ca3af;
+}
+
 
 /* --- Temperature mini display --- */
 
