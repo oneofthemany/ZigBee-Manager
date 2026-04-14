@@ -56,8 +56,8 @@ class ThermostatHandler(ClusterHandler):
 
     # Reporting configuration
     REPORT_CONFIG = [
-        # Local Temperature: Min 30s, Max 300s, Change 0.5°C (50)
-        ("local_temperature", 60, 300, 50),
+        # Local Temperature: Min 30s, Max 300s, Change 0.25°C (25)
+        ("local_temperature", 60, 300, 25),
 
         # Setpoints: Min 10s, Max 300s, Change 0.1°C (10)
         ("occupied_heating_setpoint", 0, 300, 10),   # min=0 for instant updates
