@@ -1008,12 +1008,25 @@ class ZigManDevice:
                         # Optimistic updates
                         if command == 'temperature':
                             optimistic_state['temperature_setpoint'] = float(value)
+                            optimistic_state['occupied_heating_setpoint'] = float(value)
+                            optimistic_state['heating_setpoint'] = float(value)
+                            optimistic_state['target_temp'] = float(value)
                         elif command == 'system_mode':
-                            optimistic_state['system_mode'] = str(value).lower()
+                            mode = str(value).lower()
+                            optimistic_state['system_mode'] = mode
+                            if mode == 'off':
+                                optimistic_state['running_state'] = 0
+                                optimistic_state['hvac_action'] = 'off'
+                            elif mode in ('heat', 'emergency_heat'):
+                                optimistic_state['running_state'] = 1
+                                optimistic_state['hvac_action'] = 'heating'
+                            else:
+                                optimistic_state['hvac_action'] = 'idle'
                     elif command == 'temperature':
                         # Fallback for compatibility with Hive receivers
                         await h.set_heating_setpoint(float(value))
                         optimistic_state['temperature_setpoint'] = float(value)
+                        optimistic_state['occupied_heating_setpoint'] = float(value)
                         success = True
 
             # GENERAL COMMANDS (Fallthrough)
@@ -1049,6 +1062,18 @@ class ZigManDevice:
                 logger.info(f"[{self.ieee}] Optimistic update: {optimistic_state}")
                 # This triggers handle_device_update AND _publish_json_state
                 self.update_state(optimistic_state, endpoint_id=endpoint_id)
+
+            # Schedule delayed poll for HVAC commands to pick up actual device state
+            # (receiver state changes via thermostat binding may not trigger reports)
+            if success and command in ['temperature', 'system_mode']:
+                async def _delayed_poll():
+                    await asyncio.sleep(5)
+                    try:
+                        await self.poll()
+                        logger.debug(f"[{self.ieee}] Post-command poll complete")
+                    except Exception:
+                        pass
+                asyncio.create_task(_delayed_poll())
 
             return success
 

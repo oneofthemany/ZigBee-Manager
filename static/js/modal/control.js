@@ -310,22 +310,20 @@ export function renderControlTab(device) {
         const piDemand = s.heating_demand || s.pi_heating_demand || 0;
         const battery = s.battery || 0;
 
-        const modeMap = {
-            0: 'Off', 1: 'Auto', 3: 'Cool', 4: 'Heat',
-            'off': 'Off', 'auto': 'Auto', 'cool': 'Cool', 'heat': 'Heat'
-        };
-        const currentModeName = modeMap[systemMode] || systemMode;
-        const isHeating = (runningState & 0x0001) || (String(runningState).includes("heat"));
-
-        const hvacAction = s.hvac_action || 'idle';
+        // Heating detection: running_state (Hive/ZCL standard) then hvac_action (derived)
+        const isHeating = (typeof runningState === 'number' && (runningState & 0x0001))
+                       || String(runningState).includes('heat')
+                       || s.hvac_action === 'heating';
 
         let thermostatBadge;
         if (isHeating) {
             thermostatBadge = '<span class="badge bg-danger"><i class="fas fa-fire"></i> Heating</span>';
-        } else if (systemMode === 'off' || hvacAction === 'off') {
+        } else if (String(systemMode).toLowerCase() === 'off') {
             thermostatBadge = '<span class="badge bg-dark"><i class="fas fa-power-off"></i> Off</span>';
-        } else {
+        } else if (String(systemMode).toLowerCase() !== 'off' && !isHeating) {
             thermostatBadge = '<span class="badge bg-warning text-dark"><i class="fas fa-pause"></i> Standby</span>';
+        } else {
+            thermostatBadge = '<span class="badge bg-secondary"><i class="fas fa-pause"></i> Idle</span>';
         }
 
         // Detect Hive receiver — simplified controls
