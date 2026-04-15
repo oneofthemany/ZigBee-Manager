@@ -104,9 +104,9 @@ def _clean_circuit(c: dict, existing_ids: Optional[set] = None) -> Optional[dict
             rooms.append(cleaned)
             room_ids.add(cleaned["id"])
 
-    receiver_command = str(c.get("receiver_command", "switch")).lower()
+    receiver_command = str(c.get("receiver_command", "thermostat")).lower()
     if receiver_command not in ("switch", "thermostat"):
-        receiver_command = "switch"
+        receiver_command = "thermostat"
 
     return {
         "id": cid,
@@ -225,8 +225,9 @@ def register_heating_controller_routes(app: FastAPI, get_controller, get_zigbee_
     @app.get("/api/heating/controller/devices")
     async def list_controllable_devices():
         """
-        Return all candidates for receivers (switches) and TRVs (thermostats).
-        Used by the UI to populate dropdowns.
+        Return receiver candidates and TRV candidates.
+        Receivers = mains-powered devices with thermostat cluster (system_mode).
+        TRVs = any device with thermostat attributes (temperature, setpoint).
         """
         try:
             devices = {}
@@ -238,13 +239,13 @@ def register_heating_controller_routes(app: FastAPI, get_controller, get_zigbee_
                 except Exception as e:
                     logger.debug(f"zigbee_service access failed: {e}")
 
-            switches = []
+            receivers = []
             thermostats = []
 
             # Build current circuit/room assignments for annotation
             cfg = _load_config()
-            assignments_recv: Dict[str, Dict] = {}  # ieee -> circuit info
-            assignments_trv: Dict[str, Dict] = {}   # ieee -> {circuit, room}
+            assignments_recv: Dict[str, Dict] = {}
+            assignments_trv: Dict[str, Dict] = {}
             for c in (cfg.get("heating") or {}).get("circuits") or []:
                 if c.get("receiver_ieee"):
                     assignments_recv[c["receiver_ieee"]] = {
@@ -262,6 +263,7 @@ def register_heating_controller_routes(app: FastAPI, get_controller, get_zigbee_
                     state = dev.get("state") or {}
                     name = dev.get("friendly_name") or dev.get("name") or str(ieee)
                     manuf = dev.get("manufacturer"); model = dev.get("model")
+                    power_source = dev.get("power_source")
                 else:
                     state = getattr(dev, "state", None) or {}
                     name = getattr(dev, "friendly_name", None) or getattr(dev, "name", None)
@@ -272,32 +274,61 @@ def register_heating_controller_routes(app: FastAPI, get_controller, get_zigbee_
                     name = name or str(ieee)
                     manuf = getattr(dev, "manufacturer", None)
                     model = getattr(dev, "model", None)
+                    power_source = getattr(dev, "power_source", None)
+                    # Try zigpy device for power source
+                    if power_source is None:
+                        zigpy_dev = getattr(dev, "zigpy_dev", None)
+                        if zigpy_dev:
+                            try:
+                                power_source = zigpy_dev.node_desc.mac_capability_flags.mains_powered
+                            except Exception:
+                                pass
 
                 ieee_s = str(ieee)
+                model_s = str(model or "").upper()
                 base = {"ieee": ieee_s, "name": name, "manufacturer": manuf, "model": model}
 
-                # Switch detection — has on_off attribute
-                if "on_off" in state or "state" in state:
-                    s = dict(base)
-                    s["current_state"] = state.get("on_off") or state.get("state")
-                    s["assigned"] = assignments_recv.get(ieee_s)
-                    switches.append(s)
+                has_thermostat = any(k in state for k in (
+                    "system_mode", "occupied_heating_setpoint",
+                    "local_temperature", "current_temperature",
+                    "heating_demand", "hvac_action"
+                ))
 
-                # Thermostat detection
-                if any(k in state for k in (
-                        "local_temperature", "current_temperature",
-                        "occupied_heating_setpoint", "system_mode",
-                        "heating_demand", "hvac_action"
-                )):
-                    t = dict(base)
-                    t["temperature"] = state.get("local_temperature") or state.get("current_temperature")
-                    t["setpoint"] = state.get("occupied_heating_setpoint")
-                    t["assigned"] = assignments_trv.get(ieee_s)
-                    thermostats.append(t)
+                if not has_thermostat:
+                    continue
+
+                # Determine if this is a receiver (mains-powered) or a TRV (battery)
+                is_mains = False
+                if power_source is True or power_source == "Mains":
+                    is_mains = True
+                elif "SLR" in model_s or "RECEIVER" in model_s:
+                    is_mains = True
+                elif "SLT" not in model_s and "TRV" not in model_s:
+                    # Heuristic: if has system_mode and NOT a known battery model
+                    # check if it has on_off or other mains indicators
+                    if "on_off" in state or state.get("power_source") == "Mains":
+                        is_mains = True
+
+                entry = dict(base)
+                entry["temperature"] = state.get("local_temperature") or state.get("current_temperature")
+                entry["setpoint"] = state.get("occupied_heating_setpoint")
+                entry["system_mode"] = state.get("system_mode")
+                entry["hvac_action"] = state.get("hvac_action")
+
+                if is_mains:
+                    entry["assigned"] = assignments_recv.get(ieee_s)
+                    receivers.append(entry)
+
+                # All thermostat devices are also TRV candidates
+                entry_trv = dict(base)
+                entry_trv["temperature"] = entry["temperature"]
+                entry_trv["setpoint"] = entry["setpoint"]
+                entry_trv["assigned"] = assignments_trv.get(ieee_s)
+                thermostats.append(entry_trv)
 
             return {
                 "success": True,
-                "switches": switches,
+                "receivers": receivers,
                 "thermostats": thermostats,
             }
         except Exception as e:
