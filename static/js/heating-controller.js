@@ -19,7 +19,7 @@
 
 let controllerState = null;
 let controllerConfig = null;
-let controllerDevices = { switches: [], thermostats: [] };
+let controllerDevices = { receivers: [], thermostats: [] };
 let workingCircuits = [];
 let controllerStatusTimer = null;
 
@@ -260,8 +260,8 @@ export async function openControllerSettings() {
 
         controllerConfig = cfgRes.config;
         controllerDevices = devRes.success
-            ? { switches: devRes.switches || [], thermostats: devRes.thermostats || [] }
-            : { switches: [], thermostats: [] };
+            ? { receivers: devRes.receivers || [], thermostats: devRes.thermostats || [] }
+            : { receivers: [], thermostats: [] };
         workingCircuits = JSON.parse(JSON.stringify(controllerConfig.circuits || []));
 
         bodyEl.innerHTML = renderControllerForm(controllerConfig);
@@ -310,7 +310,7 @@ function bindControllerForm() {
             id: `circuit_${n}`,
             name: `Circuit ${n}`,
             receiver_ieee: null,
-            receiver_command: 'switch',
+            receiver_command: 'thermostat',
             rooms: [],
         });
         renderCircuitsList();
@@ -335,11 +335,14 @@ function renderCircuitCard(circuit, ci) {
     const usedRecv = new Set(workingCircuits
         .map((c, i) => i === ci ? null : c.receiver_ieee)
         .filter(Boolean));
-    const recvOptions = controllerDevices.switches
-        .filter(s => !usedRecv.has(s.ieee))
-        .map(s => `<option value="${escapeAttr(s.ieee)}" ${s.ieee === circuit.receiver_ieee ? 'selected' : ''}>
-            ${escapeHtml(s.name)} (${escapeHtml(s.ieee.slice(-8))})
-        </option>`).join('');
+    const recvOptions = controllerDevices.receivers
+        .filter(r => !usedRecv.has(r.ieee) || r.ieee === circuit.receiver_ieee)
+        .map(r => {
+            const modeStr = r.system_mode ? ` [${r.system_mode}]` : '';
+            return `<option value="${escapeAttr(r.ieee)}" ${r.ieee === circuit.receiver_ieee ? 'selected' : ''}>
+                ${escapeHtml(r.name)}${modeStr} (${escapeHtml(r.ieee.slice(-8))})
+            </option>`;
+        }).join('');
 
     const roomsHtml = (circuit.rooms || []).length
         ? circuit.rooms.map((r, ri) => renderRoomCard(r, ci, ri)).join('')
@@ -367,12 +370,8 @@ function renderCircuitCard(circuit, ci) {
                             ${recvOptions}
                         </select>
                     </div>
-                    <div class="col-md-5">
-                        <label class="form-label small mb-1">Receiver command type</label>
-                        <select class="form-select form-select-sm circuit-recvcmd" data-ci="${ci}">
-                            <option value="switch" ${circuit.receiver_command === 'switch' ? 'selected' : ''}>switch (on/off)</option>
-                            <option value="thermostat" ${circuit.receiver_command === 'thermostat' ? 'selected' : ''}>thermostat (setpoint)</option>
-                        </select>
+                    <div class="col-md-5 d-flex align-items-end">
+                        <small class="text-muted"><i class="fas fa-info-circle me-1"></i>Controls via system_mode (heat/off)</small>
                     </div>
                 </div>
 

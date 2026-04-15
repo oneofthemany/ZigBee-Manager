@@ -431,40 +431,63 @@ class HeatingController:
     # ── Receiver control ───────────────────────────────────────────
     async def _apply_receiver(self, circuit: dict, should_call: bool) -> Dict[str, Any]:
         """
-        Switch the receiver on/off. Idempotent — only sends if differs from
-        the last command.
+        Control the receiver based on circuit config.
+
+        receiver_command modes (from config):
+          - "thermostat" : sends system_mode heat/off via 0x0201 handler
+                           (correct for Hive SLR1c, SLR1b and any receiver
+                            with a thermostat cluster)
+          - "switch"     : sends on/off via OnOff cluster (relay-type receivers)
+
+        Idempotent — only sends if command differs from last sent.
         """
         ieee = circuit.get("receiver_ieee")
         if not ieee:
             return {"sent": False, "reason": "no receiver configured"}
 
-        target_command = "on" if should_call else "off"
+        mode = str(circuit.get("receiver_command", "thermostat")).lower()
+
+        # Determine the command + value pair based on receiver type
+        if mode == "thermostat":
+            # Use system_mode which routes through ThermostatHandler.process_command
+            # → set_hvac_mode("heat") or set_hvac_mode("off")
+            # For Hive: HiveReceiverHandler routes mode changes via paired SLT
+            target_command = "system_mode"
+            target_value = "heat" if should_call else "off"
+            display = f"system_mode → {target_value}"
+        else:
+            # Legacy switch mode — on/off via OnOff cluster
+            target_command = "on" if should_call else "off"
+            target_value = None
+            display = target_command
+
+        # Check if we already sent this exact command
         last = self._last_command.get(ieee)
-        if last and last[0] == target_command:
-            return {"sent": False, "reason": "unchanged", "command": target_command}
+        if last and last[0] == target_command and last[1] == target_value:
+            return {"sent": False, "reason": "unchanged", "command": display}
 
         if self.dry_run:
-            logger.info(f"[DRY-RUN] Would send receiver '{circuit['name']}' ({ieee}) → {target_command}")
-            self._last_command[ieee] = (target_command, None, time.time())
-            return {"sent": True, "command": target_command, "dry_run": True}
+            logger.info(f"[DRY-RUN] Would send receiver '{circuit['name']}' ({ieee}) → {display}")
+            self._last_command[ieee] = (target_command, target_value, time.time())
+            return {"sent": True, "command": display, "dry_run": True}
 
         try:
-            await self._send_command(ieee, target_command, None,
+            await self._send_command(ieee, target_command, target_value,
                                      endpoint_id=circuit.get("receiver_endpoint"))
-            self._last_command[ieee] = (target_command, None, time.time())
-            logger.info(f"Receiver '{circuit['name']}' ({ieee}) → {target_command}")
-            return {"sent": True, "command": target_command}
+            self._last_command[ieee] = (target_command, target_value, time.time())
+            logger.info(f"Receiver '{circuit['name']}' ({ieee}) → {display}")
+            return {"sent": True, "command": display}
         except TypeError:
             # Fallback for command_sender that doesn't accept endpoint_id kwarg
             try:
-                await self._send_command(ieee, target_command, None)
-                self._last_command[ieee] = (target_command, None, time.time())
-                return {"sent": True, "command": target_command}
+                await self._send_command(ieee, target_command, target_value)
+                self._last_command[ieee] = (target_command, target_value, time.time())
+                return {"sent": True, "command": display}
             except Exception as e:
-                logger.error(f"Receiver command failed: {e}")
+                logger.error(f"Receiver command failed ({display}): {e}")
                 return {"sent": False, "error": str(e)}
         except Exception as e:
-            logger.error(f"Receiver command failed: {e}")
+            logger.error(f"Receiver command failed ({display}): {e}")
             return {"sent": False, "error": str(e)}
 
     # ── TRV control ────────────────────────────────────────────────
