@@ -40,6 +40,7 @@ import {
     viewZoneDetails
 } from './zones.js';
 
+import { initHeating } from './heating.js';
 
 import { initSystemTab } from './system-telemetry.js';
 
@@ -242,6 +243,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Initialise Zones
     initZones();
+
+    // Initialise Heating
+    initHeating();
 
     // Initialise system tab
     initSystemTab();

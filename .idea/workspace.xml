@@ -4,11 +4,22 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="spaces added">
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="weather config added">
       <change afterPath="$PROJECT_DIR$/config/matter_definitions/bilresa.json" afterDir="false" />
       <change afterPath="$PROJECT_DIR$/config/matter_definitions/ikea_e2490_bilresa.json" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/handlers/aqara_agl001_schedule_patch.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/modules/heating_advisor.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/modules/heating_controller.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/routes/heating_controller_routes.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/routes/heating_routes.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/static/js/heating-controller.js" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/static/js/heating.js" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/routes/config_routes.py" beforeDir="false" afterPath="$PROJECT_DIR$/routes/config_routes.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/config/config.yaml" beforeDir="false" afterPath="$PROJECT_DIR$/config/config.yaml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/main.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/routes/__init__.py" beforeDir="false" afterPath="$PROJECT_DIR$/routes/__init__.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/static/index.html" beforeDir="false" afterPath="$PROJECT_DIR$/static/index.html" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/static/js/main.js" beforeDir="false" afterPath="$PROJECT_DIR$/static/js/main.js" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -158,14 +169,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00273" summary="removal of text">
-      <option name="closed" value="true" />
-      <created>1775648855573</created>
-      <option name="number" value="00273" />
-      <option name="presentableId" value="LOCAL-00273" />
-      <option name="project" value="LOCAL" />
-      <updated>1775648855573</updated>
     </task>
     <task id="LOCAL-00274" summary="xml push">
       <option name="closed" value="true" />
@@ -551,7 +554,15 @@
       <option name="project" value="LOCAL" />
       <updated>1776244905791</updated>
     </task>
-    <option name="localTasksCounter" value="322" />
+    <task id="LOCAL-00322" summary="weather config added">
+      <option name="closed" value="true" />
+      <created>1776246319779</created>
+      <option name="number" value="00322" />
+      <option name="presentableId" value="LOCAL-00322" />
+      <option name="project" value="LOCAL" />
+      <updated>1776246319779</updated>
+    </task>
+    <option name="localTasksCounter" value="323" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -585,7 +596,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="read only to dbus" />
     <MESSAGE value="removal of ro - needs to be open" />
     <MESSAGE value="sec option added" />
     <MESSAGE value="removal of :Z as no longer needed due to sec option" />
@@ -610,6 +620,7 @@
     <MESSAGE value="final improvements on hvac" />
     <MESSAGE value="weather api added for smart heating function" />
     <MESSAGE value="spaces added" />
-    <option name="LAST_COMMIT_MESSAGE" value="spaces added" />
+    <MESSAGE value="weather config added" />
+    <option name="LAST_COMMIT_MESSAGE" value="weather config added" />
   </component>
 </project>

@@ -53,6 +53,8 @@ from modules.dongle_jedi_api import register_setup_routes
 from modules.matter_definitions import get_definition_store
 from modules.rotary_bindings import get_rotary_binding_manager
 from modules.weather import WeatherService
+from modules.heating_advisor import HeatingAdvisor
+from modules.heating_controller import HeatingController
 
 port = int(os.environ.get("ZMM_PORT", 8000))
 
@@ -74,6 +76,8 @@ from routes import (
     register_test_recovery_routes,
     register_websocket_routes,
     register_weather_routes,
+    register_heating_routes,
+    register_heating_controller_routes,
     manager, broadcast_event,
 )
 
@@ -156,6 +160,22 @@ weather_service = WeatherService(
     config=CONFIG.get("weather", {}),
     mqtt_service=mqtt_service,
 )
+
+
+heating_advisor = HeatingAdvisor(
+    config=CONFIG.get("heating", {}),
+    weather_service=weather_service,
+    device_getter=lambda: (zigbee_service.devices if zigbee_service else {}),
+)
+
+heating_controller = HeatingController(
+    config=CONFIG.get("heating", {}),
+    device_getter=lambda: (zigbee_service.devices if zigbee_service else {}),
+    command_sender=lambda ieee, command, value=None, endpoint_id=None:
+    zigbee_service.send_command(ieee, command, value, endpoint_id=endpoint_id),
+    comfort_defaults=CONFIG.get("heating", {}).get("comfort", {}),
+)
+
 
 # ============================================================================
 # MATTER — Embedded server + bridge (optional)
@@ -394,6 +414,13 @@ async def lifespan(app: FastAPI):
     weather_service.start()
     logger.info("Weather service initialised")
 
+    # heating
+    heating_advisor.start()
+    logger.info("Heating Advisor initialised")
+
+    heating_controller.start()
+    logger.info("Heating Controller initialised")
+
 
     # Merge Matter devices into automation engine's device registry
     if matter_bridge:
@@ -477,6 +504,8 @@ async def lifespan(app: FastAPI):
     system_monitor.stop()
     telemetry_collector.stop()
     weather_service.stop()
+    heating_advisor.stop()
+    heating_controller.stop()
     from modules.telemetry_db import close as close_telemetry_db
     close_telemetry_db()
 
@@ -565,6 +594,8 @@ register_automation_routes(app,
 )
 register_backup_routes(app, get_zigbee_service)
 register_weather_routes(app, lambda: weather_service)
+register_heating_routes(app, lambda: heating_advisor, get_zigbee_service)
+register_heating_controller_routes(app, lambda: heating_controller, get_zigbee_service)
 
 # ============================================================================
 # POST-SETUP ZIGBEE HOT-START SERVICES

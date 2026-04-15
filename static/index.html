@@ -96,6 +96,7 @@
        <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#system"><i class="fas fa-server me-1"></i> System Overview</button></li>
        <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#groups"><i class="fas fa-layer-group"></i> Groups</button></li>
        <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#automations"><i class="fas fa-bolt"></i> Automations</button></li>
+       <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#heating"><i class="fas fa-temperature-high"></i> Heating</button></li>
        <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#zones"><i class="fas fa-bullseye"></i> Zones</button></li>
        <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#mqtt-explorer"><i class="fas fa-broadcast-tower"></i> MQTT Explorer</button></li>
        <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#debug"><i class="fas fa-terminal"></i> Debug Log</button></li>
@@ -623,6 +624,13 @@
             </div>
         </div>
 
+        <!-- HEATING TAB -->
+        <div class="tab-pane fade" id="heating">
+            <div id="heatingDashboard">
+                <div class="text-center text-muted py-5">Loading heating intelligence...</div>
+            </div>
+        </div>
+
         <!-- Zones Tab-->
         <div class="tab-pane fade" id="zones" role="tabpanel" aria-labelledby="zones-tab">
             <div class="container-fluid p-3">
@@ -1147,6 +1155,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script src="/static/js/toasts.js"></script>
+<script type="module" src="/static/js/heating-controller.js"></script>
 <script type="module" src="/static/js/main.js"></script>
 <script src="/static/js/setup-jedi.js"></script>
 <script src="/static/js/setup-wizard.js"></script>

@@ -1,0 +1,1182 @@
+/**
+ * heating.js
+ * Frontend for the Heating Advisor dashboard, config and zone management.
+ *
+ * Consumes:
+ *   GET  /api/heating/dashboard
+ *   GET  /api/heating/history
+ *   GET  /api/heating/preheat
+ *   GET  /api/heating/config         POST to save
+ *   GET  /api/heating/zones          POST to replace
+ *   POST /api/heating/zones/{id}     DELETE to remove
+ *   GET  /api/heating/thermostats
+ *
+ * Integration:
+ *   - `initHeating()` called from main.js on DOMContentLoaded
+ *   - Renders into <div id="heatingDashboard">
+ *   - Auto-refreshes every 60s while the #heating tab is visible
+ *   - Settings modal is injected into <body> once on init
+ *   - Active controller panel is loaded by heating-controller.js when the
+ *     dashboard renders and a #heatingControllerPanel div is present
+ */
+
+import {
+    initHeatingController,
+    loadControllerStatus,
+    startControllerStatusRefresh,
+    stopControllerStatusRefresh,
+} from './heating-controller.js';
+
+// ============================================================================
+// STATE
+// ============================================================================
+let heatingRefreshTimer = null;
+let heatingTabActive = false;
+let lastDashboard = null;
+
+let configCache = null;
+let schemaCache = null;
+let thermostatsCache = [];
+let workingZones = [];   // zones being edited in the modal
+
+const REFRESH_MS = 60_000;
+
+const EPC_COLOURS = {
+    A: '#008054', B: '#19b459', C: '#8dce46',
+    D: '#ffd500', E: '#fcaa65', F: '#ef8023', G: '#e9153b',
+};
+
+const DAYS = [
+    { key: 'mon', label: 'Mo' }, { key: 'tue', label: 'Tu' },
+    { key: 'wed', label: 'We' }, { key: 'thu', label: 'Th' },
+    { key: 'fri', label: 'Fr' }, { key: 'sat', label: 'Sa' },
+    { key: 'sun', label: 'Su' },
+];
+
+// ============================================================================
+// INITIALIZATION
+// ============================================================================
+export function initHeating() {
+    console.log("Initializing Heating Module…");
+
+    ensureSettingsModal();
+    initHeatingController();
+
+    const heatingTabBtn = document.querySelector('button[data-bs-target="#heating"]');
+    if (!heatingTabBtn) {
+        console.warn("Heating tab button not found");
+        return;
+    }
+
+    heatingTabBtn.addEventListener('shown.bs.tab', () => {
+        heatingTabActive = true;
+        loadHeatingDashboard();
+        startHeatingAutoRefresh();
+        startControllerStatusRefresh();
+    });
+    heatingTabBtn.addEventListener('hidden.bs.tab', () => {
+        heatingTabActive = false;
+        stopHeatingAutoRefresh();
+        stopControllerStatusRefresh();
+    });
+
+    if (heatingTabBtn.classList.contains('active')) {
+        heatingTabActive = true;
+        loadHeatingDashboard();
+        startHeatingAutoRefresh();
+        startControllerStatusRefresh();
+    }
+}
+
+function startHeatingAutoRefresh() {
+    stopHeatingAutoRefresh();
+    heatingRefreshTimer = setInterval(() => {
+        if (heatingTabActive) loadHeatingDashboard({ silent: true });
+    }, REFRESH_MS);
+}
+
+function stopHeatingAutoRefresh() {
+    if (heatingRefreshTimer) clearInterval(heatingRefreshTimer);
+    heatingRefreshTimer = null;
+}
+
+// ============================================================================
+// DASHBOARD FETCH + RENDER
+// ============================================================================
+export async function loadHeatingDashboard({ silent = false } = {}) {
+    const container = document.getElementById('heatingDashboard');
+    if (!container) return;
+
+    if (!silent && !lastDashboard) {
+        container.innerHTML = spinnerBlock('Loading heating intelligence…');
+    }
+
+    try {
+        const res = await fetch('/api/heating/dashboard');
+        const json = await res.json();
+
+        if (!json.success) {
+            container.innerHTML = renderDisabled(json.error || 'Heating advisor not enabled');
+            bindTopBarControls();
+            return;
+        }
+
+        lastDashboard = json.data;
+        container.innerHTML = renderDashboard(json.data);
+        bindDashboardControls(json.data);
+        bindTopBarControls();
+        loadHeatingHistory();
+        loadControllerStatus();   // populate the controller panel
+    } catch (err) {
+        console.error('Heating dashboard fetch failed:', err);
+        if (!silent) {
+            container.innerHTML = `<div class="alert alert-danger m-3">
+                Failed to load heating dashboard: ${escapeHtml(err.message || String(err))}
+            </div>`;
+            bindTopBarControls();
+        }
+    }
+}
+
+async function loadHeatingHistory(hours = 24) {
+    try {
+        const res = await fetch(`/api/heating/history?hours=${hours}`);
+        const json = await res.json();
+        if (json.success) renderHistoryChart(json.data);
+    } catch (err) {
+        console.warn('Heating history fetch failed:', err);
+    }
+}
+
+async function fetchPreheatRecommendation(targetTemp) {
+    try {
+        const url = targetTemp
+            ? `/api/heating/preheat?target_temp=${encodeURIComponent(targetTemp)}`
+            : '/api/heating/preheat';
+        const res = await fetch(url);
+        const json = await res.json();
+        return json.success ? json.data : null;
+    } catch (err) {
+        console.error('Preheat fetch failed:', err);
+        return null;
+    }
+}
+
+// ============================================================================
+// RENDER: dashboard
+// ============================================================================
+function topBar(subtitle) {
+    return `
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <div>
+                <h5 class="mb-0"><i class="fas fa-temperature-high me-2"></i>Heating Intelligence</h5>
+                <small class="text-muted">${subtitle}</small>
+            </div>
+            <div class="btn-group btn-group-sm">
+                <button id="btn-heating-refresh" class="btn btn-outline-secondary" title="Refresh">
+                    <i class="fas fa-sync-alt"></i>
+                </button>
+                <button id="btn-heating-settings" class="btn btn-outline-primary" title="Heating settings">
+                    <i class="fas fa-cog"></i> Settings
+                </button>
+            </div>
+        </div>`;
+}
+
+function renderDisabled(message) {
+    return `
+        <div class="container-fluid p-3">
+            ${topBar('Configure your property, tariff and zones to enable smart heating')}
+            <div class="card">
+                <div class="card-body text-center py-5">
+                    <i class="fas fa-temperature-high fa-3x text-muted mb-3"></i>
+                    <h5>Heating Advisor Disabled</h5>
+                    <p class="text-muted">${escapeHtml(message)}</p>
+                    <button class="btn btn-primary" id="btn-heating-settings-alt">
+                        <i class="fas fa-cog me-1"></i> Open Settings
+                    </button>
+                </div>
+            </div>
+        </div>`;
+}
+
+function renderDashboard(d) {
+    const subtitle = `${escapeHtml(d.property?.type || 'property')} · ${escapeHtml(d.property?.insulation || '')} insulation · ${d.property?.floor_area_m2 || '?'}m² · ${escapeHtml(d.property?.boiler || 'boiler')} ${d.property?.boiler_kw || '?'}kW`;
+
+    return `
+        <div class="container-fluid p-3">
+            ${topBar(subtitle)}
+            <div class="text-muted small mb-3">Updated ${formatTs(d.ts)}</div>
+
+            <div class="row g-3 mb-3">
+                <div class="col-md-4">${renderEpcCard(d.epc, d.property)}</div>
+                <div class="col-md-4">${renderTemperatureCard(d.outdoor, d.indoor, d.heating)}</div>
+                <div class="col-md-4">${renderCostCard(d.cost, d.tariff, d.epc)}</div>
+            </div>
+
+            <div class="row g-3 mb-3">
+                <div class="col-md-6">${renderPreheatCard(d.preheat)}</div>
+                <div class="col-md-6">${renderForecastCard(d.outdoor)}</div>
+            </div>
+
+            <div id="heatingControllerPanel"></div>
+
+            ${renderZonesDashboard(d.zones || [])}
+
+            <div class="card mb-3">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <span><i class="fas fa-thermometer-half me-2"></i>Heating Devices</span>
+                    <span class="badge bg-secondary">${(d.heating?.devices || []).length}</span>
+                </div>
+                ${renderDevicesTable(d.heating?.devices || [])}
+            </div>
+
+            <div class="card mb-3">
+                <div class="card-header"><i class="fas fa-chart-line me-2"></i>24h History</div>
+                <div class="card-body">
+                    <div id="heatingHistoryChart" style="min-height:220px;">
+                        ${spinnerBlock('Loading history…')}
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <i class="fas fa-lightbulb me-2"></i>Energy-Saving Tips
+                    <span class="badge bg-secondary ms-2">${(d.tips || []).length}</span>
+                </div>
+                ${renderTips(d.tips || [])}
+            </div>
+        </div>`;
+}
+
+function renderEpcCard(epc, prop) {
+    if (!epc) return emptyCard('EPC Rating', 'No EPC data');
+    const colour = EPC_COLOURS[epc.band] || '#888';
+    return `
+        <div class="card h-100">
+            <div class="card-header"><i class="fas fa-home me-2"></i>Efficiency Rating</div>
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <div style="background:${colour};color:#fff;width:64px;height:64px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:2rem;font-weight:700;flex:0 0 auto;">${escapeHtml(epc.band)}</div>
+                    <div class="ms-3">
+                        <div class="fs-4 fw-bold">${epc.score}<small class="text-muted fs-6">/100</small></div>
+                        <small class="text-muted">${epc.kwh_per_m2_year} kWh/m²/year</small>
+                    </div>
+                </div>
+                <hr class="my-2">
+                <div class="small">
+                    ${kvRow('Annual demand', `${formatNumber(epc.annual_kwh)} kWh`)}
+                    ${kvRow('Annual cost', `£${formatNumber(epc.annual_cost_gbp)}`)}
+                    ${kvRow('Glazing', escapeHtml(prop?.glazing || '—'))}
+                </div>
+            </div>
+        </div>`;
+}
+
+function renderTemperatureCard(outdoor, indoor, heating) {
+    const outTemp = outdoor?.temperature;
+    const inTemp = indoor?.average;
+    const delta = (outTemp != null && inTemp != null) ? (inTemp - outTemp).toFixed(1) : '—';
+    const heatingBadge = heating?.active
+        ? `<span class="badge bg-danger"><i class="fas fa-fire me-1"></i>Heating</span>`
+        : `<span class="badge bg-secondary">Idle</span>`;
+    return `
+        <div class="card h-100">
+            <div class="card-header d-flex justify-content-between">
+                <span><i class="fas fa-thermometer-half me-2"></i>Temperatures</span>
+                ${heatingBadge}
+            </div>
+            <div class="card-body">
+                <div class="row text-center g-2">
+                    <div class="col-6"><div class="text-muted small">Indoor avg</div><div class="fs-3 fw-bold">${formatTemp(inTemp)}</div></div>
+                    <div class="col-6"><div class="text-muted small">Outdoor</div><div class="fs-3 fw-bold">${formatTemp(outTemp)}</div></div>
+                </div>
+                <hr class="my-2">
+                <div class="small">
+                    ${kvRow('Δ (in − out)', `${delta}°C`)}
+                    ${kvRow('Avg demand', `${heating?.avg_demand_percent ?? 0}%`)}
+                    ${kvRow('Conditions', escapeHtml(outdoor?.weather?.description || outdoor?.weather?.condition || '—'))}
+                </div>
+            </div>
+        </div>`;
+}
+
+function renderCostCard(cost, tariff, epc) {
+    const daily = cost?.daily_gbp, monthly = cost?.monthly_gbp;
+    return `
+        <div class="card h-100">
+            <div class="card-header"><i class="fas fa-pound-sign me-2"></i>Running Cost</div>
+            <div class="card-body">
+                <div class="row text-center g-2">
+                    <div class="col-6"><div class="text-muted small">Today</div><div class="fs-3 fw-bold">${daily != null ? '£' + daily.toFixed(2) : '—'}</div></div>
+                    <div class="col-6"><div class="text-muted small">This month</div><div class="fs-3 fw-bold">${monthly != null ? '£' + formatNumber(monthly) : '—'}</div></div>
+                </div>
+                <hr class="my-2">
+                <div class="small">
+                    ${kvRow('Tariff', escapeHtml(tariff?.type || 'fixed'))}
+                    ${kvRow('Unit rate', `${tariff?.unit_rate_p ?? '—'}p/kWh`)}
+                    ${kvRow("Today's kWh", cost?.daily_kwh ?? '—')}
+                    ${kvRow('Est. annual', `£${epc?.annual_cost_gbp != null ? formatNumber(epc.annual_cost_gbp) : '—'}`)}
+                </div>
+            </div>
+        </div>`;
+}
+
+function renderPreheatCard(preheat) {
+    const mins = preheat?.minutes_needed;
+    return `
+        <div class="card h-100">
+            <div class="card-header"><i class="fas fa-clock me-2"></i>Pre-heat Recommendation</div>
+            <div class="card-body">
+                ${preheat ? `
+                    <p class="mb-2">To warm from <strong>${preheat.from_temp}°C</strong> to <strong>${preheat.to_temp}°C</strong> (outdoor ${formatTemp(preheat.outdoor_temp)}):</p>
+                    <div class="fs-2 fw-bold text-primary">${mins} <small class="fs-6 text-muted">min lead time</small></div>
+                ` : `<p class="text-muted mb-2">Insufficient sensor data.</p>`}
+                <hr class="my-2">
+                <div class="input-group input-group-sm mb-2">
+                    <span class="input-group-text">Target °C</span>
+                    <input type="number" id="preheatTarget" class="form-control" step="0.5" min="10" max="28" value="21">
+                    <button id="btnPreheatCalc" class="btn btn-outline-primary">Calculate</button>
+                </div>
+                <div id="preheatResult" class="small text-muted"></div>
+            </div>
+        </div>`;
+}
+
+function renderForecastCard(outdoor) {
+    const forecast = outdoor?.forecast_3h || [];
+    if (!forecast.length) return emptyCard('3-hour Forecast', 'No forecast available');
+    const max = Math.max(...forecast, outdoor?.temperature ?? 0);
+    const min = Math.min(...forecast, outdoor?.temperature ?? 0);
+    const range = Math.max(1, max - min);
+    const bars = forecast.map((t, i) => {
+        const h = ((t - min) / range) * 80 + 10;
+        return `
+            <div class="text-center" style="flex:1;">
+                <div style="height:100px;display:flex;align-items:flex-end;justify-content:center;">
+                    <div style="width:28px;height:${h}px;background:linear-gradient(180deg,#ff7043,#ffa726);border-radius:4px 4px 0 0;" title="${t}°C in +${i + 1}h"></div>
+                </div>
+                <div class="small fw-bold">${t.toFixed(1)}°</div>
+                <div class="text-muted" style="font-size:0.7rem;">+${i + 1}h</div>
+            </div>`;
+    }).join('');
+    return `
+        <div class="card h-100">
+            <div class="card-header"><i class="fas fa-cloud-sun me-2"></i>Short-term Forecast</div>
+            <div class="card-body">
+                <div class="d-flex gap-2 align-items-end">${bars}</div>
+                <div class="text-center small text-muted mt-2">Range ${min.toFixed(1)}°C — ${max.toFixed(1)}°C</div>
+            </div>
+        </div>`;
+}
+
+function renderDevicesTable(devices) {
+    if (!devices.length) return `<div class="card-body text-muted text-center py-4">No heating devices detected.</div>`;
+    const rows = devices.map(d => {
+        const actionBadge = d.action === 'heating'
+            ? `<span class="badge bg-danger"><i class="fas fa-fire me-1"></i>heating</span>`
+            : `<span class="badge bg-secondary">${escapeHtml(d.action || 'idle')}</span>`;
+        const demand = Number(d.demand || 0);
+        const demandBar = `
+            <div class="progress" style="height:6px;width:80px;"><div class="progress-bar ${demand > 50 ? 'bg-danger' : 'bg-warning'}" style="width:${Math.min(100, demand)}%"></div></div>
+            <small class="text-muted">${demand}%</small>`;
+        // Mirror the device-list naming: prefer the cached friendly name, fall back to advisor name, then ieee
+        const cached = window._getDeviceState ? null : null;  // (we look up via cache below)
+        const cachedDev = (window.state?.deviceCache || {})[d.ieee];
+        const displayName = cachedDev?.friendly_name || d.name || d.ieee || '—';
+        return `
+            <tr>
+                <td>${escapeHtml(displayName)}</td>
+                <td>${formatTemp(d.temperature)}</td>
+                <td>${formatTemp(d.setpoint)}</td>
+                <td>${escapeHtml(d.mode || '—')}</td>
+                <td>${actionBadge}</td>
+                <td>${demandBar}</td>
+                <td class="text-end">
+                    <button class="btn btn-sm btn-outline-primary heating-manage-btn" data-ieee="${escapeAttr(d.ieee)}" title="Details & Control">
+                        <i class="fas fa-sliders-h"></i> Manage
+                    </button>
+                </td>
+            </tr>`;
+    }).join('');
+    return `
+        <div class="table-responsive">
+            <table class="table table-sm mb-0 align-middle">
+                <thead><tr><th>Device</th><th>Current</th><th>Setpoint</th><th>Mode</th><th>Action</th><th>Demand</th><th></th></tr></thead>
+                <tbody>${rows}</tbody>
+            </table>
+        </div>`;
+}
+
+// ─── Zones dashboard (per-zone summary cards) ──────────────────────
+function renderZonesDashboard(zones) {
+    if (!zones.length) return '';  // hidden entirely if no zones configured
+
+    const cards = zones.map(z => {
+        const statusMeta = {
+            below:    { colour: '#fd7e14', icon: 'arrow-down', label: 'Below target' },
+            ontarget: { colour: '#198754', icon: 'check',      label: 'On target' },
+            above:    { colour: '#dc3545', icon: 'arrow-up',   label: 'Above target' },
+            unknown:  { colour: '#6c757d', icon: 'question',   label: 'No data' },
+        }[z.status] || { colour: '#6c757d', icon: 'question', label: 'Unknown' };
+
+        const current = z.current_temp != null ? `${Number(z.current_temp).toFixed(1)}°C` : '—';
+        const delta = (z.current_temp != null)
+            ? (z.current_temp - z.target_temp).toFixed(1)
+            : null;
+        const deltaHtml = delta !== null
+            ? `<small class="${delta >= 0 ? 'text-danger' : 'text-warning'}">${delta >= 0 ? '+' : ''}${delta}°C vs target</small>`
+            : `<small class="text-muted">no reading</small>`;
+
+        const sourceBadge = {
+            schedule: `<span class="badge bg-info text-dark" title="From active schedule slot"><i class="fas fa-calendar-alt me-1"></i>scheduled</span>`,
+            setback:  `<span class="badge bg-secondary" title="Night setback"><i class="fas fa-moon me-1"></i>setback</span>`,
+            default:  `<span class="badge bg-light text-dark border" title="Zone default target">default</span>`,
+        }[z.target_source] || '';
+
+        const demand = Number(z.avg_demand_percent || 0);
+        const demandBar = `
+            <div class="progress" style="height:6px;">
+                <div class="progress-bar ${demand > 50 ? 'bg-danger' : 'bg-warning'}" style="width:${Math.min(100, demand)}%"></div>
+            </div>`;
+
+        const heatingBadge = z.heating_active
+            ? `<span class="badge bg-danger"><i class="fas fa-fire me-1"></i>heating</span>`
+            : '';
+
+        const preheatLine = (z.preheat_minutes != null && z.preheat_minutes > 0)
+            ? `<div class="mt-1 small text-muted"><i class="fas fa-clock me-1"></i>Pre-heat: ${z.preheat_minutes} min</div>`
+            : '';
+
+        const deviceCount = z.device_count || 0;
+
+        return `
+            <div class="col-md-6 col-lg-4">
+                <div class="card h-100 heating-zone-dash" style="border-left: 4px solid ${statusMeta.colour};">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-start mb-2">
+                            <div>
+                                <h6 class="mb-0"><i class="fas fa-layer-group me-1"></i>${escapeHtml(z.name)}</h6>
+                                <small class="text-muted">${deviceCount} device${deviceCount === 1 ? '' : 's'}</small>
+                            </div>
+                            ${heatingBadge}
+                        </div>
+
+                        <div class="d-flex justify-content-between align-items-baseline mb-1">
+                            <div class="fs-3 fw-bold">${current}</div>
+                            <div class="text-end">
+                                <div class="small">Target: <strong>${Number(z.target_temp).toFixed(1)}°C</strong></div>
+                                ${sourceBadge}
+                            </div>
+                        </div>
+                        <div class="mb-2">${deltaHtml}</div>
+
+                        <div class="d-flex justify-content-between small text-muted mb-1">
+                            <span>Demand</span>
+                            <span>${demand}%</span>
+                        </div>
+                        ${demandBar}
+
+                        <div class="mt-2 small" style="color:${statusMeta.colour};">
+                            <i class="fas fa-${statusMeta.icon} me-1"></i>${statusMeta.label}
+                        </div>
+                        ${preheatLine}
+                    </div>
+                </div>
+            </div>`;
+    }).join('');
+
+    return `
+        <div class="mb-3">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+                <h6 class="mb-0"><i class="fas fa-layer-group me-2"></i>Zones</h6>
+                <small class="text-muted">${zones.length} zone${zones.length === 1 ? '' : 's'}, sorted by priority</small>
+            </div>
+            <div class="row g-3">${cards}</div>
+        </div>`;
+}
+
+function renderHistoryChart(historyData) {
+    const container = document.getElementById('heatingHistoryChart');
+    if (!container) return;
+    const devices = historyData?.devices || {};
+    const names = Object.keys(devices);
+    if (!names.length) { container.innerHTML = `<div class="text-muted text-center py-4">No history data yet.</div>`; return; }
+    const series = [];
+    for (const name of names) {
+        const temps = devices[name]?.temperature || [];
+        if (temps.length > 1) series.push({ name, points: temps });
+    }
+    if (!series.length) { container.innerHTML = `<div class="text-muted text-center py-4">No temperature history recorded yet.</div>`; return; }
+    const W = 800, H = 220, PAD = 36;
+    let tMin = Infinity, tMax = -Infinity, xMin = Infinity, xMax = -Infinity;
+    for (const s of series) for (const p of s.points) {
+        const [ts, val] = parsePoint(p);
+        if (val == null) continue;
+        if (val < tMin) tMin = val; if (val > tMax) tMax = val;
+        if (ts < xMin) xMin = ts; if (ts > xMax) xMax = ts;
+    }
+    if (!isFinite(tMin) || !isFinite(tMax)) { container.innerHTML = `<div class="text-muted text-center py-4">No valid data points.</div>`; return; }
+    const tPad = Math.max(0.5, (tMax - tMin) * 0.1);
+    tMin -= tPad; tMax += tPad;
+    const xScale = t => PAD + ((t - xMin) / Math.max(1, xMax - xMin)) * (W - PAD * 2);
+    const yScale = v => H - PAD - ((v - tMin) / Math.max(0.1, tMax - tMin)) * (H - PAD * 2);
+    const palette = ['#0d6efd', '#dc3545', '#198754', '#ffc107', '#6610f2', '#fd7e14'];
+    const paths = series.map((s, i) => {
+        const colour = palette[i % palette.length];
+        const d = s.points.map(p => {
+            const [ts, val] = parsePoint(p);
+            return val == null ? '' : `${xScale(ts)},${yScale(val)}`;
+        }).filter(Boolean).join(' L ');
+        return `<path d="M ${d}" fill="none" stroke="${colour}" stroke-width="2"/>`;
+    }).join('');
+    const legend = series.map((s, i) => `<span class="me-3 small"><span style="display:inline-block;width:12px;height:12px;background:${palette[i % palette.length]};border-radius:2px;"></span> ${escapeHtml(s.name)}</span>`).join('');
+    const ticks = [tMin, (tMin + tMax) / 2, tMax].map(v => `
+        <line x1="${PAD}" x2="${W - PAD}" y1="${yScale(v)}" y2="${yScale(v)}" stroke="currentColor" stroke-opacity="0.1"/>
+        <text x="${PAD - 6}" y="${yScale(v) + 4}" text-anchor="end" font-size="10" fill="currentColor" opacity="0.6">${v.toFixed(1)}°</text>`).join('');
+    container.innerHTML = `<div class="mb-2">${legend}</div><svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;color:var(--bs-body-color);">${ticks}${paths}</svg>`;
+}
+
+function parsePoint(p) {
+    if (Array.isArray(p)) return [Number(p[0]), Number(p[1])];
+    if (p && typeof p === 'object') {
+        const ts = Number(p.ts ?? p.timestamp ?? p.time);
+        const val = p.value ?? p.v ?? p.val;
+        return [ts, val == null ? null : Number(val)];
+    }
+    return [NaN, null];
+}
+
+function renderTips(tips) {
+    if (!tips.length) return `<div class="card-body text-muted text-center py-3">No tips right now — you're running efficiently.</div>`;
+    const order = { high: 0, medium: 1, low: 2 };
+    const sorted = [...tips].sort((a, b) => (order[a.priority] ?? 3) - (order[b.priority] ?? 3));
+    const items = sorted.map(t => {
+        const border = { high: 'border-danger', medium: 'border-warning', low: 'border-info' }[t.priority] || 'border-secondary';
+        const badge = { high: 'bg-danger', medium: 'bg-warning text-dark', low: 'bg-info text-dark' }[t.priority] || 'bg-secondary';
+        return `
+            <div class="list-group-item border-start border-4 ${border}">
+                <div class="d-flex w-100 justify-content-between align-items-start">
+                    <div>
+                        <h6 class="mb-1"><i class="fas fa-${escapeAttr(t.icon || 'lightbulb')} me-2"></i>${escapeHtml(t.title)}</h6>
+                        <p class="mb-1 small">${escapeHtml(t.detail)}</p>
+                        <small class="text-muted">${escapeHtml(t.category || '')}</small>
+                    </div>
+                    <span class="badge ${badge}">${escapeHtml(t.priority || '')}</span>
+                </div>
+            </div>`;
+    }).join('');
+    return `<div class="list-group list-group-flush">${items}</div>`;
+}
+
+// ============================================================================
+// DASHBOARD BINDINGS
+// ============================================================================
+function bindTopBarControls() {
+    document.getElementById('btn-heating-refresh')?.addEventListener('click', () => {
+        lastDashboard = null;
+        loadHeatingDashboard();
+    });
+    document.getElementById('btn-heating-settings')?.addEventListener('click', openSettingsModal);
+    document.getElementById('btn-heating-settings-alt')?.addEventListener('click', openSettingsModal);
+}
+
+function bindDashboardControls(data) {
+    document.getElementById('btnPreheatCalc')?.addEventListener('click', async () => {
+        const input = document.getElementById('preheatTarget');
+        const resultDiv = document.getElementById('preheatResult');
+        if (!input || !resultDiv) return;
+        const target = parseFloat(input.value);
+        if (isNaN(target)) { resultDiv.innerHTML = `<span class="text-danger">Invalid</span>`; return; }
+        resultDiv.innerHTML = `<span class="spinner-border spinner-border-sm me-1"></span>Calculating…`;
+        const ph = await fetchPreheatRecommendation(target);
+        if (!ph) { resultDiv.innerHTML = `<span class="text-danger">Request failed</span>`; return; }
+        if (ph.error) { resultDiv.innerHTML = `<span class="text-muted">${escapeHtml(ph.error)}</span>`; return; }
+        resultDiv.innerHTML = `From <strong>${formatTemp(ph.current_indoor)}</strong> to <strong>${target}°C</strong> (outdoor ${formatTemp(ph.current_outdoor)}): start <strong>${ph.preheat_minutes} min</strong> ahead.`;
+    });
+
+    // Manage buttons — same pattern as device list: pass the full cached device object
+    document.querySelectorAll('.heating-manage-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const ieee = btn.dataset.ieee;
+            const cachedDev = (window.state?.deviceCache || {})[ieee];
+            if (cachedDev && typeof window.openDeviceModal === 'function') {
+                window.openDeviceModal(cachedDev);
+            } else if (typeof window.openDeviceModal === 'function') {
+                // Fallback — try with a stub if cache miss (modal may handle gracefully)
+                window.openDeviceModal({ ieee, friendly_name: ieee, state: {} });
+            } else {
+                console.warn('openDeviceModal not available on window');
+            }
+        });
+    });
+}
+
+// ============================================================================
+// SETTINGS MODAL
+// ============================================================================
+function ensureSettingsModal() {
+    if (document.getElementById('heatingSettingsModal')) return;
+    const html = `
+        <div class="modal fade" id="heatingSettingsModal" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog modal-xl modal-dialog-scrollable">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title"><i class="fas fa-cog me-2"></i>Heating Settings</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body" id="heatingSettingsBody">${spinnerBlock('Loading settings…')}</div>
+                    <div class="modal-footer">
+                        <div id="heatingSettingsStatus" class="me-auto small text-muted"></div>
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="button" class="btn btn-primary" id="btnHeatingSettingsSave">
+                            <i class="fas fa-save me-1"></i> Save
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>`;
+    document.body.insertAdjacentHTML('beforeend', html);
+    document.getElementById('btnHeatingSettingsSave').addEventListener('click', saveSettings);
+}
+
+async function openSettingsModal() {
+    const modalEl = document.getElementById('heatingSettingsModal');
+    const bodyEl = document.getElementById('heatingSettingsBody');
+    const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+    bodyEl.innerHTML = spinnerBlock('Loading settings…');
+    modal.show();
+
+    try {
+        const [cfgRes, thermRes] = await Promise.all([
+            fetch('/api/heating/config').then(r => r.json()),
+            fetch('/api/heating/thermostats').then(r => r.json()).catch(() => ({ success: false })),
+        ]);
+        if (!cfgRes.success) throw new Error(cfgRes.error || 'Failed to load config');
+
+        configCache = cfgRes.config;
+        schemaCache = cfgRes.schema || {};
+        thermostatsCache = thermRes.success ? (thermRes.thermostats || []) : [];
+        workingZones = deepClone(configCache.zones || []);
+
+        bodyEl.innerHTML = renderSettingsForm(configCache, schemaCache);
+        bindSettingsTabs();
+    } catch (err) {
+        bodyEl.innerHTML = `<div class="alert alert-danger">Failed to load settings: ${escapeHtml(err.message)}</div>`;
+    }
+}
+
+function renderSettingsForm(cfg, schema) {
+    return `
+        <ul class="nav nav-tabs mb-3" role="tablist">
+            <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#heat-set-property">Property</button></li>
+            <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#heat-set-tariff">Tariff & Boiler</button></li>
+            <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#heat-set-comfort">Comfort</button></li>
+            <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#heat-set-zones">Zones <span class="badge bg-secondary ms-1" id="zoneCountBadge">${workingZones.length}</span></button></li>
+        </ul>
+
+        <div class="form-check form-switch mb-3">
+            <input class="form-check-input" type="checkbox" id="heatEnabled" ${cfg.enabled ? 'checked' : ''}>
+            <label class="form-check-label" for="heatEnabled"><strong>Enable Heating Advisor</strong></label>
+        </div>
+
+        <div class="tab-content">
+            <div class="tab-pane fade show active" id="heat-set-property">${renderPropertyForm(cfg.property, schema)}</div>
+            <div class="tab-pane fade" id="heat-set-tariff">${renderTariffBoilerForm(cfg.tariff, cfg.boiler, schema)}</div>
+            <div class="tab-pane fade" id="heat-set-comfort">${renderComfortForm(cfg.comfort)}</div>
+            <div class="tab-pane fade" id="heat-set-zones">${renderZonesSection()}</div>
+        </div>`;
+}
+
+function renderPropertyForm(p, schema) {
+    return `
+        <div class="row g-3">
+            <div class="col-md-6">
+                <label class="form-label">Property type</label>
+                ${selectEl('propType', p.type, schema.property_types)}
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Build year</label>
+                <input type="number" class="form-control" id="propAge" value="${p.age}" min="1800" max="2100">
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Insulation</label>
+                ${selectEl('propInsulation', p.insulation, schema.insulation)}
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Glazing</label>
+                ${selectEl('propGlazing', p.glazing, schema.glazing)}
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Floor area (m²)</label>
+                <input type="number" class="form-control" id="propArea" value="${p.floor_area_m2}" min="10" max="1000">
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Floors</label>
+                <input type="number" class="form-control" id="propFloors" value="${p.floors}" min="1" max="5">
+            </div>
+        </div>`;
+}
+
+function renderTariffBoilerForm(t, b, schema) {
+    return `
+        <h6 class="text-muted">Electricity / Gas Tariff</h6>
+        <div class="row g-3 mb-3">
+            <div class="col-md-6">
+                <label class="form-label">Tariff type</label>
+                ${selectEl('tariffType', t.type, schema.tariff_types)}
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Unit rate (p/kWh)</label>
+                <input type="number" step="0.01" class="form-control" id="tariffUnit" value="${t.unit_rate_p}">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Standing charge (p/day)</label>
+                <input type="number" step="0.01" class="form-control" id="tariffStanding" value="${t.standing_charge_p}">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Off-peak start</label>
+                <input type="time" class="form-control" id="tariffOpStart" value="${t.off_peak_start}">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Off-peak end</label>
+                <input type="time" class="form-control" id="tariffOpEnd" value="${t.off_peak_end}">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Off-peak rate (p/kWh)</label>
+                <input type="number" step="0.01" class="form-control" id="tariffOpRate" value="${t.off_peak_rate_p}">
+            </div>
+        </div>
+        <hr>
+        <h6 class="text-muted">Boiler / Heat Source</h6>
+        <div class="row g-3">
+            <div class="col-md-6">
+                <label class="form-label">Type</label>
+                ${selectEl('boilerType', b.type, schema.boiler_types)}
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Output (kW)</label>
+                <input type="number" step="0.5" class="form-control" id="boilerKw" value="${b.output_kw}">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Efficiency (%)</label>
+                <input type="number" class="form-control" id="boilerEff" value="${b.efficiency_percent}">
+                <small class="text-muted">SEDBUK % (use COP×100 for heat pumps — e.g. 300)</small>
+            </div>
+        </div>`;
+}
+
+function renderComfortForm(c) {
+    return `
+        <div class="row g-3">
+            <div class="col-md-3">
+                <label class="form-label">Target temp (°C)</label>
+                <input type="number" step="0.5" class="form-control" id="comfortTarget" value="${c.target_temp}">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Night setback (°C)</label>
+                <input type="number" step="0.5" class="form-control" id="comfortSetback" value="${c.night_setback}">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Minimum (°C)</label>
+                <input type="number" step="0.5" class="form-control" id="comfortMin" value="${c.min_temp}">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Max pre-heat (min)</label>
+                <input type="number" class="form-control" id="comfortPreheat" value="${c.preheat_max_minutes}">
+            </div>
+        </div>
+        <small class="text-muted">These act as defaults when a zone doesn't specify its own.</small>`;
+}
+
+function renderZonesSection() {
+    return `
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <div>
+                <strong>Heating Zones</strong>
+                <small class="text-muted ms-2">Assign thermostats and TRVs to rooms or floors.</small>
+            </div>
+            <div class="btn-group btn-group-sm">
+                <button class="btn btn-outline-secondary" id="btnZonePresets"><i class="fas fa-magic me-1"></i> Quick setup</button>
+                <button class="btn btn-primary" id="btnAddZone"><i class="fas fa-plus me-1"></i> Add zone</button>
+            </div>
+        </div>
+        ${thermostatsCache.length === 0
+            ? `<div class="alert alert-info small"><i class="fas fa-info-circle me-1"></i> No heating devices detected yet. You can still define zones — devices will appear once paired.</div>`
+            : `<div class="small text-muted mb-2">${thermostatsCache.length} heating device(s) available.</div>`}
+        <div id="zonesList"></div>`;
+}
+
+function renderZoneCard(zone, index) {
+    const assigned = zone.devices || [];
+    const unassignedForThis = thermostatsCache.filter(t =>
+        !workingZones.some((z, zi) => zi !== index && (z.devices || []).includes(t.ieee))
+    );
+    const deviceCheckboxes = unassignedForThis.length
+        ? unassignedForThis.map(t => {
+            const checked = assigned.includes(t.ieee) ? 'checked' : '';
+            const temp = t.temperature != null ? ` <small class="text-muted">(${Number(t.temperature).toFixed(1)}°C)</small>` : '';
+            return `
+                <label class="list-group-item small d-flex align-items-center">
+                    <input class="form-check-input me-2 zone-device-cb" type="checkbox" data-zone-idx="${index}" data-ieee="${escapeAttr(t.ieee)}" ${checked}>
+                    <div class="flex-grow-1">
+                        <div>${escapeHtml(t.name)}${temp}</div>
+                        <small class="text-muted">${escapeHtml(t.ieee)}</small>
+                    </div>
+                </label>`;
+        }).join('')
+        : `<div class="list-group-item small text-muted">No available devices.</div>`;
+
+    return `
+        <div class="card mb-2 heating-zone-card" data-zone-idx="${index}">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <div class="d-flex align-items-center gap-2 flex-grow-1">
+                    <i class="fas fa-layer-group text-primary"></i>
+                    <input type="text" class="form-control form-control-sm zone-name" data-zone-idx="${index}"
+                           value="${escapeAttr(zone.name)}" placeholder="Zone name" style="max-width:220px;">
+                    <small class="text-muted">id: ${escapeHtml(zone.id)}</small>
+                </div>
+                <button class="btn btn-sm btn-outline-danger btn-delete-zone" data-zone-idx="${index}" title="Delete zone">
+                    <i class="fas fa-trash"></i>
+                </button>
+            </div>
+            <div class="card-body">
+                <div class="row g-2 mb-3">
+                    <div class="col-md-3">
+                        <label class="form-label small mb-1">Target °C</label>
+                        <input type="number" step="0.5" class="form-control form-control-sm zone-target" data-zone-idx="${index}" value="${zone.target_temp}">
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label small mb-1">Setback °C</label>
+                        <input type="number" step="0.5" class="form-control form-control-sm zone-setback" data-zone-idx="${index}" value="${zone.night_setback}">
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label small mb-1">Min °C</label>
+                        <input type="number" step="0.5" class="form-control form-control-sm zone-min" data-zone-idx="${index}" value="${zone.min_temp}">
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label small mb-1">Priority (1–10)</label>
+                        <input type="number" min="1" max="10" class="form-control form-control-sm zone-priority" data-zone-idx="${index}" value="${zone.priority || 5}">
+                    </div>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label small mb-1">Devices in this zone <span class="badge bg-secondary">${assigned.length}</span></label>
+                    <div class="list-group" style="max-height:220px; overflow-y:auto;">${deviceCheckboxes}</div>
+                </div>
+
+                <details>
+                    <summary class="small text-muted" style="cursor:pointer;">
+                        <i class="fas fa-calendar-alt me-1"></i> Schedule (${(zone.schedule || []).length} slot${(zone.schedule || []).length === 1 ? '' : 's'})
+                    </summary>
+                    <div class="mt-2">${renderZoneSchedule(zone, index)}</div>
+                </details>
+            </div>
+        </div>`;
+}
+
+function renderZoneSchedule(zone, zoneIdx) {
+    const slots = zone.schedule || [];
+    const slotsHtml = slots.map((slot, si) => {
+        const dayBtns = DAYS.map(d => {
+            const active = (slot.days || []).includes(d.key);
+            return `<button type="button" class="btn btn-sm ${active ? 'btn-primary' : 'btn-outline-secondary'} zone-sched-day"
+                    data-zone-idx="${zoneIdx}" data-slot-idx="${si}" data-day="${d.key}" style="padding:2px 8px;">${d.label}</button>`;
+        }).join(' ');
+        return `
+            <div class="border rounded p-2 mb-2">
+                <div class="d-flex gap-2 align-items-center flex-wrap">
+                    <div class="btn-group">${dayBtns}</div>
+                    <input type="time" class="form-control form-control-sm zone-sched-start" data-zone-idx="${zoneIdx}" data-slot-idx="${si}" value="${slot.start || '07:00'}" style="width:120px;">
+                    <span>→</span>
+                    <input type="time" class="form-control form-control-sm zone-sched-end" data-zone-idx="${zoneIdx}" data-slot-idx="${si}" value="${slot.end || '22:00'}" style="width:120px;">
+                    <input type="number" step="0.5" class="form-control form-control-sm zone-sched-temp" data-zone-idx="${zoneIdx}" data-slot-idx="${si}" value="${slot.temp ?? 20}" style="width:90px;">
+                    <span class="small text-muted">°C</span>
+                    <button class="btn btn-sm btn-outline-danger ms-auto btn-delete-slot" data-zone-idx="${zoneIdx}" data-slot-idx="${si}"><i class="fas fa-times"></i></button>
+                </div>
+            </div>`;
+    }).join('');
+    return `
+        ${slotsHtml || '<div class="text-muted small mb-2">No schedule slots. Uses target temp by default.</div>'}
+        <button class="btn btn-sm btn-outline-primary btn-add-slot" data-zone-idx="${zoneIdx}"><i class="fas fa-plus"></i> Add time slot</button>`;
+}
+
+// ─── Zone presets ──────────────────────────────────────────────────
+const ZONE_PRESETS = {
+    single: [{ name: 'Whole Home' }],
+    two: [{ name: 'Upstairs' }, { name: 'Downstairs' }],
+    three: [{ name: 'Living Areas' }, { name: 'Bedrooms' }, { name: 'Bathroom' }],
+    four: [{ name: 'Living Room' }, { name: 'Kitchen' }, { name: 'Master Bedroom' }, { name: 'Other Bedrooms' }],
+};
+
+function showQuickSetupPicker() {
+    const html = `
+        <div class="modal fade" id="zonePresetModal" tabindex="-1">
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">Quick Zone Setup</h5>
+                        <button class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <p class="small text-muted">Pick a starting layout. You can customise and assign devices afterwards. <strong>This replaces your existing zones.</strong></p>
+                        <div class="list-group">
+                            <button class="list-group-item list-group-item-action" data-preset="single"><strong>Single Zone</strong><br><small class="text-muted">Whole-home control (1 zone)</small></button>
+                            <button class="list-group-item list-group-item-action" data-preset="two"><strong>Upstairs / Downstairs</strong><br><small class="text-muted">Classic 2-zone layout</small></button>
+                            <button class="list-group-item list-group-item-action" data-preset="three"><strong>Living / Bedrooms / Bathroom</strong><br><small class="text-muted">Typical 3-zone layout</small></button>
+                            <button class="list-group-item list-group-item-action" data-preset="four"><strong>Room-by-Room (4 zones)</strong><br><small class="text-muted">Living, Kitchen, Master, Other Bedrooms</small></button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>`;
+    document.querySelector('#zonePresetModal')?.remove();
+    document.body.insertAdjacentHTML('beforeend', html);
+    const modalEl = document.getElementById('zonePresetModal');
+    const modal = new bootstrap.Modal(modalEl);
+    modal.show();
+    modalEl.addEventListener('hidden.bs.modal', () => modalEl.remove());
+    modalEl.querySelectorAll('[data-preset]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const preset = ZONE_PRESETS[btn.dataset.preset];
+            if (preset) {
+                workingZones = preset.map(z => ({
+                    id: z.name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, ''),
+                    name: z.name,
+                    target_temp: 21, night_setback: 17, min_temp: 16, priority: 5,
+                    devices: [], schedule: [],
+                }));
+                renderZonesList();
+            }
+            modal.hide();
+        });
+    });
+}
+
+// ─── Zone list rendering + bindings ────────────────────────────────
+function renderZonesList() {
+    const container = document.getElementById('zonesList');
+    if (!container) return;
+    if (!workingZones.length) {
+        container.innerHTML = `<div class="text-center text-muted py-4 border rounded">
+            No zones defined. Click <strong>Add zone</strong> or <strong>Quick setup</strong> to start.
+        </div>`;
+    } else {
+        container.innerHTML = workingZones.map((z, i) => renderZoneCard(z, i)).join('');
+    }
+    const badge = document.getElementById('zoneCountBadge');
+    if (badge) badge.textContent = workingZones.length;
+    bindZoneControls();
+}
+
+function bindZoneControls() {
+    document.querySelectorAll('.zone-name').forEach(el => {
+        el.addEventListener('input', e => {
+            workingZones[+e.target.dataset.zoneIdx].name = e.target.value;
+        });
+    });
+    const numericBindings = [
+        ['.zone-target', 'target_temp', parseFloat],
+        ['.zone-setback', 'night_setback', parseFloat],
+        ['.zone-min', 'min_temp', parseFloat],
+        ['.zone-priority', 'priority', v => parseInt(v, 10)],
+    ];
+    for (const [sel, key, coerce] of numericBindings) {
+        document.querySelectorAll(sel).forEach(el => {
+            el.addEventListener('change', e => {
+                workingZones[+e.target.dataset.zoneIdx][key] = coerce(e.target.value);
+            });
+        });
+    }
+    document.querySelectorAll('.zone-device-cb').forEach(cb => {
+        cb.addEventListener('change', e => {
+            const idx = +e.target.dataset.zoneIdx;
+            const ieee = e.target.dataset.ieee;
+            const zone = workingZones[idx];
+            zone.devices = zone.devices || [];
+            if (e.target.checked) {
+                if (!zone.devices.includes(ieee)) zone.devices.push(ieee);
+            } else {
+                zone.devices = zone.devices.filter(d => d !== ieee);
+            }
+            renderZonesList();
+        });
+    });
+    document.querySelectorAll('.btn-delete-zone').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const idx = +btn.dataset.zoneIdx;
+            if (confirm(`Delete zone "${workingZones[idx]?.name}"?`)) {
+                workingZones.splice(idx, 1);
+                renderZonesList();
+            }
+        });
+    });
+    document.querySelectorAll('.zone-sched-day').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const zi = +btn.dataset.zoneIdx, si = +btn.dataset.slotIdx, day = btn.dataset.day;
+            const slot = workingZones[zi].schedule[si];
+            slot.days = slot.days || [];
+            const i = slot.days.indexOf(day);
+            if (i >= 0) slot.days.splice(i, 1); else slot.days.push(day);
+            renderZonesList();
+        });
+    });
+    const slotBindings = [
+        ['.zone-sched-start', 'start', v => v],
+        ['.zone-sched-end', 'end', v => v],
+        ['.zone-sched-temp', 'temp', v => parseFloat(v)],
+    ];
+    for (const [sel, key, coerce] of slotBindings) {
+        document.querySelectorAll(sel).forEach(el => {
+            el.addEventListener('change', e => {
+                const zi = +e.target.dataset.zoneIdx, si = +e.target.dataset.slotIdx;
+                workingZones[zi].schedule[si][key] = coerce(e.target.value);
+            });
+        });
+    }
+    document.querySelectorAll('.btn-delete-slot').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const zi = +btn.dataset.zoneIdx, si = +btn.dataset.slotIdx;
+            workingZones[zi].schedule.splice(si, 1);
+            renderZonesList();
+        });
+    });
+    document.querySelectorAll('.btn-add-slot').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const zi = +btn.dataset.zoneIdx;
+            workingZones[zi].schedule = workingZones[zi].schedule || [];
+            workingZones[zi].schedule.push({
+                days: ['mon', 'tue', 'wed', 'thu', 'fri'],
+                start: '07:00', end: '22:00', temp: 21,
+            });
+            renderZonesList();
+        });
+    });
+}
+
+function bindSettingsTabs() {
+    renderZonesList();
+
+    document.getElementById('btnAddZone')?.addEventListener('click', () => {
+        const n = workingZones.length + 1;
+        workingZones.push({
+            id: `zone_${n}`, name: `Zone ${n}`,
+            target_temp: 21, night_setback: 17, min_temp: 16, priority: 5,
+            devices: [], schedule: [],
+        });
+        renderZonesList();
+    });
+    document.getElementById('btnZonePresets')?.addEventListener('click', showQuickSetupPicker);
+}
+
+// ─── Gather + save ─────────────────────────────────────────────────
+function gatherFormValues() {
+    const val = (id, coerce = (v) => v) => {
+        const el = document.getElementById(id);
+        return el ? coerce(el.value) : undefined;
+    };
+    return {
+        enabled: document.getElementById('heatEnabled')?.checked ?? false,
+        property: {
+            type: val('propType'),
+            age: val('propAge', v => parseInt(v, 10)),
+            insulation: val('propInsulation'),
+            glazing: val('propGlazing'),
+            floor_area_m2: val('propArea', v => parseInt(v, 10)),
+            floors: val('propFloors', v => parseInt(v, 10)),
+        },
+        tariff: {
+            type: val('tariffType'),
+            unit_rate_p: val('tariffUnit', parseFloat),
+            standing_charge_p: val('tariffStanding', parseFloat),
+            off_peak_start: val('tariffOpStart'),
+            off_peak_end: val('tariffOpEnd'),
+            off_peak_rate_p: val('tariffOpRate', parseFloat),
+        },
+        boiler: {
+            type: val('boilerType'),
+            output_kw: val('boilerKw', parseFloat),
+            efficiency_percent: val('boilerEff', v => parseInt(v, 10)),
+        },
+        comfort: {
+            target_temp: val('comfortTarget', parseFloat),
+            night_setback: val('comfortSetback', parseFloat),
+            min_temp: val('comfortMin', parseFloat),
+            preheat_max_minutes: val('comfortPreheat', v => parseInt(v, 10)),
+        },
+        zones: workingZones,
+    };
+}
+
+async function saveSettings() {
+    const saveBtn = document.getElementById('btnHeatingSettingsSave');
+    const statusEl = document.getElementById('heatingSettingsStatus');
+    const payload = gatherFormValues();
+
+    for (const z of payload.zones) {
+        if (!z.name || !z.name.trim()) {
+            statusEl.innerHTML = `<span class="text-danger">All zones need a name.</span>`;
+            return;
+        }
+    }
+
+    saveBtn.disabled = true;
+    saveBtn.innerHTML = `<span class="spinner-border spinner-border-sm me-1"></span>Saving…`;
+    statusEl.innerHTML = '';
+
+    try {
+        const res = await fetch('/api/heating/config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ config: payload }),
+        });
+        const json = await res.json();
+        if (!json.success) throw new Error(json.error || 'Save failed');
+
+        statusEl.innerHTML = `<span class="text-success"><i class="fas fa-check me-1"></i>Saved. ${escapeHtml(json.message || '')}</span>`;
+        if (typeof window.showToast === 'function') {
+            window.showToast('Heating settings saved — restart to apply', 'success');
+        }
+
+        setTimeout(() => {
+            const modalEl = document.getElementById('heatingSettingsModal');
+            bootstrap.Modal.getInstance(modalEl)?.hide();
+            lastDashboard = null;
+            loadHeatingDashboard();
+        }, 900);
+    } catch (err) {
+        statusEl.innerHTML = `<span class="text-danger">${escapeHtml(err.message)}</span>`;
+    } finally {
+        saveBtn.disabled = false;
+        saveBtn.innerHTML = `<i class="fas fa-save me-1"></i> Save`;
+    }
+}
+
+// ============================================================================
+// HELPERS
+// ============================================================================
+function selectEl(id, value, options) {
+    const opts = (options || []).map(o =>
+        `<option value="${escapeAttr(o)}" ${o === value ? 'selected' : ''}>${escapeHtml(o)}</option>`
+    ).join('');
+    return `<select class="form-select" id="${id}">${opts}</select>`;
+}
+function kvRow(k, v) {
+    return `<div class="d-flex justify-content-between"><span class="text-muted">${k}</span><span>${v}</span></div>`;
+}
+function spinnerBlock(msg) {
+    return `<div class="text-center text-muted py-5"><div class="spinner-border spinner-border-sm me-2"></div>${escapeHtml(msg)}</div>`;
+}
+function emptyCard(title, message) {
+    return `<div class="card h-100"><div class="card-header">${escapeHtml(title)}</div><div class="card-body text-muted text-center py-4">${escapeHtml(message)}</div></div>`;
+}
+function deepClone(o) { return JSON.parse(JSON.stringify(o)); }
+function formatTemp(t) { return (t == null || isNaN(t)) ? '—' : `${Number(t).toFixed(1)}°C`; }
+function formatNumber(n) { return (n == null || isNaN(n)) ? '—' : Number(n).toLocaleString(); }
+function formatTs(ts) { return ts ? new Date(ts * 1000).toLocaleTimeString() : ''; }
+function escapeHtml(s) {
+    if (s == null) return '';
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+function escapeAttr(s) { return escapeHtml(s); }

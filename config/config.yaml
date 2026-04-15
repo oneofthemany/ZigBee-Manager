@@ -9,6 +9,27 @@ weather:
   poll_interval_minutes: 60
   mqtt_publish: false
 
+
+heating:
+  enabled: true
+  property: { type, age, insulation, glazing, floor_area_m2, floors }
+  tariff: { type, unit_rate_p, standing_charge_p, off_peak_*, off_peak_rate_p }
+  boiler: { type, output_kw, efficiency_percent }
+  comfort: { target_temp, night_setback, min_temp, preheat_max_minutes }
+  zones:
+    - id: living_room
+      name: "Living Room"
+      target_temp: 20.5
+      night_setback: 16.5
+      min_temp: 16.0
+      priority: 5
+      devices: ["00:1e:5e:09:02:a3:e4:c1","00:1e:5e:09:02:a4:49:4b","54:ef:44:10:00:67:3e:a6"]
+      schedule:
+        - days: [mon, tue, wed, thu, fri, sat, sun]
+          start: "07:00"
+          end: "22:00"
+          temp: 20.5
+
 mqtt:
   base_topic: zigbee_manager
   broker_host: 192.168.1.1
