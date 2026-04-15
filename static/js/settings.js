@@ -50,10 +50,12 @@ async function loadStructuredConfig() {
         _currentConfig = data.config;
         renderConfigTab(data.config);
         renderSecurityTab(data.config);
+        renderApisTab(data.config);
     } catch (e) {
         showSettingsAlert('danger', 'Error loading config: ' + e.message);
     }
 }
+
 
 async function saveStructuredConfig() {
     const config = collectFormValues();
@@ -245,6 +247,105 @@ function renderSecurityTab(config) {
     <div id="regenResult" class="mt-2"></div>
     `;
 }
+
+
+// ============================================================================
+// WEATHER TAB RENDER
+// ============================================================================
+
+function renderApisTab(config) {
+    const w = config.weather || {};
+    const el = document.getElementById('apisFormBody');
+    if (!el) return;
+
+    el.innerHTML = `
+    <!-- WEATHER -->
+    <h6 class="text-uppercase text-muted fw-bold mb-3 mt-2 small">
+      <i class="fas fa-cloud-sun me-1"></i> Weather (Open-Meteo)
+    </h6>
+    <p class="text-muted small mb-3">
+      Free weather API — no account or API key required.
+      Provides outdoor temperature, humidity, wind and forecast for heating automation.
+      <a href="https://open-meteo.com" target="_blank" rel="noopener" class="ms-1">open-meteo.com <i class="fas fa-external-link-alt fa-xs"></i></a>
+    </p>
+    <div class="row g-3 mb-4">
+      <div class="col-md-2">
+        <label class="form-label small fw-semibold">Enabled</label>
+        <div class="form-check form-switch mt-1">
+          <input class="form-check-input" type="checkbox" id="cfg_weather_enabled"
+                 ${w.enabled ? 'checked' : ''}>
+        </div>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small fw-semibold">Latitude</label>
+        <input type="number" step="0.0001" class="form-control" id="cfg_weather_lat"
+               value="${w.latitude ?? ''}" placeholder="51.5074">
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small fw-semibold">Longitude</label>
+        <input type="number" step="0.0001" class="form-control" id="cfg_weather_lon"
+               value="${w.longitude ?? ''}" placeholder="-0.1278">
+      </div>
+      <div class="col-md-2">
+        <label class="form-label small fw-semibold">Poll Interval (min)</label>
+        <input type="number" class="form-control" id="cfg_weather_interval"
+               value="${w.poll_interval_minutes ?? 30}" min="5">
+      </div>
+      <div class="col-md-2">
+        <label class="form-label small fw-semibold">MQTT Publish</label>
+        <div class="form-check form-switch mt-1">
+          <input class="form-check-input" type="checkbox" id="cfg_weather_mqtt"
+                 ${w.mqtt_publish ? 'checked' : ''}>
+          <label class="form-check-label small text-muted">HA sensors</label>
+        </div>
+      </div>
+    </div>
+
+    <!-- Live status -->
+    <div id="weatherStatusRow" class="mb-2"></div>
+    <button class="btn btn-outline-secondary btn-sm" onclick="window.refreshWeatherNow()">
+      <i class="fas fa-sync-alt me-1"></i> Fetch Now
+    </button>
+    `;
+
+    loadWeatherStatus();
+}
+
+async function loadWeatherStatus() {
+    const el = document.getElementById('weatherStatusRow');
+    if (!el) return;
+    try {
+        const res = await fetch('/api/weather/current');
+        const data = await res.json();
+        if (data.success) {
+            const d = data.data;
+            el.innerHTML = `
+              <div class="alert alert-info py-2 small mb-2">
+                <i class="fas fa-thermometer-half me-1"></i>
+                <strong>${d.temperature_2m}°C</strong> &nbsp;·&nbsp;
+                ${d.weather_description} &nbsp;·&nbsp;
+                Humidity ${d.relative_humidity_2m}% &nbsp;·&nbsp;
+                Wind ${d.wind_speed_10m} mph &nbsp;·&nbsp;
+                Feels like ${d.apparent_temperature}°C
+              </div>`;
+        } else {
+            el.innerHTML = `<div class="text-muted small">${data.error}</div>`;
+        }
+    } catch (_) {
+        el.innerHTML = `<div class="text-muted small">Weather status unavailable</div>`;
+    }
+}
+
+window.refreshWeatherNow = async function() {
+    const el = document.getElementById('weatherStatusRow');
+    if (el) el.innerHTML = '<span class="text-muted small"><i class="fas fa-spinner fa-spin me-1"></i> Fetching…</span>';
+    try {
+        await fetch('/api/weather/refresh', { method: 'POST' });
+        await loadWeatherStatus();
+    } catch (e) {
+        if (el) el.innerHTML = `<span class="text-danger small">Error: ${e.message}</span>`;
+    }
+};
 
 // ============================================================================
 // CREDENTIAL REGENERATION
@@ -790,7 +891,14 @@ function collectFormValues() {
         },
         logging: {
             level: get('cfg_log_level'),
-        }
+        },
+        weather: {
+            enabled: document.getElementById('cfg_weather_enabled')?.checked ?? false,
+            latitude: parseFloat(document.getElementById('cfg_weather_lat')?.value) || null,
+            longitude: parseFloat(document.getElementById('cfg_weather_lon')?.value) || null,
+            poll_interval_minutes: Number(document.getElementById('cfg_weather_interval')?.value) || 30,
+            mqtt_publish: document.getElementById('cfg_weather_mqtt')?.checked ?? false,
+        },
     };
 }
 

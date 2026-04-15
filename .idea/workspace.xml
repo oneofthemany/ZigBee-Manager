@@ -4,10 +4,18 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="persistence added for keys and database">
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="final improvements on hvac">
       <change afterPath="$PROJECT_DIR$/config/matter_definitions/bilresa.json" afterDir="false" />
       <change afterPath="$PROJECT_DIR$/config/matter_definitions/ikea_e2490_bilresa.json" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/modules/weather.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/routes/weather_routes.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/caches/deviceStreaming.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/caches/deviceStreaming.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/config/config.yaml" beforeDir="false" afterPath="$PROJECT_DIR$/config/config.yaml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/main.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/routes/__init__.py" beforeDir="false" afterPath="$PROJECT_DIR$/routes/__init__.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/static/index.html" beforeDir="false" afterPath="$PROJECT_DIR$/static/index.html" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/static/js/settings.js" beforeDir="false" afterPath="$PROJECT_DIR$/static/js/settings.js" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -157,142 +165,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00254" summary="multipan fix for apply config">
-      <option name="closed" value="true" />
-      <created>1775558444574</created>
-      <option name="number" value="00254" />
-      <option name="presentableId" value="LOCAL-00254" />
-      <option name="project" value="LOCAL" />
-      <updated>1775558444574</updated>
-    </task>
-    <task id="LOCAL-00255" summary="permit join fix">
-      <option name="closed" value="true" />
-      <created>1775558935990</created>
-      <option name="number" value="00255" />
-      <option name="presentableId" value="LOCAL-00255" />
-      <option name="project" value="LOCAL" />
-      <updated>1775558935990</updated>
-    </task>
-    <task id="LOCAL-00256" summary="improvement for matter commisioning button enablement">
-      <option name="closed" value="true" />
-      <created>1775559868098</created>
-      <option name="number" value="00256" />
-      <option name="presentableId" value="LOCAL-00256" />
-      <option name="project" value="LOCAL" />
-      <updated>1775559868098</updated>
-    </task>
-    <task id="LOCAL-00257" summary="update t button enable disable for matter pair">
-      <option name="closed" value="true" />
-      <created>1775560098134</created>
-      <option name="number" value="00257" />
-      <option name="presentableId" value="LOCAL-00257" />
-      <option name="project" value="LOCAL" />
-      <updated>1775560098134</updated>
-    </task>
-    <task id="LOCAL-00258" summary="update thread_state to &quot;leader\ndone&quot;">
-      <option name="closed" value="true" />
-      <created>1775560916983</created>
-      <option name="number" value="00258" />
-      <option name="presentableId" value="LOCAL-00258" />
-      <option name="project" value="LOCAL" />
-      <updated>1775560916983</updated>
-    </task>
-    <task id="LOCAL-00259" summary="ble check added for matter commissioning">
-      <option name="closed" value="true" />
-      <created>1775561925474</created>
-      <option name="number" value="00259" />
-      <option name="presentableId" value="LOCAL-00259" />
-      <option name="project" value="LOCAL" />
-      <updated>1775561925474</updated>
-    </task>
-    <task id="LOCAL-00260" summary="attribute fix for matter automations">
-      <option name="closed" value="true" />
-      <created>1775568522711</created>
-      <option name="number" value="00260" />
-      <option name="presentableId" value="LOCAL-00260" />
-      <option name="project" value="LOCAL" />
-      <updated>1775568522711</updated>
-    </task>
-    <task id="LOCAL-00261" summary="new matter definitions">
-      <option name="closed" value="true" />
-      <created>1775568542069</created>
-      <option name="number" value="00261" />
-      <option name="presentableId" value="LOCAL-00261" />
-      <option name="project" value="LOCAL" />
-      <updated>1775568542069</updated>
-    </task>
-    <task id="LOCAL-00262" summary="matter ep definitions frontend scan">
-      <option name="closed" value="true" />
-      <created>1775573786479</created>
-      <option name="number" value="00262" />
-      <option name="presentableId" value="LOCAL-00262" />
-      <option name="project" value="LOCAL" />
-      <updated>1775573786479</updated>
-    </task>
-    <task id="LOCAL-00263" summary="comment out text">
-      <option name="closed" value="true" />
-      <created>1775578537077</created>
-      <option name="number" value="00263" />
-      <option name="presentableId" value="LOCAL-00263" />
-      <option name="project" value="LOCAL" />
-      <updated>1775578537077</updated>
-    </task>
-    <task id="LOCAL-00264" summary="adding in action buttons to matter def">
-      <option name="closed" value="true" />
-      <created>1775578560258</created>
-      <option name="number" value="00264" />
-      <option name="presentableId" value="LOCAL-00264" />
-      <option name="project" value="LOCAL" />
-      <updated>1775578560258</updated>
-    </task>
-    <task id="LOCAL-00265" summary="removal of debugging moving to packet level debug">
-      <option name="closed" value="true" />
-      <created>1775579074038</created>
-      <option name="number" value="00265" />
-      <option name="presentableId" value="LOCAL-00265" />
-      <option name="project" value="LOCAL" />
-      <updated>1775579074038</updated>
-    </task>
-    <task id="LOCAL-00266" summary="raw data added to debug">
-      <option name="closed" value="true" />
-      <created>1775579145131</created>
-      <option name="number" value="00266" />
-      <option name="presentableId" value="LOCAL-00266" />
-      <option name="project" value="LOCAL" />
-      <updated>1775579145131</updated>
-    </task>
-    <task id="LOCAL-00267" summary="matter definitions dir added">
-      <option name="closed" value="true" />
-      <created>1775648696872</created>
-      <option name="number" value="00267" />
-      <option name="presentableId" value="LOCAL-00267" />
-      <option name="project" value="LOCAL" />
-      <updated>1775648696873</updated>
-    </task>
-    <task id="LOCAL-00268" summary="new rotary bindings">
-      <option name="closed" value="true" />
-      <created>1775648722460</created>
-      <option name="number" value="00268" />
-      <option name="presentableId" value="LOCAL-00268" />
-      <option name="project" value="LOCAL" />
-      <updated>1775648722460</updated>
-    </task>
-    <task id="LOCAL-00269" summary="line removed">
-      <option name="closed" value="true" />
-      <created>1775648735525</created>
-      <option name="number" value="00269" />
-      <option name="presentableId" value="LOCAL-00269" />
-      <option name="project" value="LOCAL" />
-      <updated>1775648735525</updated>
-    </task>
-    <task id="LOCAL-00270" summary="retention of states for action buttons">
-      <option name="closed" value="true" />
-      <created>1775648761061</created>
-      <option name="number" value="00270" />
-      <option name="presentableId" value="LOCAL-00270" />
-      <option name="project" value="LOCAL" />
-      <updated>1775648761061</updated>
     </task>
     <task id="LOCAL-00271" summary="rotary bindings">
       <option name="closed" value="true" />
@@ -550,7 +422,143 @@
       <option name="project" value="LOCAL" />
       <updated>1776069385355</updated>
     </task>
-    <option name="localTasksCounter" value="303" />
+    <task id="LOCAL-00303" summary="updated to cater for install methods">
+      <option name="closed" value="true" />
+      <created>1776070365029</created>
+      <option name="number" value="00303" />
+      <option name="presentableId" value="LOCAL-00303" />
+      <option name="project" value="LOCAL" />
+      <updated>1776070365029</updated>
+    </task>
+    <task id="LOCAL-00304" summary="updated to cater for install methods">
+      <option name="closed" value="true" />
+      <created>1776070371986</created>
+      <option name="number" value="00304" />
+      <option name="presentableId" value="LOCAL-00304" />
+      <option name="project" value="LOCAL" />
+      <updated>1776070371986</updated>
+    </task>
+    <task id="LOCAL-00305" summary="cert dir added">
+      <option name="closed" value="true" />
+      <created>1776070463393</created>
+      <option name="number" value="00305" />
+      <option name="presentableId" value="LOCAL-00305" />
+      <option name="project" value="LOCAL" />
+      <updated>1776070463393</updated>
+    </task>
+    <task id="LOCAL-00306" summary="cert fix in main entry point">
+      <option name="closed" value="true" />
+      <created>1776071006567</created>
+      <option name="number" value="00306" />
+      <option name="presentableId" value="LOCAL-00306" />
+      <option name="project" value="LOCAL" />
+      <updated>1776071006567</updated>
+    </task>
+    <task id="LOCAL-00307" summary="updated to be ./data/device_settings.json">
+      <option name="closed" value="true" />
+      <created>1776174167886</created>
+      <option name="number" value="00307" />
+      <option name="presentableId" value="LOCAL-00307" />
+      <option name="project" value="LOCAL" />
+      <updated>1776174167886</updated>
+    </task>
+    <task id="LOCAL-00308" summary="new permit join and auto bind for hive receivers plus cluster attributes">
+      <option name="closed" value="true" />
+      <created>1776174223127</created>
+      <option name="number" value="00308" />
+      <option name="presentableId" value="LOCAL-00308" />
+      <option name="project" value="LOCAL" />
+      <updated>1776174223127</updated>
+    </task>
+    <task id="LOCAL-00309" summary="new diag attributes to help determine read and write availability for clusters attrs">
+      <option name="closed" value="true" />
+      <created>1776174264366</created>
+      <option name="number" value="00309" />
+      <option name="presentableId" value="LOCAL-00309" />
+      <option name="project" value="LOCAL" />
+      <updated>1776174264366</updated>
+    </task>
+    <task id="LOCAL-00310" summary="DiscoverAttributesRequest added">
+      <option name="closed" value="true" />
+      <created>1776174286637</created>
+      <option name="number" value="00310" />
+      <option name="presentableId" value="LOCAL-00310" />
+      <option name="project" value="LOCAL" />
+      <updated>1776174286638</updated>
+    </task>
+    <task id="LOCAL-00311" summary="adjusted to 0.25 degrees">
+      <option name="closed" value="true" />
+      <created>1776174312800</created>
+      <option name="number" value="00311" />
+      <option name="presentableId" value="LOCAL-00311" />
+      <option name="project" value="LOCAL" />
+      <updated>1776174312800</updated>
+    </task>
+    <task id="LOCAL-00312" summary="last seen and permit join via fixes">
+      <option name="closed" value="true" />
+      <created>1776174346240</created>
+      <option name="number" value="00312" />
+      <option name="presentableId" value="LOCAL-00312" />
+      <option name="project" value="LOCAL" />
+      <updated>1776174346240</updated>
+    </task>
+    <task id="LOCAL-00313" summary="discover_attributes update">
+      <option name="closed" value="true" />
+      <created>1776174365381</created>
+      <option name="number" value="00313" />
+      <option name="presentableId" value="LOCAL-00313" />
+      <option name="project" value="LOCAL" />
+      <updated>1776174365382</updated>
+    </task>
+    <task id="LOCAL-00314" summary="discover_attributes update">
+      <option name="closed" value="true" />
+      <created>1776174375534</created>
+      <option name="number" value="00314" />
+      <option name="presentableId" value="LOCAL-00314" />
+      <option name="project" value="LOCAL" />
+      <updated>1776174375534</updated>
+    </task>
+    <task id="LOCAL-00315" summary="controls updated for hive and standard hvac controls">
+      <option name="closed" value="true" />
+      <created>1776176017255</created>
+      <option name="number" value="00315" />
+      <option name="presentableId" value="LOCAL-00315" />
+      <option name="project" value="LOCAL" />
+      <updated>1776176017255</updated>
+    </task>
+    <task id="LOCAL-00316" summary="removed duplicate attributes">
+      <option name="closed" value="true" />
+      <created>1776176039592</created>
+      <option name="number" value="00316" />
+      <option name="presentableId" value="LOCAL-00316" />
+      <option name="project" value="LOCAL" />
+      <updated>1776176039592</updated>
+    </task>
+    <task id="LOCAL-00317" summary="multi zone  settings added for hvac receivers">
+      <option name="closed" value="true" />
+      <created>1776176095551</created>
+      <option name="number" value="00317" />
+      <option name="presentableId" value="LOCAL-00317" />
+      <option name="project" value="LOCAL" />
+      <updated>1776176095551</updated>
+    </task>
+    <task id="LOCAL-00318" summary="new zbm heating css">
+      <option name="closed" value="true" />
+      <created>1776176119004</created>
+      <option name="number" value="00318" />
+      <option name="presentableId" value="LOCAL-00318" />
+      <option name="project" value="LOCAL" />
+      <updated>1776176119004</updated>
+    </task>
+    <task id="LOCAL-00319" summary="final improvements on hvac">
+      <option name="closed" value="true" />
+      <created>1776242458925</created>
+      <option name="number" value="00319" />
+      <option name="presentableId" value="LOCAL-00319" />
+      <option name="project" value="LOCAL" />
+      <updated>1776242458926</updated>
+    </task>
+    <option name="localTasksCounter" value="320" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -584,21 +592,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="adding in matter definitions" />
-    <MESSAGE value="editor routes removed in error" />
-    <MESSAGE value="reinstating text" />
-    <MESSAGE value="removal of text" />
-    <MESSAGE value="update commission to be aware of resilience watchdog" />
-    <MESSAGE value="get_definition_store bug fix" />
-    <MESSAGE value="improved rotary bindings for ep clock and anti clock" />
-    <MESSAGE value="improved roary bindings definitions" />
-    <MESSAGE value="improved definitions update" />
-    <MESSAGE value="added handlers to from matter_parsers import BaseMatterParser, BasicInfoAttrs" />
-    <MESSAGE value="improvements to boot with matter" />
-    <MESSAGE value="rotary bindings" />
-    <MESSAGE value="delete function added" />
-    <MESSAGE value="project root not app dir for delete" />
-    <MESSAGE value="updated to be root container due to networking requirements for matter" />
     <MESSAGE value="workspace" />
     <MESSAGE value="__security option added for dbus bug" />
     <MESSAGE value="read only to dbus" />
@@ -609,17 +602,21 @@
     <MESSAGE value="device status updated to be responsive per row and not the entire page" />
     <MESSAGE value="debugging remove from prod" />
     <MESSAGE value="persistence added for keys and database" />
-    <option name="LAST_COMMIT_MESSAGE" value="persistence added for keys and database" />
-  </component>
-  <component name="XDebuggerManager">
-    <breakpoint-manager>
-      <breakpoints>
-        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
-          <url>file://$PROJECT_DIR$/core/service.py</url>
-          <line>484</line>
-          <option name="timeStamp" value="1" />
-        </line-breakpoint>
-      </breakpoints>
-    </breakpoint-manager>
+    <MESSAGE value="updated to cater for install methods" />
+    <MESSAGE value="cert dir added" />
+    <MESSAGE value="cert fix in main entry point" />
+    <MESSAGE value="updated to be ./data/device_settings.json" />
+    <MESSAGE value="new permit join and auto bind for hive receivers plus cluster attributes" />
+    <MESSAGE value="new diag attributes to help determine read and write availability for clusters attrs" />
+    <MESSAGE value="DiscoverAttributesRequest added" />
+    <MESSAGE value="adjusted to 0.25 degrees" />
+    <MESSAGE value="last seen and permit join via fixes" />
+    <MESSAGE value="discover_attributes update" />
+    <MESSAGE value="controls updated for hive and standard hvac controls" />
+    <MESSAGE value="removed duplicate attributes" />
+    <MESSAGE value="multi zone  settings added for hvac receivers" />
+    <MESSAGE value="new zbm heating css" />
+    <MESSAGE value="final improvements on hvac" />
+    <option name="LAST_COMMIT_MESSAGE" value="final improvements on hvac" />
   </component>
 </project>

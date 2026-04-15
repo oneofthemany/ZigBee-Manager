@@ -17,6 +17,7 @@ from routes.matter_attribute_routes import register_matter_attribute_routes
 from routes.backup_routes import register_backup_routes
 from routes.matter_definitions_routes import register_matter_definition_routes
 from routes.rotary_bindings_routes import register_rotary_binding_routes
+from routes.weather_routes import register_weather_routes
 
 
 __all__ = [
@@ -35,6 +36,7 @@ __all__ = [
     'register_matter_definition_routes',
     'register_test_recovery_routes',
     'register_websocket_routes',
+    'register_weather_routes',
     'manager',
     'broadcast_event',
 ]

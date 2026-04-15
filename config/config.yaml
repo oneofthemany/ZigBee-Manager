@@ -2,6 +2,13 @@ database:
   url: sqlite:///zigbee.db
   path: ./data/zigbee.db
 
+weather:
+  enabled: true
+  latitude:
+  longitude:
+  poll_interval_minutes: 60
+  mqtt_publish: false
+
 mqtt:
   base_topic: zigbee_manager
   broker_host: 192.168.1.1
