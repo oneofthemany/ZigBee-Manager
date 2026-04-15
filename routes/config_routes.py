@@ -55,6 +55,7 @@ def register_config_routes(app: FastAPI, get_zigbee_service):
                     "web": {k: v for k, v in cfg.get("web", {}).items() if k != "ssl"},
                     "web_ssl": cfg.get("web", {}).get("ssl", {}),
                     "logging": cfg.get("logging", {}),
+                    "weather": cfg.get("weather", {}),
                 }
             }
         except Exception as e:
@@ -77,6 +78,20 @@ def register_config_routes(app: FastAPI, get_zigbee_service):
                 cfg.setdefault("web", {}).setdefault("ssl", {}).update(incoming["web_ssl"])
             if "logging" in incoming:
                 cfg.setdefault("logging", {}).update(incoming["logging"])
+
+            if "weather" in incoming:
+                w = incoming["weather"]
+                weather_cfg = cfg.setdefault("weather", {})
+                if "enabled" in w:
+                    weather_cfg["enabled"] = bool(w["enabled"])
+                if w.get("latitude") is not None:
+                    weather_cfg["latitude"] = float(w["latitude"])
+                if w.get("longitude") is not None:
+                    weather_cfg["longitude"] = float(w["longitude"])
+                if w.get("poll_interval_minutes"):
+                    weather_cfg["poll_interval_minutes"] = int(w["poll_interval_minutes"])
+                if "mqtt_publish" in w:
+                    weather_cfg["mqtt_publish"] = bool(w["mqtt_publish"])
 
             if "zigbee" in incoming:
                 z = incoming["zigbee"]

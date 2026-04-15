@@ -4,18 +4,11 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="final improvements on hvac">
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="spaces added">
       <change afterPath="$PROJECT_DIR$/config/matter_definitions/bilresa.json" afterDir="false" />
       <change afterPath="$PROJECT_DIR$/config/matter_definitions/ikea_e2490_bilresa.json" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/modules/weather.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/routes/weather_routes.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/caches/deviceStreaming.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/caches/deviceStreaming.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/config/config.yaml" beforeDir="false" afterPath="$PROJECT_DIR$/config/config.yaml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/main.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/routes/__init__.py" beforeDir="false" afterPath="$PROJECT_DIR$/routes/__init__.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/static/index.html" beforeDir="false" afterPath="$PROJECT_DIR$/static/index.html" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/static/js/settings.js" beforeDir="false" afterPath="$PROJECT_DIR$/static/js/settings.js" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/routes/config_routes.py" beforeDir="false" afterPath="$PROJECT_DIR$/routes/config_routes.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -165,22 +158,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00271" summary="rotary bindings">
-      <option name="closed" value="true" />
-      <created>1775648795289</created>
-      <option name="number" value="00271" />
-      <option name="presentableId" value="LOCAL-00271" />
-      <option name="project" value="LOCAL" />
-      <updated>1775648795289</updated>
-    </task>
-    <task id="LOCAL-00272" summary="frontend reload fixed">
-      <option name="closed" value="true" />
-      <created>1775648824889</created>
-      <option name="number" value="00272" />
-      <option name="presentableId" value="LOCAL-00272" />
-      <option name="project" value="LOCAL" />
-      <updated>1775648824889</updated>
     </task>
     <task id="LOCAL-00273" summary="removal of text">
       <option name="closed" value="true" />
@@ -558,7 +535,23 @@
       <option name="project" value="LOCAL" />
       <updated>1776242458926</updated>
     </task>
-    <option name="localTasksCounter" value="320" />
+    <task id="LOCAL-00320" summary="weather api added for smart heating function">
+      <option name="closed" value="true" />
+      <created>1776244884209</created>
+      <option name="number" value="00320" />
+      <option name="presentableId" value="LOCAL-00320" />
+      <option name="project" value="LOCAL" />
+      <updated>1776244884209</updated>
+    </task>
+    <task id="LOCAL-00321" summary="spaces added">
+      <option name="closed" value="true" />
+      <created>1776244905791</created>
+      <option name="number" value="00321" />
+      <option name="presentableId" value="LOCAL-00321" />
+      <option name="project" value="LOCAL" />
+      <updated>1776244905791</updated>
+    </task>
+    <option name="localTasksCounter" value="322" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -592,8 +585,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="workspace" />
-    <MESSAGE value="__security option added for dbus bug" />
     <MESSAGE value="read only to dbus" />
     <MESSAGE value="removal of ro - needs to be open" />
     <MESSAGE value="sec option added" />
@@ -617,6 +608,8 @@
     <MESSAGE value="multi zone  settings added for hvac receivers" />
     <MESSAGE value="new zbm heating css" />
     <MESSAGE value="final improvements on hvac" />
-    <option name="LAST_COMMIT_MESSAGE" value="final improvements on hvac" />
+    <MESSAGE value="weather api added for smart heating function" />
+    <MESSAGE value="spaces added" />
+    <option name="LAST_COMMIT_MESSAGE" value="spaces added" />
   </component>
 </project>
