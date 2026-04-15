@@ -23,7 +23,7 @@ heating:
       night_setback: 16.5
       min_temp: 16.0
       priority: 5
-      devices: ["00:1e:5e:09:02:a3:e4:c1","00:1e:5e:09:02:a4:49:4b","54:ef:44:10:00:67:3e:a6"]
+      devices: ["00:1e:5e",...]
       schedule:
         - days: [mon, tue, wed, thu, fri, sat, sun]
           start: "07:00"
