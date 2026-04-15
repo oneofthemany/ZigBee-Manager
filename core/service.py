@@ -651,9 +651,9 @@ class ZigbeeService(
             logger.warning(f"[{ieee}] No endpoints discovered after 2s delay")
 
     def device_initialized(self, device: zigpy.device.Device):
-        """Called when a device is fully initialized."""
+        """Called when a device is fully initialised."""
         ieee = str(device.ieee)
-        logger.info(f"Device initialized: {ieee}")
+        logger.info(f"Device initialised: {ieee}")
 
         if ieee in self.devices:
             self.devices[ieee] = ZigManDevice(self, device)
@@ -1501,8 +1501,8 @@ class ZigbeeService(
             # Step 2: Read all discovered attributes and test write access
             attributes = []
             for attr_id in sorted(discovered_ids):
-                #if attr_id > 0xF000:
-                    #continue  # Skip most manufacturer-specific
+                if attr_id > 0xF000:
+                    continue  # Skip most manufacturer-specific
 
                 # Get name from zigpy definition
                 name = f"0x{attr_id:04X}"
