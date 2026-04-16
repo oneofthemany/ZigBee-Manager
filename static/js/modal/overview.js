@@ -65,7 +65,7 @@ export function renderOverviewTab(device) {
         'hvac_action', //'running_state',
         'current_temperature', 'local_temperature',
         'internal_temperature',
-        //'heating_setpoint',
+        'heating_setpoint',
         'target_temp', 'temperature_setpoint',
     ];
 
