@@ -324,12 +324,23 @@ class ZigManDevice:
                 logger.info(f"[{self.ieee}] Applied Philips Hue Motion quirk: sensors on EP2")
         # === END QUIRK ===
 
+        # === HANDLER OVERRIDES (model-specific handler subclasses) ===
+        handler_overrides = {}
+
+        if "slr" in model or "receiver" in model:
+            from handlers.hvac import HiveReceiverHandler
+            handler_overrides[0x0201] = HiveReceiverHandler
+            logger.info(f"[{self.ieee}] Applied Hive Receiver quirk: HiveReceiverHandler for 0x0201")
+        # === END HANDLER OVERRIDES ===
+
         for ep_id, ep in self.zigpy_dev.endpoints.items():
             if ep_id == 0: continue
 
             def attach_handler(cluster, is_server=True):
                 cid = cluster.cluster_id
-                handler_cls = HANDLER_REGISTRY.get(cid)
+
+                # Check device-specific overrides first, then global registry
+                handler_cls = handler_overrides.get(cid) or HANDLER_REGISTRY.get(cid)
 
                 if not handler_cls:
                     if cid in SKIP_GENERIC_CLUSTERS:
@@ -1001,6 +1012,7 @@ class ZigManDevice:
             # HVAC COMMANDS - route to handler if process_command exists
             if not success and command in ['temperature', 'system_mode']:
                 h = get_handler(0x0201)
+                logger.info(f"[{self.ieee}] HVAC handler lookup: {type(h).__name__ if h else 'None'}")
                 if h:
                     if hasattr(h, 'process_command'):
                         h.process_command(command, value)
