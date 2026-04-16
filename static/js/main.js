@@ -56,6 +56,7 @@ import {
     toggleVerboseLogging,
     viewDebugPackets,
     refreshDebugPackets,
+    exportDebugPackets,
     clearDebugFilters,
     downloadDebugLog
 } from './logging.js';
@@ -128,6 +129,7 @@ window.toggleDebug = toggleDebug;
 window.toggleVerboseLogging = toggleVerboseLogging;
 window.viewDebugPackets = viewDebugPackets;
 window.refreshDebugPackets = refreshDebugPackets;
+window.exportDebugPackets = exportDebugPackets;
 window.clearDebugFilters = clearDebugFilters;
 window.downloadDebugLog = downloadDebugLog;
 

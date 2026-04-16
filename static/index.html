@@ -1103,9 +1103,14 @@
                     <div class="col-md-3">
                         <input type="text" id="packetClusterFilter" class="form-control form-control-sm" placeholder="Cluster ID (e.g. 0x0406)">                    </div>
                     <div class="col-md-3">
-                        <button class="btn btn-sm btn-primary w-100" onclick="refreshDebugPackets()">
-                            <i class="fas fa-sync"></i> Refresh
-                        </button>
+                        <div class="btn-group w-100">
+                            <button class="btn btn-sm btn-primary" onclick="refreshDebugPackets()">
+                                <i class="fas fa-sync"></i> Refresh
+                            </button>
+                            <button class="btn btn-sm btn-outline-success" onclick="exportDebugPackets()" title="Export filtered packets to JSON">
+                                <i class="fas fa-download"></i> Export
+                            </button>
+                        </div>
                     </div>
                 </div>
                 <div id="debugPacketsContent" style="max-height: 60vh; overflow-y: auto;">

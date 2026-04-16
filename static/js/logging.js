@@ -337,6 +337,116 @@ export async function refreshDebugPackets() {
     }
 }
 
+export async function exportDebugPackets() {
+    const importanceFilter = document.getElementById('packetImportanceFilter')?.value || '';
+    const ieeeFilter       = document.getElementById('packetIeeeFilter')?.value?.trim() || '';
+    const clusterFilter    = document.getElementById('packetClusterFilter')?.value?.trim() || '';
+
+    // Build query — fetch all matching packets (high limit) respecting current filters
+    const params = new URLSearchParams({ limit: '10000' });
+    if (importanceFilter) params.append('importance', importanceFilter);
+    if (ieeeFilter)       params.append('ieee', ieeeFilter);
+    if (clusterFilter) {
+        const clusterInt = clusterFilter.startsWith('0x')
+            ? parseInt(clusterFilter, 16)
+            : parseInt(clusterFilter, 10);
+        if (!isNaN(clusterInt)) params.append('cluster', clusterInt.toString());
+    }
+
+    try {
+        const res  = await fetch(`/api/debug/packets?${params.toString()}`);
+        const data = await res.json();
+
+        if (!data.success) {
+            alert('Failed to fetch packets: ' + (data.error || 'unknown error'));
+            return;
+        }
+
+        const packets = data.packets || [];
+        if (packets.length === 0) {
+            alert('No packets to export.');
+            return;
+        }
+
+        // Enrich each packet with device info + analysis
+        const enriched = packets.map(p => {
+            const device   = state.deviceCache[p.ieee] || {};
+            const isMatter = p.protocol === 'matter';
+            let analysis;
+            try {
+                if (isMatter) {
+                    analysis = {
+                        cluster_name: p.cluster_name || `Cluster ${p.cluster || '?'}`,
+                        command:      p.event || p.data?.command_name || 'event',
+                        summary:      p.summary || ''
+                    };
+                } else {
+                    analysis = analysePacket(p);
+                }
+            } catch {
+                analysis = {
+                    cluster_name: p.cluster_name || `0x${(p.cluster || 0).toString(16).padStart(4, '0')}`,
+                    command:      p.decoded?.command_name || p.decoded?.command_id_hex || 'Unknown',
+                    summary:      ''
+                };
+            }
+
+            return {
+                time:     p.timestamp ? new Date(p.timestamp * 1000).toISOString() : null,
+                time_raw: p.timestamp,
+                device:   device.friendly_name || p.friendly_name || device.name || 'Unknown',
+                type:     device.model || device.model_id || null,
+                ieee:     p.ieee || null,
+                protocol: p.protocol || 'zigbee',
+                endpoint: p.endpoint || null,
+                cluster:  p.cluster !== undefined ? `0x${p.cluster.toString(16).padStart(4, '0')}` : null,
+                cluster_name: analysis.cluster_name,
+                command:  analysis.command,
+                summary:  analysis.summary,
+                importance: p.importance || null,
+                raw:      p.decoded || p.data || p,
+            };
+        });
+
+        const filterInfo = [];
+        if (importanceFilter) filterInfo.push(`importance=${importanceFilter}`);
+        if (ieeeFilter)       filterInfo.push(`ieee=${ieeeFilter}`);
+        if (clusterFilter)    filterInfo.push(`cluster=${clusterFilter}`);
+
+        const payload = {
+            exported_at: new Date().toISOString(),
+            filters:     filterInfo.length ? filterInfo.join(', ') : 'none',
+            count:       enriched.length,
+            packets:     enriched
+        };
+
+        // Build filename with filter hints
+        const ts = new Date().toISOString().replace(/[:.]/g, '-').split('T')[0];
+        const parts = ['packets', ts];
+        if (ieeeFilter)       parts.push(ieeeFilter.replace(/:/g, ''));
+        if (clusterFilter)    parts.push(clusterFilter.replace(/^0x/i, 'c'));
+        if (importanceFilter) parts.push(importanceFilter);
+        const filename = parts.join('_') + '.json';
+
+        // Trigger download
+        const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+        const url  = URL.createObjectURL(blob);
+        const a    = document.createElement('a');
+        a.href     = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(() => {
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }, 100);
+
+    } catch (e) {
+        console.error('Export error:', e);
+        alert('Export failed: ' + e.message);
+    }
+}
+
 function renderDebugPacketTable() {
     const content = document.getElementById('debugPacketsContent');
     if (!content) return;
