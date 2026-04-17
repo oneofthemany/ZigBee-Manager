@@ -1491,18 +1491,43 @@ class ZigbeeService(
                     result = await cluster.discover_attributes(0, 255)
                 if result:
                     for item in result:
-                        attr_id = item if isinstance(item, int) else getattr(item, 'attrid', item)
-                        discovered_ids.add(attr_id)
+                        try:
+                            attr_id = item if isinstance(item, int) else getattr(item, 'attrid', None)
+                            if attr_id is not None and isinstance(attr_id, int):
+                                discovered_ids.add(attr_id)
+                        except (TypeError, AttributeError):
+                            continue
             except Exception as e:
                 logger.warning(f"[{ieee}] Discover attributes failed: {e}")
-                # Fallback: use zigpy cluster definition
+
+            # For manufacturer-specific clusters (0xFC00+), also try extended range
+            if cluster_id >= 0xFC00 or not discovered_ids:
+                scan_ranges = [(0x0000, 0x0020)]
+                if cluster_id >= 0xFC00:
+                    scan_ranges = [(0x0000, 0x0050)]
+                for start, end in scan_ranges:
+                    for attr_id in range(start, end):
+                        if attr_id in discovered_ids:
+                            continue
+                        try:
+                            async with asyncio.timeout(2.0):
+                                read_result = await cluster.read_attributes([attr_id])
+                            if read_result:
+                                success_attrs = read_result[0] if read_result else {}
+                                failure_attrs = read_result[1] if len(read_result) > 1 else {}
+                                # Only add if attr is in success dict (not in failures)
+                                if attr_id in success_attrs and attr_id not in failure_attrs:
+                                    discovered_ids.add(attr_id)
+                        except Exception:
+                            continue
+
+            # Fallback: use zigpy cluster definition if nothing discovered
+            if not discovered_ids and cluster.attributes:
                 discovered_ids = set(cluster.attributes.keys())
 
             # Step 2: Read all discovered attributes and test write access
             attributes = []
             for attr_id in sorted(discovered_ids):
-                if attr_id > 0xF000:
-                    continue  # Skip most manufacturer-specific
 
                 # Get name from zigpy definition
                 name = f"0x{attr_id:04X}"
@@ -1579,6 +1604,163 @@ class ZigbeeService(
         except Exception as e:
             logger.error(f"[{ieee}] Attribute discovery failed: {e}")
             return {"success": False, "error": str(e)}
+
+    async def get_device_config(self, ieee):
+        """
+        Retrieve complete device configuration:
+        - Device identification (manufacturer, model, NWK, power source)
+        - Node descriptor
+        - Endpoints, clusters, attribute values
+        - ZDO binding table
+        - ZDO neighbor table (routers only)
+        """
+        if ieee not in self.devices:
+            return {"success": False, "error": "Device not found"}
+
+        zdev = self.devices[ieee]
+        zigpy_dev = zdev.zigpy_dev
+
+        config = {
+            "ieee": ieee,
+            "nwk": f"0x{zigpy_dev.nwk:04X}" if zigpy_dev.nwk else None,
+            "manufacturer": str(zigpy_dev.manufacturer or ""),
+            "model": str(zigpy_dev.model or ""),
+            "quirk": str(type(zigpy_dev).__module__) if type(zigpy_dev).__module__ != 'zigpy.device' else None,
+            "is_initialized": zigpy_dev.is_initialized,
+            "lqi": getattr(zigpy_dev, 'lqi', None),
+            "rssi": getattr(zigpy_dev, 'rssi', None),
+            "last_seen": getattr(zigpy_dev, 'last_seen', None),
+            "node_descriptor": None,
+            "endpoints": [],
+            "bindings": [],
+            "neighbors": [],
+            "state": dict(zdev.state) if hasattr(zdev, 'state') else {},
+            "device_settings": self.device_settings.get(ieee, {}),
+        }
+
+        # Node descriptor
+        if zigpy_dev.node_desc:
+            nd = zigpy_dev.node_desc
+            config["node_descriptor"] = {
+                "logical_type": str(nd.logical_type).split('.')[-1] if nd.logical_type else None,
+                "manufacturer_code": nd.manufacturer_code,
+                "maximum_buffer_size": nd.maximum_buffer_size,
+                "maximum_incoming_transfer_size": nd.maximum_incoming_transfer_size,
+                "maximum_outgoing_transfer_size": nd.maximum_outgoing_transfer_size,
+                "mac_capability_flags": int(nd.mac_capability_flags) if nd.mac_capability_flags else 0,
+                "is_mains_powered": getattr(nd, 'is_mains_powered', None),
+                "is_router": getattr(nd, 'is_router', None),
+                "is_end_device": getattr(nd, 'is_end_device', None),
+                "is_receiver_on_when_idle": getattr(nd, 'is_receiver_on_when_idle', None),
+            }
+
+        # Endpoints with clusters and attribute values
+        for ep_id, ep in zigpy_dev.endpoints.items():
+            if ep_id == 0:
+                continue
+
+            ep_data = {
+                "endpoint_id": ep_id,
+                "profile": getattr(ep, 'profile_id', None),
+                "device_type": getattr(ep, 'device_type', None),
+                "input_clusters": [],
+                "output_clusters": [],
+            }
+
+            for cluster_id, cluster in (ep.in_clusters or {}).items():
+                cluster_info = {
+                    "id": f"0x{cluster_id:04X}",
+                    "id_int": cluster_id,
+                    "name": cluster.name if hasattr(cluster, 'name') else None,
+                    "attributes": {},
+                }
+
+                # Get cached attribute values (no network I/O — use what we already have)
+                try:
+                    attrs_cache = getattr(cluster, '_attr_cache', {}) or {}
+                    for attr_id, val in attrs_cache.items():
+                        if hasattr(val, 'value'):
+                            val = val.value
+                        attr_name = None
+                        if attr_id in cluster.attributes:
+                            attr_def = cluster.attributes[attr_id]
+                            attr_name = attr_def.name if hasattr(attr_def, 'name') else None
+                        try:
+                            safe_val = prepare_for_json({0: val})[0]
+                        except Exception:
+                            safe_val = str(val)
+                        cluster_info["attributes"][f"0x{attr_id:04X}"] = {
+                            "name": attr_name,
+                            "value": safe_val,
+                        }
+                except Exception as e:
+                    cluster_info["attributes_error"] = str(e)
+
+                ep_data["input_clusters"].append(cluster_info)
+
+            for cluster_id, cluster in (ep.out_clusters or {}).items():
+                ep_data["output_clusters"].append({
+                    "id": f"0x{cluster_id:04X}",
+                    "id_int": cluster_id,
+                    "name": cluster.name if hasattr(cluster, 'name') else None,
+                })
+
+            config["endpoints"].append(ep_data)
+
+        # ZDO binding table
+        try:
+            async with asyncio.timeout(5.0):
+                result = await zigpy_dev.zdo.Mgmt_Bind_req(0)
+            if result and len(result) >= 3:
+                status, _, binding_list = result[0], result[1], result[2]
+                for b in binding_list or []:
+                    try:
+                        config["bindings"].append({
+                            "src_ieee": str(b.SrcAddress) if hasattr(b, 'SrcAddress') else None,
+                            "src_endpoint": getattr(b, 'SrcEndpoint', None),
+                            "cluster": f"0x{b.ClusterId:04X}" if hasattr(b, 'ClusterId') else None,
+                            "dst_ieee": str(b.DstAddress) if hasattr(b, 'DstAddress') else None,
+                            "dst_endpoint": getattr(b, 'DstEndpoint', None),
+                        })
+                    except Exception:
+                        pass
+        except asyncio.TimeoutError:
+            config["bindings_error"] = "Timeout"
+        except Exception as e:
+            config["bindings_error"] = str(e)
+
+        # ZDO neighbor table (routers only)
+        try:
+            if config.get("node_descriptor", {}).get("is_router"):
+                async with asyncio.timeout(5.0):
+                    result = await zigpy_dev.zdo.Mgmt_Lqi_req(0)
+                if result and len(result) >= 3:
+                    status, _, neighbor_list = result[0], result[1], result[2]
+                    for n in neighbor_list or []:
+                        try:
+                            config["neighbors"].append({
+                                "ieee": str(n.IEEEAddr) if hasattr(n, 'IEEEAddr') else None,
+                                "nwk": f"0x{n.NWKAddr:04X}" if hasattr(n, 'NWKAddr') else None,
+                                "device_type": getattr(n, 'DeviceType', None),
+                                "rx_on_when_idle": getattr(n, 'RxOnWhenIdle', None),
+                                "relationship": str(getattr(n, 'Relationship', '')),
+                                "depth": getattr(n, 'Depth', None),
+                                "lqi": getattr(n, 'LQI', None),
+                            })
+                        except Exception:
+                            pass
+        except asyncio.TimeoutError:
+            config["neighbors_error"] = "Timeout"
+        except Exception as e:
+            config["neighbors_error"] = str(e)
+
+        # Serialize everything safely for JSON
+        try:
+            config = prepare_for_json(config)
+        except Exception:
+            pass
+
+        return {"success": True, "config": config}
 
     async def bind_devices(self, source_ieee, target_ieee, cluster_id):
         """Bind a source device to a target device."""
