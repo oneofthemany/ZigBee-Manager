@@ -563,68 +563,112 @@ class AqaraManufacturerCluster(ClusterHandler):
 
     async def write_attribute(self, attr_id: int, value: Any) -> bool:
         """
-        Write attribute with correct Cluster Routing and Type Casting.
-        Fixes UNSUPPORTED_ATTRIBUTE errors by targeting the Aqara Opple Cluster (0xFCC0)
-        for proprietary attributes.
+        Write a manufacturer-specific attribute on the Aqara Opple cluster (0xFCC0).
+
+        Uses write_attributes_raw with a manually-built foundation.Attribute so
+        we don't depend on zigpy having a schema for these proprietary attrs
+        (which would otherwise raise KeyError(<attr_id>) during schema lookup).
+        Also robust to the several response shapes zigpy can return on success.
         """
         from zigpy import types as t
+        from zigpy.zcl import foundation
 
-        # 1. Determine Type & Cast Value
-        # Uses the ATTR_TYPES dictionary you defined at the class level
+        # 1) Coerce value to the declared zigpy type
         target_type = self.ATTR_TYPES.get(attr_id, t.uint8_t)
-
         try:
-            # Safely cast the incoming value (e.g., Python bool True -> Zigbee uint8 1)
             val_converted = target_type(value)
-        except ValueError:
-            logger.error(f"[{self.device.ieee}] Type Error: Could not cast {value} to {target_type.__name__}")
-            return False
-
-        # 2. Determine Target Cluster (The Critical Fix)
-        # Default to the handler's main cluster (usually Thermostat 0x0201)
-        target_cluster = self.cluster
-
-        # Logic: Aqara custom attributes (usually 0x02xx) do not exist on the standard Thermostat cluster.
-        # They live on the Manufacturer Specific "Opple" Cluster (0xFCC0).
-        if attr_id >= 0x0200:
-            OPPLE_CLUSTER_ID = 0xFCC0
-
-            # Check if this device actually has the Opple cluster on this endpoint
-            if hasattr(self.cluster, 'endpoint') and OPPLE_CLUSTER_ID in self.cluster.endpoint.in_clusters:
-                target_cluster = self.cluster.endpoint.in_clusters[OPPLE_CLUSTER_ID]
-                logger.debug(f"[{self.device.ieee}] Routing custom attr 0x{attr_id:04X} to Opple Cluster (0xFCC0)")
-            else:
-                logger.warning(f"[{self.device.ieee}] target is Aqara specific (0x{attr_id:04X}) but Cluster 0xFCC0 was not found on endpoint!")
-
-        # 3. Perform the Write
-        try:
-            logger.info(f"[{self.device.ieee}] Writing 0x{attr_id:04X}={val_converted} to Cluster 0x{target_cluster.cluster_id:04X} (Type: {target_type.__name__})")
-
-            # Manufacturer code 0x115F (Lumi) is strictly required for these attributes
-            result = await target_cluster.write_attributes(
-                {attr_id: val_converted},
-                manufacturer=self.MANUFACTURER_CODE
+        except (ValueError, TypeError) as e:
+            logger.error(
+                f"[{self.device.ieee}] write 0x{attr_id:04X}: "
+                f"cast {value!r} -> {target_type.__name__} failed: {e}"
             )
-
-            # 4. Check Result
-            if result and isinstance(result, (list, tuple)) and len(result) > 0:
-                record = result[0]
-                # Extract status code (handle both object and raw int responses)
-                status = record.status if hasattr(record, 'status') else record
-
-                if status == 0: # Status.SUCCESS
-                    logger.info(f"[{self.device.ieee}] ✓ Write Success")
-                    return True
-                else:
-                    logger.warning(f"[{self.device.ieee}] Write Failed with Status: {status} (0x{status:02X})")
-                    return False
-
-            # Fallback if result format is unexpected
             return False
 
+        # 2) Pick the right cluster. Aqara 0x02xx attrs live on Opple (0xFCC0).
+        target_cluster = self.cluster
+        if attr_id >= 0x0200 and hasattr(self.cluster, "endpoint"):
+            opple = self.cluster.endpoint.in_clusters.get(0xFCC0)
+            if opple is not None:
+                target_cluster = opple
+            else:
+                logger.warning(
+                    f"[{self.device.ieee}] 0x{attr_id:04X} requested but "
+                    f"0xFCC0 not present on endpoint"
+                )
+                return False
+
+        # 3) Build the Attribute record manually (bypass zigpy schema lookup)
+        try:
+            type_id = foundation.DATA_TYPES.pytype_to_datatype_id(target_type)
         except Exception as e:
-            logger.error(f"[{self.device.ieee}] Write Exception: {e}")
+            logger.error(
+                f"[{self.device.ieee}] No zigpy data-type id for "
+                f"{target_type.__name__}: {e}"
+            )
             return False
+
+        attr = foundation.Attribute(attrid=attr_id, value=foundation.TypeValue())
+        attr.value.type = type_id
+        attr.value.value = val_converted
+
+        logger.info(
+            f"[{self.device.ieee}] Writing 0x{attr_id:04X}={val_converted} "
+            f"to cluster 0x{target_cluster.cluster_id:04X} "
+            f"(type=0x{type_id:02X} {target_type.__name__})"
+        )
+
+        # 4) Send write via write_attributes_raw (no schema lookup)
+        try:
+            result = await target_cluster.write_attributes_raw(
+                [attr], manufacturer=self.MANUFACTURER_CODE
+            )
+        except Exception as e:
+            logger.error(
+                f"[{self.device.ieee}] Write 0x{attr_id:04X} exception: "
+                f"{type(e).__name__}: {e}"
+            )
+            return False
+
+        # 5) Parse the response robustly. zigpy returns shapes like:
+        #      [[Record(status=0)]]
+        #      [[Record(status=X, attrid=Y), ...]]
+        #      [Record(status=0)]
+        records = result
+        while (
+                isinstance(records, (list, tuple))
+                and len(records) == 1
+                and isinstance(records[0], (list, tuple))
+        ):
+            records = records[0]
+
+        if not isinstance(records, (list, tuple)) or not records:
+            logger.warning(
+                f"[{self.device.ieee}] Unexpected write result for "
+                f"0x{attr_id:04X}: {result!r}"
+            )
+            return False
+
+        record = records[0]
+        status = getattr(record, "status", record)
+        try:
+            status_int = int(status)
+        except (TypeError, ValueError):
+            logger.warning(
+                f"[{self.device.ieee}] Unparseable write status for "
+                f"0x{attr_id:04X}: {status!r} (raw result={result!r})"
+            )
+            return False
+
+        if status_int == 0:
+            logger.info(
+                f"[{self.device.ieee}] ✓ Write 0x{attr_id:04X} succeeded"
+            )
+            return True
+        logger.warning(
+            f"[{self.device.ieee}] Write 0x{attr_id:04X} failed: "
+            f"status=0x{status_int:02X}"
+        )
+        return False
 
 
     async def read_attribute(self, attr_id: int) -> Any:

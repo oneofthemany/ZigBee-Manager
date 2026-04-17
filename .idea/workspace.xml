@@ -4,16 +4,10 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="config export and stop skipping  manufacturer specific attributes">
-      <change beforePath="$PROJECT_DIR$/.idea/misc.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/misc.xml" afterDir="false" />
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="aqara updates for new heating controller">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/device.py" beforeDir="false" afterPath="$PROJECT_DIR$/device.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/handlers/aqara.py" beforeDir="false" afterPath="$PROJECT_DIR$/handlers/aqara.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/modules/heating_controller.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/heating_controller.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/routes/heating_controller_routes.py" beforeDir="false" afterPath="$PROJECT_DIR$/routes/heating_controller_routes.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/static/js/device-modal.js" beforeDir="false" afterPath="$PROJECT_DIR$/static/js/device-modal.js" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/static/js/modal/control.js" beforeDir="false" afterPath="$PROJECT_DIR$/static/js/modal/control.js" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/static/js/state.js" beforeDir="false" afterPath="$PROJECT_DIR$/static/js/state.js" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -163,14 +157,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00278" summary="adding in matter definitions">
-      <option name="closed" value="true" />
-      <created>1775650928642</created>
-      <option name="number" value="00278" />
-      <option name="presentableId" value="LOCAL-00278" />
-      <option name="project" value="LOCAL" />
-      <updated>1775650928642</updated>
     </task>
     <task id="LOCAL-00279" summary="editor routes removed in error">
       <option name="closed" value="true" />
@@ -556,7 +542,15 @@
       <option name="project" value="LOCAL" />
       <updated>1776423083421</updated>
     </task>
-    <option name="localTasksCounter" value="327" />
+    <task id="LOCAL-00327" summary="aqara updates for new heating controller">
+      <option name="closed" value="true" />
+      <created>1776429764164</created>
+      <option name="number" value="00327" />
+      <option name="presentableId" value="LOCAL-00327" />
+      <option name="project" value="LOCAL" />
+      <updated>1776429764164</updated>
+    </task>
+    <option name="localTasksCounter" value="328" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -583,7 +577,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="device status updated to be responsive per row and not the entire page" />
     <MESSAGE value="debugging remove from prod" />
     <MESSAGE value="persistence added for keys and database" />
     <MESSAGE value="updated to cater for install methods" />
@@ -608,6 +601,7 @@
     <MESSAGE value="mac removal" />
     <MESSAGE value="heatpoint hold added" />
     <MESSAGE value="config export and stop skipping  manufacturer specific attributes" />
-    <option name="LAST_COMMIT_MESSAGE" value="config export and stop skipping  manufacturer specific attributes" />
+    <MESSAGE value="aqara updates for new heating controller" />
+    <option name="LAST_COMMIT_MESSAGE" value="aqara updates for new heating controller" />
   </component>
 </project>

@@ -58,6 +58,42 @@ function isAqaraTRV(device) {
     return (aqaraLike && trvMarker) || model.includes('agl001');
 }
 
+
+function getTemperatureSources(excludeIeee) {
+    const out = [];
+    const cache = state.deviceCache || {};
+    for (const [ieee, dev] of Object.entries(cache)) {
+        if (!dev || ieee === excludeIeee) continue;
+        const s = dev.state || {};
+        let temp = null;
+        for (const k of ['temperature', 'local_temperature', 'current_temperature', 'internal_temperature']) {
+            const v = s[k];
+            const f = (v == null) ? NaN : Number(v);
+            if (!isNaN(f) && f !== 0 && f > -40 && f < 80) { temp = f; break; }
+        }
+        if (temp == null) continue;
+        out.push({
+            ieee,
+            name: dev.friendly_name || dev.name || ieee,
+            model: dev.model || '',
+            temperature: temp
+        });
+    }
+    out.sort((a, b) => a.name.localeCompare(b.name));
+    return out;
+}
+
+function renderTempSourceOptions(excludeIeee) {
+    const sources = getTemperatureSources(excludeIeee);
+    const header = `<option value="">— Manual entry —</option>`;
+    if (!sources.length) {
+        return header + `<option value="" disabled>No temperature-reporting devices found</option>`;
+    }
+    return header + sources.map(src =>
+        `<option value="${src.ieee}">${src.name} (${src.temperature.toFixed(1)}°C)</option>`
+    ).join('');
+}
+
 function heatingManagedBanner() {
     return `
         <div class="alert alert-info small mb-0 mt-2" role="alert">
@@ -624,25 +660,36 @@ export function renderControlTab(device) {
                             </button>
                         </div>
                         <div class="col-12"><hr class="my-0"></div>
-                        <div class="col-md-6">
+                        <div class="col-md-4">
                             <label class="form-label small text-muted">Temperature Sensor</label>
                             <select class="form-select" id="aq-st-${device.ieee}" ${sensorExtDis}
                                 onchange="window.aqaraSetSensorType('${device.ieee}', this.value)">
                                 <option value="internal" ${sensorType === 'internal' ? 'selected' : ''}>Internal</option>
                                 <option value="external" ${sensorType === 'external' ? 'selected' : ''}>External</option>
                             </select>
-                            ${managed ? '<div class="form-text small text-info">Managed by Heating Controller</div>' : '<div class="form-text small">Use internal sensor or an external room temperature.</div>'}
+                            ${managed ? '<div class="form-text small text-info">Managed by Heating Controller</div>' : '<div class="form-text small">Switch to External to use a room sensor below.</div>'}
                         </div>
-                        <div class="col-md-6">
-                            <label class="form-label small text-muted">Push External Temperature (°C)</label>
+                        <div class="col-md-4">
+                            <label class="form-label small text-muted">External Source</label>
+                            <select class="form-select" id="aq-src-${device.ieee}" ${sensorExtDis}
+                                onchange="window.aqaraSourceChanged('${device.ieee}', this.value)">
+                                ${renderTempSourceOptions(device.ieee)}
+                            </select>
+                            <div class="form-text small">Pick a device to copy its room temperature from.</div>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label small text-muted">Temperature (°C)</label>
                             <div class="input-group">
                                 <input type="number" class="form-control" id="aq-ext-${device.ieee}"
                                        step="0.1" min="-40" max="80"
                                        value="${extTemp}" placeholder="e.g. 19.5" ${sensorExtDis}>
                                 <button class="btn btn-outline-primary" ${sensorExtDis}
-                                        onclick="window.aqaraPushExternalTemp('${device.ieee}')">Send</button>
+                                        onclick="window.aqaraPushExternalTemp('${device.ieee}')"
+                                        title="Write the current value to the TRV">
+                                    <i class="fas fa-paper-plane"></i>
+                                </button>
                             </div>
-                            ${managed ? '<div class="form-text small text-info">Managed by Heating Controller</div>' : '<div class="form-text small">Requires Temperature Sensor set to External.</div>'}
+                            <div class="form-text small">Pre-filled when a source is selected. Editable.</div>
                         </div>
                     </div>
                 </div>
@@ -1070,15 +1117,60 @@ window.aqaraSetSensorType = async function(ieee, type) {
     }
 };
 
-window.aqaraPushExternalTemp = async function(ieee) {
+window.aqaraSourceChanged = function(ieee, sourceIeee) {
     const input = document.getElementById(`aq-ext-${ieee}`);
     if (!input) return;
-    const val = parseFloat(input.value);
+    if (!sourceIeee) return;  // Manual entry chosen — leave the field alone
+    const cache = state.deviceCache || {};
+    const src = cache[sourceIeee];
+    if (!src || !src.state) return;
+    const s = src.state;
+    let temp = null;
+    for (const k of ['temperature', 'local_temperature', 'current_temperature', 'internal_temperature']) {
+        const v = s[k];
+        const f = (v == null) ? NaN : Number(v);
+        if (!isNaN(f) && f !== 0 && f > -40 && f < 80) { temp = f; break; }
+    }
+    if (temp == null) return;
+    input.value = temp.toFixed(1);
+};
+
+window.aqaraPushExternalTemp = async function(ieee) {
+    const input = document.getElementById(`aq-ext-${ieee}`);
+    const srcSel = document.getElementById(`aq-src-${ieee}`);
+    const sensorSel = document.getElementById(`aq-st-${ieee}`);
+    if (!input) return;
+
+    // If a source is picked, use that source's *current* temperature (freshest)
+    let val;
+    const sourceIeee = srcSel ? srcSel.value : '';
+    if (sourceIeee) {
+        const src = (state.deviceCache || {})[sourceIeee];
+        const s = (src && src.state) || {};
+        for (const k of ['temperature', 'local_temperature', 'current_temperature', 'internal_temperature']) {
+            const v = s[k];
+            const f = (v == null) ? NaN : Number(v);
+            if (!isNaN(f) && f !== 0 && f > -40 && f < 80) { val = f; break; }
+        }
+        if (val == null) {
+            alert('Selected source has no current temperature reading. Try again in a moment.');
+            return;
+        }
+        input.value = val.toFixed(1);
+    } else {
+        val = parseFloat(input.value);
+    }
     if (isNaN(val) || val < -40 || val > 80) {
         alert('Enter a valid temperature between -40 and 80 °C');
         return;
     }
+
     try {
+        // Ensure sensor_type=external first — otherwise the TRV ignores the push
+        if (sensorSel && sensorSel.value !== 'external') {
+            await window.sendCommand(ieee, 'sensor_type', 1);
+            sensorSel.value = 'external';
+        }
         await window.sendCommand(ieee, 'external_temp', val);
     } catch (e) {
         console.error('aqaraPushExternalTemp failed:', e);
