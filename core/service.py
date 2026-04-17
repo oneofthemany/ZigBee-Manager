@@ -1491,18 +1491,43 @@ class ZigbeeService(
                     result = await cluster.discover_attributes(0, 255)
                 if result:
                     for item in result:
-                        attr_id = item if isinstance(item, int) else getattr(item, 'attrid', item)
-                        discovered_ids.add(attr_id)
+                        try:
+                            attr_id = item if isinstance(item, int) else getattr(item, 'attrid', None)
+                            if attr_id is not None and isinstance(attr_id, int):
+                                discovered_ids.add(attr_id)
+                        except (TypeError, AttributeError):
+                            continue
             except Exception as e:
                 logger.warning(f"[{ieee}] Discover attributes failed: {e}")
-                # Fallback: use zigpy cluster definition
+
+            # For manufacturer-specific clusters (0xFC00+), also try extended range
+            if cluster_id >= 0xFC00 or not discovered_ids:
+                scan_ranges = [(0x0000, 0x0020)]
+                if cluster_id >= 0xFC00:
+                    scan_ranges = [(0x0000, 0x0050)]
+                for start, end in scan_ranges:
+                    for attr_id in range(start, end):
+                        if attr_id in discovered_ids:
+                            continue
+                        try:
+                            async with asyncio.timeout(2.0):
+                                read_result = await cluster.read_attributes([attr_id])
+                            if read_result:
+                                success_attrs = read_result[0] if read_result else {}
+                                failure_attrs = read_result[1] if len(read_result) > 1 else {}
+                                # Only add if attr is in success dict (not in failures)
+                                if attr_id in success_attrs and attr_id not in failure_attrs:
+                                    discovered_ids.add(attr_id)
+                        except Exception:
+                            continue
+
+            # Fallback: use zigpy cluster definition if nothing discovered
+            if not discovered_ids and cluster.attributes:
                 discovered_ids = set(cluster.attributes.keys())
 
             # Step 2: Read all discovered attributes and test write access
             attributes = []
             for attr_id in sorted(discovered_ids):
-                if attr_id > 0xF000:
-                    continue  # Skip most manufacturer-specific
 
                 # Get name from zigpy definition
                 name = f"0x{attr_id:04X}"
