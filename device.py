@@ -324,23 +324,12 @@ class ZigManDevice:
                 logger.info(f"[{self.ieee}] Applied Philips Hue Motion quirk: sensors on EP2")
         # === END QUIRK ===
 
-        # === HANDLER OVERRIDES (model-specific handler subclasses) ===
-        handler_overrides = {}
-
-        if "slr" in model or "receiver" in model:
-            from handlers.hvac import HiveReceiverHandler
-            handler_overrides[0x0201] = HiveReceiverHandler
-            logger.info(f"[{self.ieee}] Applied Hive Receiver quirk: HiveReceiverHandler for 0x0201")
-        # === END HANDLER OVERRIDES ===
-
         for ep_id, ep in self.zigpy_dev.endpoints.items():
             if ep_id == 0: continue
 
             def attach_handler(cluster, is_server=True):
                 cid = cluster.cluster_id
-
-                # Check device-specific overrides first, then global registry
-                handler_cls = handler_overrides.get(cid) or HANDLER_REGISTRY.get(cid)
+                handler_cls = HANDLER_REGISTRY.get(cid)
 
                 if not handler_cls:
                     if cid in SKIP_GENERIC_CLUSTERS:
@@ -998,7 +987,8 @@ class ZigManDevice:
                         logger.error(f"[{self.ieee}] No ColorClusterHandler (0x0300) for hs_color")
 
             # AQARA MANUFACTURER CLUSTER COMMANDS (0xFCC0)
-            if not success and command in ['window_detection', 'valve_detection', 'motor_calibration', 'child_lock']:
+            if not success and command in ['window_detection', 'valve_detection', 'motor_calibration',
+                                           'child_lock', 'external_temp', 'sensor_type']:
                 h = get_handler(0xFCC0)
                 if h and hasattr(h, 'process_command'):
                     h.process_command(command, value)
@@ -1006,6 +996,14 @@ class ZigManDevice:
                     # Optimistic updates
                     if command == 'motor_calibration':
                         optimistic_state['motor_calibration'] = 'calibrating' if value else 'idle'
+                    elif command == 'external_temp':
+                        try:
+                            optimistic_state['external_temperature'] = float(value)
+                        except (TypeError, ValueError):
+                            pass
+                    elif command == 'sensor_type':
+                        sv = str(value).lower()
+                        optimistic_state['sensor_type'] = 'external' if sv in ('1', 'external', 'true', 'on') else 'internal'
                     else:
                         optimistic_state[command] = bool(value)
 

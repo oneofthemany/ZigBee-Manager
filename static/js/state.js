@@ -15,9 +15,9 @@ export const state = {
     pairingInterval: null,
     tableSortInitialised: false,
     deviceFilter: null,
-    controlInteractionActive: false  // Prevents modal refresh during slider/picker interaction
+    controlInteractionActive: false,  // Prevents modal refresh during slider/picker interaction
+    heatingManaged: { enabled: false, ieees: new Set() }  // IEEEs managed by heating controller
 };
-
 window._getDeviceState = function(ieee) {
     return state.deviceCache[ieee]?.state || {};
 };

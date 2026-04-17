@@ -258,8 +258,8 @@ class AqaraManufacturerCluster(ClusterHandler):
     ATTR_WINDOW_OPEN = 0x027A           # uint8 - 1=Open, 0=Closed (status)
     ATTR_CALIBRATED = 0x027B            # uint8 - Calibration status (READ-ONLY: 0=not_ready, 1=ready, 2=error, 3=in_progress)
     ATTR_SCHEDULE = 0x027D              # uint8 - Schedule enable/disable
-    ATTR_SENSOR_TYPE = 0x027E           # uint8 - Internal/External sensor
-    ATTR_EXTERNAL_TEMP = 0x0280         # uint16 - External temp in centidegrees
+    ATTR_SENSOR_TYPE = 0x027E           # uint8 - 0=Internal, 1=External sensor
+    ATTR_EXTERNAL_TEMP = 0x0280         # int16 - External temp in centidegrees (signed)
     ATTR_BATTERY_PCT = 0x040A           # uint8 - Battery percentage
     ATTR_REPORTING_INTERVAL = 0x00EE    # uint16 - Reporting interval seconds
 
@@ -287,6 +287,7 @@ class AqaraManufacturerCluster(ClusterHandler):
         0x0272: t.uint8_t,   # Preset
         0x027B: t.uint8_t,   # Calibrated Status
         0x027E: t.uint8_t,   # Sensor Type
+        0x0280: t.int16s,    # External Temperature (centidegrees, signed)
         0x0102: t.uint8_t,   # Detection Interval
         0x010C: t.uint8_t,   # Motion Sensitivity
         0x0152: t.uint8_t,   # Trigger Indicator
@@ -753,6 +754,26 @@ class AqaraManufacturerCluster(ClusterHandler):
 
         elif command == "child_lock":
             asyncio.create_task(self.write_attribute(self.ATTR_CHILD_LOCK, val_int))
+
+        elif command == "external_temp":
+            # Accept float °C; convert to signed int16 centidegrees, clamp to -40..+80 °C.
+            try:
+                temp_c = float(value)
+            except (TypeError, ValueError):
+                logger.error(f"[{self.device.ieee}] external_temp: invalid value {value!r}")
+                return
+            temp_c = max(-40.0, min(80.0, temp_c))
+            centi = int(round(temp_c * 100))
+            asyncio.create_task(self.write_attribute(self.ATTR_EXTERNAL_TEMP, centi))
+
+        elif command == "sensor_type":
+            # Accept 'internal'/'external' strings or 0/1/bool.
+            if isinstance(value, str):
+                sv = value.strip().lower()
+                st_int = 1 if sv in ("external", "1", "true", "on", "yes") else 0
+            else:
+                st_int = 1 if value else 0
+            asyncio.create_task(self.write_attribute(self.ATTR_SENSOR_TYPE, st_int))
 
 
     def get_configuration_options(self) -> List[Dict]:
