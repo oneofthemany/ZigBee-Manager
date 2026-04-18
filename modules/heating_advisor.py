@@ -355,7 +355,7 @@ class HeatingAdvisor:
         heating_active = False
         try:
             heating_active = any(
-                (d.get("state") or {}).get("hvac_action") == "heating"
+                self._best_running(d.get("state") or {})
                 for d in hvac_devices
             )
         except Exception as e:
@@ -399,19 +399,59 @@ class HeatingAdvisor:
                 weather_current = None
 
         # Build device list defensively
+        # Pull controller intent so we can distinguish real heating from
+        # "controller wants heat but receiver hasn't fired yet" on the table.
+        controller_calling_ieees = set()
+        try:
+            from modules.heating_controller import HeatingController  # noqa: F401
+            ctrl = getattr(self, "controller", None)
+            if ctrl is None:
+                # Fall back: look in the FastAPI app state via globals if wired
+                import sys
+                for mod_name in ("main", "__main__"):
+                    mod = sys.modules.get(mod_name)
+                    c = getattr(mod, "heating_controller", None) if mod else None
+                    if c is not None:
+                        ctrl = c
+                        break
+            if ctrl and getattr(ctrl, "enabled", False):
+                last = getattr(ctrl, "_last_decision", None) or {}
+                for circ in (last.get("circuits") or []):
+                    if circ.get("calling_for_heat") and circ.get("receiver_ieee"):
+                        controller_calling_ieees.add(str(circ["receiver_ieee"]))
+        except Exception as e:
+            logger.debug(f"controller intent lookup skipped: {e}")
+
+        # Build device list defensively
         device_list = []
         for d in hvac_devices:
             try:
                 state = d.get("state") or {}
+                ieee = d.get("ieee")
+                running = self._best_running(state)
+                mode = state.get("system_mode", "unknown")
+
+                # Compute a single truthful "effective_action" label so the
+                # frontend can render without repeating this logic.
+                if running:
+                    effective_action = "heating"
+                elif str(ieee) in controller_calling_ieees:
+                    effective_action = "calling"   # controller intent, receiver idle
+                elif str(mode).lower() == "off":
+                    effective_action = "off"
+                else:
+                    effective_action = "idle"
+
                 device_list.append({
-                    "ieee": d.get("ieee"),
-                    "name": d.get("friendly_name") or d.get("ieee"),
+                    "ieee": ieee,
+                    "name": d.get("friendly_name") or ieee,
                     "temperature": state.get("local_temperature") or state.get("current_temperature"),
                     "setpoint": state.get("occupied_heating_setpoint") or state.get("target_temp"),
                     "demand": self._best_demand(state),
-                    "running": self._best_running(state),
-                    "mode": state.get("system_mode", "unknown"),
+                    "running": running,
+                    "mode": mode,
                     "action": state.get("hvac_action", "unknown"),
+                    "effective_action": effective_action,
                     "zone": self._device_to_zone_id(d.get("ieee")),
                 })
             except Exception as e:
@@ -484,7 +524,7 @@ class HeatingAdvisor:
                 state = dev.get("state", {})
                 temp = state.get("local_temperature") or state.get("current_temperature")
                 setpoint = state.get("occupied_heating_setpoint") or state.get("target_temp")
-                demand = state.get("heating_demand")
+                demand = self._best_demand(state)
                 action = state.get("hvac_action") or "unknown"
 
                 if temp is not None:
@@ -496,7 +536,7 @@ class HeatingAdvisor:
                 if demand is not None:
                     try: demands.append(float(demand))
                     except (TypeError, ValueError): pass
-                if action == "heating":
+                if self._best_running(state):
                     any_heating = True
 
                 z_devices.append({

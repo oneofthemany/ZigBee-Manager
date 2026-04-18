@@ -176,6 +176,13 @@ heating_controller = HeatingController(
     comfort_defaults=CONFIG.get("heating", {}).get("comfort", {}),
 )
 
+# Give the advisor a reference to the controller so it can surface
+# controller intent (calling-for-heat) alongside device reality.
+try:
+    heating_advisor.controller = heating_controller
+except Exception:
+    pass
+
 
 # ============================================================================
 # MATTER — Embedded server + bridge (optional)

@@ -4,12 +4,10 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="heating tab updates">
-      <change beforePath="$PROJECT_DIR$/device.py" beforeDir="false" afterPath="$PROJECT_DIR$/device.py" afterDir="false" />
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="heating tab bug fixes">
+      <change beforePath="$PROJECT_DIR$/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/main.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/modules/heating_advisor.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/heating_advisor.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/modules/heating_controller.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/heating_controller.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/modules/telemetry_db.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/telemetry_db.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/routes/heating_routes.py" beforeDir="false" afterPath="$PROJECT_DIR$/routes/heating_routes.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/static/js/heating-controller.js" beforeDir="false" afterPath="$PROJECT_DIR$/static/js/heating-controller.js" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/static/js/heating.js" beforeDir="false" afterPath="$PROJECT_DIR$/static/js/heating.js" afterDir="false" />
     </list>
@@ -161,14 +159,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00283" summary="get_definition_store bug fix">
-      <option name="closed" value="true" />
-      <created>1775657008237</created>
-      <option name="number" value="00283" />
-      <option name="presentableId" value="LOCAL-00283" />
-      <option name="project" value="LOCAL" />
-      <updated>1775657008237</updated>
     </task>
     <task id="LOCAL-00284" summary="improved rotary bindings for ep clock and anti clock">
       <option name="closed" value="true" />
@@ -554,7 +544,15 @@
       <option name="project" value="LOCAL" />
       <updated>1776502661258</updated>
     </task>
-    <option name="localTasksCounter" value="332" />
+    <task id="LOCAL-00332" summary="heating tab bug fixes">
+      <option name="closed" value="true" />
+      <created>1776504108653</created>
+      <option name="number" value="00332" />
+      <option name="presentableId" value="LOCAL-00332" />
+      <option name="project" value="LOCAL" />
+      <updated>1776504108653</updated>
+    </task>
+    <option name="localTasksCounter" value="333" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -581,7 +579,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="cert fix in main entry point" />
     <MESSAGE value="updated to be ./data/device_settings.json" />
     <MESSAGE value="new permit join and auto bind for hive receivers plus cluster attributes" />
     <MESSAGE value="new diag attributes to help determine read and write availability for clusters attrs" />
@@ -606,6 +603,7 @@
     <MESSAGE value="improvements for disablement for when heating controiller is enabled" />
     <MESSAGE value="dictionary added" />
     <MESSAGE value="heating tab updates" />
-    <option name="LAST_COMMIT_MESSAGE" value="heating tab updates" />
+    <MESSAGE value="heating tab bug fixes" />
+    <option name="LAST_COMMIT_MESSAGE" value="heating tab bug fixes" />
   </component>
 </project>

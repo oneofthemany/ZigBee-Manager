@@ -118,9 +118,13 @@ export async function loadHeatingDashboard({ silent = false } = {}) {
         }
 
         lastDashboard = json.data;
-        // Refresh runtime cache BEFORE rendering so the devices table has
-        // up-to-date 24h on-time percentages.
-        await loadHeatingRuntime();
+        // Refresh runtime + controller overlay BEFORE rendering so the devices
+        // table uses the controller's live truth for receivers and up-to-date
+        // 24h on-time percentages.
+        await Promise.all([
+            loadHeatingRuntime(),
+            loadControllerOverlay(),
+        ]);
         // Preserve heatingControllerPanel contents across re-renders when
         // possible so the user doesn't see a spinner-flash every 20s.
         const prevPanel = document.getElementById('heatingControllerPanel');
@@ -384,12 +388,62 @@ function renderForecastCard(outdoor) {
 // can render synchronously. loadHeatingRuntime() populates this.
 let runtimeCache = {};
 
+// Cache of { ieee: { running: bool, calling: bool } } from
+// /api/heating/controller/state — the authoritative source for receiver truth.
+// Populated by loadControllerOverlay() before renderDevicesTable is called.
+let controllerOverlay = {};
+
+async function loadControllerOverlay() {
+    try {
+        const res = await fetch('/api/heating/controller/state');
+        const json = await res.json();
+        controllerOverlay = {};
+        if (json.success && json.state && Array.isArray(json.state.circuits)) {
+            for (const c of json.state.circuits) {
+                if (!c.receiver_ieee) continue;
+                controllerOverlay[c.receiver_ieee] = {
+                    running: c.receiver_state?.running === true,
+                    calling: !!c.calling_for_heat,
+                    system_mode: c.receiver_state?.system_mode,
+                };
+            }
+        }
+    } catch (err) {
+        console.warn('Controller overlay fetch failed:', err);
+        controllerOverlay = {};
+    }
+}
+
 function renderDevicesTable(devices) {
     if (!devices.length) return `<div class="card-body text-muted text-center py-4">No heating devices detected.</div>`;
     const rows = devices.map(d => {
-        const actionBadge = d.action === 'heating'
-            ? `<span class="badge bg-danger"><i class="fas fa-fire me-1"></i>heating</span>`
-            : `<span class="badge bg-secondary">${escapeHtml(d.action || 'idle')}</span>`;
+        // Receivers known to the Heating Controller → trust its truth over
+        // the advisor's (possibly-stale) hvac_action. This mirrors exactly
+        // what the heatingControllerPanel shows.
+        const overlay = controllerOverlay[d.ieee];
+        let eff;
+        if (overlay) {
+            if (overlay.running)       eff = 'heating';
+            else if (overlay.calling)  eff = 'calling';
+            else if (String(d.mode || '').toLowerCase() === 'off') eff = 'off';
+            else                       eff = 'idle';
+        } else {
+            // Non-receiver (TRV, standalone thermostat): fall back to advisor.
+            eff = d.effective_action ??
+                (d.running ? 'heating' : (d.action || 'idle'));
+        }
+        const actionBadge = (() => {
+            switch (eff) {
+                case 'heating':
+                    return `<span class="badge bg-danger"><i class="fas fa-fire me-1"></i>heating</span>`;
+                case 'calling':
+                    return `<span class="badge bg-warning text-dark" title="Controller is calling for heat but the receiver is not firing yet"><i class="fas fa-hourglass-half me-1"></i>calling</span>`;
+                case 'off':
+                    return `<span class="badge bg-dark">off</span>`;
+                default:
+                    return `<span class="badge bg-secondary">idle</span>`;
+            }
+        })();
 
         // 24h on-time percentage (replaces instantaneous demand)
         const rt = runtimeCache[d.ieee];

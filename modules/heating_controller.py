@@ -775,17 +775,31 @@ class HeatingController:
             current_temp = trv.get("current_temp")
             current_sp = trv.get("current_setpoint")
 
-            # Decide intended setpoint
-            if decision.status == "hot" and circuit_calling:
+            # Decide intended setpoint.
+            #
+            # Room "hot" → force-close the valve by writing a setpoint comfortably
+            # below the current room temperature. We do this whether or not the
+            # circuit is currently calling — pre-emptive close so the very next
+            # time the circuit fires, this valve is already shut.
+            #
+            # The intended setpoint is floored at MIN_TRV_SETPOINT (5°C for Aqara
+            # E1; configurable per-TRV in config.yaml).
+            TRV_MIN_SETPOINT = float(trv.get("min_setpoint", 5.0))
+            if decision.status == "hot":
                 reference = room_temp if room_temp is not None else current_temp
                 if reference is None:
                     intended = round(target, 1)
                     action = "track_target"
                 else:
-                    intended = round(reference - FORCE_CLOSE_OFFSET, 1)
+                    # Use whichever is lower: target-margin or room-margin.
+                    # Both well below current_temp so the valve definitely closes.
+                    offset = FORCE_CLOSE_OFFSET
+                    by_room = reference - offset
+                    by_target = target - offset
+                    intended = round(max(TRV_MIN_SETPOINT, min(by_room, by_target)), 1)
                     action = "force_close"
             else:
-                intended = round(target, 1)
+                intended = round(max(TRV_MIN_SETPOINT, target), 1)
                 action = "track_target"
 
             # Skip if not online

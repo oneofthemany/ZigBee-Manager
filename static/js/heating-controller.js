@@ -117,9 +117,15 @@ function renderControllerPanel(state) {
 }
 
 function renderCircuitStatusCard(c) {
-    const callBadge = c.calling_for_heat
-        ? `<span class="badge bg-danger"><i class="fas fa-fire me-1"></i>Calling for heat</span>`
-        : `<span class="badge bg-secondary">Idle</span>`;
+    // Split "intent" (controller wants heat) from "reality" (receiver is
+    // actually firing). Hive SLR commonly sits at system_mode=heat with
+    // running_state=0 when the internal comparator isn't calling yet.
+    const receiverRunning = c.receiver_state?.running === true;
+    const callBadge = receiverRunning
+        ? `<span class="badge bg-danger"><i class="fas fa-fire me-1"></i>Heating</span>`
+        : (c.calling_for_heat
+            ? `<span class="badge bg-warning text-dark" title="Controller is calling for heat but the receiver has not yet responded"><i class="fas fa-hourglass-half me-1"></i>Calling (waiting)</span>`
+            : `<span class="badge bg-secondary">Idle</span>`);
     const recvAction = c.receiver_action || {};
     const recvState = c.receiver_state || {};
     const runningBadge = recvState.running
