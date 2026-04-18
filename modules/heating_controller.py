@@ -526,12 +526,36 @@ class HeatingController:
                         trv["intended_setpoint"] = a["target_setpoint"]
                         trv["action"] = a["action"]
 
+            # Surface the receiver's live running_state / system_mode so the
+            # controller panel can show whether the boiler is actually firing.
+            recv_state = {}
+            rx_ieee = circuit.get("receiver_ieee")
+            if rx_ieee and rx_ieee in devices:
+                rx_dev = devices[rx_ieee]
+                rs_dict = (
+                              rx_dev.get("state") if isinstance(rx_dev, dict)
+                              else getattr(rx_dev, "state", None)
+                          ) or {}
+                rs = rs_dict.get("running_state")
+                rs_on = False
+                if isinstance(rs, (int, float)):
+                    rs_on = bool(int(rs) & 0x0001)
+                elif isinstance(rs, str) and "heat" in rs.lower():
+                    rs_on = True
+                recv_state = {
+                    "running_state": rs,
+                    "running": rs_on,
+                    "system_mode": rs_dict.get("system_mode"),
+                    "setpoint": rs_dict.get("occupied_heating_setpoint"),
+                }
+
             circuits_out.append({
                 "id": circuit["id"],
                 "name": circuit["name"],
                 "calling_for_heat": should_call,
                 "receiver_ieee": circuit["receiver_ieee"],
                 "receiver_action": receiver_action,
+                "receiver_state": recv_state,
                 "rooms": [d.to_dict() for d in room_decisions],
                 "trv_actions": trv_actions,
             })

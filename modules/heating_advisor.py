@@ -822,9 +822,12 @@ class HeatingAdvisor:
     @staticmethod
     def _best_demand(state: Dict[str, Any]) -> float:
         """
-        Pick a sensible "demand %" from whichever field is present.
-        Priority: explicit heating_demand/pi_heating_demand, else
-        derive from running_state / hvac_action / system_mode.
+        Percent heat-demand, in order of authoritative → inferred.
+
+        - heating_demand / pi_heating_demand: explicit % from the device.
+        - running_state bit 0 or hvac_action=='heating': the device reports
+          it is actively calling for heat → 100%.
+        - Anything else (including system_mode='heat' while idle) → 0%.
         """
         for k in ("heating_demand", "pi_heating_demand"):
             v = state.get(k)
@@ -840,9 +843,6 @@ class HeatingAdvisor:
             return 100.0
         if state.get("hvac_action") == "heating":
             return 100.0
-        sm = state.get("system_mode")
-        if isinstance(sm, str) and sm.lower() in ("heat", "emergency_heat"):
-            return 100.0 if state.get("on") else 0.0
         return 0.0
 
     @staticmethod
@@ -969,8 +969,22 @@ class HeatingAdvisor:
                                     "temperature", "internal_temperature"])
                 setp = _pick(ieee, ["occupied_heating_setpoint",
                                     "heating_setpoint", "temperature_setpoint"])
-                dem  = _pick(ieee, ["heating_demand", "pi_heating_demand",
-                                    "running_state"])
+                dem = _pick(ieee, ["heating_demand", "pi_heating_demand",
+                                   "running_state"])
+                # running_state is a ZCL bitmap, not a percentage. Map
+                # bit 0 (HEAT) → 100% so it renders consistently with the
+                # demand series from other devices.
+                if dem["attribute"] == "running_state":
+                    for pt in dem["series"]:
+                        nv = pt.get("numeric_val")
+                        if nv is not None:
+                            pt["numeric_val"] = 100.0 if (int(nv) & 0x0001) else 0.0
+                        else:
+                            # Fall back to parsing the string value
+                            try:
+                                pt["numeric_val"] = 100.0 if (int(pt.get("value", 0)) & 0x0001) else 0.0
+                            except (TypeError, ValueError):
+                                pt["numeric_val"] = 0.0
                 history[name] = {
                     "ieee": ieee,
                     "temperature": temp["series"],
@@ -986,3 +1000,84 @@ class HeatingAdvisor:
         except Exception as e:
             logger.error(f"Failed to query heating history: {e}", exc_info=True)
             return {"devices": {}, "hours": hours, "error": str(e)}
+
+    def get_daily_runtime(self, hours: int = 24) -> Dict[str, Any]:
+        """
+        Compute per-device heating on-time as a percentage of the window.
+        Uses whichever telemetry series that device actually records:
+          heating_demand / pi_heating_demand (>0 = on)
+          running_state (bit 0 = on)
+        Returns: { ieee: { name, on_minutes, percent, source } }
+        """
+        try:
+            from modules.telemetry_db import query_device_state_history
+        except Exception as e:
+            logger.error(f"telemetry_db import failed: {e}")
+            return {}
+
+        hvac = self._find_hvac_devices()
+        window_seconds = max(60, int(hours) * 3600)
+        out = {}
+
+        def _as_on(attr: str, numeric_val, raw_value) -> bool:
+            if numeric_val is not None:
+                try:
+                    n = float(numeric_val)
+                except (TypeError, ValueError):
+                    n = None
+            else:
+                n = None
+            if n is None:
+                try:
+                    n = float(raw_value)
+                except (TypeError, ValueError):
+                    return False
+            if attr == "running_state":
+                return bool(int(n) & 0x0001)
+            return n > 0.0
+
+        for d in hvac:
+            ieee = d.get("ieee")
+            name = d.get("friendly_name") or ieee
+            series = None
+            chosen = None
+            for attr in ("heating_demand", "pi_heating_demand", "running_state"):
+                try:
+                    data = query_device_state_history(ieee, attr, hours) or []
+                except Exception:
+                    data = []
+                if data:
+                    series = data
+                    chosen = attr
+                    break
+
+            if not series:
+                out[ieee] = {
+                    "name": name, "on_seconds": 0,
+                    "percent": 0.0, "source": None,
+                }
+                continue
+
+            # Integrate time-on across the window using step functions between
+            # successive samples. ts is a DuckDB datetime — already UTC.
+            import datetime as _dt
+            on_seconds = 0.0
+            for i, pt in enumerate(series):
+                is_on = _as_on(chosen, pt.get("numeric_val"), pt.get("value"))
+                if not is_on:
+                    continue
+                t0 = pt["ts"]
+                t1 = series[i + 1]["ts"] if i + 1 < len(series) else _dt.datetime.now(t0.tzinfo)
+                dt = (t1 - t0).total_seconds()
+                if dt > 0:
+                    on_seconds += min(dt, window_seconds)
+
+            pct = 100.0 * on_seconds / window_seconds
+            out[ieee] = {
+                "name": name,
+                "on_seconds": int(on_seconds),
+                "percent": round(max(0.0, min(100.0, pct)), 1),
+                "source": chosen,
+            }
+
+        return out

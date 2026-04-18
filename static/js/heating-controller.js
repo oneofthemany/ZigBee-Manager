@@ -121,8 +121,20 @@ function renderCircuitStatusCard(c) {
         ? `<span class="badge bg-danger"><i class="fas fa-fire me-1"></i>Calling for heat</span>`
         : `<span class="badge bg-secondary">Idle</span>`;
     const recvAction = c.receiver_action || {};
+    const recvState = c.receiver_state || {};
+    const runningBadge = recvState.running
+        ? `<span class="badge bg-danger ms-1" title="Boiler is firing right now"><i class="fas fa-fire me-1"></i>running</span>`
+        : (recvState.running === false
+            ? `<span class="badge bg-secondary ms-1" title="Receiver is idle">idle</span>`
+            : '');
+    const modeBadge = recvState.system_mode
+        ? `<span class="badge bg-light text-dark border ms-1">${escapeHtml(String(recvState.system_mode))}</span>`
+        : '';
+    const spSuffix = (recvState.setpoint != null)
+        ? ` @ <strong>${Number(recvState.setpoint).toFixed(1)}°</strong>`
+        : '';
     const recvLine = c.receiver_ieee
-        ? `Receiver: <code>${escapeHtml(c.receiver_ieee.slice(-8))}</code>${recvAction.command ? ` → <strong>${escapeHtml(recvAction.command)}</strong>` : ''}${recvAction.dry_run ? ' <em>(dry-run)</em>' : ''}`
+        ? `Receiver: <code>${escapeHtml(c.receiver_ieee.slice(-8))}</code>${spSuffix}${runningBadge}${modeBadge}${recvAction.command ? ` → <strong>${escapeHtml(recvAction.command)}</strong>` : ''}${recvAction.dry_run ? ' <em>(dry-run)</em>' : ''}`
         : `<span class="text-warning">No receiver assigned</span>`;
 
     const rooms = (c.rooms || []).map(r => {

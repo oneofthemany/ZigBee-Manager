@@ -4,10 +4,11 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="dictionary added">
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="heating tab updates">
+      <change beforePath="$PROJECT_DIR$/device.py" beforeDir="false" afterPath="$PROJECT_DIR$/device.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/modules/heating_advisor.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/heating_advisor.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/modules/heating_controller.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/heating_controller.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/modules/telemetry_db.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/telemetry_db.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/routes/heating_routes.py" beforeDir="false" afterPath="$PROJECT_DIR$/routes/heating_routes.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/static/js/heating-controller.js" beforeDir="false" afterPath="$PROJECT_DIR$/static/js/heating-controller.js" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/static/js/heating.js" beforeDir="false" afterPath="$PROJECT_DIR$/static/js/heating.js" afterDir="false" />
@@ -160,14 +161,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00282" summary="update commission to be aware of resilience watchdog">
-      <option name="closed" value="true" />
-      <created>1775654914199</created>
-      <option name="number" value="00282" />
-      <option name="presentableId" value="LOCAL-00282" />
-      <option name="project" value="LOCAL" />
-      <updated>1775654914200</updated>
     </task>
     <task id="LOCAL-00283" summary="get_definition_store bug fix">
       <option name="closed" value="true" />
@@ -553,7 +546,15 @@
       <option name="project" value="LOCAL" />
       <updated>1776501928840</updated>
     </task>
-    <option name="localTasksCounter" value="331" />
+    <task id="LOCAL-00331" summary="heating tab updates">
+      <option name="closed" value="true" />
+      <created>1776502661258</created>
+      <option name="number" value="00331" />
+      <option name="presentableId" value="LOCAL-00331" />
+      <option name="project" value="LOCAL" />
+      <updated>1776502661258</updated>
+    </task>
+    <option name="localTasksCounter" value="332" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -580,7 +581,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="cert dir added" />
     <MESSAGE value="cert fix in main entry point" />
     <MESSAGE value="updated to be ./data/device_settings.json" />
     <MESSAGE value="new permit join and auto bind for hive receivers plus cluster attributes" />
@@ -605,6 +605,7 @@
     <MESSAGE value="trv updates" />
     <MESSAGE value="improvements for disablement for when heating controiller is enabled" />
     <MESSAGE value="dictionary added" />
-    <option name="LAST_COMMIT_MESSAGE" value="dictionary added" />
+    <MESSAGE value="heating tab updates" />
+    <option name="LAST_COMMIT_MESSAGE" value="heating tab updates" />
   </component>
 </project>

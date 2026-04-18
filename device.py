@@ -521,7 +521,17 @@ class ZigManDevice:
             self.service._schedule_save()
 
             # Update service cache
+            # Update service cache
             self.service.handle_device_update(self, changed, qos=qos, endpoint_id=endpoint_id)
+
+            # Persist changed attributes to DuckDB for history/runtime queries.
+            # Filtered inside the collector (skips last_seen, metadata, _raw, etc.)
+            collector = getattr(self.service, "telemetry_collector", None)
+            if collector is not None:
+                try:
+                    collector.record_state_change(self.ieee, changed)
+                except Exception as e:
+                    logger.debug(f"[{self.ieee}] telemetry record skipped: {e}")
 
             # Publish for lights only
             if has_light:
@@ -1024,14 +1034,13 @@ class ZigManDevice:
                         elif command == 'system_mode':
                             mode = str(value).lower()
                             optimistic_state['system_mode'] = mode
+                            # Do NOT optimistically set running_state/hvac_action
+                            # from mode alone — mode=heat with running_state=0
+                            # is "enabled, not currently calling". Wait for the
+                            # device's next running_state report.
                             if mode == 'off':
                                 optimistic_state['running_state'] = 0
                                 optimistic_state['hvac_action'] = 'off'
-                            elif mode in ('heat', 'emergency_heat'):
-                                optimistic_state['running_state'] = 1
-                                optimistic_state['hvac_action'] = 'heating'
-                            else:
-                                optimistic_state['hvac_action'] = 'idle'
                     elif command == 'temperature':
                         # Fallback for compatibility with Hive receivers
                         await h.set_heating_setpoint(float(value))

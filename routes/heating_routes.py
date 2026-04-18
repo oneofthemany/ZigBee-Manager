@@ -332,6 +332,22 @@ def register_heating_routes(app: FastAPI, get_heating_advisor, get_zigbee_servic
             logger.error(f"History endpoint failed: {e}", exc_info=True)
             return {"success": False, "error": str(e)}
 
+
+    @app.get("/api/heating/runtime")
+    async def heating_runtime(hours: int = 24):
+        adv = _resolve_advisor()
+        if not adv or not getattr(adv, "enabled", False):
+            return {"success": False, "error": "Heating advisor not enabled"}
+        try:
+            return {
+                "success": True,
+                "hours": hours,
+                "devices": adv.get_daily_runtime(hours),
+            }
+        except Exception as e:
+            logger.error(f"Runtime endpoint failed: {e}", exc_info=True)
+            return {"success": False, "error": str(e)}
+
     @app.get("/api/heating/tips")
     async def heating_tips():
         adv = _resolve_advisor()

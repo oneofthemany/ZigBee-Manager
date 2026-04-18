@@ -118,6 +118,9 @@ export async function loadHeatingDashboard({ silent = false } = {}) {
         }
 
         lastDashboard = json.data;
+        // Refresh runtime cache BEFORE rendering so the devices table has
+        // up-to-date 24h on-time percentages.
+        await loadHeatingRuntime();
         // Preserve heatingControllerPanel contents across re-renders when
         // possible so the user doesn't see a spinner-flash every 20s.
         const prevPanel = document.getElementById('heatingControllerPanel');
@@ -377,18 +380,25 @@ function renderForecastCard(outdoor) {
         </div>`;
 }
 
+// Runtime is fetched per-dashboard-load and cached here so renderDevicesTable()
+// can render synchronously. loadHeatingRuntime() populates this.
+let runtimeCache = {};
+
 function renderDevicesTable(devices) {
     if (!devices.length) return `<div class="card-body text-muted text-center py-4">No heating devices detected.</div>`;
     const rows = devices.map(d => {
         const actionBadge = d.action === 'heating'
             ? `<span class="badge bg-danger"><i class="fas fa-fire me-1"></i>heating</span>`
             : `<span class="badge bg-secondary">${escapeHtml(d.action || 'idle')}</span>`;
-        const demand = Number(d.demand || 0);
-        const demandBar = `
-            <div class="progress" style="height:6px;width:80px;"><div class="progress-bar ${demand > 50 ? 'bg-danger' : 'bg-warning'}" style="width:${Math.min(100, demand)}%"></div></div>
-            <small class="text-muted">${demand}%</small>`;
-        // Mirror the device-list naming: prefer the cached friendly name, fall back to advisor name, then ieee
-        const cached = window._getDeviceState ? null : null;  // (we look up via cache below)
+
+        // 24h on-time percentage (replaces instantaneous demand)
+        const rt = runtimeCache[d.ieee];
+        const pct = rt ? Number(rt.percent || 0) : 0;
+        const onMin = rt ? Math.round((rt.on_seconds || 0) / 60) : 0;
+        const pctBar = `
+            <div class="progress" style="height:6px;width:80px;"><div class="progress-bar ${pct > 50 ? 'bg-danger' : 'bg-warning'}" style="width:${Math.min(100, pct)}%"></div></div>
+            <small class="text-muted" title="${onMin} min on in the last 24h${rt?.source ? ` (source: ${rt.source})` : ''}">${pct.toFixed(1)}%</small>`;
+
         const cachedDev = (window.state?.deviceCache || {})[d.ieee];
         const displayName = cachedDev?.friendly_name || d.name || d.ieee || '—';
         return `
@@ -398,7 +408,7 @@ function renderDevicesTable(devices) {
                 <td>${formatTemp(d.setpoint)}</td>
                 <td>${escapeHtml(d.mode || '—')}</td>
                 <td>${actionBadge}</td>
-                <td>${demandBar}</td>
+                <td>${pctBar}</td>
                 <td class="text-end">
                     <button class="btn btn-sm btn-outline-primary heating-manage-btn" data-ieee="${escapeAttr(d.ieee)}" title="Details & Control">
                         <i class="fas fa-sliders-h"></i> Manage
@@ -409,10 +419,22 @@ function renderDevicesTable(devices) {
     return `
         <div class="table-responsive">
             <table class="table table-sm mb-0 align-middle">
-                <thead><tr><th>Device</th><th>Current</th><th>Setpoint</th><th>Mode</th><th>Action</th><th>Demand</th><th></th></tr></thead>
+                <thead><tr><th>Device</th><th>Current</th><th>Setpoint</th><th>Mode</th><th>Action</th><th>24h on-time</th><th></th></tr></thead>
                 <tbody>${rows}</tbody>
             </table>
         </div>`;
+}
+
+async function loadHeatingRuntime(hours = 24) {
+    try {
+        const res = await fetch(`/api/heating/runtime?hours=${hours}`);
+        const json = await res.json();
+        if (json.success) {
+            runtimeCache = json.devices || {};
+        }
+    } catch (err) {
+        console.warn('Heating runtime fetch failed:', err);
+    }
 }
 
 // ─── Zones dashboard (per-zone summary cards) ──────────────────────
@@ -508,13 +530,45 @@ function renderHistoryChart(historyData) {
     if (!container) return;
     const devices = historyData?.devices || {};
     const names = Object.keys(devices);
-    if (!names.length) { container.innerHTML = `<div class="text-muted text-center py-4">No history data yet.</div>`; return; }
+
+    const noDataBlock = (title, detail) => `
+        <div class="text-center text-muted py-4">
+            <i class="fas fa-chart-line fa-2x mb-2 opacity-50"></i>
+            <div><strong>${escapeHtml(title)}</strong></div>
+            <div class="small mt-1">${escapeHtml(detail)}</div>
+        </div>`;
+
+    if (!names.length) {
+        container.innerHTML = noDataBlock(
+            'No history yet',
+            'No heating devices have been detected. Once a thermostat or TRV starts reporting temperature, points will appear here within a few minutes.'
+        );
+        return;
+    }
+
     const series = [];
+    let totalPoints = 0;
     for (const name of names) {
         const temps = devices[name]?.temperature || [];
+        totalPoints += temps.length;
         if (temps.length > 1) series.push({ name, points: temps });
     }
-    if (!series.length) { container.innerHTML = `<div class="text-muted text-center py-4">No temperature history recorded yet.</div>`; return; }
+
+    if (!series.length) {
+        const deviceList = names.slice(0, 6).map(n => `<li><code>${escapeHtml(n)}</code></li>`).join('');
+        const extra = names.length > 6 ? `<li>…and ${names.length - 6} more</li>` : '';
+        container.innerHTML = `
+            <div class="text-center text-muted py-3">
+                <i class="fas fa-chart-line fa-2x mb-2 opacity-50"></i>
+                <div><strong>No temperature history recorded yet</strong></div>
+                <div class="small mt-2">
+                    Found ${names.length} heating device${names.length === 1 ? '' : 's'} but only ${totalPoints} point${totalPoints === 1 ? '' : 's'} of temperature data in the last 24h.
+                </div>
+                <div class="small mt-1">Telemetry records a point each time a device reports a changed attribute — make sure your TRVs and receivers are online and reporting. Points will accumulate as the day progresses.</div>
+                <ul class="small text-muted list-unstyled mt-2 mb-0">${deviceList}${extra}</ul>
+            </div>`;
+        return;
+    }
     const W = 800, H = 220, PAD = 36;
     let tMin = Infinity, tMax = -Infinity, xMin = Infinity, xMax = -Infinity;
     for (const s of series) for (const p of s.points) {
