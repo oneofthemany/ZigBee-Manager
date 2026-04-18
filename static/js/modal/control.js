@@ -98,9 +98,10 @@ function heatingManagedBanner() {
     return `
         <div class="alert alert-info small mb-0 mt-2" role="alert">
             <i class="fas fa-cogs me-2"></i>
-            Direct heating control is disabled — this device is managed by the
-            <strong>Heating Controller</strong>. Make setpoint and mode changes
-            from the Heating dashboard.
+            Managed by the <strong>Heating Controller</strong> — the controller
+            drives this receiver to the max setpoint when any room in its circuit
+            is calling for heat, so the boiler fires. Set per-room temperatures
+            on the individual TRVs.
         </div>`;
 }
 
@@ -436,9 +437,15 @@ export function renderControlTab(device) {
             thermostatBadge = '<span class="badge bg-secondary"><i class="fas fa-pause"></i> Idle</span>';
         }
 
-        // Heating-controller management status for this device
+        // Heating-controller management status for this device.
+        // Only the RECEIVER's direct controls are locked — the controller
+        // drives it to max to guarantee the boiler fires. TRVs and standard
+        // thermostats stay user-editable so setpoints work as the room gate.
         const managed = isHeatingManaged(device.ieee);
-        const dis = managed ? 'disabled' : '';
+        const isHiveReceiverEarly = (device.model || '').toUpperCase().includes('SLR') ||
+                                    (device.model || '').toUpperCase().includes('RECEIVER');
+        const receiverManaged = managed && isHiveReceiverEarly;
+        const dis = receiverManaged ? 'disabled' : '';
 
         // Detect Hive receiver — simplified controls
         const isHiveReceiver = (device.model || '').toUpperCase().includes('SLR') ||
@@ -607,7 +614,11 @@ export function renderControlTab(device) {
         const sensorType = s.sensor_type === 'external' ? 'external' : 'internal';
         const extTemp = (s.external_temperature != null)
             ? Number(s.external_temperature).toFixed(1) : '';
-        const sensorExtDis = managed ? 'disabled' : '';
+        // TRV sensor-type and external-temp push are always user-editable.
+        // When the heating controller is managing the circuit it still drives
+        // the receiver, but TRV-local config (sensor, external temp, window
+        // detection, child lock, calibration) stays under user control.
+        const sensorExtDis = '';
 
         const viaCtrl = managed ? ' (via Heating Controller)' : '';
 
@@ -667,7 +678,7 @@ export function renderControlTab(device) {
                                 <option value="internal" ${sensorType === 'internal' ? 'selected' : ''}>Internal</option>
                                 <option value="external" ${sensorType === 'external' ? 'selected' : ''}>External</option>
                             </select>
-                            ${managed ? '<div class="form-text small text-info">Managed by Heating Controller</div>' : '<div class="form-text small">Switch to External to use a room sensor below.</div>'}
+                            <div class="form-text small">Switch to External to use a room sensor below.</div>
                         </div>
                         <div class="col-md-4">
                             <label class="form-label small text-muted">External Source</label>
