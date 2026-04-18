@@ -668,6 +668,13 @@ class HeatingController:
             target_command = "system_mode"
             target_value = "heat" if should_call else "off"
             display = f"system_mode → {target_value}"
+            # When calling for heat, also push a high setpoint to guarantee
+            # the receiver's internal comparator fires the boiler. When
+            # standing down, push a low one so the receiver doesn't fight us.
+            # Config override: circuit.receiver_call_setpoint / _idle_setpoint
+            call_sp = float(circuit.get("receiver_call_setpoint", 30.0))
+            idle_sp = float(circuit.get("receiver_idle_setpoint", 7.0))
+            target_setpoint = call_sp if should_call else idle_sp
         else:
             target_command = "on" if should_call else "off"
             target_value = None
@@ -683,11 +690,31 @@ class HeatingController:
             return {"sent": True, "command": display, "dry_run": True}
 
         try:
+            # 1) Push setpoint first (only in thermostat mode)
+            if mode == "thermostat":
+                last_sp = self._last_command.get(f"{ieee}:setpoint")
+                if not last_sp or last_sp[0] != target_setpoint:
+                    try:
+                        await self._send_command(
+                            ieee, "temperature", target_setpoint,
+                            endpoint_id=circuit.get("receiver_endpoint"),
+                        )
+                    except TypeError:
+                        await self._send_command(ieee, "temperature", target_setpoint)
+                    self._last_command[f"{ieee}:setpoint"] = (target_setpoint, time.time())
+                    logger.info(
+                        f"Receiver '{circuit['name']}' setpoint → {target_setpoint}°C"
+                    )
+            # 2) Then push mode / on-off
             await self._send_command(ieee, target_command, target_value,
                                      endpoint_id=circuit.get("receiver_endpoint"))
             self._last_command[ieee] = (target_command, target_value, time.time())
             logger.info(f"Receiver '{circuit['name']}' ({ieee}) → {display}")
-            return {"sent": True, "command": display}
+            return {
+                "sent": True,
+                "command": display,
+                "setpoint": target_setpoint if mode == "thermostat" else None,
+            }
         except TypeError:
             try:
                 await self._send_command(ieee, target_command, target_value)

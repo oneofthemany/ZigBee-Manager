@@ -300,12 +300,12 @@ def register_heating_routes(app: FastAPI, get_heating_advisor, get_zigbee_servic
 
     # ═════════ Dashboard / analysis ═════════
     @app.get("/api/heating/dashboard")
-    async def heating_dashboard():
+    async def heating_dashboard(force: int = 0):
         adv = _resolve_advisor()
         if not adv or not getattr(adv, "enabled", False):
             return {"success": False, "error": "Heating advisor not enabled"}
         try:
-            return {"success": True, "data": adv.get_dashboard()}
+            return {"success": True, "data": adv.get_dashboard(force=bool(force))}
         except Exception as e:
             logger.error(f"Dashboard endpoint failed: {e}", exc_info=True)
             return {"success": False, "error": f"Dashboard generation failed: {e}"}

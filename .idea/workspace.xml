@@ -4,10 +4,13 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="aqara updates for new heating controller">
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="dictionary added">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/handlers/aqara.py" beforeDir="false" afterPath="$PROJECT_DIR$/handlers/aqara.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/static/js/modal/control.js" beforeDir="false" afterPath="$PROJECT_DIR$/static/js/modal/control.js" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/modules/heating_advisor.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/heating_advisor.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/modules/heating_controller.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/heating_controller.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/routes/heating_routes.py" beforeDir="false" afterPath="$PROJECT_DIR$/routes/heating_routes.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/static/js/heating-controller.js" beforeDir="false" afterPath="$PROJECT_DIR$/static/js/heating-controller.js" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/static/js/heating.js" beforeDir="false" afterPath="$PROJECT_DIR$/static/js/heating.js" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -157,30 +160,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00279" summary="editor routes removed in error">
-      <option name="closed" value="true" />
-      <created>1775651344136</created>
-      <option name="number" value="00279" />
-      <option name="presentableId" value="LOCAL-00279" />
-      <option name="project" value="LOCAL" />
-      <updated>1775651344136</updated>
-    </task>
-    <task id="LOCAL-00280" summary="reinstating text">
-      <option name="closed" value="true" />
-      <created>1775651534195</created>
-      <option name="number" value="00280" />
-      <option name="presentableId" value="LOCAL-00280" />
-      <option name="project" value="LOCAL" />
-      <updated>1775651534195</updated>
-    </task>
-    <task id="LOCAL-00281" summary="removal of text">
-      <option name="closed" value="true" />
-      <created>1775652946664</created>
-      <option name="number" value="00281" />
-      <option name="presentableId" value="LOCAL-00281" />
-      <option name="project" value="LOCAL" />
-      <updated>1775652946664</updated>
     </task>
     <task id="LOCAL-00282" summary="update commission to be aware of resilience watchdog">
       <option name="closed" value="true" />
@@ -550,7 +529,31 @@
       <option name="project" value="LOCAL" />
       <updated>1776429764164</updated>
     </task>
-    <option name="localTasksCounter" value="328" />
+    <task id="LOCAL-00328" summary="trv updates">
+      <option name="closed" value="true" />
+      <created>1776431750107</created>
+      <option name="number" value="00328" />
+      <option name="presentableId" value="LOCAL-00328" />
+      <option name="project" value="LOCAL" />
+      <updated>1776431750107</updated>
+    </task>
+    <task id="LOCAL-00329" summary="improvements for disablement for when heating controiller is enabled">
+      <option name="closed" value="true" />
+      <created>1776501908656</created>
+      <option name="number" value="00329" />
+      <option name="presentableId" value="LOCAL-00329" />
+      <option name="project" value="LOCAL" />
+      <updated>1776501908657</updated>
+    </task>
+    <task id="LOCAL-00330" summary="dictionary added">
+      <option name="closed" value="true" />
+      <created>1776501928840</created>
+      <option name="number" value="00330" />
+      <option name="presentableId" value="LOCAL-00330" />
+      <option name="project" value="LOCAL" />
+      <updated>1776501928840</updated>
+    </task>
+    <option name="localTasksCounter" value="331" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -577,9 +580,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="debugging remove from prod" />
-    <MESSAGE value="persistence added for keys and database" />
-    <MESSAGE value="updated to cater for install methods" />
     <MESSAGE value="cert dir added" />
     <MESSAGE value="cert fix in main entry point" />
     <MESSAGE value="updated to be ./data/device_settings.json" />
@@ -602,6 +602,9 @@
     <MESSAGE value="heatpoint hold added" />
     <MESSAGE value="config export and stop skipping  manufacturer specific attributes" />
     <MESSAGE value="aqara updates for new heating controller" />
-    <option name="LAST_COMMIT_MESSAGE" value="aqara updates for new heating controller" />
+    <MESSAGE value="trv updates" />
+    <MESSAGE value="improvements for disablement for when heating controiller is enabled" />
+    <MESSAGE value="dictionary added" />
+    <option name="LAST_COMMIT_MESSAGE" value="dictionary added" />
   </component>
 </project>

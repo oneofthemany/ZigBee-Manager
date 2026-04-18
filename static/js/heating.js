@@ -23,8 +23,6 @@
 import {
     initHeatingController,
     loadControllerStatus,
-    startControllerStatusRefresh,
-    stopControllerStatusRefresh,
 } from './heating-controller.js';
 
 // ============================================================================
@@ -39,7 +37,7 @@ let schemaCache = null;
 let thermostatsCache = [];
 let workingZones = [];   // zones being edited in the modal
 
-const REFRESH_MS = 60_000;
+const REFRESH_MS = 20_000;
 
 const EPC_COLOURS = {
     A: '#008054', B: '#19b459', C: '#8dce46',
@@ -72,19 +70,16 @@ export function initHeating() {
         heatingTabActive = true;
         loadHeatingDashboard();
         startHeatingAutoRefresh();
-        startControllerStatusRefresh();
     });
     heatingTabBtn.addEventListener('hidden.bs.tab', () => {
         heatingTabActive = false;
         stopHeatingAutoRefresh();
-        stopControllerStatusRefresh();
     });
 
     if (heatingTabBtn.classList.contains('active')) {
         heatingTabActive = true;
         loadHeatingDashboard();
         startHeatingAutoRefresh();
-        startControllerStatusRefresh();
     }
 }
 
@@ -112,7 +107,8 @@ export async function loadHeatingDashboard({ silent = false } = {}) {
     }
 
     try {
-        const res = await fetch('/api/heating/dashboard');
+        // Force=1 on the user-initiated refresh, silent tick uses cache.
+        const res = await fetch(`/api/heating/dashboard?force=${silent ? 0 : 1}`);
         const json = await res.json();
 
         if (!json.success) {
@@ -122,11 +118,21 @@ export async function loadHeatingDashboard({ silent = false } = {}) {
         }
 
         lastDashboard = json.data;
+        // Preserve heatingControllerPanel contents across re-renders when
+        // possible so the user doesn't see a spinner-flash every 20s.
+        const prevPanel = document.getElementById('heatingControllerPanel');
+        const prevHTML = prevPanel ? prevPanel.innerHTML : null;
         container.innerHTML = renderDashboard(json.data);
+        if (prevHTML) {
+            const newPanel = document.getElementById('heatingControllerPanel');
+            if (newPanel) newPanel.innerHTML = prevHTML;
+        }
         bindDashboardControls(json.data);
         bindTopBarControls();
         loadHeatingHistory();
-        loadControllerStatus();   // populate the controller panel
+        // Single-shot refresh: controller panel is fetched in-line with the
+        // dashboard, not on its own interval. Matches the 20s cadence above.
+        await loadControllerStatus();
     } catch (err) {
         console.error('Heating dashboard fetch failed:', err);
         if (!silent) {

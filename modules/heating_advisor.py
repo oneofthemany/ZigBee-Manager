@@ -266,8 +266,10 @@ class HeatingAdvisor:
             await asyncio.sleep(900)
 
     # ── Public API ─────────────────────────────────────────────────
-    def get_dashboard(self) -> Dict[str, Any]:
-        if self._last_analysis and (time.time() - self._last_analysis_ts < 1800):
+    def get_dashboard(self, force: bool = False) -> Dict[str, Any]:
+        # Cache at 60s — long enough to dampen accidental spam from the UI
+        # but short enough that live values feel live. `force=True` bypasses.
+        if (not force) and self._last_analysis and (time.time() - self._last_analysis_ts < 60):
             return self._last_analysis
         try:
             self._last_analysis = self._run_analysis()
@@ -406,7 +408,8 @@ class HeatingAdvisor:
                     "name": d.get("friendly_name") or d.get("ieee"),
                     "temperature": state.get("local_temperature") or state.get("current_temperature"),
                     "setpoint": state.get("occupied_heating_setpoint") or state.get("target_temp"),
-                    "demand": state.get("heating_demand", 0),
+                    "demand": self._best_demand(state),
+                    "running": self._best_running(state),
                     "mode": state.get("system_mode", "unknown"),
                     "action": state.get("hvac_action", "unknown"),
                     "zone": self._device_to_zone_id(d.get("ieee")),
@@ -816,15 +819,44 @@ class HeatingAdvisor:
             return []
         return fc.get("temperature_2m", [])[:24]
 
-    def _get_avg_demand(self, hvac_devices: List[Dict]) -> float:
-        demands = []
-        for d in hvac_devices:
-            demand = d.get("state", {}).get("heating_demand")
-            if demand is not None:
+    @staticmethod
+    def _best_demand(state: Dict[str, Any]) -> float:
+        """
+        Pick a sensible "demand %" from whichever field is present.
+        Priority: explicit heating_demand/pi_heating_demand, else
+        derive from running_state / hvac_action / system_mode.
+        """
+        for k in ("heating_demand", "pi_heating_demand"):
+            v = state.get(k)
+            if v is not None:
                 try:
-                    demands.append(float(demand))
+                    return float(v)
                 except (TypeError, ValueError):
                     pass
+        rs = state.get("running_state")
+        if isinstance(rs, (int, float)) and int(rs) & 0x0001:
+            return 100.0
+        if isinstance(rs, str) and "heat" in rs.lower():
+            return 100.0
+        if state.get("hvac_action") == "heating":
+            return 100.0
+        sm = state.get("system_mode")
+        if isinstance(sm, str) and sm.lower() in ("heat", "emergency_heat"):
+            return 100.0 if state.get("on") else 0.0
+        return 0.0
+
+    @staticmethod
+    def _best_running(state: Dict[str, Any]) -> bool:
+        rs = state.get("running_state")
+        if isinstance(rs, (int, float)) and int(rs) & 0x0001:
+            return True
+        if isinstance(rs, str) and "heat" in rs.lower():
+            return True
+        return state.get("hvac_action") == "heating"
+
+    def _get_avg_demand(self, hvac_devices: List[Dict]) -> float:
+        demands = [self._best_demand(d.get("state", {})) for d in hvac_devices]
+        demands = [x for x in demands if x is not None]
         return round(sum(demands) / len(demands), 0) if demands else 0
 
     # ── EPC Estimation ─────────────────────────────────────────────
@@ -908,19 +940,49 @@ class HeatingAdvisor:
 
     # ── Historical Analysis ────────────────────────────────────────
     def get_heating_history(self, hours: int = 24) -> Dict:
+        """
+        Telemetry history per HVAC device. Tries several attribute names for
+        each conceptual series and returns whichever has data — so Hive SLRs
+        (running_state), Aqara TRVs (pi_heating_demand) and generic thermostats
+        (heating_demand) all populate correctly.
+        """
         try:
             from modules.telemetry_db import query_device_state_history
             hvac = self._find_hvac_devices()
             history = {}
+
+            def _pick(ieee, keys):
+                for k in keys:
+                    try:
+                        data = query_device_state_history(ieee, k, hours) or []
+                    except Exception as e:
+                        logger.debug(f"history[{ieee}.{k}] failed: {e}")
+                        continue
+                    if data:
+                        return {"series": data, "attribute": k}
+                return {"series": [], "attribute": None}
+
             for d in hvac:
                 ieee = d.get("ieee")
                 name = d.get("friendly_name") or ieee
+                temp = _pick(ieee, ["local_temperature", "current_temperature",
+                                    "temperature", "internal_temperature"])
+                setp = _pick(ieee, ["occupied_heating_setpoint",
+                                    "heating_setpoint", "temperature_setpoint"])
+                dem  = _pick(ieee, ["heating_demand", "pi_heating_demand",
+                                    "running_state"])
                 history[name] = {
-                    "temperature": query_device_state_history(ieee, "local_temperature", hours),
-                    "setpoint": query_device_state_history(ieee, "occupied_heating_setpoint", hours),
-                    "demand": query_device_state_history(ieee, "heating_demand", hours),
+                    "ieee": ieee,
+                    "temperature": temp["series"],
+                    "setpoint": setp["series"],
+                    "demand": dem["series"],
+                    "sources": {
+                        "temperature": temp["attribute"],
+                        "setpoint": setp["attribute"],
+                        "demand": dem["attribute"],
+                    },
                 }
             return {"devices": history, "hours": hours}
         except Exception as e:
-            logger.error(f"Failed to query heating history: {e}")
+            logger.error(f"Failed to query heating history: {e}", exc_info=True)
             return {"devices": {}, "hours": hours, "error": str(e)}

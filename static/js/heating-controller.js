@@ -57,17 +57,6 @@ export async function loadControllerStatus(targetSelector = '#heatingControllerP
     }
 }
 
-export function startControllerStatusRefresh(targetSelector = '#heatingControllerPanel') {
-    stopControllerStatusRefresh();
-    controllerStatusTimer = setInterval(() => {
-        loadControllerStatus(targetSelector);
-    }, STATUS_REFRESH_MS);
-}
-
-export function stopControllerStatusRefresh() {
-    if (controllerStatusTimer) clearInterval(controllerStatusTimer);
-    controllerStatusTimer = null;
-}
 
 // ============================================================================
 // RENDER: live status panel
