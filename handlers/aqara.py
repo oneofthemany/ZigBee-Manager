@@ -10,6 +10,17 @@ import zigpy.types as t
 
 from .base import ClusterHandler, register_handler
 
+# ZCL data-type IDs for raw writes that bypass cluster schema lookup
+_ZCL_DATATYPE_ID = {
+    t.Bool:     0x10,
+    t.uint8_t:  0x20,
+    t.uint16_t: 0x21,
+    t.uint32_t: 0x23,
+    t.int8s:    0x28,
+    t.int16s:   0x29,
+    t.int32s:   0x2B,
+}
+
 logger = logging.getLogger("handlers.aqara")
 
 
@@ -563,53 +574,50 @@ class AqaraManufacturerCluster(ClusterHandler):
 
     async def write_attribute(self, attr_id: int, value: Any) -> bool:
         """
-        Write a manufacturer-specific attribute on the Aqara Opple cluster (0xFCC0).
-
-        Uses write_attributes_raw with a manually-built foundation.Attribute so
-        we don't depend on zigpy having a schema for these proprietary attrs
-        (which would otherwise raise KeyError(<attr_id>) during schema lookup).
-        Also robust to the several response shapes zigpy can return on success.
+        Write a manufacturer-specific attribute via write_attributes_raw so we
+        bypass cluster-schema lookup (which otherwise raises KeyError for Aqara
+        proprietary attrs on the bare 0xFCC0 cluster).
         """
         from zigpy import types as t
         from zigpy.zcl import foundation
 
-        # 1) Coerce value to the declared zigpy type
         target_type = self.ATTR_TYPES.get(attr_id, t.uint8_t)
+        type_id = _ZCL_DATATYPE_ID.get(target_type)
+        if type_id is None:
+            logger.error(
+                f"[{self.device.ieee}] No ZCL data-type id mapped for "
+                f"{target_type.__name__} (attr 0x{attr_id:04X})"
+            )
+            return False
+
         try:
             val_converted = target_type(value)
         except (ValueError, TypeError) as e:
             logger.error(
-                f"[{self.device.ieee}] write 0x{attr_id:04X}: "
-                f"cast {value!r} -> {target_type.__name__} failed: {e}"
+                f"[{self.device.ieee}] write 0x{attr_id:04X}: cast "
+                f"{value!r} -> {target_type.__name__} failed: {e}"
             )
             return False
 
-        # 2) Pick the right cluster. Aqara 0x02xx attrs live on Opple (0xFCC0).
+        # Route Aqara 0x02xx attrs to the Opple cluster (0xFCC0)
         target_cluster = self.cluster
         if attr_id >= 0x0200 and hasattr(self.cluster, "endpoint"):
             opple = self.cluster.endpoint.in_clusters.get(0xFCC0)
-            if opple is not None:
-                target_cluster = opple
-            else:
+            if opple is None:
                 logger.warning(
                     f"[{self.device.ieee}] 0x{attr_id:04X} requested but "
                     f"0xFCC0 not present on endpoint"
                 )
                 return False
+            target_cluster = opple
 
-        # 3) Build the Attribute record manually (bypass zigpy schema lookup)
-        try:
-            type_id = foundation.DATA_TYPES.pytype_to_datatype_id(target_type)
-        except Exception as e:
-            logger.error(
-                f"[{self.device.ieee}] No zigpy data-type id for "
-                f"{target_type.__name__}: {e}"
-            )
-            return False
-
-        attr = foundation.Attribute(attrid=attr_id, value=foundation.TypeValue())
-        attr.value.type = type_id
-        attr.value.value = val_converted
+        # Build the Attribute manually
+        tv = foundation.TypeValue()
+        tv.type = type_id
+        tv.value = val_converted
+        attr = foundation.Attribute()
+        attr.attrid = attr_id
+        attr.value = tv
 
         logger.info(
             f"[{self.device.ieee}] Writing 0x{attr_id:04X}={val_converted} "
@@ -617,7 +625,6 @@ class AqaraManufacturerCluster(ClusterHandler):
             f"(type=0x{type_id:02X} {target_type.__name__})"
         )
 
-        # 4) Send write via write_attributes_raw (no schema lookup)
         try:
             result = await target_cluster.write_attributes_raw(
                 [attr], manufacturer=self.MANUFACTURER_CODE
@@ -629,10 +636,7 @@ class AqaraManufacturerCluster(ClusterHandler):
             )
             return False
 
-        # 5) Parse the response robustly. zigpy returns shapes like:
-        #      [[Record(status=0)]]
-        #      [[Record(status=X, attrid=Y), ...]]
-        #      [Record(status=0)]
+        # Unwrap [[Record, ...]] -> [Record, ...] etc.
         records = result
         while (
                 isinstance(records, (list, tuple))
@@ -640,7 +644,6 @@ class AqaraManufacturerCluster(ClusterHandler):
                 and isinstance(records[0], (list, tuple))
         ):
             records = records[0]
-
         if not isinstance(records, (list, tuple)) or not records:
             logger.warning(
                 f"[{self.device.ieee}] Unexpected write result for "
@@ -655,14 +658,12 @@ class AqaraManufacturerCluster(ClusterHandler):
         except (TypeError, ValueError):
             logger.warning(
                 f"[{self.device.ieee}] Unparseable write status for "
-                f"0x{attr_id:04X}: {status!r} (raw result={result!r})"
+                f"0x{attr_id:04X}: {status!r}"
             )
             return False
 
         if status_int == 0:
-            logger.info(
-                f"[{self.device.ieee}] ✓ Write 0x{attr_id:04X} succeeded"
-            )
+            logger.info(f"[{self.device.ieee}] ✓ Write 0x{attr_id:04X} succeeded")
             return True
         logger.warning(
             f"[{self.device.ieee}] Write 0x{attr_id:04X} failed: "
