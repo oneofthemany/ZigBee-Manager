@@ -275,6 +275,29 @@ export async function openControllerSettings() {
             : { receivers: [], thermostats: [] };
         controllerSensors = (sensorRes.success ? (sensorRes.sensors || []) : []);
         workingCircuits = JSON.parse(JSON.stringify(controllerConfig.circuits || []));
+        // Normalise: the backend emits `trvs: [{ieee, ...}]` but this frontend
+        // historically read/wrote `trv_ieees: [...]`. Derive/keep both in sync
+        // so either source of the saved config lights up the checkboxes.
+        for (const c of workingCircuits) {
+            for (const r of (c.rooms || [])) {
+                const fromTrvs = Array.isArray(r.trvs)
+                    ? r.trvs.map(t => t && t.ieee).filter(Boolean)
+                    : [];
+                const fromLegacy = Array.isArray(r.trv_ieees) ? r.trv_ieees : [];
+                // Union (preserve any extras that might only exist in legacy form)
+                const merged = Array.from(new Set([...fromTrvs, ...fromLegacy]));
+                r.trv_ieees = merged;
+                // Keep trvs list shape — used by backend and persists per-TRV
+                // settings (window_detection, child_lock, valve_detection)
+                if (!Array.isArray(r.trvs)) r.trvs = [];
+                const existingIeees = new Set(r.trvs.map(t => t.ieee));
+                for (const ieee of merged) {
+                    if (!existingIeees.has(ieee)) r.trvs.push({ ieee });
+                }
+                // Drop any trv entries that no longer appear in merged
+                r.trvs = r.trvs.filter(t => merged.includes(t.ieee));
+            }
+        }
 
         bodyEl.innerHTML = renderControllerForm(controllerConfig);
         bindControllerForm();
@@ -536,7 +559,187 @@ function renderRoomCard(room, ci, ri) {
                     TRVs <span class="badge bg-secondary">${trvCount}</span>
                     ${trvCount === 0 && sensorIeee ? '<small class="text-muted ms-2">optional for sensor-only rooms</small>' : ''}
                 </label>
-                <div class="list-group" style="max-height:200px; overflow-y:auto;">${trvCheckboxes}</div>
+                <div class="list-group mb-2" style="max-height:200px; overflow-y:auto;">${trvCheckboxes}</div>
+
+                ${renderDimensionsPanel(room, ci, ri)}
+            </div>
+        </div>`;
+}
+
+// ============================================================================
+// DIMENSIONS PANEL — optional per-room, collapsed by default
+// ============================================================================
+function renderDimensionsPanel(room, ci, ri) {
+    const dim = room.dimensions || {};
+    const walls = dim.walls || {};
+    const windows = dim.windows || [];
+    const doors = dim.doors || [];
+    const hasContent = !!(dim.floor_area_m2 || walls.external_m2 || windows.length || doors.length);
+    const badgeHtml = hasContent
+        ? `<span class="badge bg-success ms-1">set</span>`
+        : `<span class="badge bg-secondary ms-1">not set</span>`;
+
+    const collapseId = `dimensions-c${ci}-r${ri}`;
+
+    // Window rows
+    const windowRows = windows.map((w, wi) => `
+        <div class="row g-1 mb-1 align-items-center window-row" data-ci="${ci}" data-ri="${ri}" data-wi="${wi}">
+            <div class="col-md-3">
+                <input type="number" step="0.1" min="0" class="form-control form-control-sm window-area"
+                       data-ci="${ci}" data-ri="${ri}" data-wi="${wi}"
+                       value="${w.area_m2 ?? ''}" placeholder="m²">
+            </div>
+            <div class="col-md-3">
+                <select class="form-select form-select-sm window-glazing"
+                        data-ci="${ci}" data-ri="${ri}" data-wi="${wi}">
+                    <option value="single"  ${w.glazing === 'single'  ? 'selected' : ''}>Single</option>
+                    <option value="double"  ${w.glazing === 'double' || !w.glazing ? 'selected' : ''}>Double</option>
+                    <option value="triple"  ${w.glazing === 'triple'  ? 'selected' : ''}>Triple</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <select class="form-select form-select-sm window-orient"
+                        data-ci="${ci}" data-ri="${ri}" data-wi="${wi}">
+                    ${['unknown', 'N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'].map(o =>
+                        `<option value="${o}" ${(w.orientation || 'unknown') === o ? 'selected' : ''}>${o === 'unknown' ? '— orientation —' : o}</option>`
+                    ).join('')}
+                </select>
+            </div>
+            <div class="col-md-3">
+                <button class="btn btn-sm btn-outline-danger btn-window-del"
+                        data-ci="${ci}" data-ri="${ri}" data-wi="${wi}" title="Remove window">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+        </div>`).join('');
+
+    // Door rows
+    const doorRows = doors.map((d, di) => `
+        <div class="row g-1 mb-1 align-items-center door-row" data-ci="${ci}" data-ri="${ri}" data-di="${di}">
+            <div class="col-md-4">
+                <input type="number" step="0.1" min="0" class="form-control form-control-sm door-area"
+                       data-ci="${ci}" data-ri="${ri}" data-di="${di}"
+                       value="${d.area_m2 ?? ''}" placeholder="m²">
+            </div>
+            <div class="col-md-5">
+                <select class="form-select form-select-sm door-type"
+                        data-ci="${ci}" data-ri="${ri}" data-di="${di}">
+                    <option value="internal" ${d.type === 'internal' || !d.type ? 'selected' : ''}>Internal</option>
+                    <option value="external" ${d.type === 'external' ? 'selected' : ''}>External (to outside)</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <button class="btn btn-sm btn-outline-danger btn-door-del"
+                        data-ci="${ci}" data-ri="${ri}" data-di="${di}" title="Remove door">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+        </div>`).join('');
+
+    return `
+        <div class="border-top pt-2 mt-2">
+            <a class="small text-decoration-none" data-bs-toggle="collapse" href="#${collapseId}" role="button"
+               aria-expanded="${hasContent ? 'true' : 'false'}">
+                <i class="fas fa-ruler-combined me-1"></i>Room dimensions ${badgeHtml}
+                <i class="fas fa-caret-down ms-1"></i>
+            </a>
+            <div class="collapse ${hasContent ? 'show' : ''}" id="${collapseId}">
+                <div class="pt-2">
+                    <div class="row g-2 mb-2">
+                        <div class="col-md-4">
+                            <label class="form-label small mb-1">Floor area (m²)</label>
+                            <input type="number" step="0.1" min="0" class="form-control form-control-sm dim-floor-area"
+                                   data-ci="${ci}" data-ri="${ri}" value="${dim.floor_area_m2 ?? ''}">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label small mb-1">Ceiling height (m)</label>
+                            <input type="number" step="0.1" min="1.5" max="5" class="form-control form-control-sm dim-ceiling-height"
+                                   data-ci="${ci}" data-ri="${ri}" value="${dim.ceiling_height_m ?? 2.4}">
+                        </div>
+                    </div>
+
+                    <div class="row g-2 mb-2">
+                        <div class="col-md-4">
+                            <label class="form-label small mb-1" title="Walls facing outside — biggest heat loss">
+                                External wall area (m²) <i class="fas fa-question-circle text-muted"></i>
+                            </label>
+                            <input type="number" step="0.1" min="0" class="form-control form-control-sm dim-wall-ext"
+                                   data-ci="${ci}" data-ri="${ri}" value="${walls.external_m2 ?? ''}">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label small mb-1" title="Walls shared with neighbouring property">
+                                Party wall area (m²) <i class="fas fa-question-circle text-muted"></i>
+                            </label>
+                            <input type="number" step="0.1" min="0" class="form-control form-control-sm dim-wall-party"
+                                   data-ci="${ci}" data-ri="${ri}" value="${walls.party_m2 ?? ''}">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label small mb-1" title="Walls adjoining other rooms in this dwelling">
+                                Internal wall area (m²)
+                            </label>
+                            <input type="number" step="0.1" min="0" class="form-control form-control-sm dim-wall-int"
+                                   data-ci="${ci}" data-ri="${ri}" value="${walls.internal_m2 ?? ''}">
+                        </div>
+                    </div>
+
+                    <div class="row g-2 mb-2">
+                        <div class="col-md-6">
+                            <label class="form-label small mb-1">Floor type</label>
+                            <select class="form-select form-select-sm dim-floor-type"
+                                    data-ci="${ci}" data-ri="${ri}">
+                                ${[
+                                    'unknown',
+                                    'solid',
+                                    'suspended',
+                                    'carpet_over_concrete',
+                                    'tile_over_concrete',
+                                    'wooden',
+                                    'carpet_over_wooden',
+                                ].map(t =>
+                                    `<option value="${t}" ${(dim.floor_type || 'unknown') === t ? 'selected' : ''}>${t.replace(/_/g, ' ')}</option>`
+                                ).join('')}
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small mb-1">Ceiling type</label>
+                            <select class="form-select form-select-sm dim-ceiling-type"
+                                    data-ci="${ci}" data-ri="${ri}">
+                                ${['unknown', 'insulated', 'uninsulated', 'flat_roof'].map(t =>
+                                    `<option value="${t}" ${(dim.ceiling_type || 'unknown') === t ? 'selected' : ''}>${t.replace(/_/g, ' ')}</option>`
+                                ).join('')}
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="d-flex justify-content-between align-items-center mt-3 mb-1">
+                        <strong class="small"><i class="fas fa-square me-1"></i>Windows (${windows.length})</strong>
+                        <button class="btn btn-sm btn-outline-secondary btn-window-add"
+                                data-ci="${ci}" data-ri="${ri}">
+                            <i class="fas fa-plus me-1"></i>Add window
+                        </button>
+                    </div>
+                    <div class="small text-muted mb-1">Area, glazing type and orientation per window</div>
+                    ${windowRows || '<div class="small text-muted">No windows added.</div>'}
+
+                    <div class="d-flex justify-content-between align-items-center mt-3 mb-1">
+                        <strong class="small"><i class="fas fa-door-closed me-1"></i>Doors (${doors.length})</strong>
+                        <button class="btn btn-sm btn-outline-secondary btn-door-add"
+                                data-ci="${ci}" data-ri="${ri}">
+                            <i class="fas fa-plus me-1"></i>Add door
+                        </button>
+                    </div>
+                    ${doorRows || '<div class="small text-muted">No doors added.</div>'}
+
+                    <div class="mt-3 pt-2 border-top">
+                        <button class="btn btn-sm btn-outline-primary btn-thermal-preview"
+                                data-ci="${ci}" data-ri="${ri}"
+                                data-room-id="${escapeAttr(room.id)}">
+                            <i class="fas fa-calculator me-1"></i>Preview thermal profile
+                        </button>
+                        <div class="mt-2 small thermal-preview-slot"
+                             data-ci="${ci}" data-ri="${ri}"></div>
+                    </div>
+                </div>
             </div>
         </div>`;
 }
@@ -570,12 +773,17 @@ function bindCircuitCards() {
     document.querySelectorAll('.btn-add-room').forEach(btn => {
         btn.addEventListener('click', () => {
             const ci = +btn.dataset.ci;
-            const n = (workingCircuits[ci].rooms || []).length + 1;
             workingCircuits[ci].rooms = workingCircuits[ci].rooms || [];
+            const n = workingCircuits[ci].rooms.length + 1;
+            // Prefix with circuit id so newly-added rooms are globally unique.
+            // User can rename later; this just avoids the default collision.
+            const prefix = (workingCircuits[ci].id || `c${ci + 1}`).toLowerCase()
+                .replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
             workingCircuits[ci].rooms.push({
-                id: `room_${n}`, name: `Room ${n}`,
+                id: `${prefix}_room_${n}`,
+                name: `Room ${n}`,
                 target_temp: 21, night_setback: 17, min_temp: 16,
-                trv_ieees: [], schedule: [],
+                trv_ieees: [], trvs: [], schedule: [],
                 temperature_sensor_ieee: null,
                 external_temp_mode: 'off',
             });
@@ -616,12 +824,15 @@ function bindCircuitCards() {
             const ieee = e.target.dataset.ieee;
             const room = workingCircuits[ci].rooms[ri];
             room.trv_ieees = room.trv_ieees || [];
+            room.trvs = Array.isArray(room.trvs) ? room.trvs : [];
             if (e.target.checked) {
                 if (!room.trv_ieees.includes(ieee)) room.trv_ieees.push(ieee);
+                if (!room.trvs.some(t => t.ieee === ieee)) room.trvs.push({ ieee });
             } else {
                 room.trv_ieees = room.trv_ieees.filter(t => t !== ieee);
+                room.trvs = room.trvs.filter(t => t.ieee !== ieee);
             }
-            renderCircuitsList();  // re-render so other rooms' available lists update
+            renderCircuitsList();
         });
     });
     // Room sensor selection
@@ -646,6 +857,251 @@ function bindCircuitCards() {
             workingCircuits[ci].rooms[ri].external_temp_mode = e.target.value;
         });
     });
+
+    // ---- Dimensions block (room-level) ----
+    function getDim(ci, ri) {
+        const room = workingCircuits[ci].rooms[ri];
+        if (!room.dimensions) {
+            room.dimensions = {
+                floor_area_m2: null, ceiling_height_m: 2.4,
+                walls: { external_m2: 0, party_m2: 0, internal_m2: 0 },
+                windows: [], doors: [],
+                floor_type: 'unknown', ceiling_type: 'unknown',
+            };
+        }
+        if (!room.dimensions.walls) room.dimensions.walls = { external_m2: 0, party_m2: 0, internal_m2: 0 };
+        if (!room.dimensions.windows) room.dimensions.windows = [];
+        if (!room.dimensions.doors) room.dimensions.doors = [];
+        return room.dimensions;
+    }
+
+    function parseNumOrNull(s) {
+        const v = parseFloat(s);
+        return isNaN(v) ? null : v;
+    }
+
+    // Scalar fields
+    const scalarMap = [
+        ['.dim-floor-area',      d => ({ ...d, floor_area_m2: parseNumOrNull(event.target.value) })],
+    ];
+    document.querySelectorAll('.dim-floor-area').forEach(el => {
+        el.addEventListener('change', e => {
+            const d = getDim(+e.target.dataset.ci, +e.target.dataset.ri);
+            d.floor_area_m2 = parseNumOrNull(e.target.value);
+        });
+    });
+    document.querySelectorAll('.dim-ceiling-height').forEach(el => {
+        el.addEventListener('change', e => {
+            const d = getDim(+e.target.dataset.ci, +e.target.dataset.ri);
+            d.ceiling_height_m = parseNumOrNull(e.target.value) || 2.4;
+        });
+    });
+    document.querySelectorAll('.dim-wall-ext').forEach(el => {
+        el.addEventListener('change', e => {
+            const d = getDim(+e.target.dataset.ci, +e.target.dataset.ri);
+            d.walls.external_m2 = parseNumOrNull(e.target.value) || 0;
+        });
+    });
+    document.querySelectorAll('.dim-wall-party').forEach(el => {
+        el.addEventListener('change', e => {
+            const d = getDim(+e.target.dataset.ci, +e.target.dataset.ri);
+            d.walls.party_m2 = parseNumOrNull(e.target.value) || 0;
+        });
+    });
+    document.querySelectorAll('.dim-wall-int').forEach(el => {
+        el.addEventListener('change', e => {
+            const d = getDim(+e.target.dataset.ci, +e.target.dataset.ri);
+            d.walls.internal_m2 = parseNumOrNull(e.target.value) || 0;
+        });
+    });
+    document.querySelectorAll('.dim-floor-type').forEach(el => {
+        el.addEventListener('change', e => {
+            getDim(+e.target.dataset.ci, +e.target.dataset.ri).floor_type = e.target.value;
+        });
+    });
+    document.querySelectorAll('.dim-ceiling-type').forEach(el => {
+        el.addEventListener('change', e => {
+            getDim(+e.target.dataset.ci, +e.target.dataset.ri).ceiling_type = e.target.value;
+        });
+    });
+
+    // Window rows
+    document.querySelectorAll('.btn-window-add').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const d = getDim(+btn.dataset.ci, +btn.dataset.ri);
+            d.windows.push({ area_m2: 1.0, glazing: 'double', orientation: 'unknown' });
+            renderCircuitsList();
+        });
+    });
+    document.querySelectorAll('.window-area').forEach(el => {
+        el.addEventListener('change', e => {
+            const d = getDim(+e.target.dataset.ci, +e.target.dataset.ri);
+            d.windows[+e.target.dataset.wi].area_m2 = parseNumOrNull(e.target.value) || 0;
+        });
+    });
+    document.querySelectorAll('.window-glazing').forEach(el => {
+        el.addEventListener('change', e => {
+            const d = getDim(+e.target.dataset.ci, +e.target.dataset.ri);
+            d.windows[+e.target.dataset.wi].glazing = e.target.value;
+        });
+    });
+    document.querySelectorAll('.window-orient').forEach(el => {
+        el.addEventListener('change', e => {
+            const d = getDim(+e.target.dataset.ci, +e.target.dataset.ri);
+            d.windows[+e.target.dataset.wi].orientation = e.target.value;
+        });
+    });
+    document.querySelectorAll('.btn-window-del').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const d = getDim(+btn.dataset.ci, +btn.dataset.ri);
+            d.windows.splice(+btn.dataset.wi, 1);
+            renderCircuitsList();
+        });
+    });
+
+    // Door rows
+    document.querySelectorAll('.btn-door-add').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const d = getDim(+btn.dataset.ci, +btn.dataset.ri);
+            d.doors.push({ area_m2: 1.9, type: 'internal' });
+            renderCircuitsList();
+        });
+    });
+    document.querySelectorAll('.door-area').forEach(el => {
+        el.addEventListener('change', e => {
+            const d = getDim(+e.target.dataset.ci, +e.target.dataset.ri);
+            d.doors[+e.target.dataset.di].area_m2 = parseNumOrNull(e.target.value) || 0;
+        });
+    });
+    document.querySelectorAll('.door-type').forEach(el => {
+        el.addEventListener('change', e => {
+            const d = getDim(+e.target.dataset.ci, +e.target.dataset.ri);
+            d.doors[+e.target.dataset.di].type = e.target.value;
+        });
+    });
+    document.querySelectorAll('.btn-door-del').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const d = getDim(+btn.dataset.ci, +btn.dataset.ri);
+            d.doors.splice(+btn.dataset.di, 1);
+            renderCircuitsList();
+        });
+    });
+
+    document.querySelectorAll('.btn-thermal-preview').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            const ci = +btn.dataset.ci;
+            const ri = +btn.dataset.ri;
+            const circuit = workingCircuits[ci];
+            const room = circuit?.rooms?.[ri];
+            if (!room) return;
+            const circuitId = encodeURIComponent(circuit.id);
+            const roomId = encodeURIComponent(room.id);
+
+            // Scoped DOM — find the slot inside the same circuit+room combo,
+            // NOT by global ID (multiple rooms may share the same room.id).
+            const out = document.querySelector(
+                `.thermal-preview-slot[data-ci="${ci}"][data-ri="${ri}"]`
+            );
+            if (!out) return;
+
+            out.innerHTML = `<span class="spinner-border spinner-border-sm me-1"></span>Computing…`;
+            btn.disabled = true;
+            try {
+                // Circuit-scoped endpoint — disambiguates when multiple
+                // circuits have rooms sharing the same id.
+                const res = await fetch(
+                    `/api/heating/circuits/${circuitId}/rooms/${roomId}/thermal`
+                );
+                const json = await res.json();
+                if (!json.success) {
+                    out.innerHTML = `<div class="text-danger">${escapeHtml(json.error || 'Failed')}</div>`;
+                    return;
+                }
+                out.innerHTML = renderThermalResult(json.thermal, json.meta);
+            } catch (e) {
+                out.innerHTML = `<div class="text-danger">Request failed: ${escapeHtml(e.message)}</div>`;
+            } finally {
+                btn.disabled = false;
+            }
+        });
+    });
+
+}
+
+function renderThermalResult(t, meta) {
+    if (!t) return '<div class="text-muted">No data</div>';
+    const bd = t.static_breakdown || {};
+    const headerMeta = (meta && (meta.circuit_name || meta.room_name)) ? `
+        <div class="small text-muted mb-1">
+            ${meta.circuit_name ? `<i class="fas fa-stream me-1"></i>${escapeHtml(meta.circuit_name)} › ` : ''}
+            ${meta.room_name ? `<strong>${escapeHtml(meta.room_name)}</strong>` : ''}
+        </div>` : '';
+    const ambiguousWarning = meta?.ambiguous_id ? `
+        <div class="alert alert-warning small py-1 px-2 mb-2">
+            <i class="fas fa-exclamation-triangle me-1"></i>
+            Found ${meta.match_count} rooms with id <code>${escapeHtml(t.room_id)}</code>.
+            Showing the first match — rename your rooms to make the ids unique.
+        </div>` : '';
+
+    const fmt = v => v == null ? '—' : `${Number(v).toFixed(1)} W/K`;
+    const pct = (v, total) => {
+        if (!v || !total) return '';
+        return ` <span class="text-muted">(${Math.round(100 * v / total)}%)</span>`;
+    };
+    const staticTotal = t.static_w_per_k || 0;
+
+    const warnings = (t.warnings || []).map(w =>
+        `<li class="text-warning">${escapeHtml(w)}</li>`).join('');
+
+    const confidenceLabel = t.measured_confidence >= 0.7
+        ? '<span class="badge bg-success">high confidence</span>'
+        : t.measured_confidence >= 0.3
+        ? '<span class="badge bg-warning text-dark">medium confidence</span>'
+        : '<span class="badge bg-secondary">low / none</span>';
+
+    return `
+        <div class="card card-body bg-light p-2">
+            ${headerMeta}
+            ${ambiguousWarning}
+            <div class="d-flex justify-content-between mb-2">
+                <div>
+                    <strong>Blended heat loss:</strong>
+                    <span class="fs-5 text-primary">${fmt(t.blended_w_per_k)}</span>
+                </div>
+                <div>${confidenceLabel}</div>
+            </div>
+
+            <div class="row g-2 small">
+                <div class="col-md-6">
+                    <strong>Static (from dimensions)</strong>: ${fmt(t.static_w_per_k)}
+                    <ul class="mb-1 mt-1" style="list-style:none;padding-left:0;">
+                        <li>Walls (external): ${fmt(bd.walls_external)}${pct(bd.walls_external, staticTotal)}</li>
+                        <li>Party walls: ${fmt(bd.walls_party)}${pct(bd.walls_party, staticTotal)}</li>
+                        <li>Windows: ${fmt(bd.windows)}${pct(bd.windows, staticTotal)}</li>
+                        <li>Doors: ${fmt(bd.doors)}${pct(bd.doors, staticTotal)}</li>
+                        <li>Floor: ${fmt(bd.floor)}${pct(bd.floor, staticTotal)}</li>
+                        <li>Ceiling: ${fmt(bd.ceiling)}${pct(bd.ceiling, staticTotal)}</li>
+                        <li>Ventilation: ${fmt(bd.ventilation)}${pct(bd.ventilation, staticTotal)}</li>
+                    </ul>
+                </div>
+                <div class="col-md-6">
+                    <strong>Measured (from telemetry)</strong>: ${fmt(t.measured_w_per_k)}
+                    <ul class="mb-1 mt-1" style="list-style:none;padding-left:0;">
+                        <li>Samples analysed: <strong>${t.measured_sample_count || 0}</strong></li>
+                        <li>Best R²: ${t.measured_r2 != null ? t.measured_r2.toFixed(2) : '—'}</li>
+                        <li>Time constant τ: ${t.tau_seconds != null ? (t.tau_seconds / 60).toFixed(0) + ' min' : '—'}</li>
+                        <li>Insulation: <code>${escapeHtml(meta.insulation)}</code></li>
+                        <li>Source: <code>${escapeHtml((meta.sensor_ieee || 'none').slice(-8))}</code></li>
+                    </ul>
+                </div>
+            </div>
+
+            ${warnings ? `<ul class="small mt-2 mb-0">${warnings}</ul>` : ''}
+            <div class="small text-muted mt-1">
+                Lower W/K = better insulated. Typical UK room: 30–80 W/K.
+                Used in Phase 4 for BTU / radiator sizing.
+            </div>
+        </div>`;
 }
 
 async function saveControllerSettings() {

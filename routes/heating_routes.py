@@ -508,6 +508,113 @@ def register_heating_routes(app: FastAPI, get_heating_advisor, get_zigbee_servic
         except Exception as e:
             return {"success": False, "error": str(e)}
 
+
+    @app.get("/api/heating/circuits/{circuit_id}/rooms/{room_id}/thermal")
+    async def circuit_room_thermal(circuit_id: str, room_id: str, days: int = 14):
+        """Thermal profile for a specific room in a specific circuit."""
+        return await _thermal_for_room(circuit_id, room_id, days)
+
+    @app.get("/api/heating/rooms/{room_id}/thermal")
+    async def room_thermal_legacy(room_id: str, days: int = 14):
+        """
+        Back-compat: if multiple circuits share the room_id (common when users
+        accept the default 'room_1' everywhere), fall back to the first match
+        and warn.
+        """
+        return await _thermal_for_room(None, room_id, days)
+
+    async def _thermal_for_room(circuit_id, room_id: str, days: int):
+        adv = _resolve_advisor()
+        if not adv:
+            return {"success": False, "error": "Heating advisor not available"}
+        try:
+            cfg = _load_config()
+            heating = cfg.get("heating") or {}
+            insulation = (heating.get("property") or {}).get("insulation", "partial")
+
+            circuits = heating.get("circuits") or []
+            found_room = None
+            found_circuit = None
+            matches = 0
+            for c in circuits:
+                if circuit_id is not None and str(c.get("id")) != str(circuit_id):
+                    continue
+                for r in (c.get("rooms") or []):
+                    if str(r.get("id")) == room_id:
+                        matches += 1
+                        if not found_room:
+                            found_room = r
+                            found_circuit = c
+                        if circuit_id is not None:
+                            break  # exact match, stop searching
+                if found_room and circuit_id is not None:
+                    break
+
+            if not found_room:
+                return {"success": False,
+                        "error": f"Room '{room_id}' not found"
+                                 + (f" in circuit '{circuit_id}'" if circuit_id else "")}
+
+            ambiguous = (circuit_id is None and matches > 1)
+
+            dimensions = found_room.get("dimensions")
+
+            sensor_ieee = found_room.get("temperature_sensor_ieee")
+            if not sensor_ieee:
+                trvs = found_room.get("trvs") or []
+                if trvs and isinstance(trvs[0], dict):
+                    sensor_ieee = trvs[0].get("ieee")
+
+            temp_series = []
+            if sensor_ieee:
+                try:
+                    from modules.telemetry_db import query_device_state_history
+                    hours = max(24, int(days) * 24)
+                    for attr in ("temperature", "local_temperature",
+                                 "current_temperature", "internal_temperature"):
+                        rows = query_device_state_history(sensor_ieee, attr, hours) or []
+                        if rows:
+                            temp_series = rows
+                            break
+                except Exception as e:
+                    logger.warning(f"history fetch failed: {e}")
+
+            outdoor_temp_getter = None
+            if adv and getattr(adv, "weather", None):
+                try:
+                    current_out = adv.weather.get_outdoor_temperature()
+                    outdoor_temp_getter = lambda _ts, _v=current_out: _v
+                except Exception:
+                    pass
+
+            from modules.thermal_profile import compute_profile
+            profile = compute_profile(
+                room_id=room_id,
+                dimensions=dimensions,
+                insulation=insulation,
+                temperature_series=temp_series,
+                outdoor_temp_getter=outdoor_temp_getter,
+            )
+
+            return {
+                "success": True,
+                "thermal": profile.to_dict(),
+                "meta": {
+                    "circuit_id": str(found_circuit.get("id")) if found_circuit else None,
+                    "circuit_name": found_circuit.get("name") if found_circuit else None,
+                    "room_name": found_room.get("name"),
+                    "sensor_ieee": sensor_ieee,
+                    "insulation": insulation,
+                    "temperature_samples": len(temp_series),
+                    "days": int(days),
+                    "ambiguous_id": ambiguous,
+                    "match_count": matches,
+                },
+            }
+        except Exception as e:
+            logger.error(f"Thermal profile failed for {room_id}: {e}", exc_info=True)
+            return {"success": False, "error": str(e)}
+
     # ═════════ Thermostat discovery (for zone assignment UI) ═════════
     @app.get("/api/heating/thermostats")
     async def list_thermostats():

@@ -358,7 +358,7 @@ class HeatingController:
                 DEFAULT_EXT_TEMP_PUSH_INTERVAL_SEC
             ) or DEFAULT_EXT_TEMP_PUSH_INTERVAL_SEC)
 
-            out.append({
+            room_out = {
                 "id": rid,
                 "name": str(r["name"]),
                 "target_temp": _as_float(r.get("target_temp"), self._default_target),
@@ -371,7 +371,12 @@ class HeatingController:
                 # Keep legacy key populated so older code paths still work.
                 "trv_ieees": [t["ieee"] for t in trvs],
                 "schedule": clean_sched,
-            })
+            }
+            # Dimensions are used by Phase 3+ (thermal profile, BTU sizing).
+            # Controller itself doesn't need them but preserves them verbatim.
+            if isinstance(r.get("dimensions"), dict):
+                room_out["dimensions"] = r["dimensions"]
+            out.append(room_out)
         return out
 
     def _clean_trvs(self, room: dict) -> List[Dict]:

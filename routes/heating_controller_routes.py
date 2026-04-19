@@ -27,6 +27,105 @@ CONFIG_PATH = "./config/config.yaml"
 VALID_EXT_MODES = ("off", "advisory", "push")
 
 
+
+VALID_FLOOR_TYPES = (
+    "solid",
+    "suspended",
+    "carpet_over_concrete",
+    "tile_over_concrete",
+    "wooden",
+    "carpet_over_wooden",
+    "unknown",
+)
+VALID_GLAZING = ("single", "double", "triple")
+VALID_ORIENTATIONS = ("N", "NE", "E", "SE", "S", "SW", "W", "NW", "unknown")
+VALID_DOOR_TYPES = ("external", "internal")
+VALID_CEILING_TYPES = ("insulated", "uninsulated", "flat_roof", "unknown")
+
+
+def _clean_window(w: dict) -> Optional[dict]:
+    if not isinstance(w, dict):
+        return None
+    area = _as_float(w.get("area_m2"))
+    if area is None or area <= 0:
+        return None
+    glazing = str(w.get("glazing", "double")).lower()
+    if glazing not in VALID_GLAZING:
+        glazing = "double"
+    orient = str(w.get("orientation", "unknown")).upper()
+    if orient.lower() == "unknown":
+        orient = "unknown"
+    elif orient not in VALID_ORIENTATIONS:
+        orient = "unknown"
+    return {"area_m2": round(area, 2), "glazing": glazing, "orientation": orient}
+
+
+def _clean_door(d: dict) -> Optional[dict]:
+    if not isinstance(d, dict):
+        return None
+    area = _as_float(d.get("area_m2"))
+    if area is None or area <= 0:
+        return None
+    typ = str(d.get("type", "internal")).lower()
+    if typ not in VALID_DOOR_TYPES:
+        typ = "internal"
+    return {"area_m2": round(area, 2), "type": typ}
+
+
+def _clean_dimensions(d: dict) -> Optional[dict]:
+    """
+    Normalise a room's dimensions block. Returns None (omitted from config)
+    if the user hasn't supplied anything meaningful — which is fine, rooms
+    without dimensions just skip thermal / BTU calculation.
+    """
+    if not isinstance(d, dict):
+        return None
+
+    floor_area = _as_float(d.get("floor_area_m2"))
+    ceiling_h = _as_float(d.get("ceiling_height_m"), 2.4)
+
+    walls_in = d.get("walls") if isinstance(d.get("walls"), dict) else {}
+    walls = {
+        "external_m2": max(0.0, _as_float(walls_in.get("external_m2"), 0.0) or 0.0),
+        "party_m2":    max(0.0, _as_float(walls_in.get("party_m2"),    0.0) or 0.0),
+        "internal_m2": max(0.0, _as_float(walls_in.get("internal_m2"), 0.0) or 0.0),
+    }
+
+    raw_windows = d.get("windows") if isinstance(d.get("windows"), list) else []
+    windows = [w for w in (_clean_window(x) for x in raw_windows) if w]
+
+    raw_doors = d.get("doors") if isinstance(d.get("doors"), list) else []
+    doors = [x for x in (_clean_door(y) for y in raw_doors) if x]
+
+    floor_type = str(d.get("floor_type", "unknown")).lower()
+    if floor_type not in VALID_FLOOR_TYPES:
+        floor_type = "unknown"
+
+    ceiling_type = str(d.get("ceiling_type", "unknown")).lower()
+    if ceiling_type not in VALID_CEILING_TYPES:
+        ceiling_type = "unknown"
+
+    # If nothing substantive was supplied, skip persistence entirely
+    has_content = (
+            (floor_area and floor_area > 0) or walls["external_m2"] > 0
+            or walls["party_m2"] > 0 or walls["internal_m2"] > 0
+            or windows or doors
+    )
+    if not has_content:
+        return None
+
+    out = {
+        "floor_area_m2": round(floor_area, 2) if floor_area else None,
+        "ceiling_height_m": round(max(1.5, min(5.0, ceiling_h)), 2),
+        "walls": walls,
+        "windows": windows,
+        "doors": doors,
+        "floor_type": floor_type,
+        "ceiling_type": ceiling_type,
+    }
+    return out
+
+
 # ─── YAML helpers ──────────────────────────────────────────────────
 def _load_config() -> Dict[str, Any]:
     if not os.path.exists(CONFIG_PATH):
@@ -150,7 +249,9 @@ def _clean_room(r: dict, existing_ids: Optional[set] = None) -> Optional[dict]:
     push_interval_raw = _as_float(r.get("external_temp_push_interval_sec"), 300.0)
     push_interval = int(push_interval_raw) if push_interval_raw else 300
 
-    return {
+    dimensions = _clean_dimensions(r.get("dimensions"))
+
+    out = {
         "id": rid,
         "name": str(r["name"]),
         "target_temp": _as_float(r.get("target_temp"), 21.0),
@@ -162,6 +263,9 @@ def _clean_room(r: dict, existing_ids: Optional[set] = None) -> Optional[dict]:
         "trvs": trvs,
         "schedule": clean_sched,
     }
+    if dimensions is not None:
+        out["dimensions"] = dimensions
+    return out
 
 
 def _clean_circuit(c: dict, existing_ids: Optional[set] = None) -> Optional[dict]:
