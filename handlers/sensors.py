@@ -36,7 +36,7 @@ ILLUM_REPORTABLE_CHANGE = 100    # Report if the raw value changes by 100
 # Temperature
 TEMP_MIN_REPORT_INTERVAL = 30    # Report every 30 seconds (minimum)
 TEMP_MAX_REPORT_INTERVAL = 3600  # Report every 1 hour (maximum)
-TEMP_REPORTABLE_CHANGE = 50      # Report if the value changes by 0.5 degrees (50 raw units)
+TEMP_REPORTABLE_CHANGE = 25      # Report if the value changes by 0.25 degrees (25 raw units)
 
 # ============================================================
 # HELPER MIXIN FOR DYNAMIC CONFIGURATION
@@ -57,7 +57,7 @@ class SensorReportingMixin:
                 change = 100       # Match your ILLUM_REPORTABLE_CHANGE
             elif self.CLUSTER_ID == 0x0402: # Temperature
                 min_interval = 30  # Match your TEMP_MIN_REPORT_INTERVAL
-                change = 50        # Match your TEMP_REPORTABLE_CHANGE (0.5 C)
+                change = 25        # Match your TEMP_REPORTABLE_CHANGE (0.25 C)
             elif self.CLUSTER_ID == 0x0405: # Humidity
                 min_interval = 30
                 change = 100       # 1% change
