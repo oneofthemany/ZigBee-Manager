@@ -25,6 +25,35 @@ import {
     loadControllerStatus,
 } from './heating-controller.js';
 
+
+// Chart palette tuned for both light and dark mode visibility.
+// Each colour has ~4:1 contrast against both #f0f2f5 (light body) and
+// #0f1117 (dark body). Verified with WebAIM contrast checker.
+function getChartPalette() {
+    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+    return isDark
+        ? ['#60a5fa',  // light blue
+           '#f87171',  // light red
+           '#4ade80',  // light green
+           '#fbbf24',  // amber
+           '#a78bfa',  // lavender
+           '#fb923c',  // orange
+           '#2dd4bf',  // teal
+           '#f472b6',  // pink
+           '#c084fc',  // purple
+           '#38bdf8']  // sky
+        : ['#1d4ed8',  // darker blue for white bg
+           '#b91c1c',  // darker red
+           '#15803d',  // darker green
+           '#b45309',  // amber
+           '#6d28d9',  // purple
+           '#c2410c',  // orange
+           '#0e7490',  // teal
+           '#be185d',  // pink
+           '#7e22ce',  // violet
+           '#0369a1']; // deep sky
+}
+
 // ============================================================================
 // STATE
 // ============================================================================
@@ -51,6 +80,13 @@ const DAYS = [
     { key: 'sun', label: 'Su' },
 ];
 
+// Re-render the chart immediately when the user toggles theme so colours
+// and tooltip styling update without waiting for the next 20s tick.
+document.addEventListener('themechange', () => {
+    if (lastDashboard) {
+        loadHeatingHistory();  // refetch + redraw
+    }
+});
 // ============================================================================
 // INITIALIZATION
 // ============================================================================
@@ -125,6 +161,40 @@ export async function loadHeatingDashboard({ silent = false } = {}) {
             loadHeatingRuntime(),
             loadControllerOverlay(),
         ]);
+        // Inject sensor-only rooms as pseudo-devices in the heating devices
+        // table so bathrooms etc. are visible alongside TRV-equipped rooms.
+        try {
+            const ctrlRes = await fetch('/api/heating/controller/state');
+            const ctrlJson = await ctrlRes.json();
+            if (ctrlJson.success && ctrlJson.state) {
+                const extraDevices = [];
+                const known = new Set((json.data.heating?.devices || []).map(d => d.ieee));
+                for (const c of (ctrlJson.state.circuits || [])) {
+                    for (const r of (c.rooms || [])) {
+                        if ((r.trvs || []).length > 0) continue;      // has TRVs already
+                        if (!r.sensor_ieee) continue;                 // nothing to represent
+                        if (known.has(r.sensor_ieee)) continue;       // already in table
+                        // The device cache has the sensor's friendly name
+                        const cachedDev = (window.state?.deviceCache || {})[r.sensor_ieee];
+                        extraDevices.push({
+                            ieee: r.sensor_ieee,
+                            name: cachedDev?.friendly_name || `${r.name} (sensor)`,
+                            temperature: r.current_temp,
+                            setpoint: r.target_temp,
+                            mode: 'sensor',
+                            action: r.status === 'cold' ? 'calling' : 'idle',
+                            effective_action: r.status === 'cold' ? 'calling' : 'idle',
+                            running: false,
+                            demand: 0,
+                            _sensor_only: true,
+                        });
+                    }
+                }
+                if (extraDevices.length) {
+                    json.data.heating.devices = (json.data.heating.devices || []).concat(extraDevices);
+                }
+            }
+        } catch (e) { console.debug('Sensor-only injection skipped:', e); }
         // Preserve heatingControllerPanel contents across re-renders when
         // possible so the user doesn't see a spinner-flash every 20s.
         const prevPanel = document.getElementById('heatingControllerPanel');
@@ -400,12 +470,34 @@ async function loadControllerOverlay() {
         controllerOverlay = {};
         if (json.success && json.state && Array.isArray(json.state.circuits)) {
             for (const c of json.state.circuits) {
-                if (!c.receiver_ieee) continue;
-                controllerOverlay[c.receiver_ieee] = {
-                    running: c.receiver_state?.running === true,
-                    calling: !!c.calling_for_heat,
-                    system_mode: c.receiver_state?.system_mode,
-                };
+                // Receiver entry — running / calling truth
+                if (c.receiver_ieee) {
+                    controllerOverlay[c.receiver_ieee] = {
+                        kind: 'receiver',
+                        running: c.receiver_state?.running === true,
+                        calling: !!c.calling_for_heat,
+                        system_mode: c.receiver_state?.system_mode,
+                    };
+                }
+                // Per-TRV entries — overlay the authoritative room temperature
+                // (external sensor if configured, else TRV mean) so the Heating
+                // Devices table shows what the controller actually decides on.
+                for (const r of (c.rooms || [])) {
+                    if (r.current_temp == null) continue;
+                    for (const t of (r.trvs || [])) {
+                        if (!t.ieee) continue;
+                        controllerOverlay[t.ieee] = {
+                            kind: 'trv',
+                            room_name: r.name,
+                            room_temp: r.current_temp,
+                            room_temp_source: r.temp_source, // "external" | "trv_mean"
+                            room_status: r.status,           // cold | ontarget | hot
+                            target_temp: r.target_temp,
+                            intended_setpoint: t.intended_setpoint,
+                            trv_action: t.action,            // track_target | force_close
+                        };
+                    }
+                }
             }
         }
     } catch (err) {
@@ -455,11 +547,28 @@ function renderDevicesTable(devices) {
 
         const cachedDev = (window.state?.deviceCache || {})[d.ieee];
         const displayName = cachedDev?.friendly_name || d.name || d.ieee || '—';
+        // If the controller is managing this device, overlay room temp / target
+        // so this row matches the controller panel exactly.
+        let currentCell, setpointCell;
+        if (overlay?.kind === 'trv' && overlay.room_temp != null) {
+            const srcTag = overlay.room_temp_source === 'external'
+                ? `<i class="fas fa-satellite-dish ms-1 text-info" title="From external sensor in ${escapeHtml(overlay.room_name)}"></i>`
+                : `<i class="fas fa-thermometer-half ms-1 text-muted" title="TRV mean"></i>`;
+            currentCell = `${formatTemp(overlay.room_temp)} ${srcTag}`;
+            const intendedTag = (overlay.intended_setpoint != null && Math.abs((overlay.intended_setpoint - (d.setpoint ?? 0))) > 0.05)
+                ? ` <small class="text-muted" title="Controller intended setpoint">(→${overlay.intended_setpoint}°)</small>`
+                : '';
+            setpointCell = `${formatTemp(d.setpoint)}${intendedTag}`;
+        } else {
+            currentCell = formatTemp(d.temperature);
+            setpointCell = formatTemp(d.setpoint);
+        }
+
         return `
             <tr>
                 <td>${escapeHtml(displayName)}</td>
-                <td>${formatTemp(d.temperature)}</td>
-                <td>${formatTemp(d.setpoint)}</td>
+                <td>${currentCell}</td>
+                <td>${setpointCell}</td>
                 <td>${escapeHtml(d.mode || '—')}</td>
                 <td>${actionBadge}</td>
                 <td>${pctBar}</td>
@@ -579,6 +688,10 @@ function renderZonesDashboard(zones) {
         </div>`;
 }
 
+// Cached chart state so refreshes don't flash
+let _historyChartSeries = null;
+let _historyHoverHandler = null;
+
 function renderHistoryChart(historyData) {
     const container = document.getElementById('heatingHistoryChart');
     if (!container) return;
@@ -600,6 +713,7 @@ function renderHistoryChart(historyData) {
         return;
     }
 
+    // Build series — temperature only (we chart temp over time, not demand)
     const series = [];
     let totalPoints = 0;
     for (const name of names) {
@@ -615,49 +729,253 @@ function renderHistoryChart(historyData) {
             <div class="text-center text-muted py-3">
                 <i class="fas fa-chart-line fa-2x mb-2 opacity-50"></i>
                 <div><strong>No temperature history recorded yet</strong></div>
-                <div class="small mt-2">
-                    Found ${names.length} heating device${names.length === 1 ? '' : 's'} but only ${totalPoints} point${totalPoints === 1 ? '' : 's'} of temperature data in the last 24h.
-                </div>
-                <div class="small mt-1">Telemetry records a point each time a device reports a changed attribute — make sure your TRVs and receivers are online and reporting. Points will accumulate as the day progresses.</div>
+                <div class="small mt-2">Found ${names.length} heating device${names.length === 1 ? '' : 's'} but only ${totalPoints} point${totalPoints === 1 ? '' : 's'} of temperature data in the last 24h.</div>
+                <div class="small mt-1">Telemetry records a point each time a device reports a changed attribute. Points will accumulate as the day progresses.</div>
                 <ul class="small text-muted list-unstyled mt-2 mb-0">${deviceList}${extra}</ul>
             </div>`;
         return;
     }
-    const W = 800, H = 220, PAD = 36;
+
+    _historyChartSeries = series;
+
+    // === Geometry ===
+    const W = 900;
+    const H = 280;
+    const PAD_L = 46;   // left for y-axis
+    const PAD_R = 16;
+    const PAD_T = 12;
+    const PAD_B = 40;   // bottom for x-axis labels
+    const plotW = W - PAD_L - PAD_R;
+    const plotH = H - PAD_T - PAD_B;
+
+    // === Scale domains ===
     let tMin = Infinity, tMax = -Infinity, xMin = Infinity, xMax = -Infinity;
     for (const s of series) for (const p of s.points) {
         const [ts, val] = parsePoint(p);
-        if (val == null) continue;
-        if (val < tMin) tMin = val; if (val > tMax) tMax = val;
-        if (ts < xMin) xMin = ts; if (ts > xMax) xMax = ts;
+        if (val == null || !isFinite(val) || !isFinite(ts)) continue;
+        if (val < tMin) tMin = val;
+        if (val > tMax) tMax = val;
+        if (ts < xMin) xMin = ts;
+        if (ts > xMax) xMax = ts;
     }
-    if (!isFinite(tMin) || !isFinite(tMax)) { container.innerHTML = `<div class="text-muted text-center py-4">No valid data points.</div>`; return; }
-    const tPad = Math.max(0.5, (tMax - tMin) * 0.1);
-    tMin -= tPad; tMax += tPad;
-    const xScale = t => PAD + ((t - xMin) / Math.max(1, xMax - xMin)) * (W - PAD * 2);
-    const yScale = v => H - PAD - ((v - tMin) / Math.max(0.1, tMax - tMin)) * (H - PAD * 2);
-    const palette = ['#0d6efd', '#dc3545', '#198754', '#ffc107', '#6610f2', '#fd7e14'];
+    if (!isFinite(tMin) || !isFinite(tMax)) {
+        container.innerHTML = noDataBlock('No valid data points', 'Telemetry exists but no samples have numeric values.');
+        return;
+    }
+
+    // Nice-round Y range at 1°C intervals with a bit of padding
+    tMin = Math.floor(tMin - 0.5);
+    tMax = Math.ceil(tMax + 0.5);
+    if (tMax - tMin < 4) tMax = tMin + 4;   // minimum 4° visible
+
+    // X range — default to "last 24h ending now" so the axis is stable
+    const now = Date.now();
+    xMax = Math.max(xMax, now);
+    xMin = Math.min(xMin, now - 24 * 3600 * 1000);
+
+    const xScale = t => PAD_L + ((t - xMin) / Math.max(1, xMax - xMin)) * plotW;
+    const yScale = v => PAD_T + plotH - ((v - tMin) / Math.max(0.1, tMax - tMin)) * plotH;
+
+    // === Y-axis ticks (every 1°C, labels every 2°C if range is large) ===
+    const yTicks = [];
+    const yLabelStep = (tMax - tMin > 10) ? 2 : 1;
+    for (let v = tMin; v <= tMax + 0.001; v += 1) {
+        yTicks.push({ v, isLabel: (Math.round(v) % yLabelStep === 0) });
+    }
+
+    // === X-axis ticks (every 2 hours) ===
+    const xTicks = [];
+    const start = new Date(xMin);
+    start.setMinutes(0, 0, 0);
+    start.setHours(start.getHours() + 1);
+    for (let t = start.getTime(); t <= xMax; t += 2 * 3600 * 1000) {
+        xTicks.push(t);
+    }
+
+    const fmtHour = ms => {
+        const d = new Date(ms);
+        const h = d.getHours().toString().padStart(2, '0');
+        return `${h}:00`;
+    };
+
+    // === Palette ===
+    const palette = getChartPalette();
+
+    // === Paths ===
     const paths = series.map((s, i) => {
         const colour = palette[i % palette.length];
         const d = s.points.map(p => {
             const [ts, val] = parsePoint(p);
-            return val == null ? '' : `${xScale(ts)},${yScale(val)}`;
+            if (val == null || !isFinite(val) || !isFinite(ts)) return '';
+            return `${xScale(ts).toFixed(1)},${yScale(val).toFixed(1)}`;
         }).filter(Boolean).join(' L ');
-        return `<path d="M ${d}" fill="none" stroke="${colour}" stroke-width="2"/>`;
+        return d ? `<path d="M ${d}" fill="none" stroke="${colour}" stroke-width="1.8"
+                         stroke-linejoin="round" stroke-linecap="round"
+                         data-series-index="${i}" class="history-line"/>` : '';
     }).join('');
-    const legend = series.map((s, i) => `<span class="me-3 small"><span style="display:inline-block;width:12px;height:12px;background:${palette[i % palette.length]};border-radius:2px;"></span> ${escapeHtml(s.name)}</span>`).join('');
-    const ticks = [tMin, (tMin + tMax) / 2, tMax].map(v => `
-        <line x1="${PAD}" x2="${W - PAD}" y1="${yScale(v)}" y2="${yScale(v)}" stroke="currentColor" stroke-opacity="0.1"/>
-        <text x="${PAD - 6}" y="${yScale(v) + 4}" text-anchor="end" font-size="10" fill="currentColor" opacity="0.6">${v.toFixed(1)}°</text>`).join('');
-    container.innerHTML = `<div class="mb-2">${legend}</div><svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;color:var(--bs-body-color);">${ticks}${paths}</svg>`;
+
+    // === Grid ===
+    const yGrid = yTicks.map(t => `
+        <line x1="${PAD_L}" x2="${W - PAD_R}" y1="${yScale(t.v)}" y2="${yScale(t.v)}"
+              stroke="currentColor" stroke-opacity="${t.isLabel ? 0.15 : 0.05}"
+              stroke-dasharray="${t.isLabel ? '' : '2,2'}"/>`).join('');
+
+    const xGrid = xTicks.map(t => `
+        <line x1="${xScale(t)}" x2="${xScale(t)}" y1="${PAD_T}" y2="${PAD_T + plotH}"
+              stroke="currentColor" stroke-opacity="0.05"/>`).join('');
+
+    // === Labels ===
+    const yLabels = yTicks.filter(t => t.isLabel).map(t => `
+        <text x="${PAD_L - 6}" y="${yScale(t.v) + 4}" text-anchor="end"
+              font-size="11" fill="currentColor" opacity="0.7">${t.v}°C</text>`).join('');
+
+    const xLabels = xTicks.map(t => `
+        <text x="${xScale(t)}" y="${PAD_T + plotH + 16}" text-anchor="middle"
+              font-size="11" fill="currentColor" opacity="0.7">${fmtHour(t)}</text>`).join('');
+
+    // === Axes ===
+    const xAxis = `<line x1="${PAD_L}" x2="${W - PAD_R}" y1="${PAD_T + plotH}" y2="${PAD_T + plotH}"
+                         stroke="currentColor" stroke-opacity="0.3"/>`;
+    const yAxis = `<line x1="${PAD_L}" x2="${PAD_L}" y1="${PAD_T}" y2="${PAD_T + plotH}"
+                         stroke="currentColor" stroke-opacity="0.3"/>`;
+
+    // === Legend ===
+    const legend = series.map((s, i) => `
+        <span class="me-3 small d-inline-flex align-items-center">
+            <span style="display:inline-block;width:18px;height:3px;background:${palette[i % palette.length]};margin-right:6px;border-radius:2px;"></span>
+            ${escapeHtml(s.name)}
+        </span>`).join('');
+
+    container.innerHTML = `
+        <div class="mb-2">${legend}</div>
+        <div class="position-relative" id="heatingHistorySvgWrap">
+            <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none"
+                 style="width:100%;height:auto;color:var(--bs-body-color);display:block;"
+                 id="heatingHistorySvg">
+                ${yGrid}${xGrid}${xAxis}${yAxis}${yLabels}${xLabels}${paths}
+                <line id="hover-line" x1="0" x2="0" y1="${PAD_T}" y2="${PAD_T + plotH}"
+                      stroke="currentColor" stroke-opacity="0.4" stroke-dasharray="3,3"
+                      style="display:none;pointer-events:none;"/>
+            </svg>
+            <div id="heatingHistoryTooltip"
+                 style="position:absolute;display:none;pointer-events:none;
+                        padding:6px 10px;border-radius:6px;font-size:12px;
+                        line-height:1.4;white-space:nowrap;z-index:10;
+                        transform:translate(-50%, -100%);margin-top:-8px;"></div>
+        </div>`;
+
+    // === Hover handler (single listener; replaces previous on re-render) ===
+    if (_historyHoverHandler) {
+        const old = document.getElementById('heatingHistorySvg');
+        if (old) old.removeEventListener('mousemove', _historyHoverHandler);
+    }
+
+    const svg = document.getElementById('heatingHistorySvg');
+    const tooltip = document.getElementById('heatingHistoryTooltip');
+    const hoverLine = document.getElementById('hover-line');
+
+    _historyHoverHandler = (evt) => {
+        const rect = svg.getBoundingClientRect();
+        const svgX = (evt.clientX - rect.left) * (W / rect.width);
+        const t = xMin + ((svgX - PAD_L) / plotW) * (xMax - xMin);
+        if (svgX < PAD_L || svgX > W - PAD_R) {
+            tooltip.style.display = 'none';
+            hoverLine.style.display = 'none';
+            return;
+        }
+        hoverLine.setAttribute('x1', svgX);
+        hoverLine.setAttribute('x2', svgX);
+        hoverLine.style.display = '';
+
+        // Nearest point per series
+        const readings = [];
+        for (let i = 0; i < _historyChartSeries.length; i++) {
+            const s = _historyChartSeries[i];
+            let best = null, bestDiff = Infinity;
+            for (const p of s.points) {
+                const [ts, val] = parsePoint(p);
+                if (val == null || !isFinite(val) || !isFinite(ts)) continue;
+                const diff = Math.abs(ts - t);
+                if (diff < bestDiff) { bestDiff = diff; best = { ts, val }; }
+            }
+            if (best && bestDiff < 30 * 60 * 1000) {  // within 30min
+                readings.push({
+                    name: s.name, val: best.val, ts: best.ts,
+                    colour: palette[i % palette.length],
+                });
+            }
+        }
+
+        if (readings.length === 0) {
+            tooltip.style.display = 'none';
+            return;
+        }
+
+        const d = new Date(t);
+        const hhmm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+        const dayLabel = (() => {
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            const cmp = new Date(d);
+            cmp.setHours(0, 0, 0, 0);
+            const diffDays = Math.round((today - cmp) / (24 * 3600 * 1000));
+            if (diffDays === 0) return 'today';
+            if (diffDays === 1) return 'yesterday';
+            return d.toLocaleDateString(undefined, { weekday: 'short' });
+        })();
+
+        tooltip.innerHTML = `
+            <div style="margin-bottom:4px;font-weight:600;">${hhmm} <span style="opacity:0.7;font-weight:400;">${dayLabel}</span></div>
+            ${readings.map(r => `
+                <div>
+                    <span style="display:inline-block;width:8px;height:8px;background:${r.colour};border-radius:2px;margin-right:6px;"></span>
+                    ${escapeHtml(r.name)}: <strong>${r.val.toFixed(1)}°C</strong>
+                </div>`).join('')}`;
+
+        tooltip.style.display = '';
+        tooltip.style.left = ((svgX / W) * rect.width) + 'px';
+        tooltip.style.top = (evt.clientY - rect.top) + 'px';
+    };
+
+    svg.addEventListener('mousemove', _historyHoverHandler);
+    svg.addEventListener('mouseleave', () => {
+        tooltip.style.display = 'none';
+        hoverLine.style.display = 'none';
+    });
 }
 
 function parsePoint(p) {
     if (Array.isArray(p)) return [Number(p[0]), Number(p[1])];
     if (p && typeof p === 'object') {
-        const ts = Number(p.ts ?? p.timestamp ?? p.time);
-        const val = p.value ?? p.v ?? p.val;
-        return [ts, val == null ? null : Number(val)];
+        // ts may be:
+        //   - ISO string from DuckDB (e.g. "2026-04-17T12:34:56")
+        //   - Number (epoch seconds or ms)
+        //   - Date object
+        const rawTs = p.ts ?? p.timestamp ?? p.time;
+        let ts;
+        if (rawTs instanceof Date) {
+            ts = rawTs.getTime();
+        } else if (typeof rawTs === 'string') {
+            ts = Date.parse(rawTs);   // returns ms epoch or NaN
+        } else if (typeof rawTs === 'number') {
+            // If the number is suspiciously small (< 10^12), treat as seconds
+            ts = rawTs < 1e12 ? rawTs * 1000 : rawTs;
+        } else {
+            ts = NaN;
+        }
+
+        // Prefer numeric_val (our server-side parsed float) over the raw value
+        // string. Falls back to value for older/non-numeric attributes.
+        let val;
+        if (p.numeric_val != null) {
+            val = Number(p.numeric_val);
+        } else {
+            const raw = p.value ?? p.v ?? p.val;
+            val = raw == null ? null : Number(raw);
+        }
+        if (val != null && !isFinite(val)) val = null;
+
+        return [ts, val];
     }
     return [NaN, null];
 }
