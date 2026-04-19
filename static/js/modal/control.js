@@ -59,26 +59,76 @@ function isAqaraTRV(device) {
 }
 
 
+// Which device state keys are considered valid "ambient room temperature"
+// readings. Excludes setpoints, internal TRV pipe readings that misreport
+// when a radiator is hot, and any key that clearly isn't an air-temp.
+const AMBIENT_TEMP_KEYS = [
+    'temperature',               // generic sensor (cluster 0x0402)
+    'local_temperature',         // thermostat self-report (0x0201 0x0000)
+    'current_temperature',       // HA climate alias
+    'room_temperature',          // some multi-sensor devices
+    'air_temperature',           // some air-quality sensors
+    'ambient_temperature',       // rare
+];
+
+// Explicitly reject keys that look like temperatures but aren't ambient.
+const REJECT_TEMP_KEYS = new Set([
+    'setpoint', 'occupied_heating_setpoint', 'occupied_cooling_setpoint',
+    'unoccupied_heating_setpoint', 'unoccupied_cooling_setpoint',
+    'target_temp', 'temperature_setpoint', 'heating_setpoint',
+    'external_temperature',      // this is what *we* push to the TRV; not a source
+    'internal_temperature',      // TRV's own pipe probe — unreliable for ambient
+    'device_temperature',        // chip temperature, not ambient
+    'cpu_temperature',
+]);
+
 function getTemperatureSources(excludeIeee) {
     const out = [];
     const cache = state.deviceCache || {};
+
     for (const [ieee, dev] of Object.entries(cache)) {
         if (!dev || ieee === excludeIeee) continue;
         const s = dev.state || {};
+
+        // Search known ambient keys in priority order
         let temp = null;
-        for (const k of ['temperature', 'local_temperature', 'current_temperature', 'internal_temperature']) {
+        let tempKey = null;
+        for (const k of AMBIENT_TEMP_KEYS) {
+            if (REJECT_TEMP_KEYS.has(k)) continue;
             const v = s[k];
             const f = (v == null) ? NaN : Number(v);
-            if (!isNaN(f) && f !== 0 && f > -40 && f < 80) { temp = f; break; }
+            // Realistic indoor range: 0–50 °C. Reject exact 0 (uninitialised),
+            // anything negative (probably outdoor/device probe), anything wild.
+            if (!isNaN(f) && f > 0 && f < 50) {
+                temp = f;
+                tempKey = k;
+                break;
+            }
         }
+
         if (temp == null) continue;
+
+        // Descriptive device-type hint so the dropdown tells the user *why*
+        // this device is offered (motion sensor, thermostat, etc.)
+        const caps = dev.capability_list || [];
+        let kind = 'sensor';
+        if (caps.includes('thermostat') || s.system_mode !== undefined) kind = 'thermostat';
+        else if (caps.includes('motion_sensor') || caps.includes('occupancy_sensing')) kind = 'motion';
+        else if (caps.includes('contact_sensor')) kind = 'contact';
+        else if (caps.includes('air_quality')) kind = 'air quality';
+        else if ('humidity' in s || 'pressure' in s) kind = 'climate';
+        else if ('illuminance' in s || 'lux' in s) kind = 'multi-sensor';
+
         out.push({
             ieee,
             name: dev.friendly_name || dev.name || ieee,
             model: dev.model || '',
-            temperature: temp
+            temperature: temp,
+            temp_key: tempKey,
+            kind,
         });
     }
+
     out.sort((a, b) => a.name.localeCompare(b.name));
     return out;
 }
