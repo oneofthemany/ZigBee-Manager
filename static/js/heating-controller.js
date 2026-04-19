@@ -20,6 +20,7 @@
 let controllerState = null;
 let controllerConfig = null;
 let controllerDevices = { receivers: [], thermostats: [] };
+let controllerSensors = [];
 let workingCircuits = [];
 let controllerStatusTimer = null;
 
@@ -172,7 +173,9 @@ function renderCircuitStatusCard(c) {
                         <i class="fas fa-${statusMeta.icon} me-1"></i>${r.current_temp != null ? r.current_temp.toFixed(1) : '—'}° / ${r.target_temp != null ? r.target_temp.toFixed(1) : '—'}°
                     </span>
                 </div>
-                ${trvLines || '<div class="small text-muted">No TRVs</div>'}
+                ${trvLines || `<div class="small text-muted fst-italic">
+                    <i class="fas fa-broadcast-tower me-1"></i>Sensor-only room — radiator runs on circuit flow
+                </div>`}
             </div>`;
     }).join('');
 
@@ -259,9 +262,10 @@ export async function openControllerSettings() {
     modal.show();
 
     try {
-        const [cfgRes, devRes] = await Promise.all([
+        const [cfgRes, devRes, sensorRes] = await Promise.all([
             fetch('/api/heating/controller/config').then(r => r.json()),
             fetch('/api/heating/controller/devices').then(r => r.json()).catch(() => ({ success: false })),
+            fetch('/api/heating/controller/sensors').then(r => r.json()).catch(() => ({ success: false })),
         ]);
         if (!cfgRes.success) throw new Error(cfgRes.error || 'Config load failed');
 
@@ -269,6 +273,7 @@ export async function openControllerSettings() {
         controllerDevices = devRes.success
             ? { receivers: devRes.receivers || [], thermostats: devRes.thermostats || [] }
             : { receivers: [], thermostats: [] };
+        controllerSensors = (sensorRes.success ? (sensorRes.sensors || []) : []);
         workingCircuits = JSON.parse(JSON.stringify(controllerConfig.circuits || []));
 
         bodyEl.innerHTML = renderControllerForm(controllerConfig);
@@ -419,6 +424,51 @@ function renderRoomCard(room, ci, ri) {
         }).join('')
         : `<div class="list-group-item small text-muted">No available TRVs.</div>`;
 
+    // Room temperature sensor dropdown — any device reporting a temperature
+    // (motion sensors, THP, contact sensors with temp, etc.)
+    const sensorIeee = room.temperature_sensor_ieee || '';
+    const sensorOptions = [
+        `<option value="">— None (use TRV readings) —</option>`,
+        ...controllerSensors
+            .filter(s => s.ieee !== sensorIeee)   // selected one added below
+            .map(s => {
+                const kindLabel = s.is_thermostat ? ' · thermostat' : '';
+                return `<option value="${escapeAttr(s.ieee)}">
+                    ${escapeHtml(s.name)} (${Number(s.temperature).toFixed(1)}°C${kindLabel})
+                </option>`;
+            }),
+    ];
+    // Make sure currently-selected sensor is present in the list even if
+    // it's temporarily unavailable/offline
+    if (sensorIeee && !controllerSensors.some(s => s.ieee === sensorIeee)) {
+        sensorOptions.push(`<option value="${escapeAttr(sensorIeee)}" selected>
+            ${escapeHtml(sensorIeee)} (offline)
+        </option>`);
+    } else if (sensorIeee) {
+        const sel = controllerSensors.find(s => s.ieee === sensorIeee);
+        if (sel) {
+            sensorOptions.splice(1, 0, `<option value="${escapeAttr(sel.ieee)}" selected>
+                ${escapeHtml(sel.name)} (${Number(sel.temperature).toFixed(1)}°C)
+            </option>`);
+        }
+    }
+
+    const extMode = room.external_temp_mode || (sensorIeee ? 'advisory' : 'off');
+    const trvCount = (room.trv_ieees || []).length;
+    const sensorOnlyBanner = trvCount === 0 && sensorIeee ? `
+        <div class="alert alert-info alert-sm py-1 px-2 small mb-2">
+            <i class="fas fa-broadcast-tower me-1"></i>
+            <strong>Sensor-only room</strong> — the radiator runs on circuit flow whenever
+            any room in this circuit calls for heat. The sensor above drives this room's
+            call-for-heat decision.
+        </div>` : '';
+    const noTrvsNoSensorWarning = trvCount === 0 && !sensorIeee ? `
+        <div class="alert alert-warning alert-sm py-1 px-2 small mb-2">
+            <i class="fas fa-exclamation-triangle me-1"></i>
+            This room has no TRVs <strong>and</strong> no temperature sensor — it cannot
+            call for heat. Add a TRV or a sensor, or remove the room.
+        </div>` : '';
+
     return `
         <div class="card mb-2 ms-3" style="border-left: 3px solid var(--bs-info);">
             <div class="card-body py-2">
@@ -454,8 +504,37 @@ function renderRoomCard(room, ci, ri) {
                     </div>
                 </div>
 
+                <div class="row g-2 mb-2">
+                    <div class="col-md-8">
+                        <label class="form-label small mb-1">
+                            <i class="fas fa-thermometer-half me-1"></i>Room temperature sensor
+                        </label>
+                        <select class="form-select form-select-sm room-sensor"
+                                data-ci="${ci}" data-ri="${ri}">
+                            ${sensorOptions.join('')}
+                        </select>
+                        <div class="form-text small">
+                            Pick any device reporting temperature (motion sensor, THP, thermostat, etc.)
+                            to drive call-for-heat for this room.
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label small mb-1">External temp mode</label>
+                        <select class="form-select form-select-sm room-ext-mode"
+                                data-ci="${ci}" data-ri="${ri}" ${!sensorIeee ? 'disabled' : ''}>
+                            <option value="off"      ${extMode === 'off' ? 'selected' : ''}>Off (ignore sensor)</option>
+                            <option value="advisory" ${extMode === 'advisory' ? 'selected' : ''}>Advisory (controller uses sensor)</option>
+                            <option value="push"     ${extMode === 'push' ? 'selected' : ''}>Push (also send to TRVs)</option>
+                        </select>
+                    </div>
+                </div>
+
+                ${sensorOnlyBanner}
+                ${noTrvsNoSensorWarning}
+
                 <label class="form-label small mb-1">
-                    TRVs <span class="badge bg-secondary">${(room.trv_ieees || []).length}</span>
+                    TRVs <span class="badge bg-secondary">${trvCount}</span>
+                    ${trvCount === 0 && sensorIeee ? '<small class="text-muted ms-2">optional for sensor-only rooms</small>' : ''}
                 </label>
                 <div class="list-group" style="max-height:200px; overflow-y:auto;">${trvCheckboxes}</div>
             </div>
@@ -497,6 +576,8 @@ function bindCircuitCards() {
                 id: `room_${n}`, name: `Room ${n}`,
                 target_temp: 21, night_setback: 17, min_temp: 16,
                 trv_ieees: [], schedule: [],
+                temperature_sensor_ieee: null,
+                external_temp_mode: 'off',
             });
             renderCircuitsList();
         });
@@ -541,6 +622,28 @@ function bindCircuitCards() {
                 room.trv_ieees = room.trv_ieees.filter(t => t !== ieee);
             }
             renderCircuitsList();  // re-render so other rooms' available lists update
+        });
+    });
+    // Room sensor selection
+    document.querySelectorAll('.room-sensor').forEach(el => {
+        el.addEventListener('change', e => {
+            const ci = +e.target.dataset.ci, ri = +e.target.dataset.ri;
+            const room = workingCircuits[ci].rooms[ri];
+            room.temperature_sensor_ieee = e.target.value || null;
+            // Sensible default: when a sensor gets picked, default mode to
+            // 'advisory'; when it's cleared, mode must be 'off'.
+            if (!room.temperature_sensor_ieee) {
+                room.external_temp_mode = 'off';
+            } else if (!room.external_temp_mode || room.external_temp_mode === 'off') {
+                room.external_temp_mode = 'advisory';
+            }
+            renderCircuitsList();  // re-render so ext-mode enabled state updates
+        });
+    });
+    document.querySelectorAll('.room-ext-mode').forEach(el => {
+        el.addEventListener('change', e => {
+            const ci = +e.target.dataset.ci, ri = +e.target.dataset.ri;
+            workingCircuits[ci].rooms[ri].external_temp_mode = e.target.value;
         });
     });
 }

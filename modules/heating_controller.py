@@ -309,6 +309,19 @@ class HeatingController:
             # Parse TRVs from either the new 'trvs' list (dicts) or legacy 'trv_ieees' list (strings).
             trvs = self._clean_trvs(r)
 
+
+            if not trvs and not sensor_ieee:
+                logger.warning(
+                    f"Room '{rid}' has no TRVs and no temperature_sensor_ieee "
+                    f"— it will never call for heat. Ignoring."
+                )
+                continue
+            if not trvs:
+                logger.info(
+                    f"Room '{rid}' is sensor-only (no TRVs) — call-for-heat "
+                    f"will be driven by sensor reading only."
+                )
+
             schedule = r.get("schedule") or []
             if not isinstance(schedule, list):
                 schedule = []
