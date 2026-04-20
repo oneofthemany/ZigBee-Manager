@@ -23,6 +23,7 @@
   <a href="#-features">Features</a> · 
   <a href="#-web-interface">Web Interface</a> · 
   <a href="#-automation-engine">Automations</a> · 
+  <a href="#-weather-aware-heating">Heating</a> · 
   <a href="#-ota-firmware-updates">OTA Updates</a> · 
   <a href="#-device-onboarding">Device Onboarding</a> · 
   <a href="#-configuration">Configuration</a> · 
@@ -115,14 +116,22 @@ On first boot, if `channel`, `pan_id`, `extended_pan_id`, or `network_key` are a
 
 ### Matter Integration (Optional)
 
-Support for **Matter** devices alongside Zigbee — presented as a unified device list with protocol-aware routing.
+Full **Matter** support alongside Zigbee — devices from both protocols appear in a single unified device list with protocol badges, and all the same features (automations, MQTT Discovery, OTA where applicable, WebSocket updates, control modals) work identically across both.
 
-- **Embedded Server** — Runs [python-matter-server](https://github.com/home-assistant-libs/python-matter-server) as a managed subprocess, no Docker required
-- **WiFi Matter Devices** — Commission and control Matter-over-WiFi devices (Eve, Nanoleaf, etc.)
-- **Unified Device List** — Matter and Zigbee devices appear in the same table with protocol badges
-- **Cross-Protocol Automation** — Automation engine triggers and actions work across both protocols
-- **MQTT Discovery** — Matter devices published to Home Assistant using the same discovery patterns
-- **Zero Overhead** — Completely optional; disabled by default with no impact on Zigbee performance
+**How it works internally.** The application spawns [python-matter-server](https://github.com/home-assistant-libs/python-matter-server) (the Home Assistant team's CHIP SDK wrapper) as a managed Python subprocess — no Docker, no separate service. A `MatterBridge` module connects to its WebSocket API on `localhost:5580`, translates Matter nodes into the same internal device format as Zigbee devices, and feeds them through the same event pipeline. Handlers in `modules/handlers/matter_parsers.py` decode Matter cluster attributes (BasicInformation, OnOff, LevelControl, ColorControl, temperature/humidity/occupancy sensors, etc.) into the same normalised state shape the Zigbee side produces, so the frontend, automation engine, and MQTT publishing code don't need to know which protocol a device speaks.
+
+**Two transport options:**
+
+- **Matter-over-WiFi** — Commission any WiFi-based Matter device (Eve, Nanoleaf, Aqara Hub M3 accessories, TP-Link Tapo Matter, etc.) using the 11-digit setup code or the QR numeric pairing code. The device joins your WiFi and speaks Matter-over-IP directly to the embedded server.
+- **Matter-over-Thread** — Uses the Sonoff MG24 dongle in **MultiPAN RCP** mode, which runs Zigbee *and* Thread simultaneously on the same radio. An embedded OpenThread Border Router (`otbr-agent`) provides the Thread network, and Matter devices like Thread-based TRVs (IKEA BILRESA, Eve Thermo) commission onto it the same way.
+
+**Commissioning flow** — enter the device's setup code in the Devices tab, the application delegates to python-matter-server (for WiFi) or runs the combined Thread-dataset-push + Matter-commission sequence (for Thread), and on success the new device streams into the device list alongside your Zigbee devices. There's no separate Matter tab or mode toggle.
+
+- **Unified device list** — Matter and Zigbee in the same table with protocol badges
+- **Cross-protocol automations** — triggers and actions mix freely; a Zigbee motion sensor can turn on a Matter lamp and vice versa
+- **MQTT Discovery** — Matter devices publish to Home Assistant using identical discovery patterns to Zigbee
+- **Zero overhead when disabled** — if `matter.enabled` is false, no Matter code runs at all (no subprocess, no imports, no connections)
+- **Auto-restart on crash** — the embedded server has health monitoring with exponential backoff (up to 5 retries)
 
 <!-- SCREENSHOT: Matter commissioning -->
 <p align="center">
@@ -130,7 +139,21 @@ Support for **Matter** devices alongside Zigbee — presented as a unified devic
   <br><em>Matter integration — commission via setup code, unified device list with protocol badges</em>
 </p>
 
-For full documentation see [docs/matter.md](docs/matter.md).
+For the full reference — setup, supported clusters, commissioning internals, troubleshooting — see **[docs/matter.md](docs/matter.md)**. For how the MultiPAN dongle runs Zigbee and Thread concurrently, see **[docs/multipan.md](docs/multipan.md)**.
+
+### MultiPAN (Zigbee + Thread on one radio)
+
+The application supports the **Sonoff Zigbee Dongle Plus-E (MG24)** running MultiPAN RCP firmware, which lets one dongle serve both the Zigbee mesh and the Thread network concurrently — halving your USB port requirement for Matter-over-Thread households.
+
+- **Single radio, two protocols** — MG24 acts as a Zigbee NCP for zigpy/bellows *and* as a Radio Co-Processor for OpenThread, multiplexed over the same serial link using CPC/HDLC framing
+- **Rust framing module** — `modules/tdm/zmm_cpc/` (PyO3/maturin) implements the CPC/HDLC wire format (`FLAG EP LEN_LO LEN_HI CTRL HCS(2)`, CRC-16/XMODEM) for reliable communication with the MG24
+- **Embedded OpenThread Border Router** — `otbr-agent` runs inside the container, bound to the MG24 via D-Bus, providing the Thread network that Matter-over-Thread devices join
+- **Dongle Jedi setup wizard** — guided first-boot flow that detects the dongle, confirms firmware, forms or joins a Thread network, and writes the resulting dataset into `config.yaml`
+- **Link-state handshake recovery** — stale CPC I-frames from a previous boot are drained and acknowledged before the stack issues SABM, preventing the "dongle unresponsive after restart" class of failure
+
+If you're running separate Zigbee and Thread radios (e.g. an EFR32MG21 for Zigbee and a separate RCP for Thread), you don't need any of this — the Matter-over-Thread path still works via whatever OTBR you've configured. MultiPAN is the Sonoff MG24 convenience story.
+
+See **[docs/multipan.md](docs/multipan.md)** for the MG24 firmware flashing, CPC wire-format reference, and troubleshooting.
 
 ### OTA Firmware Updates
 
@@ -232,6 +255,26 @@ An experimental presence detection system using RSSI signal fluctuations from ex
   <br><em>Zone presence detection — RSSI-based occupancy without dedicated sensors</em>
 </p>
 
+### 🔥 Weather-Aware Heating
+
+A two-module heating system that brings thermal modelling and active multi-zone control to Zigbee/Matter TRVs and boiler receivers.
+
+- **Heating Advisor** — read-only analytical engine. Produces an EPC-style rating, per-room thermal profiles (W/K heat loss) and pre-heat timing recommendations. Correlates outdoor weather with indoor temperatures and heating demand to surface efficiency tips (over-heating, mild-weather shutoff, cold-snap pre-heat, insulation/glazing upgrades, heat-pump candidacy, tariff optimisation).
+- **Heating Controller** — active control. Classifies each room as `cold` / `ontarget` / `hot` with hysteresis (±0.3–0.5 °C bands), calls the boiler receiver only when any room is cold, and coordinates per-TRV setpoints so a hot room can't steal heat from a cold one on the same circuit. External-sensor modes (`advisory` / `push`) work around TRV hot-pipe temperature bias, including writing external temperatures into the Aqara 0xFCC0 cluster.
+- **Thermal Profile** — per-room heat loss in W/K, computed both statically (SAP Appendix S U-values from dimensions + insulation) and measurably (fits Newton's law of cooling to telemetry cool-down windows), then blends the two weighted by fit quality.
+- **Radiator Sizing** — MCS-style required watts at design outdoor temperature (−3 °C), with derating to your actual boiler flow temperature using the manufacturer exponent of 1.3. Flags each radiator as `undersized` / `adequate` / `oversized`.
+- **Anomaly Watcher** — scans every 5 minutes for rooms cooling faster than their baseline `τ`. Catches open windows, broken seals and stuck TRVs without the user having to watch graphs.
+- **Per-room efficiency tips** — rule-based feedback on radiator placement (under-window penalty, reflective panels, K2/P+ upgrades), glazing, external doors, suspended floors and more.
+- **Dry-run mode** — the controller has a `dry_run` flag that runs the full decision tick and logs what it would do without actually commanding any TRV or receiver. Safe way to validate a new circuit/room config.
+
+See **[docs/heating.md](docs/heating.md)** for the full reference — physics, config schema, all tip triggers, hysteresis constants, and the EPC/preheat formulas.
+
+<!-- SCREENSHOT: Heating tab -->
+<p align="center">
+  <img src="docs/images/screenshot-heating.png" alt="Heating dashboard with circuits, rooms and thermal profile" width="70%">
+  <br><em>Heating tab — circuits, per-room status, thermal profiles and efficiency tips</em>
+</p>
+
 ### Stability & Resilience
 
 - **NCP Failure Recovery** — Automatic watchdog with recovery logic for critical coordinator failures
@@ -291,6 +334,7 @@ Access at **http://YOUR_IP:8000**. All tabs update in real-time via WebSocket.
 | **Topology**      | Interactive force-directed mesh graph with LQI link quality and online/offline zones                                                                         |
 | **Groups**        | Create and control native Zigbee groups                                                                                                                      |
 | **Automations**   | Global automation rules across all devices with inline filtering, editing, and trace log                                                                     |
+| **Heating**       | Weather-aware heating dashboard — EPC rating, per-room thermal profiles, radiator sizing, circuit/room controller view, efficiency tips. See [docs/heating.md](docs/heating.md) |
 | **Zones**         | RSSI-based presence detection zones                                                                                                                          |
 | **MQTT Explorer** | Real-time MQTT traffic monitor and publish tool                                                                                                              |
 | **Settings**      | Rich settings panel — see below                                                                                                                              |
@@ -298,14 +342,16 @@ Access at **http://YOUR_IP:8000**. All tabs update in real-time via WebSocket.
 
 ### Settings Panel
 
-The settings tab is a four-sub-tab panel:
+The settings tab is a six-sub-tab panel:
 
 | Sub-tab               | Description                                                                                                                                                                                      |
 |:----------------------|:-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | **Configuration**     | Form-based editor for Zigbee radio, MQTT broker, web interface, and logging settings. Writes to `config.yaml` with no manual YAML editing required. Includes HTTPS/SSL toggle.                   |
+| **APIs**              | External API integrations. Currently houses the **Weather (Open-Meteo)** integration — free, no account or API key required. Supplies outdoor temperature, humidity, wind and forecast to the Heating Advisor for EPC estimation, pre-heat timing and cold-snap alerts. Configurable latitude/longitude, poll interval, and optional MQTT publish for Home Assistant sensors. |
 | **Security**          | Manage PAN ID, Extended PAN ID, and Network Key with per-field regenerate buttons. Network key is hidden by default.                                                                             |
 | **Spectrum Analysis** | Live 2.4 GHz energy scan across all ZigBee channels (11–26) with colour-coded interference chart. Auto channel select writes the best channel to config. Manual channel override also available. |
 | **Advanced (YAML)**   | Raw `config.yaml` editor — preserved for advanced users who need direct access.                                                                                                                  |
+| **Thread**            | Thread Border Router status and network management — form a new Thread network, view active dataset, commissioning credentials, and border router state. Required for Matter-over-Thread commissioning via the MultiPAN RCP radio. See [docs/multipan.md](docs/multipan.md).                                                  |
 
 <!-- SCREENSHOT: Settings panel -->
 <p align="center">
@@ -434,6 +480,8 @@ sudo tail -f /opt/zigbee_matter_manager/logs/zigbee.log # Follow app logs
 | Document                                                                    | Description                                                        |
 |:----------------------------------------------------------------------------|:-------------------------------------------------------------------|
 | [docs/matter.md](docs/matter.md)                                           | Matter integration — setup, supported features, architecture       |
+| [docs/multipan.md](docs/multipan.md)                                       | MultiPAN (Zigbee + Thread on the Sonoff MG24) — firmware, CPC wire format, OTBR setup |
+| [docs/heating.md](docs/heating.md)                                         | Weather-aware heating — advisor, controller, thermal profile, radiator sizing, EPC/preheat maths, config reference |
 | [docs/automations.md](docs/automations.md)                                 | Automation engine — rule syntax, conditions, sequences, examples   |
 | [docs/mqtt-explorer.md](docs/mqtt-explorer.md)                             | MQTT Explorer — usage, filtering, architecture                     |
 | [docs/onboarding.md](docs/onboarding.md)                                   | Developer guide — handler architecture, adding new device support  |
