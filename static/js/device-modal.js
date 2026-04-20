@@ -6,7 +6,7 @@
 import { state } from './state.js';
 import { hasCluster } from './modal/config.js';
 import { renderOverviewTab, saveConfig } from './modal/overview.js';
-import { renderControlTab, updateControlValues } from './modal/control.js';
+import { renderControlTab, updateControlValues, refreshHeatingManaged } from './modal/control.js';
 import { renderBindingTab } from './modal/binding.js';
 import { renderCapsTab } from './modal/clusters.js';
 import { renderAutomationTab, initAutomationTab } from './modal/automation.js';
@@ -19,7 +19,10 @@ import { renderMatterEndpointsTab, initMatterEndpointsTab } from './modal/matter
 
 // Re-export these functions so main.js (and others) can still import them from here
 export { renderOverviewTab, renderControlTab, renderBindingTab, renderCapsTab, renderAutomationTab, renderMappingsTab, saveConfig, handleOTAProgress };
-export function openDeviceModal(d) {
+export async function openDeviceModal(d) {
+    // Refresh heating-controller managed set so the Control tab can disable
+    // direct heating controls for managed devices. Non-blocking failure.
+    await refreshHeatingManaged().catch(() => {});
     const cachedDev = (d && d.ieee && state.deviceCache[d.ieee]) ? state.deviceCache[d.ieee] : d;
     const isZigbee = !cachedDev.protocol || cachedDev.protocol === 'zigbee';
     state.currentDeviceIeee = cachedDev.ieee;

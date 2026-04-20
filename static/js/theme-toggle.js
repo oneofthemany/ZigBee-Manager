@@ -26,6 +26,9 @@
         document.documentElement.setAttribute('data-theme', theme);
         localStorage.setItem(STORAGE_KEY, theme);
         updateToggleButton(theme);
+        // Notify listeners (charts, canvas widgets etc.) so they can redraw
+        // with theme-appropriate colours without waiting for the next tick.
+        document.dispatchEvent(new CustomEvent('themechange', { detail: { theme } }));
     }
 
     // ----------------------------------------------------------

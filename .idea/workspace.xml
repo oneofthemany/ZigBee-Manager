@@ -4,12 +4,11 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="mac removal">
-      <change afterPath="$PROJECT_DIR$/config/matter_definitions/bilresa.json" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/config/matter_definitions/ikea_e2490_bilresa.json" afterDir="false" />
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="more new features to heating:&#10;&#10;radiator sizing&#10;thermal profiles per room&#10;heating anomaly detection">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/modules/heating_controller.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/heating_controller.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/modules/thermal_profile.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/thermal_profile.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/routes/heating_controller_routes.py" beforeDir="false" afterPath="$PROJECT_DIR$/routes/heating_controller_routes.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/routes/heating_routes.py" beforeDir="false" afterPath="$PROJECT_DIR$/routes/heating_routes.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/static/js/heating-controller.js" beforeDir="false" afterPath="$PROJECT_DIR$/static/js/heating-controller.js" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -44,7 +43,7 @@
   <component name="GithubPullRequestsUISettings">{
   &quot;selectedUrlAndAccountId&quot;: {
     &quot;url&quot;: &quot;https://github.com/oneofthemany/ZigBee-Matter-Manager.git&quot;,
-    &quot;accountId&quot;: &quot;b00be1dc-7b4f-4311-ab84-b3d2175df6fb&quot;
+    &quot;accountId&quot;: &quot;e255082e-bca2-4e88-a50f-e3452f07b5b3&quot;
   }
 }</component>
   <component name="ProjectColorInfo">{
@@ -72,7 +71,7 @@
     &quot;git-widget-placeholder&quot;: &quot;main&quot;,
     &quot;kotlin-language-version-configured&quot;: &quot;true&quot;,
     &quot;last_opened_file_path&quot;: &quot;/var/home/smu02/StudioProjects/Music-Therapy&quot;,
-    &quot;project.structure.last.edited&quot;: &quot;SDKs&quot;,
+    &quot;project.structure.last.edited&quot;: &quot;Project&quot;,
     &quot;project.structure.proportion&quot;: &quot;0.0&quot;,
     &quot;project.structure.side.proportion&quot;: &quot;0.2&quot;,
     &quot;settings.editor.selected.configurable&quot;: &quot;AndroidSdkUpdater&quot;
@@ -160,134 +159,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00276" summary="source tree after body inner">
-      <option name="closed" value="true" />
-      <created>1775650702377</created>
-      <option name="number" value="00276" />
-      <option name="presentableId" value="LOCAL-00276" />
-      <option name="project" value="LOCAL" />
-      <updated>1775650702377</updated>
-    </task>
-    <task id="LOCAL-00277" summary="duplicate rotary bindings registration">
-      <option name="closed" value="true" />
-      <created>1775650726133</created>
-      <option name="number" value="00277" />
-      <option name="presentableId" value="LOCAL-00277" />
-      <option name="project" value="LOCAL" />
-      <updated>1775650726133</updated>
-    </task>
-    <task id="LOCAL-00278" summary="adding in matter definitions">
-      <option name="closed" value="true" />
-      <created>1775650928642</created>
-      <option name="number" value="00278" />
-      <option name="presentableId" value="LOCAL-00278" />
-      <option name="project" value="LOCAL" />
-      <updated>1775650928642</updated>
-    </task>
-    <task id="LOCAL-00279" summary="editor routes removed in error">
-      <option name="closed" value="true" />
-      <created>1775651344136</created>
-      <option name="number" value="00279" />
-      <option name="presentableId" value="LOCAL-00279" />
-      <option name="project" value="LOCAL" />
-      <updated>1775651344136</updated>
-    </task>
-    <task id="LOCAL-00280" summary="reinstating text">
-      <option name="closed" value="true" />
-      <created>1775651534195</created>
-      <option name="number" value="00280" />
-      <option name="presentableId" value="LOCAL-00280" />
-      <option name="project" value="LOCAL" />
-      <updated>1775651534195</updated>
-    </task>
-    <task id="LOCAL-00281" summary="removal of text">
-      <option name="closed" value="true" />
-      <created>1775652946664</created>
-      <option name="number" value="00281" />
-      <option name="presentableId" value="LOCAL-00281" />
-      <option name="project" value="LOCAL" />
-      <updated>1775652946664</updated>
-    </task>
-    <task id="LOCAL-00282" summary="update commission to be aware of resilience watchdog">
-      <option name="closed" value="true" />
-      <created>1775654914199</created>
-      <option name="number" value="00282" />
-      <option name="presentableId" value="LOCAL-00282" />
-      <option name="project" value="LOCAL" />
-      <updated>1775654914200</updated>
-    </task>
-    <task id="LOCAL-00283" summary="get_definition_store bug fix">
-      <option name="closed" value="true" />
-      <created>1775657008237</created>
-      <option name="number" value="00283" />
-      <option name="presentableId" value="LOCAL-00283" />
-      <option name="project" value="LOCAL" />
-      <updated>1775657008237</updated>
-    </task>
-    <task id="LOCAL-00284" summary="improved rotary bindings for ep clock and anti clock">
-      <option name="closed" value="true" />
-      <created>1775659059165</created>
-      <option name="number" value="00284" />
-      <option name="presentableId" value="LOCAL-00284" />
-      <option name="project" value="LOCAL" />
-      <updated>1775659059166</updated>
-    </task>
-    <task id="LOCAL-00285" summary="improved roary bindings definitions">
-      <option name="closed" value="true" />
-      <created>1775662865222</created>
-      <option name="number" value="00285" />
-      <option name="presentableId" value="LOCAL-00285" />
-      <option name="project" value="LOCAL" />
-      <updated>1775662865222</updated>
-    </task>
-    <task id="LOCAL-00286" summary="improved definitions update">
-      <option name="closed" value="true" />
-      <created>1775662938528</created>
-      <option name="number" value="00286" />
-      <option name="presentableId" value="LOCAL-00286" />
-      <option name="project" value="LOCAL" />
-      <updated>1775662938528</updated>
-    </task>
-    <task id="LOCAL-00287" summary="added handlers to from matter_parsers import BaseMatterParser, BasicInfoAttrs">
-      <option name="closed" value="true" />
-      <created>1775663826167</created>
-      <option name="number" value="00287" />
-      <option name="presentableId" value="LOCAL-00287" />
-      <option name="project" value="LOCAL" />
-      <updated>1775663826167</updated>
-    </task>
-    <task id="LOCAL-00288" summary="improvements to boot with matter">
-      <option name="closed" value="true" />
-      <created>1775665857216</created>
-      <option name="number" value="00288" />
-      <option name="presentableId" value="LOCAL-00288" />
-      <option name="project" value="LOCAL" />
-      <updated>1775665857217</updated>
-    </task>
-    <task id="LOCAL-00289" summary="rotary bindings">
-      <option name="closed" value="true" />
-      <created>1775665877791</created>
-      <option name="number" value="00289" />
-      <option name="presentableId" value="LOCAL-00289" />
-      <option name="project" value="LOCAL" />
-      <updated>1775665877791</updated>
-    </task>
-    <task id="LOCAL-00290" summary="delete function added">
-      <option name="closed" value="true" />
-      <created>1775665890714</created>
-      <option name="number" value="00290" />
-      <option name="presentableId" value="LOCAL-00290" />
-      <option name="project" value="LOCAL" />
-      <updated>1775665890714</updated>
-    </task>
-    <task id="LOCAL-00291" summary="project root not app dir for delete">
-      <option name="closed" value="true" />
-      <created>1775666074342</created>
-      <option name="number" value="00291" />
-      <option name="presentableId" value="LOCAL-00291" />
-      <option name="project" value="LOCAL" />
-      <updated>1775666074342</updated>
     </task>
     <task id="LOCAL-00292" summary="updated to be root container due to networking requirements for matter">
       <option name="closed" value="true" />
@@ -553,7 +424,135 @@
       <option name="project" value="LOCAL" />
       <updated>1776257174017</updated>
     </task>
-    <option name="localTasksCounter" value="325" />
+    <task id="LOCAL-00325" summary="heatpoint hold added">
+      <option name="closed" value="true" />
+      <created>1776422995999</created>
+      <option name="number" value="00325" />
+      <option name="presentableId" value="LOCAL-00325" />
+      <option name="project" value="LOCAL" />
+      <updated>1776422995999</updated>
+    </task>
+    <task id="LOCAL-00326" summary="config export and stop skipping  manufacturer specific attributes">
+      <option name="closed" value="true" />
+      <created>1776423083421</created>
+      <option name="number" value="00326" />
+      <option name="presentableId" value="LOCAL-00326" />
+      <option name="project" value="LOCAL" />
+      <updated>1776423083421</updated>
+    </task>
+    <task id="LOCAL-00327" summary="aqara updates for new heating controller">
+      <option name="closed" value="true" />
+      <created>1776429764164</created>
+      <option name="number" value="00327" />
+      <option name="presentableId" value="LOCAL-00327" />
+      <option name="project" value="LOCAL" />
+      <updated>1776429764164</updated>
+    </task>
+    <task id="LOCAL-00328" summary="trv updates">
+      <option name="closed" value="true" />
+      <created>1776431750107</created>
+      <option name="number" value="00328" />
+      <option name="presentableId" value="LOCAL-00328" />
+      <option name="project" value="LOCAL" />
+      <updated>1776431750107</updated>
+    </task>
+    <task id="LOCAL-00329" summary="improvements for disablement for when heating controiller is enabled">
+      <option name="closed" value="true" />
+      <created>1776501908656</created>
+      <option name="number" value="00329" />
+      <option name="presentableId" value="LOCAL-00329" />
+      <option name="project" value="LOCAL" />
+      <updated>1776501908657</updated>
+    </task>
+    <task id="LOCAL-00330" summary="dictionary added">
+      <option name="closed" value="true" />
+      <created>1776501928840</created>
+      <option name="number" value="00330" />
+      <option name="presentableId" value="LOCAL-00330" />
+      <option name="project" value="LOCAL" />
+      <updated>1776501928840</updated>
+    </task>
+    <task id="LOCAL-00331" summary="heating tab updates">
+      <option name="closed" value="true" />
+      <created>1776502661258</created>
+      <option name="number" value="00331" />
+      <option name="presentableId" value="LOCAL-00331" />
+      <option name="project" value="LOCAL" />
+      <updated>1776502661258</updated>
+    </task>
+    <task id="LOCAL-00332" summary="heating tab bug fixes">
+      <option name="closed" value="true" />
+      <created>1776504108653</created>
+      <option name="number" value="00332" />
+      <option name="presentableId" value="LOCAL-00332" />
+      <option name="project" value="LOCAL" />
+      <updated>1776504108653</updated>
+    </task>
+    <task id="LOCAL-00333" summary="adding in the ability to use any device as an external temp source for TRV with overrides in place to remove receivers as options">
+      <option name="closed" value="true" />
+      <created>1776585268573</created>
+      <option name="number" value="00333" />
+      <option name="presentableId" value="LOCAL-00333" />
+      <option name="project" value="LOCAL" />
+      <updated>1776585268573</updated>
+    </task>
+    <task id="LOCAL-00334" summary="dark mode for heating tab">
+      <option name="closed" value="true" />
+      <created>1776589514460</created>
+      <option name="number" value="00334" />
+      <option name="presentableId" value="LOCAL-00334" />
+      <option name="project" value="LOCAL" />
+      <updated>1776589514460</updated>
+    </task>
+    <task id="LOCAL-00335" summary="colout pallette and controleroverlay patches">
+      <option name="closed" value="true" />
+      <created>1776589555232</created>
+      <option name="number" value="00335" />
+      <option name="presentableId" value="LOCAL-00335" />
+      <option name="project" value="LOCAL" />
+      <updated>1776589555232</updated>
+    </task>
+    <task id="LOCAL-00336" summary="adding in option for TRV less rooms where control of heating pull can be undertaken  by a temp sensor">
+      <option name="closed" value="true" />
+      <created>1776590361413</created>
+      <option name="number" value="00336" />
+      <option name="presentableId" value="LOCAL-00336" />
+      <option name="project" value="LOCAL" />
+      <updated>1776590361413</updated>
+    </task>
+    <task id="LOCAL-00337" summary="theme change update">
+      <option name="closed" value="true" />
+      <created>1776590405807</created>
+      <option name="number" value="00337" />
+      <option name="presentableId" value="LOCAL-00337" />
+      <option name="project" value="LOCAL" />
+      <updated>1776590405807</updated>
+    </task>
+    <task id="LOCAL-00338" summary="changing temp sensor update to be more aggressive for new heating controller">
+      <option name="closed" value="true" />
+      <created>1776590440483</created>
+      <option name="number" value="00338" />
+      <option name="presentableId" value="LOCAL-00338" />
+      <option name="project" value="LOCAL" />
+      <updated>1776590440484</updated>
+    </task>
+    <task id="LOCAL-00339" summary="new thermal profile option">
+      <option name="closed" value="true" />
+      <created>1776594318418</created>
+      <option name="number" value="00339" />
+      <option name="presentableId" value="LOCAL-00339" />
+      <option name="project" value="LOCAL" />
+      <updated>1776594318418</updated>
+    </task>
+    <task id="LOCAL-00340" summary="more new features to heating:&#10;&#10;radiator sizing&#10;thermal profiles per room&#10;heating anomaly detection">
+      <option name="closed" value="true" />
+      <created>1776673007041</created>
+      <option name="number" value="00340" />
+      <option name="presentableId" value="LOCAL-00340" />
+      <option name="project" value="LOCAL" />
+      <updated>1776673007041</updated>
+    </task>
+    <option name="localTasksCounter" value="341" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -571,13 +570,6 @@
                       </list>
                     </value>
                   </entry>
-                  <entry key="text">
-                    <value>
-                      <list>
-                        <option value="deploy" />
-                      </list>
-                    </value>
-                  </entry>
                 </map>
               </option>
             </State>
@@ -587,22 +579,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="removal of :Z as no longer needed due to sec option" />
-    <MESSAGE value="handle_message fix" />
-    <MESSAGE value="device status updated to be responsive per row and not the entire page" />
-    <MESSAGE value="debugging remove from prod" />
-    <MESSAGE value="persistence added for keys and database" />
-    <MESSAGE value="updated to cater for install methods" />
-    <MESSAGE value="cert dir added" />
-    <MESSAGE value="cert fix in main entry point" />
-    <MESSAGE value="updated to be ./data/device_settings.json" />
-    <MESSAGE value="new permit join and auto bind for hive receivers plus cluster attributes" />
-    <MESSAGE value="new diag attributes to help determine read and write availability for clusters attrs" />
-    <MESSAGE value="DiscoverAttributesRequest added" />
-    <MESSAGE value="adjusted to 0.25 degrees" />
-    <MESSAGE value="last seen and permit join via fixes" />
-    <MESSAGE value="discover_attributes update" />
-    <MESSAGE value="controls updated for hive and standard hvac controls" />
     <MESSAGE value="removed duplicate attributes" />
     <MESSAGE value="multi zone  settings added for hvac receivers" />
     <MESSAGE value="new zbm heating css" />
@@ -612,6 +588,22 @@
     <MESSAGE value="weather config added" />
     <MESSAGE value="new smart heating function" />
     <MESSAGE value="mac removal" />
-    <option name="LAST_COMMIT_MESSAGE" value="mac removal" />
+    <MESSAGE value="heatpoint hold added" />
+    <MESSAGE value="config export and stop skipping  manufacturer specific attributes" />
+    <MESSAGE value="aqara updates for new heating controller" />
+    <MESSAGE value="trv updates" />
+    <MESSAGE value="improvements for disablement for when heating controiller is enabled" />
+    <MESSAGE value="dictionary added" />
+    <MESSAGE value="heating tab updates" />
+    <MESSAGE value="heating tab bug fixes" />
+    <MESSAGE value="adding in the ability to use any device as an external temp source for TRV with overrides in place to remove receivers as options" />
+    <MESSAGE value="dark mode for heating tab" />
+    <MESSAGE value="colout pallette and controleroverlay patches" />
+    <MESSAGE value="adding in option for TRV less rooms where control of heating pull can be undertaken  by a temp sensor" />
+    <MESSAGE value="theme change update" />
+    <MESSAGE value="changing temp sensor update to be more aggressive for new heating controller" />
+    <MESSAGE value="new thermal profile option" />
+    <MESSAGE value="more new features to heating:&#10;&#10;radiator sizing&#10;thermal profiles per room&#10;heating anomaly detection" />
+    <option name="LAST_COMMIT_MESSAGE" value="more new features to heating:&#10;&#10;radiator sizing&#10;thermal profiles per room&#10;heating anomaly detection" />
   </component>
 </project>

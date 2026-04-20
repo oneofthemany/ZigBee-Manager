@@ -266,8 +266,10 @@ class HeatingAdvisor:
             await asyncio.sleep(900)
 
     # ── Public API ─────────────────────────────────────────────────
-    def get_dashboard(self) -> Dict[str, Any]:
-        if self._last_analysis and (time.time() - self._last_analysis_ts < 1800):
+    def get_dashboard(self, force: bool = False) -> Dict[str, Any]:
+        # Cache at 60s — long enough to dampen accidental spam from the UI
+        # but short enough that live values feel live. `force=True` bypasses.
+        if (not force) and self._last_analysis and (time.time() - self._last_analysis_ts < 60):
             return self._last_analysis
         try:
             self._last_analysis = self._run_analysis()
@@ -353,7 +355,7 @@ class HeatingAdvisor:
         heating_active = False
         try:
             heating_active = any(
-                (d.get("state") or {}).get("hvac_action") == "heating"
+                self._best_running(d.get("state") or {})
                 for d in hvac_devices
             )
         except Exception as e:
@@ -397,18 +399,59 @@ class HeatingAdvisor:
                 weather_current = None
 
         # Build device list defensively
+        # Pull controller intent so we can distinguish real heating from
+        # "controller wants heat but receiver hasn't fired yet" on the table.
+        controller_calling_ieees = set()
+        try:
+            from modules.heating_controller import HeatingController  # noqa: F401
+            ctrl = getattr(self, "controller", None)
+            if ctrl is None:
+                # Fall back: look in the FastAPI app state via globals if wired
+                import sys
+                for mod_name in ("main", "__main__"):
+                    mod = sys.modules.get(mod_name)
+                    c = getattr(mod, "heating_controller", None) if mod else None
+                    if c is not None:
+                        ctrl = c
+                        break
+            if ctrl and getattr(ctrl, "enabled", False):
+                last = getattr(ctrl, "_last_decision", None) or {}
+                for circ in (last.get("circuits") or []):
+                    if circ.get("calling_for_heat") and circ.get("receiver_ieee"):
+                        controller_calling_ieees.add(str(circ["receiver_ieee"]))
+        except Exception as e:
+            logger.debug(f"controller intent lookup skipped: {e}")
+
+        # Build device list defensively
         device_list = []
         for d in hvac_devices:
             try:
                 state = d.get("state") or {}
+                ieee = d.get("ieee")
+                running = self._best_running(state)
+                mode = state.get("system_mode", "unknown")
+
+                # Compute a single truthful "effective_action" label so the
+                # frontend can render without repeating this logic.
+                if running:
+                    effective_action = "heating"
+                elif str(ieee) in controller_calling_ieees:
+                    effective_action = "calling"   # controller intent, receiver idle
+                elif str(mode).lower() == "off":
+                    effective_action = "off"
+                else:
+                    effective_action = "idle"
+
                 device_list.append({
-                    "ieee": d.get("ieee"),
-                    "name": d.get("friendly_name") or d.get("ieee"),
+                    "ieee": ieee,
+                    "name": d.get("friendly_name") or ieee,
                     "temperature": state.get("local_temperature") or state.get("current_temperature"),
                     "setpoint": state.get("occupied_heating_setpoint") or state.get("target_temp"),
-                    "demand": state.get("heating_demand", 0),
-                    "mode": state.get("system_mode", "unknown"),
+                    "demand": self._best_demand(state),
+                    "running": running,
+                    "mode": mode,
                     "action": state.get("hvac_action", "unknown"),
+                    "effective_action": effective_action,
                     "zone": self._device_to_zone_id(d.get("ieee")),
                 })
             except Exception as e:
@@ -481,7 +524,7 @@ class HeatingAdvisor:
                 state = dev.get("state", {})
                 temp = state.get("local_temperature") or state.get("current_temperature")
                 setpoint = state.get("occupied_heating_setpoint") or state.get("target_temp")
-                demand = state.get("heating_demand")
+                demand = self._best_demand(state)
                 action = state.get("hvac_action") or "unknown"
 
                 if temp is not None:
@@ -493,7 +536,7 @@ class HeatingAdvisor:
                 if demand is not None:
                     try: demands.append(float(demand))
                     except (TypeError, ValueError): pass
-                if action == "heating":
+                if self._best_running(state):
                     any_heating = True
 
                 z_devices.append({
@@ -816,15 +859,44 @@ class HeatingAdvisor:
             return []
         return fc.get("temperature_2m", [])[:24]
 
-    def _get_avg_demand(self, hvac_devices: List[Dict]) -> float:
-        demands = []
-        for d in hvac_devices:
-            demand = d.get("state", {}).get("heating_demand")
-            if demand is not None:
+    @staticmethod
+    def _best_demand(state: Dict[str, Any]) -> float:
+        """
+        Percent heat-demand, in order of authoritative → inferred.
+
+        - heating_demand / pi_heating_demand: explicit % from the device.
+        - running_state bit 0 or hvac_action=='heating': the device reports
+          it is actively calling for heat → 100%.
+        - Anything else (including system_mode='heat' while idle) → 0%.
+        """
+        for k in ("heating_demand", "pi_heating_demand"):
+            v = state.get(k)
+            if v is not None:
                 try:
-                    demands.append(float(demand))
+                    return float(v)
                 except (TypeError, ValueError):
                     pass
+        rs = state.get("running_state")
+        if isinstance(rs, (int, float)) and int(rs) & 0x0001:
+            return 100.0
+        if isinstance(rs, str) and "heat" in rs.lower():
+            return 100.0
+        if state.get("hvac_action") == "heating":
+            return 100.0
+        return 0.0
+
+    @staticmethod
+    def _best_running(state: Dict[str, Any]) -> bool:
+        rs = state.get("running_state")
+        if isinstance(rs, (int, float)) and int(rs) & 0x0001:
+            return True
+        if isinstance(rs, str) and "heat" in rs.lower():
+            return True
+        return state.get("hvac_action") == "heating"
+
+    def _get_avg_demand(self, hvac_devices: List[Dict]) -> float:
+        demands = [self._best_demand(d.get("state", {})) for d in hvac_devices]
+        demands = [x for x in demands if x is not None]
         return round(sum(demands) / len(demands), 0) if demands else 0
 
     # ── EPC Estimation ─────────────────────────────────────────────
@@ -908,19 +980,144 @@ class HeatingAdvisor:
 
     # ── Historical Analysis ────────────────────────────────────────
     def get_heating_history(self, hours: int = 24) -> Dict:
+        """
+        Telemetry history per HVAC device. Tries several attribute names for
+        each conceptual series and returns whichever has data — so Hive SLRs
+        (running_state), Aqara TRVs (pi_heating_demand) and generic thermostats
+        (heating_demand) all populate correctly.
+        """
         try:
             from modules.telemetry_db import query_device_state_history
             hvac = self._find_hvac_devices()
             history = {}
+
+            def _pick(ieee, keys):
+                for k in keys:
+                    try:
+                        data = query_device_state_history(ieee, k, hours) or []
+                    except Exception as e:
+                        logger.debug(f"history[{ieee}.{k}] failed: {e}")
+                        continue
+                    if data:
+                        return {"series": data, "attribute": k}
+                return {"series": [], "attribute": None}
+
             for d in hvac:
                 ieee = d.get("ieee")
                 name = d.get("friendly_name") or ieee
+                temp = _pick(ieee, ["local_temperature", "current_temperature",
+                                    "temperature", "internal_temperature"])
+                setp = _pick(ieee, ["occupied_heating_setpoint",
+                                    "heating_setpoint", "temperature_setpoint"])
+                dem = _pick(ieee, ["heating_demand", "pi_heating_demand",
+                                   "running_state"])
+                # running_state is a ZCL bitmap, not a percentage. Map
+                # bit 0 (HEAT) → 100% so it renders consistently with the
+                # demand series from other devices.
+                if dem["attribute"] == "running_state":
+                    for pt in dem["series"]:
+                        nv = pt.get("numeric_val")
+                        if nv is not None:
+                            pt["numeric_val"] = 100.0 if (int(nv) & 0x0001) else 0.0
+                        else:
+                            # Fall back to parsing the string value
+                            try:
+                                pt["numeric_val"] = 100.0 if (int(pt.get("value", 0)) & 0x0001) else 0.0
+                            except (TypeError, ValueError):
+                                pt["numeric_val"] = 0.0
                 history[name] = {
-                    "temperature": query_device_state_history(ieee, "local_temperature", hours),
-                    "setpoint": query_device_state_history(ieee, "occupied_heating_setpoint", hours),
-                    "demand": query_device_state_history(ieee, "heating_demand", hours),
+                    "ieee": ieee,
+                    "temperature": temp["series"],
+                    "setpoint": setp["series"],
+                    "demand": dem["series"],
+                    "sources": {
+                        "temperature": temp["attribute"],
+                        "setpoint": setp["attribute"],
+                        "demand": dem["attribute"],
+                    },
                 }
             return {"devices": history, "hours": hours}
         except Exception as e:
-            logger.error(f"Failed to query heating history: {e}")
+            logger.error(f"Failed to query heating history: {e}", exc_info=True)
             return {"devices": {}, "hours": hours, "error": str(e)}
+
+    def get_daily_runtime(self, hours: int = 24) -> Dict[str, Any]:
+        """
+        Compute per-device heating on-time as a percentage of the window.
+        Uses whichever telemetry series that device actually records:
+          heating_demand / pi_heating_demand (>0 = on)
+          running_state (bit 0 = on)
+        Returns: { ieee: { name, on_minutes, percent, source } }
+        """
+        try:
+            from modules.telemetry_db import query_device_state_history
+        except Exception as e:
+            logger.error(f"telemetry_db import failed: {e}")
+            return {}
+
+        hvac = self._find_hvac_devices()
+        window_seconds = max(60, int(hours) * 3600)
+        out = {}
+
+        def _as_on(attr: str, numeric_val, raw_value) -> bool:
+            if numeric_val is not None:
+                try:
+                    n = float(numeric_val)
+                except (TypeError, ValueError):
+                    n = None
+            else:
+                n = None
+            if n is None:
+                try:
+                    n = float(raw_value)
+                except (TypeError, ValueError):
+                    return False
+            if attr == "running_state":
+                return bool(int(n) & 0x0001)
+            return n > 0.0
+
+        for d in hvac:
+            ieee = d.get("ieee")
+            name = d.get("friendly_name") or ieee
+            series = None
+            chosen = None
+            for attr in ("heating_demand", "pi_heating_demand", "running_state"):
+                try:
+                    data = query_device_state_history(ieee, attr, hours) or []
+                except Exception:
+                    data = []
+                if data:
+                    series = data
+                    chosen = attr
+                    break
+
+            if not series:
+                out[ieee] = {
+                    "name": name, "on_seconds": 0,
+                    "percent": 0.0, "source": None,
+                }
+                continue
+
+            # Integrate time-on across the window using step functions between
+            # successive samples. ts is a DuckDB datetime — already UTC.
+            import datetime as _dt
+            on_seconds = 0.0
+            for i, pt in enumerate(series):
+                is_on = _as_on(chosen, pt.get("numeric_val"), pt.get("value"))
+                if not is_on:
+                    continue
+                t0 = pt["ts"]
+                t1 = series[i + 1]["ts"] if i + 1 < len(series) else _dt.datetime.now(t0.tzinfo)
+                dt = (t1 - t0).total_seconds()
+                if dt > 0:
+                    on_seconds += min(dt, window_seconds)
+
+            pct = 100.0 * on_seconds / window_seconds
+            out[ieee] = {
+                "name": name,
+                "on_seconds": int(on_seconds),
+                "percent": round(max(0.0, min(100.0, pct)), 1),
+                "source": chosen,
+            }
+
+        return out

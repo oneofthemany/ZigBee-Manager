@@ -49,6 +49,8 @@ _BOILER_DEFAULTS = {
     "type": "gas",
     "efficiency_percent": 89,
     "output_kw": 24,
+    "flow_temperature_c": 70,     # Design flow temp; condensing boilers often 55–65
+    "design_outdoor_c": -3.0,     # UK MCS standard for sizing calculations
 }
 _COMFORT_DEFAULTS = {
     "min_temp": 18.0,
@@ -141,6 +143,11 @@ def _clean_boiler(b: dict) -> dict:
     out["output_kw"] = _coerce_float(b.get("output_kw"), out["output_kw"])
     # Clamp
     out["efficiency_percent"] = max(1, min(400, out["efficiency_percent"]))  # 400 allows heat pump COP
+    # Flow temp & design outdoor — used for radiator sizing (Phase 4)
+    flow_c = _coerce_float(b.get("flow_temperature_c"), out["flow_temperature_c"])
+    out["flow_temperature_c"] = max(30.0, min(90.0, flow_c))
+    design_out = _coerce_float(b.get("design_outdoor_c"), out["design_outdoor_c"])
+    out["design_outdoor_c"] = max(-20.0, min(10.0, design_out))
     return out
 
 
@@ -275,8 +282,144 @@ def _find_thermostats(devices: Dict[str, Any]) -> List[Dict[str, Any]]:
     return out
 
 
+def _generate_room_tips(room: dict, insulation: str) -> List[dict]:
+    """
+    Rule-based tips. Each tip is {id, severity, title, detail, action}.
+    severity: info | warning
+    """
+    tips = []
+    dim = room.get("dimensions") or {}
+    rad = room.get("radiator") or {}
+    windows = dim.get("windows") or []
+    doors = dim.get("doors") or []
+
+    # --- Radiator placement ---
+    placement = (rad.get("placement") or "").lower()
+    if placement == "under_window":
+        tips.append({
+            "id": "radiator_under_window",
+            "severity": "warning",
+            "title": "Radiator placed under a window",
+            "detail": (
+                "Rising warm air mixes with cold air falling off the window, "
+                "boosting perceived draught and losing ~10% efficiency. If relocating "
+                "isn't possible, fit a radiator shelf on top to deflect air into the "
+                "room, and add thermal lining to the curtains (never let curtains "
+                "drape over the radiator)."
+            ),
+            "action": "Consider a radiator shelf + thermally-lined curtains",
+        })
+
+    # Reflective panel (if radiator is on an external wall)
+    rad_wall = (rad.get("wall") or "").lower()
+    walls = dim.get("walls") or {}
+    rad_wall_type = (walls.get(rad_wall) or {}).get("type") if rad_wall else None
+    if rad.get("reflective_panel") is False and rad_wall_type == "external":
+        tips.append({
+            "id": "no_reflective_panel",
+            "severity": "info",
+            "title": "No reflective panel behind radiator",
+            "detail": (
+                "A reflective panel (foil or purpose-made board) behind a "
+                "radiator on an external wall returns 3–8% more heat into the "
+                "room by cutting radiative loss through the wall. ~£10 per panel."
+            ),
+            "action": "Fit a reflective panel behind this radiator",
+        })
+    elif rad.get("reflective_panel") is None and rad_wall_type == "external":
+        tips.append({
+            "id": "check_reflective_panel",
+            "severity": "info",
+            "title": "Reflective panel status unknown",
+            "detail": "Radiator is on an external wall. Check if a reflective panel is fitted behind it.",
+            "action": "Update the room config with reflective_panel true/false",
+        })
+
+    # Radiator type (single vs double)
+    rtype = (rad.get("type") or "").lower()
+    if rtype == "single_panel":
+        tips.append({
+            "id": "single_panel_radiator",
+            "severity": "info",
+            "title": "Single-panel radiator",
+            "detail": (
+                "Single panels deliver roughly half the output of a same-sized "
+                "double-panel + double-convector type. If this room struggles "
+                "to reach target, upgrading the panel type is often cheaper "
+                "than replacing to a larger footprint."
+            ),
+            "action": "Consider upgrading to a K2 / P+ type in the same footprint",
+        })
+
+    # --- Insulation ---
+    if insulation == "none":
+        tips.append({
+            "id": "no_insulation",
+            "severity": "warning",
+            "title": "No insulation recorded",
+            "detail": (
+                "The whole-dwelling insulation level is set to 'none'. Wall, "
+                "loft and floor insulation have the biggest single impact on "
+                "running cost. A UK ECO-funded assessment may cover 100% of "
+                "cavity-wall and loft works if eligible."
+            ),
+            "action": "Check eligibility for ECO4 grants; update property config after any works",
+        })
+
+    # --- Glazing ---
+    single_glazed_count = sum(
+        1 for w in windows if str(w.get("glazing", "")).lower() == "single"
+    )
+    if single_glazed_count:
+        tips.append({
+            "id": "single_glazing",
+            "severity": "warning",
+            "title": f"{single_glazed_count} single-glazed window{'s' if single_glazed_count > 1 else ''}",
+            "detail": (
+                "Single glazing loses ~4.8 W/m²/K — roughly 3× a modern double-glazed "
+                "unit. Secondary glazing is a non-invasive alternative if replacement "
+                "is not possible (listed buildings, rental)."
+            ),
+            "action": "Upgrade to double/triple glazing, or fit secondary glazing",
+        })
+
+    # --- External doors ---
+    ext_door_area = sum(
+        float(d.get("area_m2") or 0) for d in doors if d.get("type") == "external"
+    )
+    if ext_door_area > 0:
+        tips.append({
+            "id": "external_door",
+            "severity": "info",
+            "title": "External door in this room",
+            "detail": (
+                "External doors (especially older wooden ones) leak heat through "
+                "their frame seals. Check compression on the weather seals, "
+                "consider a draught excluder at the base, and a heavy curtain on "
+                "the inside if the frame is particularly poor."
+            ),
+            "action": "Inspect seals, add a door curtain if needed",
+        })
+
+    # --- Floor type ---
+    floor_type = (dim.get("floor_type") or "").lower()
+    if floor_type in ("suspended", "wooden"):
+        tips.append({
+            "id": "suspended_floor",
+            "severity": "info",
+            "title": "Suspended / wooden floor",
+            "detail": (
+                "Suspended floors lose ~0.6 W/m²/K — about 40% more than a carpeted "
+                "floor. Under-floor insulation (rockwool + mesh, or spray foam) is "
+                "the fastest payback you can retrofit without lifting the floor."
+            ),
+            "action": "Consider under-floor insulation from below",
+        })
+
+    return tips
+
 # ═══════════════════════════════════════════════════════════════════
-def register_heating_routes(app: FastAPI, get_heating_advisor, get_zigbee_service=None):
+def register_heating_routes(app: FastAPI, get_heating_advisor, get_zigbee_service,get_anomaly_watcher=None):
     """
     Register heating routes.
 
@@ -300,12 +443,12 @@ def register_heating_routes(app: FastAPI, get_heating_advisor, get_zigbee_servic
 
     # ═════════ Dashboard / analysis ═════════
     @app.get("/api/heating/dashboard")
-    async def heating_dashboard():
+    async def heating_dashboard(force: int = 0):
         adv = _resolve_advisor()
         if not adv or not getattr(adv, "enabled", False):
             return {"success": False, "error": "Heating advisor not enabled"}
         try:
-            return {"success": True, "data": adv.get_dashboard()}
+            return {"success": True, "data": adv.get_dashboard(force=bool(force))}
         except Exception as e:
             logger.error(f"Dashboard endpoint failed: {e}", exc_info=True)
             return {"success": False, "error": f"Dashboard generation failed: {e}"}
@@ -332,6 +475,22 @@ def register_heating_routes(app: FastAPI, get_heating_advisor, get_zigbee_servic
             logger.error(f"History endpoint failed: {e}", exc_info=True)
             return {"success": False, "error": str(e)}
 
+
+    @app.get("/api/heating/runtime")
+    async def heating_runtime(hours: int = 24):
+        adv = _resolve_advisor()
+        if not adv or not getattr(adv, "enabled", False):
+            return {"success": False, "error": "Heating advisor not enabled"}
+        try:
+            return {
+                "success": True,
+                "hours": hours,
+                "devices": adv.get_daily_runtime(hours),
+            }
+        except Exception as e:
+            logger.error(f"Runtime endpoint failed: {e}", exc_info=True)
+            return {"success": False, "error": str(e)}
+
     @app.get("/api/heating/tips")
     async def heating_tips():
         adv = _resolve_advisor()
@@ -342,6 +501,61 @@ def register_heating_routes(app: FastAPI, get_heating_advisor, get_zigbee_servic
             return {"success": True, "data": dashboard.get("tips", [])}
         except Exception as e:
             logger.error(f"Tips endpoint failed: {e}", exc_info=True)
+            return {"success": False, "error": str(e)}
+
+
+    @app.get("/api/heating/circuits/{circuit_id}/rooms/{room_id}/tips")
+    async def circuit_room_tips(circuit_id: str, room_id: str):
+        """
+        Return actionable efficiency tips for a room based on its config.
+        Generated from the room's dimensions / radiator / insulation data.
+        """
+        try:
+            cfg = _load_config()
+            heating = cfg.get("heating") or {}
+
+            found_room = None
+            found_circuit = None
+            for c in (heating.get("circuits") or []):
+                if str(c.get("id")) != str(circuit_id):
+                    continue
+                found_circuit = c
+                for r in (c.get("rooms") or []):
+                    if str(r.get("id")) == room_id:
+                        found_room = r
+                        break
+                break
+            if not found_room:
+                return {"success": False, "error": "Room not found"}
+
+            insulation = (heating.get("property") or {}).get("insulation", "partial")
+            tips = _generate_room_tips(found_room, insulation)
+            return {"success": True, "tips": tips,
+                    "meta": {"room_name": found_room.get("name"),
+                             "circuit_name": found_circuit.get("name")}}
+        except Exception as e:
+            logger.error(f"Tips failed for {room_id}: {e}", exc_info=True)
+            return {"success": False, "error": str(e)}
+
+    @app.get("/api/heating/anomalies")
+    async def heating_anomalies():
+        watcher = get_anomaly_watcher() if get_anomaly_watcher else None
+        if not watcher:
+            return {"success": True, "data": {
+                "last_scan_ts": None, "last_scan_age_seconds": None,
+                "active": [], "recently_resolved": [],
+            }}
+        return {"success": True, "data": watcher.get_snapshot()}
+
+    @app.post("/api/heating/anomalies/scan")
+    async def scan_anomalies_now():
+        watcher = get_anomaly_watcher() if get_anomaly_watcher else None
+        if not watcher:
+            return {"success": False, "error": "Anomaly watcher not initialised"}
+        try:
+            new = await watcher.scan_once()
+            return {"success": True, "new_anomalies": new, "data": watcher.get_snapshot()}
+        except Exception as e:
             return {"success": False, "error": str(e)}
 
     # ═════════ Config ═════════
@@ -490,6 +704,425 @@ def register_heating_routes(app: FastAPI, get_heating_advisor, get_zigbee_servic
             logger.info(f"Heating zone deleted: {zone_id}")
             return {"success": True, "deleted": zone_id, "remaining": len(zones)}
         except Exception as e:
+            return {"success": False, "error": str(e)}
+
+
+    @app.get("/api/heating/circuits/{circuit_id}/rooms/{room_id}/thermal")
+    async def circuit_room_thermal(circuit_id: str, room_id: str, days: int = 14):
+        """Thermal profile for a specific room in a specific circuit."""
+        return await _thermal_for_room(circuit_id, room_id, days)
+
+    @app.get("/api/heating/rooms/{room_id}/thermal")
+    async def room_thermal_legacy(room_id: str, days: int = 14):
+        """
+        Back-compat: if multiple circuits share the room_id (common when users
+        accept the default 'room_1' everywhere), fall back to the first match
+        and warn.
+        """
+        return await _thermal_for_room(None, room_id, days)
+
+    async def _thermal_for_room(circuit_id, room_id: str, days: int):
+        adv = _resolve_advisor()
+        if not adv:
+            return {"success": False, "error": "Heating advisor not available"}
+        try:
+            cfg = _load_config()
+            heating = cfg.get("heating") or {}
+            insulation = (heating.get("property") or {}).get("insulation", "partial")
+
+            circuits = heating.get("circuits") or []
+            found_room = None
+            found_circuit = None
+            matches = 0
+            for c in circuits:
+                if circuit_id is not None and str(c.get("id")) != str(circuit_id):
+                    continue
+                for r in (c.get("rooms") or []):
+                    if str(r.get("id")) == room_id:
+                        matches += 1
+                        if not found_room:
+                            found_room = r
+                            found_circuit = c
+                        if circuit_id is not None:
+                            break  # exact match, stop searching
+                if found_room and circuit_id is not None:
+                    break
+
+            if not found_room:
+                return {"success": False,
+                        "error": f"Room '{room_id}' not found"
+                                 + (f" in circuit '{circuit_id}'" if circuit_id else "")}
+
+            ambiguous = (circuit_id is None and matches > 1)
+
+            dimensions = found_room.get("dimensions")
+
+            sensor_ieee = found_room.get("temperature_sensor_ieee")
+            if not sensor_ieee:
+                trvs = found_room.get("trvs") or []
+                if trvs and isinstance(trvs[0], dict):
+                    sensor_ieee = trvs[0].get("ieee")
+
+            temp_series = []
+            if sensor_ieee:
+                try:
+                    from modules.telemetry_db import query_device_state_history
+                    hours = max(24, int(days) * 24)
+                    for attr in ("temperature", "local_temperature",
+                                 "current_temperature", "internal_temperature"):
+                        rows = query_device_state_history(sensor_ieee, attr, hours) or []
+                        if rows:
+                            temp_series = rows
+                            break
+                except Exception as e:
+                    logger.warning(f"history fetch failed: {e}")
+
+            outdoor_temp_getter = None
+            if adv and getattr(adv, "weather", None):
+                try:
+                    current_out = adv.weather.get_outdoor_temperature()
+                    outdoor_temp_getter = lambda _ts, _v=current_out: _v
+                except Exception:
+                    pass
+
+            from modules.thermal_profile import compute_profile
+            profile = compute_profile(
+                room_id=room_id,
+                dimensions=dimensions,
+                insulation=insulation,
+                temperature_series=temp_series,
+                outdoor_temp_getter=outdoor_temp_getter,
+            )
+
+            return {
+                "success": True,
+                "thermal": profile.to_dict(),
+                "meta": {
+                    "circuit_id": str(found_circuit.get("id")) if found_circuit else None,
+                    "circuit_name": found_circuit.get("name") if found_circuit else None,
+                    "room_name": found_room.get("name"),
+                    "sensor_ieee": sensor_ieee,
+                    "insulation": insulation,
+                    "temperature_samples": len(temp_series),
+                    "days": int(days),
+                    "ambiguous_id": ambiguous,
+                    "match_count": matches,
+                },
+            }
+        except Exception as e:
+            logger.error(f"Thermal profile failed for {room_id}: {e}", exc_info=True)
+            return {"success": False, "error": str(e)}
+
+
+    @app.get("/api/heating/circuits/{circuit_id}/rooms/{room_id}/sizing")
+    async def circuit_room_sizing(circuit_id: str, room_id: str):
+        """
+        Radiator / BTU sizing for one room.
+        Uses Phase 3 thermal profile + design outdoor temp + flow temp
+        from the boiler config. If the user has entered installed radiator
+        capacity, also returns adequate/under/oversized status.
+        """
+        adv = _resolve_advisor()
+        if not adv:
+            return {"success": False, "error": "Heating advisor not available"}
+        try:
+            cfg = _load_config()
+            heating = cfg.get("heating") or {}
+            boiler = _with_defaults(heating.get("boiler"), _BOILER_DEFAULTS)
+            insulation = (heating.get("property") or {}).get("insulation", "partial")
+
+            # Locate room
+            circuits = heating.get("circuits") or []
+            found_room = None
+            found_circuit = None
+            for c in circuits:
+                if str(c.get("id")) != str(circuit_id):
+                    continue
+                found_circuit = c
+                for r in (c.get("rooms") or []):
+                    if str(r.get("id")) == room_id:
+                        found_room = r
+                        break
+                break
+            if not found_room:
+                return {"success": False,
+                        "error": f"Room '{room_id}' not found in circuit '{circuit_id}'"}
+
+            # Build the thermal profile first (same as Phase 3 endpoint)
+            dimensions = found_room.get("dimensions")
+            sensor_ieee = found_room.get("temperature_sensor_ieee")
+            if not sensor_ieee:
+                trvs = found_room.get("trvs") or []
+                if trvs and isinstance(trvs[0], dict):
+                    sensor_ieee = trvs[0].get("ieee")
+
+            temp_series = []
+            if sensor_ieee:
+                try:
+                    from modules.telemetry_db import query_device_state_history
+                    for attr in ("temperature", "local_temperature",
+                                 "current_temperature", "internal_temperature"):
+                        rows = query_device_state_history(sensor_ieee, attr, 14 * 24) or []
+                        if rows:
+                            temp_series = rows
+                            break
+                except Exception as e:
+                    logger.debug(f"history fetch failed: {e}")
+
+            outdoor_getter = None
+            if getattr(adv, "weather", None):
+                try:
+                    current_out = adv.weather.get_outdoor_temperature()
+                    outdoor_getter = lambda _ts, _v=current_out: _v
+                except Exception:
+                    pass
+
+            from modules.thermal_profile import compute_profile
+            from modules.radiator_sizing import compute_sizing
+
+            profile = compute_profile(
+                room_id=room_id,
+                dimensions=dimensions,
+                insulation=insulation,
+                temperature_series=temp_series,
+                outdoor_temp_getter=outdoor_getter,
+            )
+
+            # Now the sizing calc
+            target = float(found_room.get("target_temp") or 21.0)
+            design_out = float(boiler.get("design_outdoor_c", -3.0))
+            flow_c = float(boiler.get("flow_temperature_c", 70.0))
+
+            rad_cfg = found_room.get("radiator") or {}
+            installed_w = rad_cfg.get("watts_at_dt50")
+            room_flow = rad_cfg.get("flow_temperature_c", flow_c)
+
+            sizing = compute_sizing(
+                room_id=room_id,
+                w_per_k=profile.blended_w_per_k,
+                target_temp_c=target,
+                design_outdoor_c=design_out,
+                installed_watts_at_dt50=installed_w,
+                flow_temperature_c=room_flow,
+            )
+
+            return {
+                "success": True,
+                "sizing": sizing.to_dict(),
+                "thermal": profile.to_dict(),
+                "meta": {
+                    "circuit_id": str(found_circuit.get("id")),
+                    "circuit_name": found_circuit.get("name"),
+                    "room_name": found_room.get("name"),
+                    "insulation": insulation,
+                    "flow_temperature_c": flow_c,
+                    "design_outdoor_c": design_out,
+                    "radiator_description": rad_cfg.get("description"),
+                },
+            }
+
+        except Exception as e:
+            logger.error(f"Sizing failed for {room_id}: {e}", exc_info=True)
+            return {"success": False, "error": str(e)}
+
+
+    @app.get("/api/heating/circuits/{circuit_id}/rooms/{room_id}/preheat")
+    async def circuit_room_preheat(
+            circuit_id: str,
+            room_id: str,
+            target_temp: float = None,
+    ):
+        """
+        Per-room pre-heat recommendation.
+
+        If target_temp is not supplied, uses the room's configured target.
+        Uses the live room temperature (external sensor preferred, first TRV
+        as fallback) and current outdoor temperature.
+        """
+        adv = _resolve_advisor()
+        if not adv:
+            return {"success": False, "error": "Heating advisor not available"}
+        try:
+            cfg = _load_config()
+            heating = cfg.get("heating") or {}
+            boiler = _with_defaults(heating.get("boiler"), _BOILER_DEFAULTS)
+            insulation = (heating.get("property") or {}).get("insulation", "partial")
+
+            # Locate room
+            circuits = heating.get("circuits") or []
+            found_room = None
+            found_circuit = None
+            for c in circuits:
+                if str(c.get("id")) != str(circuit_id):
+                    continue
+                found_circuit = c
+                for r in (c.get("rooms") or []):
+                    if str(r.get("id")) == room_id:
+                        found_room = r
+                        break
+                break
+            if not found_room:
+                return {"success": False,
+                        "error": f"Room '{room_id}' not found in circuit '{circuit_id}'"}
+
+            # Build thermal profile (re-uses Phase 3)
+            dimensions = found_room.get("dimensions")
+            sensor_ieee = found_room.get("temperature_sensor_ieee")
+            if not sensor_ieee:
+                trvs = found_room.get("trvs") or []
+                if trvs and isinstance(trvs[0], dict):
+                    sensor_ieee = trvs[0].get("ieee")
+
+            temp_series = []
+            if sensor_ieee:
+                try:
+                    from modules.telemetry_db import query_device_state_history
+                    for attr in ("temperature", "local_temperature",
+                                 "current_temperature", "internal_temperature"):
+                        rows = query_device_state_history(sensor_ieee, attr, 14 * 24) or []
+                        if rows:
+                            temp_series = rows
+                            break
+                except Exception as e:
+                    logger.debug(f"history fetch failed: {e}")
+
+            outdoor_getter = None
+            current_outdoor = None
+            if getattr(adv, "weather", None):
+                try:
+                    current_outdoor = adv.weather.get_outdoor_temperature()
+                    outdoor_getter = lambda _ts, _v=current_outdoor: _v
+                except Exception:
+                    pass
+            if current_outdoor is None:
+                current_outdoor = 10.0   # UK mean fallback
+
+            from modules.thermal_profile import compute_profile, compute_preheat
+            from modules.radiator_sizing import compute_sizing, derate_radiator
+
+            profile = compute_profile(
+                room_id=room_id,
+                dimensions=dimensions,
+                insulation=insulation,
+                temperature_series=temp_series,
+                outdoor_temp_getter=outdoor_getter,
+            )
+
+            # Live current room temp
+            # Prefer sensor reading; fall back to first TRV's local_temperature
+            from_temp = None
+            devices = {}
+            if hasattr(adv, "_get_devices"):
+                try:
+                    devices = adv._get_devices() or {}
+                except Exception:
+                    devices = {}
+
+            def _live_temp(ieee):
+                if not ieee or ieee not in devices:
+                    return None
+                dev = devices[ieee]
+                state = dev.get("state") if isinstance(dev, dict) else getattr(dev, "state", None) or {}
+                for k in ("temperature", "local_temperature", "current_temperature", "internal_temperature"):
+                    v = state.get(k)
+                    try:
+                        f = float(v)
+                    except (TypeError, ValueError):
+                        continue
+                    if f != 0 and -20 < f < 50:
+                        return f
+                return None
+
+            from_temp = _live_temp(sensor_ieee)
+            if from_temp is None:
+                for t in (found_room.get("trvs") or []):
+                    if isinstance(t, dict):
+                        from_temp = _live_temp(t.get("ieee"))
+                        if from_temp is not None:
+                            break
+
+            if from_temp is None:
+                return {
+                    "success": False,
+                    "error": f"No live temperature available for room '{room_id}'",
+                }
+
+            # Resolve target
+            to_temp = float(target_temp) if target_temp is not None \
+                else float(found_room.get("target_temp") or 21.0)
+
+            # Resolve installed radiator output at the current flow temp
+            flow_c = float(boiler.get("flow_temperature_c", 70.0))
+            rad_cfg = found_room.get("radiator") or {}
+            installed_w = rad_cfg.get("watts_at_dt50")
+            room_flow = rad_cfg.get("flow_temperature_c", flow_c)
+
+            radiator_effective = None
+            if installed_w:
+                if room_flow == 70:
+                    radiator_effective = float(installed_w)
+                else:
+                    radiator_effective = derate_radiator(
+                        float(installed_w), float(room_flow), to_temp
+                    )
+            else:
+                # No installed capacity known — fall back to the Phase 4
+                # "required with margin" figure as a best-guess radiator.
+                sizing = compute_sizing(
+                    room_id=room_id,
+                    w_per_k=profile.blended_w_per_k,
+                    target_temp_c=to_temp,
+                    design_outdoor_c=float(boiler.get("design_outdoor_c", -3.0)),
+                )
+                if sizing.required_watts_with_margin:
+                    radiator_effective = sizing.required_watts_with_margin
+                    # Derate if not at ΔT50
+                    if room_flow != 70:
+                        radiator_effective = derate_radiator(
+                            radiator_effective, float(room_flow), to_temp
+                        )
+
+            # Confidence derives from the thermal profile blend:
+            #   - measured_confidence >= 0.7 → high
+            #   - 0.3 .. 0.7 → medium
+            #   - else → low
+            mc = profile.measured_confidence or 0.0
+            if mc >= 0.7:
+                conf = "high"
+            elif mc >= 0.3:
+                conf = "medium"
+            else:
+                conf = "low"
+
+            est = compute_preheat(
+                room_id=room_id,
+                from_temp_c=from_temp,
+                to_temp_c=to_temp,
+                outdoor_temp_c=current_outdoor,
+                w_per_k=profile.blended_w_per_k,
+                tau_seconds=profile.tau_seconds,
+                radiator_watts_effective=radiator_effective,
+                confidence_in=conf,
+            )
+
+            return {
+                "success": True,
+                "preheat": est.to_dict(),
+                "thermal": profile.to_dict(),
+                "meta": {
+                    "circuit_id": str(found_circuit.get("id")),
+                    "circuit_name": found_circuit.get("name"),
+                    "room_name": found_room.get("name"),
+                    "sensor_ieee": sensor_ieee,
+                    "flow_temperature_c": flow_c,
+                    "design_outdoor_c": float(boiler.get("design_outdoor_c", -3.0)),
+                    "live_current_temp_c": from_temp,
+                    "live_outdoor_temp_c": current_outdoor,
+                },
+            }
+
+        except Exception as e:
+            logger.error(f"Preheat failed for {room_id}: {e}", exc_info=True)
             return {"success": False, "error": str(e)}
 
     # ═════════ Thermostat discovery (for zone assignment UI) ═════════

@@ -12,6 +12,155 @@ let interactionTimeout = null;
 const INTERACTION_DEBOUNCE_MS = 2000;
 let activeTouchSlider = null;
 
+// ============================================================================
+// HEATING-CONTROLLER INTEGRATION
+// ----------------------------------------------------------------------------
+// The heating controller may be actively managing some receivers and TRVs.
+// When it is, we disable direct setpoint/mode/sensor-type controls for those
+// devices so the user isn't fighting the controller. Aqara TRV-local features
+// (window detection, child lock, valve detection, calibrate) remain available
+// but are routed through /api/heating/controller/trv/* so config.yaml stays
+// in sync with what's on the device.
+// ============================================================================
+
+export async function refreshHeatingManaged() {
+    try {
+        const res = await fetch('/api/heating/controller/managed');
+        const data = await res.json();
+        if (data && data.success) {
+            state.heatingManaged = {
+                enabled: !!data.enabled,
+                ieees: new Set((data.ieees || []).map(String))
+            };
+            return state.heatingManaged;
+        }
+    } catch (e) {
+        console.debug('Heating managed fetch skipped:', e);
+    }
+    state.heatingManaged = state.heatingManaged || { enabled: false, ieees: new Set() };
+    return state.heatingManaged;
+}
+
+function isHeatingManaged(ieee) {
+    const hm = state.heatingManaged;
+    if (!hm || !hm.enabled) return false;
+    return hm.ieees && hm.ieees.has(String(ieee));
+}
+
+function isAqaraTRV(device) {
+    const manuf = String(device.manufacturer || '').toLowerCase();
+    const model = String(device.model || '').toLowerCase();
+    const aqaraLike = manuf.includes('lumi') || manuf.includes('aqara');
+    const trvMarker =
+        model.includes('airrtc') ||
+        model.includes('agl001') ||
+        (aqaraLike && model.includes('thermostat'));
+    return (aqaraLike && trvMarker) || model.includes('agl001');
+}
+
+
+// Which device state keys are considered valid "ambient room temperature"
+// readings. Excludes setpoints, internal TRV pipe readings that misreport
+// when a radiator is hot, and any key that clearly isn't an air-temp.
+const AMBIENT_TEMP_KEYS = [
+    'temperature',               // generic sensor (cluster 0x0402)
+    'local_temperature',         // thermostat self-report (0x0201 0x0000)
+    'current_temperature',       // HA climate alias
+    'room_temperature',          // some multi-sensor devices
+    'air_temperature',           // some air-quality sensors
+    'ambient_temperature',       // rare
+];
+
+// Explicitly reject keys that look like temperatures but aren't ambient.
+const REJECT_TEMP_KEYS = new Set([
+    'setpoint', 'occupied_heating_setpoint', 'occupied_cooling_setpoint',
+    'unoccupied_heating_setpoint', 'unoccupied_cooling_setpoint',
+    'target_temp', 'temperature_setpoint', 'heating_setpoint',
+    'external_temperature',      // this is what *we* push to the TRV; not a source
+    'internal_temperature',      // TRV's own pipe probe — unreliable for ambient
+    'device_temperature',        // chip temperature, not ambient
+    'cpu_temperature',
+]);
+
+function getTemperatureSources(excludeIeee) {
+    const out = [];
+    const cache = state.deviceCache || {};
+
+    for (const [ieee, dev] of Object.entries(cache)) {
+        if (!dev || ieee === excludeIeee) continue;
+        const s = dev.state || {};
+
+        // Search known ambient keys in priority order
+        let temp = null;
+        let tempKey = null;
+        for (const k of AMBIENT_TEMP_KEYS) {
+            if (REJECT_TEMP_KEYS.has(k)) continue;
+            const v = s[k];
+            const f = (v == null) ? NaN : Number(v);
+            // Realistic indoor range: 0–50 °C. Reject exact 0 (uninitialised),
+            // anything negative (probably outdoor/device probe), anything wild.
+            if (!isNaN(f) && f > 0 && f < 50) {
+                temp = f;
+                tempKey = k;
+                break;
+            }
+        }
+
+        if (temp == null) continue;
+
+        // Descriptive device-type hint so the dropdown tells the user *why*
+        // this device is offered (motion sensor, thermostat, etc.)
+        const caps = dev.capability_list || [];
+        let kind = 'sensor';
+        if (caps.includes('thermostat') || s.system_mode !== undefined) kind = 'thermostat';
+        else if (caps.includes('motion_sensor') || caps.includes('occupancy_sensing')) kind = 'motion';
+        else if (caps.includes('contact_sensor')) kind = 'contact';
+        else if (caps.includes('air_quality')) kind = 'air quality';
+        else if ('humidity' in s || 'pressure' in s) kind = 'climate';
+        else if ('illuminance' in s || 'lux' in s) kind = 'multi-sensor';
+
+        out.push({
+            ieee,
+            name: dev.friendly_name || dev.name || ieee,
+            model: dev.model || '',
+            temperature: temp,
+            temp_key: tempKey,
+            kind,
+        });
+    }
+
+    out.sort((a, b) => a.name.localeCompare(b.name));
+    return out;
+}
+
+function renderTempSourceOptions(excludeIeee) {
+    const sources = getTemperatureSources(excludeIeee);
+    const header = `<option value="">— Manual entry —</option>`;
+    if (!sources.length) {
+        return header + `<option value="" disabled>No temperature-reporting devices found</option>`;
+    }
+    return header + sources.map(src =>
+        `<option value="${src.ieee}">${src.name} (${src.temperature.toFixed(1)}°C)</option>`
+    ).join('');
+}
+
+function heatingManagedBanner() {
+    return `
+        <div class="alert alert-info small mb-0 mt-2" role="alert">
+            <i class="fas fa-cogs me-2"></i>
+            Managed by the <strong>Heating Controller</strong> — the controller
+            drives this receiver to the max setpoint when any room in its circuit
+            is calling for heat, so the boiler fires. Set per-room temperatures
+            on the individual TRVs.
+        </div>`;
+}
+
+function managedBadge() {
+    return `<span class="badge bg-info text-dark ms-1" title="Managed by Heating Controller">
+        <i class="fas fa-cogs"></i> Managed
+    </span>`;
+}
+
 /**
  * Mark control interaction as active and set debounced clear
  */
@@ -231,6 +380,18 @@ export function updateControlValues(device) {
             existingBadge.outerHTML = badgeHtml;
         }
     }
+
+    // Update Aqara TRV state-only badges (window/valve/calibration)
+    const aqHdr = document.querySelector(`[data-aqara-trv-badges="${ieee}"]`);
+    if (aqHdr) {
+        const windowOpen = !!s.window_open;
+        const valveAlarm = !!s.valve_alarm;
+        const calStatus = s.calibration_status || s.motor_calibration || 'idle';
+        aqHdr.innerHTML =
+            (windowOpen ? '<span class="badge bg-warning text-dark me-1"><i class="fas fa-window-maximize"></i> Window open</span>' : '') +
+            (valveAlarm ? '<span class="badge bg-danger me-1"><i class="fas fa-exclamation-triangle"></i> Valve alarm</span>' : '') +
+            `<span class="badge bg-secondary">${String(calStatus).replace(/_/g, ' ')}</span>`;
+    }
 }
 
 export function renderControlTab(device) {
@@ -326,19 +487,29 @@ export function renderControlTab(device) {
             thermostatBadge = '<span class="badge bg-secondary"><i class="fas fa-pause"></i> Idle</span>';
         }
 
+        // Heating-controller management status for this device.
+        // Only the RECEIVER's direct controls are locked — the controller
+        // drives it to max to guarantee the boiler fires. TRVs and standard
+        // thermostats stay user-editable so setpoints work as the room gate.
+        const managed = isHeatingManaged(device.ieee);
+        const isHiveReceiverEarly = (device.model || '').toUpperCase().includes('SLR') ||
+                                    (device.model || '').toUpperCase().includes('RECEIVER');
+        const receiverManaged = managed && isHiveReceiverEarly;
+        const dis = receiverManaged ? 'disabled' : '';
+
         // Detect Hive receiver — simplified controls
         const isHiveReceiver = (device.model || '').toUpperCase().includes('SLR') ||
                                (device.model || '').toUpperCase().includes('RECEIVER');
 
         if (isHiveReceiver) {
-            // --- HIVE RECEIVER: full heating controls ---
+            // --- HIVE RECEIVER: full heating controls (disabled when managed) ---
             html += `
             <div class="col-12">
                 <div class="card">
                     <div class="card-header bg-light d-flex justify-content-between align-items-center">
                         <strong><i class="fas fa-fire-alt"></i> Heatlink</strong>
                         <div data-thermostat-badge="${device.ieee}">
-                            ${thermostatBadge}
+                            ${thermostatBadge}${managed ? managedBadge() : ''}
                         </div>
                     </div>
                     <div class="card-body">
@@ -358,16 +529,16 @@ export function renderControlTab(device) {
                             <div class="col-12">
                                 <label class="form-label fw-bold"><i class="fas fa-sliders-h"></i> Set Target</label>
                                 <div class="input-group">
-                                    <button class="btn btn-outline-secondary" onclick="window.adjustThermostat('${device.ieee}', -0.5)">−</button>
+                                    <button class="btn btn-outline-secondary" ${dis} onclick="window.adjustThermostat('${device.ieee}', -0.5)">−</button>
                                     <input type="number" id="thermostat-setpoint-${device.ieee}" class="form-control text-center"
-                                           value="${targetTemp}" step="0.5" min="5" max="35">
-                                    <button class="btn btn-outline-secondary" onclick="window.adjustThermostat('${device.ieee}', 0.5)">+</button>
-                                    <button class="btn btn-primary" onclick="window.setThermostatTemp('${device.ieee}')">Set</button>
+                                           value="${targetTemp}" step="0.5" min="5" max="35" ${dis}>
+                                    <button class="btn btn-outline-secondary" ${dis} onclick="window.adjustThermostat('${device.ieee}', 0.5)">+</button>
+                                    <button class="btn btn-primary" ${dis} onclick="window.setThermostatTemp('${device.ieee}')">Set</button>
                                 </div>
                             </div>
                             <div class="col-12">
                                 <label class="form-label fw-bold"><i class="fas fa-cog"></i> Mode</label>
-                                <select id="hvac-mode-${device.ieee}" class="form-select"
+                                <select id="hvac-mode-${device.ieee}" class="form-select" ${dis}
                                         onchange="window.setHvacMode('${device.ieee}', this.value)">
                                     <option value="off" ${String(systemMode).toLowerCase() === 'off' ? 'selected' : ''}>Off</option>
                                     <option value="heat" ${String(systemMode).toLowerCase() === 'heat' ? 'selected' : ''}>Heat</option>
@@ -381,6 +552,7 @@ export function renderControlTab(device) {
                                     <div class="progress-bar bg-danger" style="width: ${piDemand}%"></div>
                                 </div>
                             </div>` : ''}
+                            ${managed ? `<div class="col-12">${heatingManagedBanner()}</div>` : ''}
                         </div>
                     </div>
                 </div>
@@ -415,7 +587,7 @@ export function renderControlTab(device) {
                     </div>
                 </div>`;
             } else {
-                // --- STANDARD THERMOSTAT: full controls ---
+                // --- STANDARD THERMOSTAT / TRV: full controls (disabled when managed) ---
                 html += `
                 <div class="col-12">
                     <div class="card">
@@ -426,6 +598,7 @@ export function renderControlTab(device) {
                                 ${battery > 0 && battery < 20
                                     ? `<span class="badge bg-warning text-dark ms-1"><i class="fas fa-battery-quarter"></i> ${battery}%</span>`
                                     : ''}
+                                ${managed ? managedBadge() : ''}
                             </div>
                         </div>
                         <div class="card-body">
@@ -444,7 +617,7 @@ export function renderControlTab(device) {
                                 </div>
                                 <div class="col-12">
                                     <label class="form-label fw-bold"><i class="fas fa-cog"></i> Mode</label>
-                                    <select id="hvac-mode-${device.ieee}" class="form-select"
+                                    <select id="hvac-mode-${device.ieee}" class="form-select" ${dis}
                                             onchange="window.setHvacMode('${device.ieee}', this.value)">
                                         <option value="off" ${String(systemMode).toLowerCase() === 'off' ? 'selected' : ''}>Off</option>
                                         <option value="heat" ${String(systemMode).toLowerCase() === 'heat' ? 'selected' : ''}>Heat</option>
@@ -454,11 +627,11 @@ export function renderControlTab(device) {
                                 <div class="col-12">
                                     <label class="form-label fw-bold"><i class="fas fa-sliders-h"></i> Set Target</label>
                                     <div class="input-group">
-                                        <button class="btn btn-outline-secondary" onclick="window.adjustThermostat('${device.ieee}', -0.5)">−</button>
+                                        <button class="btn btn-outline-secondary" ${dis} onclick="window.adjustThermostat('${device.ieee}', -0.5)">−</button>
                                         <input type="number" id="thermostat-setpoint-${device.ieee}" class="form-control text-center"
-                                               value="${targetTemp}" step="0.5" min="5" max="35">
-                                        <button class="btn btn-outline-secondary" onclick="window.adjustThermostat('${device.ieee}', 0.5)">+</button>
-                                        <button class="btn btn-primary" onclick="window.setThermostatTemp('${device.ieee}')">Set</button>
+                                               value="${targetTemp}" step="0.5" min="5" max="35" ${dis}>
+                                        <button class="btn btn-outline-secondary" ${dis} onclick="window.adjustThermostat('${device.ieee}', 0.5)">+</button>
+                                        <button class="btn btn-primary" ${dis} onclick="window.setThermostatTemp('${device.ieee}')">Set</button>
                                     </div>
                                 </div>
                                 ${piDemand > 0 ? `
@@ -468,6 +641,7 @@ export function renderControlTab(device) {
                                         <div class="progress-bar bg-danger" style="width: ${piDemand}%"></div>
                                     </div>
                                 </div>` : ''}
+                                ${managed ? `<div class="col-12">${heatingManagedBanner()}</div>` : ''}
                             </div>
                         </div>
                     </div>
@@ -475,6 +649,113 @@ export function renderControlTab(device) {
                 ${renderScheduleSection(device.ieee)}`;
             }
         }
+    }
+
+    // --- Aqara TRV local features (always shown for Aqara TRVs with 0x0201) ---
+    if (isAqaraTRV(device) && hasCluster(device, 0x0201)) {
+        controlsFound = true;
+        const managed = isHeatingManaged(device.ieee);
+        const windowDet = !!s.window_detection;
+        const childLock = !!s.child_lock;
+        const valveDet = !!s.valve_detection;
+        const valveAlarm = !!s.valve_alarm;
+        const windowOpen = !!s.window_open;
+        const calStatus = s.calibration_status || s.motor_calibration || 'idle';
+        const sensorType = s.sensor_type === 'external' ? 'external' : 'internal';
+        const extTemp = (s.external_temperature != null)
+            ? Number(s.external_temperature).toFixed(1) : '';
+        // TRV sensor-type and external-temp push are always user-editable.
+        // When the heating controller is managing the circuit it still drives
+        // the receiver, but TRV-local config (sensor, external temp, window
+        // detection, child lock, calibration) stays under user control.
+        const sensorExtDis = '';
+
+        const viaCtrl = managed ? ' (via Heating Controller)' : '';
+
+        html += `
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header bg-light d-flex justify-content-between align-items-center flex-wrap gap-2">
+                    <strong><i class="fas fa-temperature-low"></i> Aqara TRV Features${viaCtrl}</strong>
+                    <div data-aqara-trv-badges="${device.ieee}">
+                        ${windowOpen ? '<span class="badge bg-warning text-dark me-1"><i class="fas fa-window-maximize"></i> Window open</span>' : ''}
+                        ${valveAlarm ? '<span class="badge bg-danger me-1"><i class="fas fa-exclamation-triangle"></i> Valve alarm</span>' : ''}
+                        <span class="badge bg-secondary">${String(calStatus).replace(/_/g, ' ')}</span>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="aq-wd-${device.ieee}" ${windowDet ? 'checked' : ''}
+                                    onchange="window.aqaraSetFeature('${device.ieee}', 'window_detection', this.checked)">
+                                <label class="form-check-label" for="aq-wd-${device.ieee}">
+                                    <i class="fas fa-window-maximize me-1"></i> Window Detection
+                                </label>
+                            </div>
+                            <div class="form-text small">Pause heating when a window is detected open.</div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="aq-cl-${device.ieee}" ${childLock ? 'checked' : ''}
+                                    onchange="window.aqaraSetFeature('${device.ieee}', 'child_lock', this.checked)">
+                                <label class="form-check-label" for="aq-cl-${device.ieee}">
+                                    <i class="fas fa-lock me-1"></i> Child Lock
+                                </label>
+                            </div>
+                            <div class="form-text small">Lock the physical dial on the TRV.</div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="aq-vd-${device.ieee}" ${valveDet ? 'checked' : ''}
+                                    onchange="window.aqaraSetFeature('${device.ieee}', 'valve_detection', this.checked)">
+                                <label class="form-check-label" for="aq-vd-${device.ieee}">
+                                    <i class="fas fa-faucet me-1"></i> Valve Detection
+                                </label>
+                            </div>
+                            <div class="form-text small">Detect and report a seized valve.</div>
+                        </div>
+                        <div class="col-md-6 d-flex align-items-end">
+                            <button class="btn btn-outline-secondary w-100" onclick="window.aqaraCalibrate('${device.ieee}')">
+                                <i class="fas fa-wrench me-1"></i> Calibrate Valve
+                            </button>
+                        </div>
+                        <div class="col-12"><hr class="my-0"></div>
+                        <div class="col-md-4">
+                            <label class="form-label small text-muted">Temperature Sensor</label>
+                            <select class="form-select" id="aq-st-${device.ieee}" ${sensorExtDis}
+                                onchange="window.aqaraSetSensorType('${device.ieee}', this.value)">
+                                <option value="internal" ${sensorType === 'internal' ? 'selected' : ''}>Internal</option>
+                                <option value="external" ${sensorType === 'external' ? 'selected' : ''}>External</option>
+                            </select>
+                            <div class="form-text small">Switch to External to use a room sensor below.</div>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label small text-muted">External Source</label>
+                            <select class="form-select" id="aq-src-${device.ieee}" ${sensorExtDis}
+                                onchange="window.aqaraSourceChanged('${device.ieee}', this.value)">
+                                ${renderTempSourceOptions(device.ieee)}
+                            </select>
+                            <div class="form-text small">Pick a device to copy its room temperature from.</div>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label small text-muted">Temperature (°C)</label>
+                            <div class="input-group">
+                                <input type="number" class="form-control" id="aq-ext-${device.ieee}"
+                                       step="0.1" min="-40" max="80"
+                                       value="${extTemp}" placeholder="e.g. 19.5" ${sensorExtDis}>
+                                <button class="btn btn-outline-primary" ${sensorExtDis}
+                                        onclick="window.aqaraPushExternalTemp('${device.ieee}')"
+                                        title="Write the current value to the TRV">
+                                    <i class="fas fa-paper-plane"></i>
+                                </button>
+                            </div>
+                            <div class="form-text small">Pre-filled when a source is selected. Editable.</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>`;
     }
 
     // --- On/Off, Level, Color Clusters ---
@@ -830,5 +1111,130 @@ window.showColorMode = function(ieee, epId, mode) {
     } else {
         if (tempPanel) tempPanel.style.display = 'none';
         if (colorPanel) colorPanel.style.display = '';
+    }
+};
+
+// ============================================================================
+// AQARA TRV COMMAND HANDLERS
+// ----------------------------------------------------------------------------
+// When the device is managed by the heating controller, persistent settings
+// (window/child_lock/valve detection, calibrate) are routed through the
+// controller API so config.yaml stays in sync with the device. Otherwise they
+// go through the standard /api/device/command path.
+// ============================================================================
+
+window.aqaraSetFeature = async function(ieee, feature, enabled) {
+    const managed = isHeatingManaged(ieee);
+    const ALLOWED_MANAGED = ['window_detection', 'child_lock', 'valve_detection'];
+    try {
+        if (managed && ALLOWED_MANAGED.includes(feature)) {
+            const body = { ieee, [feature]: !!enabled };
+            const res = await fetch('/api/heating/controller/trv/settings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            });
+            const data = await res.json();
+            if (!data.success) {
+                alert('Failed to update ' + feature + ': ' + (data.error || 'unknown'));
+            }
+        } else {
+            await window.sendCommand(ieee, feature, enabled ? 1 : 0);
+        }
+    } catch (e) {
+        console.error('aqaraSetFeature failed:', e);
+        alert('Update failed: ' + (e.message || e));
+    }
+};
+
+window.aqaraCalibrate = async function(ieee) {
+    if (!confirm('Start motor calibration?\n\nThe valve will sweep through its full range — this takes roughly 2 minutes and the TRV may be noisy during that time.')) return;
+    const managed = isHeatingManaged(ieee);
+    try {
+        if (managed) {
+            const res = await fetch('/api/heating/controller/trv/calibrate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ieee })
+            });
+            const data = await res.json();
+            if (!data.success) alert('Calibration failed: ' + (data.error || 'unknown'));
+        } else {
+            await window.sendCommand(ieee, 'motor_calibration', 1);
+        }
+    } catch (e) {
+        console.error('aqaraCalibrate failed:', e);
+        alert('Calibration failed: ' + (e.message || e));
+    }
+};
+
+window.aqaraSetSensorType = async function(ieee, type) {
+    try {
+        const val = (type === 'external') ? 1 : 0;
+        await window.sendCommand(ieee, 'sensor_type', val);
+    } catch (e) {
+        console.error('aqaraSetSensorType failed:', e);
+        alert('Sensor-type change failed: ' + (e.message || e));
+    }
+};
+
+window.aqaraSourceChanged = function(ieee, sourceIeee) {
+    const input = document.getElementById(`aq-ext-${ieee}`);
+    if (!input) return;
+    if (!sourceIeee) return;  // Manual entry chosen — leave the field alone
+    const cache = state.deviceCache || {};
+    const src = cache[sourceIeee];
+    if (!src || !src.state) return;
+    const s = src.state;
+    let temp = null;
+    for (const k of ['temperature', 'local_temperature', 'current_temperature', 'internal_temperature']) {
+        const v = s[k];
+        const f = (v == null) ? NaN : Number(v);
+        if (!isNaN(f) && f !== 0 && f > -40 && f < 80) { temp = f; break; }
+    }
+    if (temp == null) return;
+    input.value = temp.toFixed(1);
+};
+
+window.aqaraPushExternalTemp = async function(ieee) {
+    const input = document.getElementById(`aq-ext-${ieee}`);
+    const srcSel = document.getElementById(`aq-src-${ieee}`);
+    const sensorSel = document.getElementById(`aq-st-${ieee}`);
+    if (!input) return;
+
+    // If a source is picked, use that source's *current* temperature (freshest)
+    let val;
+    const sourceIeee = srcSel ? srcSel.value : '';
+    if (sourceIeee) {
+        const src = (state.deviceCache || {})[sourceIeee];
+        const s = (src && src.state) || {};
+        for (const k of ['temperature', 'local_temperature', 'current_temperature', 'internal_temperature']) {
+            const v = s[k];
+            const f = (v == null) ? NaN : Number(v);
+            if (!isNaN(f) && f !== 0 && f > -40 && f < 80) { val = f; break; }
+        }
+        if (val == null) {
+            alert('Selected source has no current temperature reading. Try again in a moment.');
+            return;
+        }
+        input.value = val.toFixed(1);
+    } else {
+        val = parseFloat(input.value);
+    }
+    if (isNaN(val) || val < -40 || val > 80) {
+        alert('Enter a valid temperature between -40 and 80 °C');
+        return;
+    }
+
+    try {
+        // Ensure sensor_type=external first — otherwise the TRV ignores the push
+        if (sensorSel && sensorSel.value !== 'external') {
+            await window.sendCommand(ieee, 'sensor_type', 1);
+            sensorSel.value = 'external';
+        }
+        await window.sendCommand(ieee, 'external_temp', val);
+    } catch (e) {
+        console.error('aqaraPushExternalTemp failed:', e);
+        alert('Push external temp failed: ' + (e.message || e));
     }
 };

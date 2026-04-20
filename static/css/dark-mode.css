@@ -1075,3 +1075,39 @@ body,
 .list-group-item {
     transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
 }
+
+
+/* Heating history chart — theme-aware */
+#heatingHistoryTooltip {
+    background: var(--bs-tertiary-bg, var(--bg-surface-raised, #fff)) !important;
+    color: var(--text-primary, #212529) !important;
+    border: 1px solid var(--border-color, #dee2e6);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.18);
+}
+
+[data-theme="dark"] #heatingHistoryTooltip {
+    background: var(--bg-surface-raised, #222636) !important;
+    color: var(--text-primary, #e1e4eb) !important;
+    border-color: var(--border-color, #2d3348);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+}
+
+#heatingHistorySvg {
+    color: var(--text-primary, #212529);
+}
+
+/* Dark mode: full-brightness text on chart, stronger grid */
+[data-theme="dark"] #heatingHistorySvg {
+    color: #ffffff;
+}
+[data-theme="dark"] #heatingHistorySvg text {
+    fill: #ffffff !important;
+    opacity: 1 !important;
+}
+[data-theme="dark"] #heatingHistorySvg .history-line {
+    stroke-width: 2.2 !important;
+}
+/* Brighten the grid lines a bit in dark mode so they're visible */
+[data-theme="dark"] #heatingHistorySvg line[stroke="currentColor"] {
+    stroke-opacity: 0.25 !important;
+}

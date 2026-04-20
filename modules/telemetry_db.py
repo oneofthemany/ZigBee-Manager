@@ -29,7 +29,7 @@ from typing import Any, Dict, List, Optional
 logger = logging.getLogger("modules.telemetry_db")
 
 DB_PATH = "./data/telemetry.duckdb"
-DEFAULT_RETENTION_DAYS = 7
+DEFAULT_RETENTION_DAYS = 90
 
 # Lazy import — duckdb is only needed when this module is used
 _db = None

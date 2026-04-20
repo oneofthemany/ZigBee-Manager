@@ -7,48 +7,72 @@ The Controller actually sends commands to make heating happen.
 Model:
     Circuit (a receiver/zone valve calling for boiler heat)
       └── Room (a heated space with target temp)
+            ├── Room sensor (optional — external thermostat/temp sensor)
             └── TRV(s) (regulate flow into that room's radiators)
 
 Per-tick decision flow:
     1. Snapshot device states
-    2. Classify each room: COLD / ONTARGET / HOT (with hysteresis)
+    2. For each room:
+         a. Pick the room temperature source:
+              - temperature_sensor_ieee if present & online  → authoritative
+              - otherwise, mean of TRV local_temperature
+         b. Classify: COLD / ONTARGET / HOT (with hysteresis)
     3. Decide each circuit: CALLING (any room cold) / IDLE (all rooms ok)
     4. Decide each TRV's setpoint:
-         - room COLD          → setpoint = target          (open via own thermostat)
-         - room HOT           → setpoint = current - 1.0   (force close, prevent stealing)
-         - room ONTARGET      → setpoint = target          (idle)
+         - room COLD     → setpoint = target         (open via own thermostat)
+         - room HOT      → setpoint = current - 1.0  (force close, prevent stealing)
+         - room ONTARGET → setpoint = target         (idle)
     5. Apply receiver state changes (only if differ from last command)
     6. Apply TRV setpoint changes (only if differ from last command + larger than 0.5°C)
+    7. (Background) Push external temp to Aqara TRVs if external_temp_mode=='push'
 
-Behaviour matches user choices:
-    - "Comfort first": every room can call for heat
-    - "Absorb to target only": no overshoot allowed
-    - "Force-close TRVs of hot rooms": prevent demand stealing
+External sensor modes (per-room, config.external_temp_mode):
+    - "off"      : TRV local temps decide everything (legacy behaviour)
+    - "advisory" : controller uses external sensor for its own classification,
+                   but TRVs continue using their own internal sensor. This is
+                   the safe default when an external sensor is configured —
+                   it immediately fixes "TRV reads hot pipe, not air".
+    - "push"     : advisory + controller writes the external temperature into
+                   each Aqara TRV's manufacturer cluster (0xFCC0, attr 0x0280)
+                   and flips sensor_type to external. Requires Aqara TRV.
 
-Config (config.yaml under heating.circuits):
+Per-TRV config (applied on start and via API):
+    - window_detection : bool  → Aqara 0xFCC0 attr 0x0273
+    - child_lock       : bool  → Aqara 0xFCC0 attr 0x0277
+    - valve_detection  : bool  → Aqara 0xFCC0 attr 0x0274
+  (motor_calibration is one-shot via API, not persisted as "always on")
+
+Config (config.yaml under heating):
   heating:
+    controller:
+      enabled: true
+      dry_run: false
     circuits:
       - id: downstairs
         name: "Downstairs"
         receiver_ieee: "00:15:8d:00:00:aa:bb:cc"
-        receiver_command: switch          # 'switch' (on/off) or 'thermostat'
-        receiver_endpoint: 1              # optional endpoint id
+        receiver_command: thermostat      # 'thermostat' or 'switch'
+        receiver_endpoint: 1
         rooms:
-          - id: living_room
-            name: "Living Room"
+          - id: living
+            name: "Living"
             target_temp: 20.5
             night_setback: 17.0
             min_temp: 16.0
-            trv_ieees: ["aa:bb:..."]
+            temperature_sensor_ieee: "00:1e:5e:09:02:a3:e4:c1"
+            external_temp_mode: advisory          # off | advisory | push
+            external_temp_push_interval_sec: 300
+            # Legacy: trv_ieees: ["54:ef:44:..."]     (still supported)
+            trvs:
+              - ieee: "54:ef:44:10:00:67:3e:a6"
+                window_detection: true
+                child_lock: false
+                valve_detection: true
             schedule:
               - days: [mon,tue,wed,thu,fri]
                 start: "07:00"
                 end:   "22:00"
                 temp:  20.5
-          - id: kitchen
-            name: "Kitchen"
-            target_temp: 18.0
-            trv_ieees: ["cc:dd:..."]
 """
 import asyncio
 import logging
@@ -75,6 +99,12 @@ TICK_INTERVAL_SEC = 60
 # Don't repeat the same setpoint command more often than this
 COMMAND_COOLDOWN_SEC = 300
 
+# Default external-temp push cadence when mode='push' and room doesn't override
+DEFAULT_EXT_TEMP_PUSH_INTERVAL_SEC = 300
+
+# Min delta before we re-push external temp to a TRV (°C). Saves battery airtime.
+EXT_TEMP_PUSH_MIN_DELTA = 0.3
+
 DAY_KEYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
 
 
@@ -84,6 +114,22 @@ def _as_float(v, default: Optional[float] = None) -> Optional[float]:
         return float(v) if v is not None else default
     except (TypeError, ValueError):
         return default
+
+
+def _as_bool(v, default: Optional[bool] = None) -> Optional[bool]:
+    if v is None:
+        return default
+    if isinstance(v, bool):
+        return v
+    if isinstance(v, (int, float)):
+        return bool(v)
+    if isinstance(v, str):
+        s = v.strip().lower()
+        if s in ("1", "true", "yes", "on", "enable", "enabled", "lock"):
+            return True
+        if s in ("0", "false", "no", "off", "disable", "disabled", "unlock"):
+            return False
+    return default
 
 
 def _parse_hhmm(s: str) -> Optional[int]:
@@ -113,13 +159,26 @@ def _device_friendly_name(dev: Any, fallback: str) -> str:
     return name or fallback
 
 
+def _pick_temperature(state: Dict[str, Any]) -> Optional[float]:
+    """
+    Pull a temperature reading from a device's state, preferring the most
+    'room-like' key. Works for thermostats, TRVs and bare temperature sensors.
+    """
+    for key in ("local_temperature", "current_temperature", "temperature"):
+        v = state.get(key)
+        f = _as_float(v)
+        if f is not None and f != 0:   # filter out the init-zero we sometimes see
+            return f
+    return None
+
+
 # ── Room state ─────────────────────────────────────────────────────
 class RoomDecision:
     """Per-tick analysis of a single room."""
 
     __slots__ = (
-        "room_id", "name", "target_temp", "current_temp",
-        "status", "calling_for_heat", "trvs",
+        "room_id", "name", "target_temp", "current_temp", "temp_source",
+        "status", "calling_for_heat", "trvs", "sensor_ieee", "sensor_online",
     )
 
     def __init__(self, room_id: str, name: str):
@@ -127,6 +186,9 @@ class RoomDecision:
         self.name = name
         self.target_temp: Optional[float] = None
         self.current_temp: Optional[float] = None
+        self.temp_source: str = "none"   # "external" | "trv_mean" | "none"
+        self.sensor_ieee: Optional[str] = None
+        self.sensor_online: Optional[bool] = None
         self.status: str = "unknown"     # cold | ontarget | hot | unknown
         self.calling_for_heat: bool = False
         self.trvs: List[Dict] = []
@@ -137,6 +199,9 @@ class RoomDecision:
             "name": self.name,
             "target_temp": self.target_temp,
             "current_temp": self.current_temp,
+            "temp_source": self.temp_source,
+            "sensor_ieee": self.sensor_ieee,
+            "sensor_online": self.sensor_online,
             "status": self.status,
             "calling_for_heat": self.calling_for_heat,
             "trvs": self.trvs,
@@ -179,19 +244,35 @@ class HeatingController:
         # ieee -> (command, value, timestamp)
         self._last_command: Dict[str, Tuple[str, Any, float]] = {}
 
+        # Last external-temp push tracking:  trv_ieee -> (last_pushed_c, ts)
+        self._last_ext_push: Dict[str, Tuple[float, float]] = {}
+
         # Last decision snapshot (for dashboard/API)
         self._last_decision: Dict[str, Any] = {}
         self._last_decision_ts: float = 0
 
+        # Applied-on-start flags so we don't spam configuration writes every tick
+        self._trv_config_applied: set = set()
+
         self._task: Optional[asyncio.Task] = None
+        self._ext_push_task: Optional[asyncio.Task] = None
 
         if self.enabled:
             mode = "DRY-RUN" if self.dry_run else "LIVE"
             n_rooms = sum(len(c["rooms"]) for c in self.circuits)
-            n_trvs = sum(len(r["trv_ieees"]) for c in self.circuits for r in c["rooms"])
+            n_trvs = sum(len(r["trvs"]) for c in self.circuits for r in c["rooms"])
+            n_sensors = sum(
+                1 for c in self.circuits for r in c["rooms"]
+                if r.get("temperature_sensor_ieee")
+            )
+            n_push = sum(
+                1 for c in self.circuits for r in c["rooms"]
+                if r.get("external_temp_mode") == "push"
+            )
             logger.info(
                 f"Heating Controller [{mode}]: "
-                f"{len(self.circuits)} circuits, {n_rooms} rooms, {n_trvs} TRVs"
+                f"{len(self.circuits)} circuits, {n_rooms} rooms, {n_trvs} TRVs, "
+                f"{n_sensors} room sensors, {n_push} rooms pushing ext-temp"
             )
         elif config.get("circuits"):
             logger.info("Heating Controller defined but not enabled (set heating.controller.enabled: true)")
@@ -224,9 +305,23 @@ class HeatingController:
             if not isinstance(r, dict) or not r.get("name"):
                 continue
             rid = str(r.get("id") or r["name"]).lower().replace(" ", "_")
-            trv_ieees = r.get("trv_ieees") or []
-            if not isinstance(trv_ieees, list):
-                trv_ieees = []
+
+            # Parse TRVs from either the new 'trvs' list (dicts) or legacy 'trv_ieees' list (strings).
+            trvs = self._clean_trvs(r)
+
+
+            if not trvs and not sensor_ieee:
+                logger.warning(
+                    f"Room '{rid}' has no TRVs and no temperature_sensor_ieee "
+                    f"— it will never call for heat. Ignoring."
+                )
+                continue
+            if not trvs:
+                logger.info(
+                    f"Room '{rid}' is sensor-only (no TRVs) — call-for-heat "
+                    f"will be driven by sensor reading only."
+                )
+
             schedule = r.get("schedule") or []
             if not isinstance(schedule, list):
                 schedule = []
@@ -243,33 +338,125 @@ class HeatingController:
                     "end": str(slot.get("end", "22:00")),
                     "temp": _as_float(slot.get("temp"), 20.0),
                 })
-            out.append({
+
+            sensor_ieee = r.get("temperature_sensor_ieee")
+            sensor_ieee = str(sensor_ieee).strip() if sensor_ieee else None
+            sensor_ieee = sensor_ieee or None
+
+            mode = str(r.get("external_temp_mode", "advisory" if sensor_ieee else "off")).lower()
+            if mode not in ("off", "advisory", "push"):
+                mode = "advisory" if sensor_ieee else "off"
+            # Push without a sensor is nonsensical — coerce to off.
+            if not sensor_ieee and mode == "push":
+                logger.warning(
+                    f"Room {rid}: external_temp_mode='push' but no temperature_sensor_ieee — treating as 'off'"
+                )
+                mode = "off"
+
+            push_interval = int(_as_float(
+                r.get("external_temp_push_interval_sec"),
+                DEFAULT_EXT_TEMP_PUSH_INTERVAL_SEC
+            ) or DEFAULT_EXT_TEMP_PUSH_INTERVAL_SEC)
+
+            room_out = {
                 "id": rid,
                 "name": str(r["name"]),
                 "target_temp": _as_float(r.get("target_temp"), self._default_target),
                 "night_setback": _as_float(r.get("night_setback"), self._default_setback),
                 "min_temp": _as_float(r.get("min_temp"), self._default_min),
-                "trv_ieees": [str(i) for i in trv_ieees if i],
+                "temperature_sensor_ieee": sensor_ieee,
+                "external_temp_mode": mode,
+                "external_temp_push_interval_sec": push_interval,
+                "trvs": trvs,
+                # Keep legacy key populated so older code paths still work.
+                "trv_ieees": [t["ieee"] for t in trvs],
                 "schedule": clean_sched,
-            })
+            }
+            # Dimensions are used by Phase 3+ (thermal profile, BTU sizing).
+            # Controller itself doesn't need them but preserves them verbatim.
+            if isinstance(r.get("dimensions"), dict):
+                room_out["dimensions"] = r["dimensions"]
+            if isinstance(r.get("radiator"), dict):
+                room_out["radiator"] = r["radiator"]
+            out.append(room_out)
         return out
+
+    def _clean_trvs(self, room: dict) -> List[Dict]:
+        """
+        Accept both shapes:
+            trvs: [{ieee, window_detection?, child_lock?, valve_detection?}, ...]
+            trv_ieees: ["aa:bb:...", ...]
+        Later-listed IEEE in either collection wins on conflict (dict form preferred).
+        """
+        by_ieee: Dict[str, Dict[str, Any]] = {}
+
+        # Legacy list first, so explicit dicts override.
+        legacy = room.get("trv_ieees") or []
+        if isinstance(legacy, list):
+            for ieee in legacy:
+                if not ieee:
+                    continue
+                ieee_s = str(ieee).strip()
+                if not ieee_s:
+                    continue
+                by_ieee[ieee_s] = {
+                    "ieee": ieee_s,
+                    "window_detection": None,
+                    "child_lock": None,
+                    "valve_detection": None,
+                }
+
+        new = room.get("trvs") or []
+        if isinstance(new, list):
+            for t in new:
+                if isinstance(t, str):
+                    ieee_s = t.strip()
+                    if ieee_s:
+                        by_ieee.setdefault(ieee_s, {
+                            "ieee": ieee_s,
+                            "window_detection": None,
+                            "child_lock": None,
+                            "valve_detection": None,
+                        })
+                elif isinstance(t, dict):
+                    ieee_s = str(t.get("ieee") or "").strip()
+                    if not ieee_s:
+                        continue
+                    by_ieee[ieee_s] = {
+                        "ieee": ieee_s,
+                        "window_detection": _as_bool(t.get("window_detection"), None),
+                        "child_lock": _as_bool(t.get("child_lock"), None),
+                        "valve_detection": _as_bool(t.get("valve_detection"), None),
+                    }
+
+        return list(by_ieee.values())
 
     # ── Lifecycle ──────────────────────────────────────────────────
     def start(self):
         if not self.enabled:
             return
         self._task = asyncio.create_task(self._control_loop())
+        self._ext_push_task = asyncio.create_task(self._ext_push_loop())
         logger.info("Heating Controller started")
 
     def stop(self):
         if self._task:
             self._task.cancel()
             self._task = None
-            logger.info("Heating Controller stopped")
+        if self._ext_push_task:
+            self._ext_push_task.cancel()
+            self._ext_push_task = None
+        logger.info("Heating Controller stopped")
 
     async def _control_loop(self):
         # Initial delay so other services finish startup
         await asyncio.sleep(15)
+        # Apply persistent per-TRV config once devices are online
+        try:
+            await self._apply_all_trv_config()
+        except Exception as e:
+            logger.error(f"Initial TRV config apply failed: {e}", exc_info=True)
+
         while True:
             try:
                 await self._tick()
@@ -278,6 +465,26 @@ class HeatingController:
             except Exception as e:
                 logger.error(f"Controller tick failed: {e}", exc_info=True)
             await asyncio.sleep(TICK_INTERVAL_SEC)
+
+    async def _ext_push_loop(self):
+        """Background task: push external temperature into Aqara TRVs."""
+        await asyncio.sleep(30)  # settle
+        while True:
+            try:
+                await self._push_external_temps_once()
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"External temp push failed: {e}", exc_info=True)
+            # Use shortest configured push interval as loop cadence, clamped
+            intervals = [
+                r.get("external_temp_push_interval_sec", DEFAULT_EXT_TEMP_PUSH_INTERVAL_SEC)
+                for c in self.circuits for r in c["rooms"]
+                if r.get("external_temp_mode") == "push"
+            ]
+            sleep_for = min(intervals) if intervals else DEFAULT_EXT_TEMP_PUSH_INTERVAL_SEC
+            sleep_for = max(60, min(sleep_for, 1800))
+            await asyncio.sleep(sleep_for)
 
     # ── Public introspection ───────────────────────────────────────
     def get_state(self) -> Dict[str, Any]:
@@ -294,6 +501,15 @@ class HeatingController:
         """Run one tick on demand (used by API for manual evaluate-now)."""
         await self._tick()
         return self.get_state()
+
+    def find_trv(self, ieee: str) -> Optional[Tuple[Dict, Dict, Dict]]:
+        """Locate a TRV in the config. Returns (circuit, room, trv) or None."""
+        for c in self.circuits:
+            for r in c["rooms"]:
+                for t in r["trvs"]:
+                    if t["ieee"] == ieee:
+                        return c, r, t
+        return None
 
     # ── Core control loop ──────────────────────────────────────────
     async def _tick(self):
@@ -330,12 +546,36 @@ class HeatingController:
                         trv["intended_setpoint"] = a["target_setpoint"]
                         trv["action"] = a["action"]
 
+            # Surface the receiver's live running_state / system_mode so the
+            # controller panel can show whether the boiler is actually firing.
+            recv_state = {}
+            rx_ieee = circuit.get("receiver_ieee")
+            if rx_ieee and rx_ieee in devices:
+                rx_dev = devices[rx_ieee]
+                rs_dict = (
+                              rx_dev.get("state") if isinstance(rx_dev, dict)
+                              else getattr(rx_dev, "state", None)
+                          ) or {}
+                rs = rs_dict.get("running_state")
+                rs_on = False
+                if isinstance(rs, (int, float)):
+                    rs_on = bool(int(rs) & 0x0001)
+                elif isinstance(rs, str) and "heat" in rs.lower():
+                    rs_on = True
+                recv_state = {
+                    "running_state": rs,
+                    "running": rs_on,
+                    "system_mode": rs_dict.get("system_mode"),
+                    "setpoint": rs_dict.get("occupied_heating_setpoint"),
+                }
+
             circuits_out.append({
                 "id": circuit["id"],
                 "name": circuit["name"],
                 "calling_for_heat": should_call,
                 "receiver_ieee": circuit["receiver_ieee"],
                 "receiver_action": receiver_action,
+                "receiver_state": recv_state,
                 "rooms": [d.to_dict() for d in room_decisions],
                 "trv_actions": trv_actions,
             })
@@ -358,10 +598,11 @@ class HeatingController:
         decision = RoomDecision(room_id=room["id"], name=room["name"])
         decision.target_temp = self._effective_target(room, now)
 
-        # Gather TRV temperatures
-        temps = []
+        # Gather TRV state
+        trv_temps = []
         trvs = []
-        for ieee in room["trv_ieees"]:
+        for t in room["trvs"]:
+            ieee = t["ieee"]
             dev = devices.get(ieee)
             if dev is None:
                 trvs.append({
@@ -373,21 +614,43 @@ class HeatingController:
                 })
                 continue
             state = _device_state(dev)
-            temp = state.get("local_temperature") or state.get("current_temperature")
+            temp = _pick_temperature(state)
             setpoint = state.get("occupied_heating_setpoint") or state.get("target_temp")
-            ftemp = _as_float(temp)
-            if ftemp is not None:
-                temps.append(ftemp)
+            if temp is not None:
+                trv_temps.append(temp)
             trvs.append({
                 "ieee": ieee,
                 "name": _device_friendly_name(dev, ieee),
-                "current_temp": ftemp,
+                "current_temp": temp,
                 "current_setpoint": _as_float(setpoint),
                 "online": True,
             })
 
         decision.trvs = trvs
-        decision.current_temp = round(sum(temps) / len(temps), 1) if temps else None
+
+        # Pick room temperature: external sensor wins if present & reading.
+        sensor_ieee = room.get("temperature_sensor_ieee")
+        ext_mode = room.get("external_temp_mode", "off")
+        decision.sensor_ieee = sensor_ieee
+
+        ext_temp: Optional[float] = None
+        if sensor_ieee and ext_mode != "off":
+            sensor_dev = devices.get(sensor_ieee)
+            if sensor_dev is not None:
+                ext_temp = _pick_temperature(_device_state(sensor_dev))
+                decision.sensor_online = ext_temp is not None
+            else:
+                decision.sensor_online = False
+
+        if ext_temp is not None:
+            decision.current_temp = round(ext_temp, 1)
+            decision.temp_source = "external"
+        elif trv_temps:
+            decision.current_temp = round(sum(trv_temps) / len(trv_temps), 1)
+            decision.temp_source = "trv_mean"
+        else:
+            decision.current_temp = None
+            decision.temp_source = "none"
 
         # Classify with hysteresis
         if decision.current_temp is None or decision.target_temp is None:
@@ -435,8 +698,6 @@ class HeatingController:
 
         receiver_command modes (from config):
           - "thermostat" : sends system_mode heat/off via 0x0201 handler
-                           (correct for Hive SLR1c, SLR1b and any receiver
-                            with a thermostat cluster)
           - "switch"     : sends on/off via OnOff cluster (relay-type receivers)
 
         Idempotent — only sends if command differs from last sent.
@@ -447,21 +708,22 @@ class HeatingController:
 
         mode = str(circuit.get("receiver_command", "thermostat")).lower()
 
-        # Determine the command + value pair based on receiver type
         if mode == "thermostat":
-            # Use system_mode which routes through ThermostatHandler.process_command
-            # → set_hvac_mode("heat") or set_hvac_mode("off")
-            # For Hive: HiveReceiverHandler routes mode changes via paired SLT
             target_command = "system_mode"
             target_value = "heat" if should_call else "off"
             display = f"system_mode → {target_value}"
+            # When calling for heat, also push a high setpoint to guarantee
+            # the receiver's internal comparator fires the boiler. When
+            # standing down, push a low one so the receiver doesn't fight us.
+            # Config override: circuit.receiver_call_setpoint / _idle_setpoint
+            call_sp = float(circuit.get("receiver_call_setpoint", 30.0))
+            idle_sp = float(circuit.get("receiver_idle_setpoint", 7.0))
+            target_setpoint = call_sp if should_call else idle_sp
         else:
-            # Legacy switch mode — on/off via OnOff cluster
             target_command = "on" if should_call else "off"
             target_value = None
             display = target_command
 
-        # Check if we already sent this exact command
         last = self._last_command.get(ieee)
         if last and last[0] == target_command and last[1] == target_value:
             return {"sent": False, "reason": "unchanged", "command": display}
@@ -472,13 +734,32 @@ class HeatingController:
             return {"sent": True, "command": display, "dry_run": True}
 
         try:
+            # 1) Push setpoint first (only in thermostat mode)
+            if mode == "thermostat":
+                last_sp = self._last_command.get(f"{ieee}:setpoint")
+                if not last_sp or last_sp[0] != target_setpoint:
+                    try:
+                        await self._send_command(
+                            ieee, "temperature", target_setpoint,
+                            endpoint_id=circuit.get("receiver_endpoint"),
+                        )
+                    except TypeError:
+                        await self._send_command(ieee, "temperature", target_setpoint)
+                    self._last_command[f"{ieee}:setpoint"] = (target_setpoint, time.time())
+                    logger.info(
+                        f"Receiver '{circuit['name']}' setpoint → {target_setpoint}°C"
+                    )
+            # 2) Then push mode / on-off
             await self._send_command(ieee, target_command, target_value,
                                      endpoint_id=circuit.get("receiver_endpoint"))
             self._last_command[ieee] = (target_command, target_value, time.time())
             logger.info(f"Receiver '{circuit['name']}' ({ieee}) → {display}")
-            return {"sent": True, "command": display}
+            return {
+                "sent": True,
+                "command": display,
+                "setpoint": target_setpoint if mode == "thermostat" else None,
+            }
         except TypeError:
-            # Fallback for command_sender that doesn't accept endpoint_id kwarg
             try:
                 await self._send_command(ieee, target_command, target_value)
                 self._last_command[ieee] = (target_command, target_value, time.time())
@@ -490,7 +771,7 @@ class HeatingController:
             logger.error(f"Receiver command failed ({display}): {e}")
             return {"sent": False, "error": str(e)}
 
-    # ── TRV control ────────────────────────────────────────────────
+    # ── TRV setpoint control ───────────────────────────────────────
     async def _apply_trvs(self, room: dict, decision: RoomDecision,
                           circuit_calling: bool) -> List[Dict]:
         """
@@ -505,17 +786,40 @@ class HeatingController:
         if target is None:
             return actions
 
+        # When forcing closed we use the *room* temperature (external if present);
+        # that's more defensible than the TRV's own hot-pipe reading.
+        room_temp = decision.current_temp
+
         for trv in decision.trvs:
             ieee = trv["ieee"]
             current_temp = trv.get("current_temp")
             current_sp = trv.get("current_setpoint")
 
-            # Decide intended setpoint
-            if decision.status == "hot" and circuit_calling and current_temp is not None:
-                intended = round(current_temp - FORCE_CLOSE_OFFSET, 1)
-                action = "force_close"
+            # Decide intended setpoint.
+            #
+            # Room "hot" → force-close the valve by writing a setpoint comfortably
+            # below the current room temperature. We do this whether or not the
+            # circuit is currently calling — pre-emptive close so the very next
+            # time the circuit fires, this valve is already shut.
+            #
+            # The intended setpoint is floored at MIN_TRV_SETPOINT (5°C for Aqara
+            # E1; configurable per-TRV in config.yaml).
+            TRV_MIN_SETPOINT = float(trv.get("min_setpoint", 5.0))
+            if decision.status == "hot":
+                reference = room_temp if room_temp is not None else current_temp
+                if reference is None:
+                    intended = round(target, 1)
+                    action = "track_target"
+                else:
+                    # Use whichever is lower: target-margin or room-margin.
+                    # Both well below current_temp so the valve definitely closes.
+                    offset = FORCE_CLOSE_OFFSET
+                    by_room = reference - offset
+                    by_target = target - offset
+                    intended = round(max(TRV_MIN_SETPOINT, min(by_room, by_target)), 1)
+                    action = "force_close"
             else:
-                intended = round(target, 1)
+                intended = round(max(TRV_MIN_SETPOINT, target), 1)
                 action = "track_target"
 
             # Skip if not online
@@ -549,7 +853,8 @@ class HeatingController:
             if self.dry_run:
                 logger.info(
                     f"[DRY-RUN] Would set TRV {trv['name']} ({ieee}) → "
-                    f"{intended}°C ({action}, room {decision.status})"
+                    f"{intended}°C ({action}, room {decision.status}, "
+                    f"src={decision.temp_source})"
                 )
                 self._last_command[ieee] = ("temperature", intended, now)
                 actions.append({
@@ -563,7 +868,7 @@ class HeatingController:
                 self._last_command[ieee] = ("temperature", intended, now)
                 logger.info(
                     f"TRV {trv['name']} ({ieee}) → {intended}°C "
-                    f"({action}, room {decision.status})"
+                    f"({action}, room {decision.status}, src={decision.temp_source})"
                 )
                 actions.append({
                     "ieee": ieee, "action": action, "sent": True,
@@ -577,3 +882,153 @@ class HeatingController:
                 })
 
         return actions
+
+    # ── Per-TRV persistent config application ──────────────────────
+    async def _apply_all_trv_config(self):
+        """Apply window_detection / child_lock / valve_detection for every configured TRV."""
+        for c in self.circuits:
+            for r in c["rooms"]:
+                for t in r["trvs"]:
+                    if t["ieee"] in self._trv_config_applied:
+                        continue
+                    await self.apply_trv_config(t["ieee"])
+
+    async def apply_trv_config(self, ieee: str) -> Dict[str, Any]:
+        """
+        Apply persistent Aqara-cluster settings for a single TRV.
+        Safe to call repeatedly; returns a report of what was sent.
+        """
+        loc = self.find_trv(ieee)
+        if not loc:
+            return {"success": False, "error": "TRV not in controller config"}
+        _, room, trv = loc
+
+        results: Dict[str, Any] = {"ieee": ieee, "sent": {}, "skipped": {}, "failed": {}}
+
+        for attr, command in (
+                ("window_detection", "window_detection"),
+                ("child_lock",       "child_lock"),
+                ("valve_detection",  "valve_detection"),
+        ):
+            val = trv.get(attr)
+            if val is None:
+                results["skipped"][attr] = "not configured"
+                continue
+            if self.dry_run:
+                logger.info(f"[DRY-RUN] Would set TRV {ieee} {attr} = {val}")
+                results["sent"][attr] = {"value": bool(val), "dry_run": True}
+                continue
+            try:
+                await self._send_command(ieee, command, 1 if val else 0)
+                results["sent"][attr] = {"value": bool(val)}
+            except Exception as e:
+                logger.error(f"TRV {ieee} {attr} write failed: {e}")
+                results["failed"][attr] = str(e)
+
+        # If the room is in push mode, tell the TRV to honour the external feed.
+        if room.get("external_temp_mode") == "push":
+            if self.dry_run:
+                logger.info(f"[DRY-RUN] Would set TRV {ieee} sensor_type = external")
+                results["sent"]["sensor_type"] = {"value": "external", "dry_run": True}
+            else:
+                try:
+                    await self._send_command(ieee, "sensor_type", 1)  # 1 = external
+                    results["sent"]["sensor_type"] = {"value": "external"}
+                except Exception as e:
+                    logger.error(f"TRV {ieee} sensor_type write failed: {e}")
+                    results["failed"]["sensor_type"] = str(e)
+
+        self._trv_config_applied.add(ieee)
+        results["success"] = not results["failed"]
+        return results
+
+    async def trigger_calibration(self, ieee: str) -> Dict[str, Any]:
+        """
+        One-shot: kick off motor calibration on an Aqara TRV.
+        Takes ~2 minutes on the device side — status lives in state['motor_calibration'].
+        """
+        if not self.find_trv(ieee):
+            return {"success": False, "error": "TRV not in controller config"}
+        if self.dry_run:
+            logger.info(f"[DRY-RUN] Would start calibration on TRV {ieee}")
+            return {"success": True, "dry_run": True, "ieee": ieee}
+        try:
+            await self._send_command(ieee, "motor_calibration", 1)
+            logger.info(f"TRV {ieee}: motor calibration started")
+            return {"success": True, "ieee": ieee}
+        except Exception as e:
+            logger.error(f"TRV {ieee} calibration failed: {e}")
+            return {"success": False, "error": str(e)}
+
+    def update_trv_settings(self, ieee: str, updates: Dict[str, Any]) -> bool:
+        """
+        In-memory update of a single TRV's config. Persistence is the caller's job
+        (routes save to config.yaml). Returns True if TRV found and updated.
+        """
+        loc = self.find_trv(ieee)
+        if not loc:
+            return False
+        _, _, trv = loc
+        for k in ("window_detection", "child_lock", "valve_detection"):
+            if k in updates:
+                trv[k] = _as_bool(updates[k], trv.get(k))
+        # Force re-apply on next sweep
+        self._trv_config_applied.discard(ieee)
+        return True
+
+    # ── External temperature push ──────────────────────────────────
+    async def _push_external_temps_once(self):
+        """
+        For every room in push mode, read the sensor's current temperature and
+        forward it to each Aqara TRV in the room. Skips pushes that are
+        redundant (same reading within EXT_TEMP_PUSH_MIN_DELTA of last push).
+        """
+        devices = self._snapshot_devices()
+        now_ts = time.time()
+
+        for c in self.circuits:
+            for room in c["rooms"]:
+                if room.get("external_temp_mode") != "push":
+                    continue
+                sensor_ieee = room.get("temperature_sensor_ieee")
+                if not sensor_ieee:
+                    continue
+                sensor_dev = devices.get(sensor_ieee)
+                if sensor_dev is None:
+                    logger.debug(f"Room {room['id']}: sensor {sensor_ieee} not in device registry")
+                    continue
+                sensor_temp = _pick_temperature(_device_state(sensor_dev))
+                if sensor_temp is None:
+                    logger.debug(f"Room {room['id']}: sensor {sensor_ieee} has no temperature")
+                    continue
+
+                interval = room.get("external_temp_push_interval_sec",
+                                    DEFAULT_EXT_TEMP_PUSH_INTERVAL_SEC)
+
+                for trv in room["trvs"]:
+                    ieee = trv["ieee"]
+                    last = self._last_ext_push.get(ieee)
+                    if last is not None:
+                        last_temp, last_ts = last
+                        fresh_enough = (now_ts - last_ts) < interval
+                        tiny_change = abs(sensor_temp - last_temp) < EXT_TEMP_PUSH_MIN_DELTA
+                        if fresh_enough and tiny_change:
+                            continue
+
+                    if self.dry_run:
+                        logger.info(
+                            f"[DRY-RUN] Would push external temp {sensor_temp:.2f}°C "
+                            f"→ TRV {ieee} (room {room['id']})"
+                        )
+                        self._last_ext_push[ieee] = (sensor_temp, now_ts)
+                        continue
+
+                    try:
+                        await self._send_command(ieee, "external_temp", sensor_temp)
+                        self._last_ext_push[ieee] = (sensor_temp, now_ts)
+                        logger.info(
+                            f"TRV {ieee}: pushed external temp {sensor_temp:.2f}°C "
+                            f"(room {room['id']})"
+                        )
+                    except Exception as e:
+                        logger.warning(f"TRV {ieee}: external temp push failed: {e}")

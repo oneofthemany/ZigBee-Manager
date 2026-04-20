@@ -23,9 +23,36 @@
 import {
     initHeatingController,
     loadControllerStatus,
-    startControllerStatusRefresh,
-    stopControllerStatusRefresh,
 } from './heating-controller.js';
+
+
+// Chart palette tuned for both light and dark mode visibility.
+// Each colour has ~4:1 contrast against both #f0f2f5 (light body) and
+// #0f1117 (dark body). Verified with WebAIM contrast checker.
+function getChartPalette() {
+    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+    return isDark
+        ? ['#60a5fa',  // light blue
+           '#f87171',  // light red
+           '#4ade80',  // light green
+           '#fbbf24',  // amber
+           '#a78bfa',  // lavender
+           '#fb923c',  // orange
+           '#2dd4bf',  // teal
+           '#f472b6',  // pink
+           '#c084fc',  // purple
+           '#38bdf8']  // sky
+        : ['#1d4ed8',  // darker blue for white bg
+           '#b91c1c',  // darker red
+           '#15803d',  // darker green
+           '#b45309',  // amber
+           '#6d28d9',  // purple
+           '#c2410c',  // orange
+           '#0e7490',  // teal
+           '#be185d',  // pink
+           '#7e22ce',  // violet
+           '#0369a1']; // deep sky
+}
 
 // ============================================================================
 // STATE
@@ -39,7 +66,7 @@ let schemaCache = null;
 let thermostatsCache = [];
 let workingZones = [];   // zones being edited in the modal
 
-const REFRESH_MS = 60_000;
+const REFRESH_MS = 20_000;
 
 const EPC_COLOURS = {
     A: '#008054', B: '#19b459', C: '#8dce46',
@@ -53,6 +80,13 @@ const DAYS = [
     { key: 'sun', label: 'Su' },
 ];
 
+// Re-render the chart immediately when the user toggles theme so colours
+// and tooltip styling update without waiting for the next 20s tick.
+document.addEventListener('themechange', () => {
+    if (lastDashboard) {
+        loadHeatingHistory();  // refetch + redraw
+    }
+});
 // ============================================================================
 // INITIALIZATION
 // ============================================================================
@@ -72,19 +106,16 @@ export function initHeating() {
         heatingTabActive = true;
         loadHeatingDashboard();
         startHeatingAutoRefresh();
-        startControllerStatusRefresh();
     });
     heatingTabBtn.addEventListener('hidden.bs.tab', () => {
         heatingTabActive = false;
         stopHeatingAutoRefresh();
-        stopControllerStatusRefresh();
     });
 
     if (heatingTabBtn.classList.contains('active')) {
         heatingTabActive = true;
         loadHeatingDashboard();
         startHeatingAutoRefresh();
-        startControllerStatusRefresh();
     }
 }
 
@@ -112,7 +143,8 @@ export async function loadHeatingDashboard({ silent = false } = {}) {
     }
 
     try {
-        const res = await fetch('/api/heating/dashboard');
+        // Force=1 on the user-initiated refresh, silent tick uses cache.
+        const res = await fetch(`/api/heating/dashboard?force=${silent ? 0 : 1}`);
         const json = await res.json();
 
         if (!json.success) {
@@ -122,11 +154,72 @@ export async function loadHeatingDashboard({ silent = false } = {}) {
         }
 
         lastDashboard = json.data;
+        // Refresh runtime + controller overlay BEFORE rendering so the devices
+        // table uses the controller's live truth for receivers and up-to-date
+        // 24h on-time percentages.
+        await Promise.all([
+            loadHeatingRuntime(),
+            loadControllerOverlay(),
+            loadHeatingAnomalies(),
+        ]);
+        // Pull the controller config to expose the per-room list to the
+        // Efficiency card (per-room thermal profile buttons).
+        try {
+            const cfgRes = await fetch('/api/heating/controller/config');
+            const cfgJson = await cfgRes.json();
+            if (cfgJson.success) {
+                json.data._heating_config_circuits = cfgJson.config?.circuits || [];
+            }
+        } catch (e) { /* ignore */ }
+        // Inject sensor-only rooms as pseudo-devices in the heating devices
+        // table so bathrooms etc. are visible alongside TRV-equipped rooms.
+        try {
+            const ctrlRes = await fetch('/api/heating/controller/state');
+            const ctrlJson = await ctrlRes.json();
+            if (ctrlJson.success && ctrlJson.state) {
+                const extraDevices = [];
+                const known = new Set((json.data.heating?.devices || []).map(d => d.ieee));
+                for (const c of (ctrlJson.state.circuits || [])) {
+                    for (const r of (c.rooms || [])) {
+                        if ((r.trvs || []).length > 0) continue;      // has TRVs already
+                        if (!r.sensor_ieee) continue;                 // nothing to represent
+                        if (known.has(r.sensor_ieee)) continue;       // already in table
+                        // The device cache has the sensor's friendly name
+                        const cachedDev = (window.state?.deviceCache || {})[r.sensor_ieee];
+                        extraDevices.push({
+                            ieee: r.sensor_ieee,
+                            name: cachedDev?.friendly_name || `${r.name} (sensor)`,
+                            temperature: r.current_temp,
+                            setpoint: r.target_temp,
+                            mode: 'sensor',
+                            action: r.status === 'cold' ? 'calling' : 'idle',
+                            effective_action: r.status === 'cold' ? 'calling' : 'idle',
+                            running: false,
+                            demand: 0,
+                            _sensor_only: true,
+                        });
+                    }
+                }
+                if (extraDevices.length) {
+                    json.data.heating.devices = (json.data.heating.devices || []).concat(extraDevices);
+                }
+            }
+        } catch (e) { console.debug('Sensor-only injection skipped:', e); }
+        // Preserve heatingControllerPanel contents across re-renders when
+        // possible so the user doesn't see a spinner-flash every 20s.
+        const prevPanel = document.getElementById('heatingControllerPanel');
+        const prevHTML = prevPanel ? prevPanel.innerHTML : null;
         container.innerHTML = renderDashboard(json.data);
+        if (prevHTML) {
+            const newPanel = document.getElementById('heatingControllerPanel');
+            if (newPanel) newPanel.innerHTML = prevHTML;
+        }
         bindDashboardControls(json.data);
         bindTopBarControls();
         loadHeatingHistory();
-        loadControllerStatus();   // populate the controller panel
+        // Single-shot refresh: controller panel is fetched in-line with the
+        // dashboard, not on its own interval. Matches the 20s cadence above.
+        await loadControllerStatus();
     } catch (err) {
         console.error('Heating dashboard fetch failed:', err);
         if (!silent) {
@@ -219,6 +312,7 @@ function renderDashboard(d) {
                 <div class="col-md-6">${renderForecastCard(d.outdoor)}</div>
             </div>
 
+            <div id="heatingAnomaliesPanel" class="mb-3"></div>
             <div id="heatingControllerPanel"></div>
 
             ${renderZonesDashboard(d.zones || [])}
@@ -250,9 +344,120 @@ function renderDashboard(d) {
         </div>`;
 }
 
+async function loadHeatingAnomalies() {
+    const container = document.getElementById('heatingAnomaliesPanel');
+    if (!container) return;
+    try {
+        const res = await fetch('/api/heating/anomalies');
+        const json = await res.json();
+        if (!json.success) { container.innerHTML = ''; return; }
+        const data = json.data || {};
+        const active = data.active || [];
+        const recent = (data.recently_resolved || []).slice(0, 3);
+
+        if (!active.length && !recent.length) {
+            container.innerHTML = '';   // hide the section entirely when quiet
+            return;
+        }
+
+        const severityBadge = s => s === 'critical'
+            ? '<span class="badge bg-danger ms-1">critical</span>'
+            : s === 'warning'
+            ? '<span class="badge bg-warning text-dark ms-1">warning</span>'
+            : '<span class="badge bg-info text-dark ms-1">info</span>';
+
+        const kindIcon = k => k === 'fast_cool'
+            ? '<i class="fas fa-snowflake text-info me-1"></i>'
+            : '<i class="fas fa-hourglass-half text-warning me-1"></i>';
+
+        const activeHtml = active.map(a => `
+            <div class="alert alert-${a.severity === 'critical' ? 'danger' : 'warning'} d-flex justify-content-between align-items-start py-2 px-3 mb-2">
+                <div>
+                    ${kindIcon(a.kind)}
+                    <strong>${escapeHtml(a.circuit_name)} › ${escapeHtml(a.room_name)}</strong>
+                    ${severityBadge(a.severity)}
+                    <div class="small mt-1">${escapeHtml(a.message)}</div>
+                </div>
+                <button class="btn btn-sm btn-outline-secondary btn-room-thermal-link"
+                        data-circuit-id="${escapeAttr(a.circuit_id)}"
+                        data-room-id="${escapeAttr(a.room_id)}"
+                        data-circuit-name="${escapeAttr(a.circuit_name || '')}"
+                        data-room-name="${escapeAttr(a.room_name || '')}">
+                    <i class="fas fa-thermometer-half"></i> Profile
+                </button>
+            </div>`).join('');
+
+        const recentHtml = recent.map(r => `
+            <div class="small text-muted mb-1">
+                ${kindIcon(r.kind)}
+                <em>Resolved:</em> ${escapeHtml(r.circuit_name)} › ${escapeHtml(r.room_name)}
+                <span class="text-muted">— ${escapeHtml(r.message)}</span>
+            </div>`).join('');
+
+        container.innerHTML = `
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <span><i class="fas fa-exclamation-triangle me-2"></i>Anomalies
+                        <span class="badge bg-${active.length ? 'danger' : 'secondary'} ms-1">${active.length}</span>
+                    </span>
+                    <small class="text-muted">
+                        ${data.last_scan_age_seconds != null
+                            ? `scanned ${Math.round(data.last_scan_age_seconds)}s ago`
+                            : 'idle'}
+                    </small>
+                </div>
+                <div class="card-body">
+                    ${activeHtml || '<div class="small text-muted mb-2">No active anomalies.</div>'}
+                    ${recent.length ? `<hr class="my-2"><strong class="small">Recently resolved</strong>${recentHtml}` : ''}
+                </div>
+            </div>`;
+
+        // Rebind the "Profile" buttons so they open the detail modal
+        document.querySelectorAll('#heatingAnomaliesPanel .btn-room-thermal-link')
+            .forEach(btn => btn.addEventListener('click', () =>
+                openRoomThermalModal(
+                    btn.dataset.circuitId, btn.dataset.roomId,
+                    btn.dataset.circuitName, btn.dataset.roomName
+                )
+            ));
+    } catch (e) {
+        container.innerHTML = '';
+    }
+}
+
 function renderEpcCard(epc, prop) {
     if (!epc) return emptyCard('EPC Rating', 'No EPC data');
     const colour = EPC_COLOURS[epc.band] || '#888';
+
+    // Collect every room from the configured circuits for the "Room thermals" list
+    const cfg = (lastDashboard && lastDashboard._heating_config_circuits) || [];
+    const rooms = [];
+    for (const c of cfg) {
+        for (const r of (c.rooms || [])) {
+            rooms.push({
+                circuit_id: c.id, circuit_name: c.name,
+                room_id: r.id, room_name: r.name,
+                has_dimensions: !!(r.dimensions && r.dimensions.floor_area_m2),
+            });
+        }
+    }
+
+    const roomListHtml = rooms.length ? `
+        <hr class="my-2">
+        <div class="small mb-1"><strong>Per-room thermal profiles</strong></div>
+        <div class="small d-flex flex-wrap gap-1">
+            ${rooms.map(r => `
+                <button class="btn btn-sm btn-outline-${r.has_dimensions ? 'primary' : 'secondary'}
+                               py-0 px-2 btn-room-thermal-link"
+                        data-circuit-id="${escapeAttr(r.circuit_id)}"
+                        data-room-id="${escapeAttr(r.room_id)}"
+                        data-room-name="${escapeAttr(r.room_name)}"
+                        data-circuit-name="${escapeAttr(r.circuit_name)}"
+                        title="${r.has_dimensions ? 'View thermal profile' : 'No dimensions set — click to view anyway'}">
+                    <i class="fas fa-thermometer-half me-1"></i>${escapeHtml(r.room_name)}
+                </button>`).join('')}
+        </div>` : '';
+
     return `
         <div class="card h-100">
             <div class="card-header"><i class="fas fa-home me-2"></i>Efficiency Rating</div>
@@ -270,6 +475,7 @@ function renderEpcCard(epc, prop) {
                     ${kvRow('Annual cost', `£${formatNumber(epc.annual_cost_gbp)}`)}
                     ${kvRow('Glazing', escapeHtml(prop?.glazing || '—'))}
                 </div>
+                ${roomListHtml}
             </div>
         </div>`;
 }
@@ -371,28 +577,124 @@ function renderForecastCard(outdoor) {
         </div>`;
 }
 
+// Runtime is fetched per-dashboard-load and cached here so renderDevicesTable()
+// can render synchronously. loadHeatingRuntime() populates this.
+let runtimeCache = {};
+
+// Cache of { ieee: { running: bool, calling: bool } } from
+// /api/heating/controller/state — the authoritative source for receiver truth.
+// Populated by loadControllerOverlay() before renderDevicesTable is called.
+let controllerOverlay = {};
+
+async function loadControllerOverlay() {
+    try {
+        const res = await fetch('/api/heating/controller/state');
+        const json = await res.json();
+        controllerOverlay = {};
+        if (json.success && json.state && Array.isArray(json.state.circuits)) {
+            for (const c of json.state.circuits) {
+                // Receiver entry — running / calling truth
+                if (c.receiver_ieee) {
+                    controllerOverlay[c.receiver_ieee] = {
+                        kind: 'receiver',
+                        running: c.receiver_state?.running === true,
+                        calling: !!c.calling_for_heat,
+                        system_mode: c.receiver_state?.system_mode,
+                    };
+                }
+                // Per-TRV entries — overlay the authoritative room temperature
+                // (external sensor if configured, else TRV mean) so the Heating
+                // Devices table shows what the controller actually decides on.
+                for (const r of (c.rooms || [])) {
+                    if (r.current_temp == null) continue;
+                    for (const t of (r.trvs || [])) {
+                        if (!t.ieee) continue;
+                        controllerOverlay[t.ieee] = {
+                            kind: 'trv',
+                            room_name: r.name,
+                            room_temp: r.current_temp,
+                            room_temp_source: r.temp_source, // "external" | "trv_mean"
+                            room_status: r.status,           // cold | ontarget | hot
+                            target_temp: r.target_temp,
+                            intended_setpoint: t.intended_setpoint,
+                            trv_action: t.action,            // track_target | force_close
+                        };
+                    }
+                }
+            }
+        }
+    } catch (err) {
+        console.warn('Controller overlay fetch failed:', err);
+        controllerOverlay = {};
+    }
+}
+
 function renderDevicesTable(devices) {
     if (!devices.length) return `<div class="card-body text-muted text-center py-4">No heating devices detected.</div>`;
     const rows = devices.map(d => {
-        const actionBadge = d.action === 'heating'
-            ? `<span class="badge bg-danger"><i class="fas fa-fire me-1"></i>heating</span>`
-            : `<span class="badge bg-secondary">${escapeHtml(d.action || 'idle')}</span>`;
-        const demand = Number(d.demand || 0);
-        const demandBar = `
-            <div class="progress" style="height:6px;width:80px;"><div class="progress-bar ${demand > 50 ? 'bg-danger' : 'bg-warning'}" style="width:${Math.min(100, demand)}%"></div></div>
-            <small class="text-muted">${demand}%</small>`;
-        // Mirror the device-list naming: prefer the cached friendly name, fall back to advisor name, then ieee
-        const cached = window._getDeviceState ? null : null;  // (we look up via cache below)
+        // Receivers known to the Heating Controller → trust its truth over
+        // the advisor's (possibly-stale) hvac_action. This mirrors exactly
+        // what the heatingControllerPanel shows.
+        const overlay = controllerOverlay[d.ieee];
+        let eff;
+        if (overlay) {
+            if (overlay.running)       eff = 'heating';
+            else if (overlay.calling)  eff = 'calling';
+            else if (String(d.mode || '').toLowerCase() === 'off') eff = 'off';
+            else                       eff = 'idle';
+        } else {
+            // Non-receiver (TRV, standalone thermostat): fall back to advisor.
+            eff = d.effective_action ??
+                (d.running ? 'heating' : (d.action || 'idle'));
+        }
+        const actionBadge = (() => {
+            switch (eff) {
+                case 'heating':
+                    return `<span class="badge bg-danger"><i class="fas fa-fire me-1"></i>heating</span>`;
+                case 'calling':
+                    return `<span class="badge bg-warning text-dark" title="Controller is calling for heat but the receiver is not firing yet"><i class="fas fa-hourglass-half me-1"></i>calling</span>`;
+                case 'off':
+                    return `<span class="badge bg-dark">off</span>`;
+                default:
+                    return `<span class="badge bg-secondary">idle</span>`;
+            }
+        })();
+
+        // 24h on-time percentage (replaces instantaneous demand)
+        const rt = runtimeCache[d.ieee];
+        const pct = rt ? Number(rt.percent || 0) : 0;
+        const onMin = rt ? Math.round((rt.on_seconds || 0) / 60) : 0;
+        const pctBar = `
+            <div class="progress" style="height:6px;width:80px;"><div class="progress-bar ${pct > 50 ? 'bg-danger' : 'bg-warning'}" style="width:${Math.min(100, pct)}%"></div></div>
+            <small class="text-muted" title="${onMin} min on in the last 24h${rt?.source ? ` (source: ${rt.source})` : ''}">${pct.toFixed(1)}%</small>`;
+
         const cachedDev = (window.state?.deviceCache || {})[d.ieee];
         const displayName = cachedDev?.friendly_name || d.name || d.ieee || '—';
+        // If the controller is managing this device, overlay room temp / target
+        // so this row matches the controller panel exactly.
+        let currentCell, setpointCell;
+        if (overlay?.kind === 'trv' && overlay.room_temp != null) {
+            const srcTag = overlay.room_temp_source === 'external'
+                ? `<i class="fas fa-satellite-dish ms-1 text-info" title="From external sensor in ${escapeHtml(overlay.room_name)}"></i>`
+                : `<i class="fas fa-thermometer-half ms-1 text-muted" title="TRV mean"></i>`;
+            currentCell = `${formatTemp(overlay.room_temp)} ${srcTag}`;
+            const intendedTag = (overlay.intended_setpoint != null && Math.abs((overlay.intended_setpoint - (d.setpoint ?? 0))) > 0.05)
+                ? ` <small class="text-muted" title="Controller intended setpoint">(→${overlay.intended_setpoint}°)</small>`
+                : '';
+            setpointCell = `${formatTemp(d.setpoint)}${intendedTag}`;
+        } else {
+            currentCell = formatTemp(d.temperature);
+            setpointCell = formatTemp(d.setpoint);
+        }
+
         return `
             <tr>
                 <td>${escapeHtml(displayName)}</td>
-                <td>${formatTemp(d.temperature)}</td>
-                <td>${formatTemp(d.setpoint)}</td>
+                <td>${currentCell}</td>
+                <td>${setpointCell}</td>
                 <td>${escapeHtml(d.mode || '—')}</td>
                 <td>${actionBadge}</td>
-                <td>${demandBar}</td>
+                <td>${pctBar}</td>
                 <td class="text-end">
                     <button class="btn btn-sm btn-outline-primary heating-manage-btn" data-ieee="${escapeAttr(d.ieee)}" title="Details & Control">
                         <i class="fas fa-sliders-h"></i> Manage
@@ -403,10 +705,22 @@ function renderDevicesTable(devices) {
     return `
         <div class="table-responsive">
             <table class="table table-sm mb-0 align-middle">
-                <thead><tr><th>Device</th><th>Current</th><th>Setpoint</th><th>Mode</th><th>Action</th><th>Demand</th><th></th></tr></thead>
+                <thead><tr><th>Device</th><th>Current</th><th>Setpoint</th><th>Mode</th><th>Action</th><th>24h on-time</th><th></th></tr></thead>
                 <tbody>${rows}</tbody>
             </table>
         </div>`;
+}
+
+async function loadHeatingRuntime(hours = 24) {
+    try {
+        const res = await fetch(`/api/heating/runtime?hours=${hours}`);
+        const json = await res.json();
+        if (json.success) {
+            runtimeCache = json.devices || {};
+        }
+    } catch (err) {
+        console.warn('Heating runtime fetch failed:', err);
+    }
 }
 
 // ─── Zones dashboard (per-zone summary cards) ──────────────────────
@@ -497,53 +811,294 @@ function renderZonesDashboard(zones) {
         </div>`;
 }
 
+// Cached chart state so refreshes don't flash
+let _historyChartSeries = null;
+let _historyHoverHandler = null;
+
 function renderHistoryChart(historyData) {
     const container = document.getElementById('heatingHistoryChart');
     if (!container) return;
     const devices = historyData?.devices || {};
     const names = Object.keys(devices);
-    if (!names.length) { container.innerHTML = `<div class="text-muted text-center py-4">No history data yet.</div>`; return; }
+
+    const noDataBlock = (title, detail) => `
+        <div class="text-center text-muted py-4">
+            <i class="fas fa-chart-line fa-2x mb-2 opacity-50"></i>
+            <div><strong>${escapeHtml(title)}</strong></div>
+            <div class="small mt-1">${escapeHtml(detail)}</div>
+        </div>`;
+
+    if (!names.length) {
+        container.innerHTML = noDataBlock(
+            'No history yet',
+            'No heating devices have been detected. Once a thermostat or TRV starts reporting temperature, points will appear here within a few minutes.'
+        );
+        return;
+    }
+
+    // Build series — temperature only (we chart temp over time, not demand)
     const series = [];
+    let totalPoints = 0;
     for (const name of names) {
         const temps = devices[name]?.temperature || [];
+        totalPoints += temps.length;
         if (temps.length > 1) series.push({ name, points: temps });
     }
-    if (!series.length) { container.innerHTML = `<div class="text-muted text-center py-4">No temperature history recorded yet.</div>`; return; }
-    const W = 800, H = 220, PAD = 36;
+
+    if (!series.length) {
+        const deviceList = names.slice(0, 6).map(n => `<li><code>${escapeHtml(n)}</code></li>`).join('');
+        const extra = names.length > 6 ? `<li>…and ${names.length - 6} more</li>` : '';
+        container.innerHTML = `
+            <div class="text-center text-muted py-3">
+                <i class="fas fa-chart-line fa-2x mb-2 opacity-50"></i>
+                <div><strong>No temperature history recorded yet</strong></div>
+                <div class="small mt-2">Found ${names.length} heating device${names.length === 1 ? '' : 's'} but only ${totalPoints} point${totalPoints === 1 ? '' : 's'} of temperature data in the last 24h.</div>
+                <div class="small mt-1">Telemetry records a point each time a device reports a changed attribute. Points will accumulate as the day progresses.</div>
+                <ul class="small text-muted list-unstyled mt-2 mb-0">${deviceList}${extra}</ul>
+            </div>`;
+        return;
+    }
+
+    _historyChartSeries = series;
+
+    // === Geometry ===
+    const W = 900;
+    const H = 280;
+    const PAD_L = 46;   // left for y-axis
+    const PAD_R = 16;
+    const PAD_T = 12;
+    const PAD_B = 40;   // bottom for x-axis labels
+    const plotW = W - PAD_L - PAD_R;
+    const plotH = H - PAD_T - PAD_B;
+
+    // === Scale domains ===
     let tMin = Infinity, tMax = -Infinity, xMin = Infinity, xMax = -Infinity;
     for (const s of series) for (const p of s.points) {
         const [ts, val] = parsePoint(p);
-        if (val == null) continue;
-        if (val < tMin) tMin = val; if (val > tMax) tMax = val;
-        if (ts < xMin) xMin = ts; if (ts > xMax) xMax = ts;
+        if (val == null || !isFinite(val) || !isFinite(ts)) continue;
+        if (val < tMin) tMin = val;
+        if (val > tMax) tMax = val;
+        if (ts < xMin) xMin = ts;
+        if (ts > xMax) xMax = ts;
     }
-    if (!isFinite(tMin) || !isFinite(tMax)) { container.innerHTML = `<div class="text-muted text-center py-4">No valid data points.</div>`; return; }
-    const tPad = Math.max(0.5, (tMax - tMin) * 0.1);
-    tMin -= tPad; tMax += tPad;
-    const xScale = t => PAD + ((t - xMin) / Math.max(1, xMax - xMin)) * (W - PAD * 2);
-    const yScale = v => H - PAD - ((v - tMin) / Math.max(0.1, tMax - tMin)) * (H - PAD * 2);
-    const palette = ['#0d6efd', '#dc3545', '#198754', '#ffc107', '#6610f2', '#fd7e14'];
+    if (!isFinite(tMin) || !isFinite(tMax)) {
+        container.innerHTML = noDataBlock('No valid data points', 'Telemetry exists but no samples have numeric values.');
+        return;
+    }
+
+    // Nice-round Y range at 1°C intervals with a bit of padding
+    tMin = Math.floor(tMin - 0.5);
+    tMax = Math.ceil(tMax + 0.5);
+    if (tMax - tMin < 4) tMax = tMin + 4;   // minimum 4° visible
+
+    // X range — default to "last 24h ending now" so the axis is stable
+    const now = Date.now();
+    xMax = Math.max(xMax, now);
+    xMin = Math.min(xMin, now - 24 * 3600 * 1000);
+
+    const xScale = t => PAD_L + ((t - xMin) / Math.max(1, xMax - xMin)) * plotW;
+    const yScale = v => PAD_T + plotH - ((v - tMin) / Math.max(0.1, tMax - tMin)) * plotH;
+
+    // === Y-axis ticks (every 1°C, labels every 2°C if range is large) ===
+    const yTicks = [];
+    const yLabelStep = (tMax - tMin > 10) ? 2 : 1;
+    for (let v = tMin; v <= tMax + 0.001; v += 1) {
+        yTicks.push({ v, isLabel: (Math.round(v) % yLabelStep === 0) });
+    }
+
+    // === X-axis ticks (every 2 hours) ===
+    const xTicks = [];
+    const start = new Date(xMin);
+    start.setMinutes(0, 0, 0);
+    start.setHours(start.getHours() + 1);
+    for (let t = start.getTime(); t <= xMax; t += 2 * 3600 * 1000) {
+        xTicks.push(t);
+    }
+
+    const fmtHour = ms => {
+        const d = new Date(ms);
+        const h = d.getHours().toString().padStart(2, '0');
+        return `${h}:00`;
+    };
+
+    // === Palette ===
+    const palette = getChartPalette();
+
+    // === Paths ===
     const paths = series.map((s, i) => {
         const colour = palette[i % palette.length];
         const d = s.points.map(p => {
             const [ts, val] = parsePoint(p);
-            return val == null ? '' : `${xScale(ts)},${yScale(val)}`;
+            if (val == null || !isFinite(val) || !isFinite(ts)) return '';
+            return `${xScale(ts).toFixed(1)},${yScale(val).toFixed(1)}`;
         }).filter(Boolean).join(' L ');
-        return `<path d="M ${d}" fill="none" stroke="${colour}" stroke-width="2"/>`;
+        return d ? `<path d="M ${d}" fill="none" stroke="${colour}" stroke-width="1.8"
+                         stroke-linejoin="round" stroke-linecap="round"
+                         data-series-index="${i}" class="history-line"/>` : '';
     }).join('');
-    const legend = series.map((s, i) => `<span class="me-3 small"><span style="display:inline-block;width:12px;height:12px;background:${palette[i % palette.length]};border-radius:2px;"></span> ${escapeHtml(s.name)}</span>`).join('');
-    const ticks = [tMin, (tMin + tMax) / 2, tMax].map(v => `
-        <line x1="${PAD}" x2="${W - PAD}" y1="${yScale(v)}" y2="${yScale(v)}" stroke="currentColor" stroke-opacity="0.1"/>
-        <text x="${PAD - 6}" y="${yScale(v) + 4}" text-anchor="end" font-size="10" fill="currentColor" opacity="0.6">${v.toFixed(1)}°</text>`).join('');
-    container.innerHTML = `<div class="mb-2">${legend}</div><svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;color:var(--bs-body-color);">${ticks}${paths}</svg>`;
+
+    // === Grid ===
+    const yGrid = yTicks.map(t => `
+        <line x1="${PAD_L}" x2="${W - PAD_R}" y1="${yScale(t.v)}" y2="${yScale(t.v)}"
+              stroke="currentColor" stroke-opacity="${t.isLabel ? 0.15 : 0.05}"
+              stroke-dasharray="${t.isLabel ? '' : '2,2'}"/>`).join('');
+
+    const xGrid = xTicks.map(t => `
+        <line x1="${xScale(t)}" x2="${xScale(t)}" y1="${PAD_T}" y2="${PAD_T + plotH}"
+              stroke="currentColor" stroke-opacity="0.05"/>`).join('');
+
+    // === Labels ===
+    const yLabels = yTicks.filter(t => t.isLabel).map(t => `
+        <text x="${PAD_L - 6}" y="${yScale(t.v) + 4}" text-anchor="end"
+              font-size="11" fill="currentColor" opacity="0.7">${t.v}°C</text>`).join('');
+
+    const xLabels = xTicks.map(t => `
+        <text x="${xScale(t)}" y="${PAD_T + plotH + 16}" text-anchor="middle"
+              font-size="11" fill="currentColor" opacity="0.7">${fmtHour(t)}</text>`).join('');
+
+    // === Axes ===
+    const xAxis = `<line x1="${PAD_L}" x2="${W - PAD_R}" y1="${PAD_T + plotH}" y2="${PAD_T + plotH}"
+                         stroke="currentColor" stroke-opacity="0.3"/>`;
+    const yAxis = `<line x1="${PAD_L}" x2="${PAD_L}" y1="${PAD_T}" y2="${PAD_T + plotH}"
+                         stroke="currentColor" stroke-opacity="0.3"/>`;
+
+    // === Legend ===
+    const legend = series.map((s, i) => `
+        <span class="me-3 small d-inline-flex align-items-center">
+            <span style="display:inline-block;width:18px;height:3px;background:${palette[i % palette.length]};margin-right:6px;border-radius:2px;"></span>
+            ${escapeHtml(s.name)}
+        </span>`).join('');
+
+    container.innerHTML = `
+        <div class="mb-2">${legend}</div>
+        <div class="position-relative" id="heatingHistorySvgWrap">
+            <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none"
+                 style="width:100%;height:auto;color:var(--bs-body-color);display:block;"
+                 id="heatingHistorySvg">
+                ${yGrid}${xGrid}${xAxis}${yAxis}${yLabels}${xLabels}${paths}
+                <line id="hover-line" x1="0" x2="0" y1="${PAD_T}" y2="${PAD_T + plotH}"
+                      stroke="currentColor" stroke-opacity="0.4" stroke-dasharray="3,3"
+                      style="display:none;pointer-events:none;"/>
+            </svg>
+            <div id="heatingHistoryTooltip"
+                 style="position:absolute;display:none;pointer-events:none;
+                        padding:6px 10px;border-radius:6px;font-size:12px;
+                        line-height:1.4;white-space:nowrap;z-index:10;
+                        transform:translate(-50%, -100%);margin-top:-8px;"></div>
+        </div>`;
+
+    // === Hover handler (single listener; replaces previous on re-render) ===
+    if (_historyHoverHandler) {
+        const old = document.getElementById('heatingHistorySvg');
+        if (old) old.removeEventListener('mousemove', _historyHoverHandler);
+    }
+
+    const svg = document.getElementById('heatingHistorySvg');
+    const tooltip = document.getElementById('heatingHistoryTooltip');
+    const hoverLine = document.getElementById('hover-line');
+
+    _historyHoverHandler = (evt) => {
+        const rect = svg.getBoundingClientRect();
+        const svgX = (evt.clientX - rect.left) * (W / rect.width);
+        const t = xMin + ((svgX - PAD_L) / plotW) * (xMax - xMin);
+        if (svgX < PAD_L || svgX > W - PAD_R) {
+            tooltip.style.display = 'none';
+            hoverLine.style.display = 'none';
+            return;
+        }
+        hoverLine.setAttribute('x1', svgX);
+        hoverLine.setAttribute('x2', svgX);
+        hoverLine.style.display = '';
+
+        // Nearest point per series
+        const readings = [];
+        for (let i = 0; i < _historyChartSeries.length; i++) {
+            const s = _historyChartSeries[i];
+            let best = null, bestDiff = Infinity;
+            for (const p of s.points) {
+                const [ts, val] = parsePoint(p);
+                if (val == null || !isFinite(val) || !isFinite(ts)) continue;
+                const diff = Math.abs(ts - t);
+                if (diff < bestDiff) { bestDiff = diff; best = { ts, val }; }
+            }
+            if (best && bestDiff < 30 * 60 * 1000) {  // within 30min
+                readings.push({
+                    name: s.name, val: best.val, ts: best.ts,
+                    colour: palette[i % palette.length],
+                });
+            }
+        }
+
+        if (readings.length === 0) {
+            tooltip.style.display = 'none';
+            return;
+        }
+
+        const d = new Date(t);
+        const hhmm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+        const dayLabel = (() => {
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            const cmp = new Date(d);
+            cmp.setHours(0, 0, 0, 0);
+            const diffDays = Math.round((today - cmp) / (24 * 3600 * 1000));
+            if (diffDays === 0) return 'today';
+            if (diffDays === 1) return 'yesterday';
+            return d.toLocaleDateString(undefined, { weekday: 'short' });
+        })();
+
+        tooltip.innerHTML = `
+            <div style="margin-bottom:4px;font-weight:600;">${hhmm} <span style="opacity:0.7;font-weight:400;">${dayLabel}</span></div>
+            ${readings.map(r => `
+                <div>
+                    <span style="display:inline-block;width:8px;height:8px;background:${r.colour};border-radius:2px;margin-right:6px;"></span>
+                    ${escapeHtml(r.name)}: <strong>${r.val.toFixed(1)}°C</strong>
+                </div>`).join('')}`;
+
+        tooltip.style.display = '';
+        tooltip.style.left = ((svgX / W) * rect.width) + 'px';
+        tooltip.style.top = (evt.clientY - rect.top) + 'px';
+    };
+
+    svg.addEventListener('mousemove', _historyHoverHandler);
+    svg.addEventListener('mouseleave', () => {
+        tooltip.style.display = 'none';
+        hoverLine.style.display = 'none';
+    });
 }
 
 function parsePoint(p) {
     if (Array.isArray(p)) return [Number(p[0]), Number(p[1])];
     if (p && typeof p === 'object') {
-        const ts = Number(p.ts ?? p.timestamp ?? p.time);
-        const val = p.value ?? p.v ?? p.val;
-        return [ts, val == null ? null : Number(val)];
+        // ts may be:
+        //   - ISO string from DuckDB (e.g. "2026-04-17T12:34:56")
+        //   - Number (epoch seconds or ms)
+        //   - Date object
+        const rawTs = p.ts ?? p.timestamp ?? p.time;
+        let ts;
+        if (rawTs instanceof Date) {
+            ts = rawTs.getTime();
+        } else if (typeof rawTs === 'string') {
+            ts = Date.parse(rawTs);   // returns ms epoch or NaN
+        } else if (typeof rawTs === 'number') {
+            // If the number is suspiciously small (< 10^12), treat as seconds
+            ts = rawTs < 1e12 ? rawTs * 1000 : rawTs;
+        } else {
+            ts = NaN;
+        }
+
+        // Prefer numeric_val (our server-side parsed float) over the raw value
+        // string. Falls back to value for older/non-numeric attributes.
+        let val;
+        if (p.numeric_val != null) {
+            val = Number(p.numeric_val);
+        } else {
+            const raw = p.value ?? p.v ?? p.val;
+            val = raw == null ? null : Number(raw);
+        }
+        if (val != null && !isFinite(val)) val = null;
+
+        return [ts, val];
     }
     return [NaN, null];
 }
@@ -609,6 +1164,16 @@ function bindDashboardControls(data) {
             } else {
                 console.warn('openDeviceModal not available on window');
             }
+        });
+    });
+    document.querySelectorAll('.btn-room-thermal-link').forEach(btn => {
+        btn.addEventListener('click', () => {
+            openRoomThermalModal(
+                btn.dataset.circuitId,
+                btn.dataset.roomId,
+                btn.dataset.circuitName,
+                btn.dataset.roomName,
+            );
         });
     });
 }
@@ -1151,6 +1716,133 @@ async function saveSettings() {
         saveBtn.disabled = false;
         saveBtn.innerHTML = `<i class="fas fa-save me-1"></i> Save`;
     }
+}
+
+// ============================================================================
+// ROOM THERMAL / SIZING / PREHEAT DETAIL MODAL
+// ============================================================================
+function ensureRoomThermalModal() {
+    if (document.getElementById('roomThermalModal')) return;
+    const html = `
+        <div class="modal fade" id="roomThermalModal" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog modal-xl modal-dialog-scrollable">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title"><i class="fas fa-thermometer-half me-2"></i>
+                            <span id="roomThermalTitle">Room thermal profile</span>
+                        </h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body" id="roomThermalBody">
+                        <div class="text-center text-muted py-4">
+                            <div class="spinner-border spinner-border-sm me-2"></div>Loading…
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>`;
+    document.body.insertAdjacentHTML('beforeend', html);
+}
+
+async function openRoomThermalModal(circuitId, roomId, circuitName, roomName) {
+    ensureRoomThermalModal();
+    const modalEl = document.getElementById('roomThermalModal');
+    const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+    document.getElementById('roomThermalTitle').textContent =
+        `${circuitName} › ${roomName}`;
+    const body = document.getElementById('roomThermalBody');
+    body.innerHTML = `<div class="text-center text-muted py-4">
+        <div class="spinner-border spinner-border-sm me-2"></div>Loading…</div>`;
+    modal.show();
+
+    try {
+        const cid = encodeURIComponent(circuitId);
+        const rid = encodeURIComponent(roomId);
+        const [thermal, sizing, preheat] = await Promise.all([
+            fetch(`/api/heating/circuits/${cid}/rooms/${rid}/thermal`).then(r => r.json()),
+            fetch(`/api/heating/circuits/${cid}/rooms/${rid}/sizing`).then(r => r.json()),
+            fetch(`/api/heating/circuits/${cid}/rooms/${rid}/preheat`).then(r => r.json()),
+        ]);
+
+        let html = '';
+        if (thermal.success) {
+            html += `<h6 class="mt-2"><i class="fas fa-calculator me-1"></i>Thermal profile</h6>
+                     <div class="mb-3">${_renderThermalCard(thermal.thermal, thermal.meta)}</div>`;
+        }
+        if (sizing.success) {
+            html += `<h6 class="mt-3"><i class="fas fa-ruler-horizontal me-1"></i>Radiator sizing</h6>
+                     <div class="mb-3">${_renderSizingCard(sizing.sizing, sizing.meta)}</div>`;
+        }
+        if (preheat.success) {
+            html += `<h6 class="mt-3"><i class="fas fa-hourglass-half me-1"></i>Pre-heat time</h6>
+                     <div class="mb-3">${_renderPreheatCard(preheat.preheat, preheat.meta)}</div>`;
+        }
+        if (!html) {
+            html = `<div class="alert alert-warning">Could not load thermal data for this room.</div>`;
+        }
+        body.innerHTML = html;
+    } catch (e) {
+        body.innerHTML = `<div class="alert alert-danger">Load failed: ${escapeHtml(e.message)}</div>`;
+    }
+}
+
+// Thin wrappers that delegate to the controller modal's renderers. We can't
+// import them, so duplicate the minimal renderer inline here. To avoid drift,
+// keep these simple — if you want richer displays, extract shared functions
+// into a separate module later.
+function _renderThermalCard(t, meta) {
+    if (!t) return '<div class="text-muted">No data</div>';
+    const fmt = v => v == null ? '—' : `${Number(v).toFixed(1)} W/K`;
+    return `<div class="card card-body bg-light p-2 small">
+        <div><strong>Blended heat loss:</strong>
+             <span class="fs-6 text-primary">${fmt(t.blended_w_per_k)}</span></div>
+        <div>Static: ${fmt(t.static_w_per_k)} · Measured: ${fmt(t.measured_w_per_k)}</div>
+        <div>Samples: ${t.measured_sample_count || 0} · τ: ${t.tau_seconds ? Math.round(t.tau_seconds/60)+' min' : '—'}</div>
+        <div class="text-muted small mt-1">Insulation: ${escapeHtml(meta?.insulation || '—')}</div>
+    </div>`;
+}
+
+function _renderSizingCard(s, meta) {
+    if (!s) return '';
+    const w = v => v == null ? '—' : `${Math.round(v)} W`;
+    const btu = v => v == null ? '—' : `${Math.round(v)} BTU/hr`;
+    const statusBadge = s.status === 'adequate'
+        ? '<span class="badge bg-success ms-1">Adequate</span>'
+        : s.status === 'undersized'
+        ? `<span class="badge bg-danger ms-1">Undersized by ${Math.round(s.deficit_watts)}W</span>`
+        : s.status === 'oversized'
+        ? `<span class="badge bg-warning text-dark ms-1">Oversized by ${Math.round(s.surplus_watts)}W</span>`
+        : '';
+    return `<div class="card card-body bg-light p-2 small">
+        <div><strong>Required:</strong> ${w(s.required_watts_with_margin)} (${btu(s.required_btu_hr)}) ${statusBadge}</div>
+        <div>ΔT: ${s.delta_t}°C · Target ${s.target_temp_c}°C, design outdoor ${s.design_outdoor_c}°C</div>
+        ${s.installed_watts_at_dt50 != null ?
+            `<div>Installed: ${w(s.installed_watts_at_dt50)} (ΔT50)${s.installed_watts_at_flow_temp != null ?
+                ` → ${w(s.installed_watts_at_flow_temp)} at flow ${s.flow_temperature_c}°C` : ''}</div>` :
+            `<div class="text-muted">No installed capacity recorded</div>`}
+    </div>`;
+}
+
+function _renderPreheatCard(p, meta) {
+    if (!p) return '';
+    if (!p.reachable) {
+        return `<div class="alert alert-warning small mb-0">
+            <i class="fas fa-exclamation-triangle me-1"></i>
+            Cannot reach target at current flow temp (${p.steady_state_temp_c}°C ceiling).
+        </div>`;
+    }
+    if (!p.minutes_needed) {
+        return `<div class="alert alert-success small mb-0">
+            <i class="fas fa-check me-1"></i>Already at target.</div>`;
+    }
+    const mins = Math.round(p.minutes_needed);
+    const hrs = Math.floor(mins / 60);
+    const timeStr = hrs ? `${hrs}h ${mins % 60}m` : `${mins}m`;
+    return `<div class="card card-body bg-light p-2 small">
+        <div><strong>Pre-heat needed:</strong> <span class="fs-6 text-info">${timeStr}</span>
+             <span class="badge bg-${p.confidence === 'high' ? 'success' : p.confidence === 'medium' ? 'warning text-dark' : 'secondary'} ms-1">${p.confidence} confidence</span></div>
+        <div>${p.from_temp_c?.toFixed(1)}°C → ${p.to_temp_c?.toFixed(1)}°C at outdoor ${p.outdoor_temp_c?.toFixed(1)}°C</div>
+    </div>`;
 }
 
 // ============================================================================

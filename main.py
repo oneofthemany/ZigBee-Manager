@@ -55,6 +55,7 @@ from modules.rotary_bindings import get_rotary_binding_manager
 from modules.weather import WeatherService
 from modules.heating_advisor import HeatingAdvisor
 from modules.heating_controller import HeatingController
+from modules.heating_anomaly_watcher import HeatingAnomalyWatcher
 
 port = int(os.environ.get("ZMM_PORT", 8000))
 
@@ -175,6 +176,22 @@ heating_controller = HeatingController(
     zigbee_service.send_command(ieee, command, value, endpoint_id=endpoint_id),
     comfort_defaults=CONFIG.get("heating", {}).get("comfort", {}),
 )
+
+
+heating_anomaly_watcher = HeatingAnomalyWatcher(
+    config_getter=lambda: CONFIG,  # or whatever gives current config dict
+    advisor_getter=lambda: heating_advisor,
+    telemetry_query=lambda ieee, attr, hours:
+    __import__("modules.telemetry_db", fromlist=["query_device_state_history"])
+    .query_device_state_history(ieee, attr, hours),
+    )
+
+# Give the advisor a reference to the controller so it can surface
+# controller intent (calling-for-heat) alongside device reality.
+try:
+    heating_advisor.controller = heating_controller
+except Exception:
+    pass
 
 
 # ============================================================================
@@ -421,6 +438,8 @@ async def lifespan(app: FastAPI):
     heating_controller.start()
     logger.info("Heating Controller initialised")
 
+    heating_anomaly_watcher.start()
+    logger.info("Heating Anomaly Detection initialised")
 
     # Merge Matter devices into automation engine's device registry
     if matter_bridge:
@@ -506,6 +525,7 @@ async def lifespan(app: FastAPI):
     weather_service.stop()
     heating_advisor.stop()
     heating_controller.stop()
+    heating_anomaly_watcher.stop()
     from modules.telemetry_db import close as close_telemetry_db
     close_telemetry_db()
 
@@ -594,7 +614,7 @@ register_automation_routes(app,
 )
 register_backup_routes(app, get_zigbee_service)
 register_weather_routes(app, lambda: weather_service)
-register_heating_routes(app, lambda: heating_advisor, get_zigbee_service)
+register_heating_routes(app, lambda: heating_advisor, get_zigbee_service, lambda: heating_anomaly_watcher)
 register_heating_controller_routes(app, lambda: heating_controller, get_zigbee_service)
 
 # ============================================================================
