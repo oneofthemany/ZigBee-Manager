@@ -166,6 +166,38 @@ def register_device_routes(app: FastAPI, get_zigbee_service, get_matter_bridge):
             request.ieee, request.endpoint_id, request.cluster_id
         )
 
+
+    @app.get("/api/device/{ieee}/cached_topology")
+    async def cached_topology(ieee: str):
+        """Return cached endpoints + clusters for a device (no device traffic)."""
+        from zigbee_cache import get_topology
+        return get_topology(ieee)
+
+    @app.get("/api/device/{ieee}/cached_attributes")
+    async def cached_attributes(ieee: str, ep: int, cluster: int):
+        """Return cached attribute metadata + latest value for a cluster."""
+        from zigbee_cache import get_cached_attributes
+        return get_cached_attributes(ieee, ep, cluster)
+
+    @app.get("/api/device/{ieee}/attribute_history")
+    async def attribute_history(
+            ieee: str,
+            ep: int,
+            cluster: int,
+            attr: int,
+            since_seconds: int = 86400,
+            limit: int = 5000,
+    ):
+        """Return time-series history for a single attribute."""
+        from zigbee_cache import get_attribute_history
+        return {
+            "ieee": ieee,
+            "endpoint_id": ep,
+            "cluster_id": f"0x{cluster:04X}",
+            "attribute_id": f"0x{attr:04X}",
+            "points": get_attribute_history(ieee, ep, cluster, attr, since_seconds, limit),
+        }
+
     @app.get("/api/device/{ieee}/config")
     async def get_device_config(ieee: str):
         """Retrieve complete device configuration (identification, endpoints, attributes, bindings, neighbors)."""

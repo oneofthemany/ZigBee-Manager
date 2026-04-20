@@ -95,11 +95,20 @@ class ClusterHandler:
     # ============================================================
 
     def attribute_updated(self, attrid: int, value: Any, timestamp: Optional[float] = None):
-        """
-        Called by zigpy when a cluster attribute is updated.
-        """
-
         packet_stats.record_rx(str(self.device.ieee))
+
+        # --- feed attribute history cache ---
+        try:
+            from zigbee_cache import record_value
+            record_value(
+                str(self.device.ieee),
+                self.endpoint.endpoint_id,
+                self.cluster_id,
+                attrid,
+                value,
+            )
+        except Exception:
+            pass  # never break the handler path
 
         cluster_name = CLUSTER_NAMES.get(self.cluster_id, f"0x{self.cluster_id:04X}")
 

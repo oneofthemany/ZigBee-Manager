@@ -262,9 +262,23 @@ export function handleDeviceUpdate(payload) {
         //console.log("3. MATCH! Attempting to refresh modal...");
 
         // 4. Refresh the modal if it is open for THIS device
+        //if (state.currentDeviceIeee === payload.ieee) {
+        //    refreshModalState(state.devices[devIndex]); // Pass the updated object
+        //}
+
         if (state.currentDeviceIeee === payload.ieee) {
-            refreshModalState(state.devices[devIndex]); // Pass the updated object
+            // DEBUG LOGGING:
+            //console.log("3b. About to call refreshModalState, fn is:", typeof refreshModalState);
+            try {
+                refreshModalState(state.devices[devIndex]);
+                console.log("3c. refreshModalState returned successfully");
+            } catch (err) {
+                console.error("3d. refreshModalState THREW:", err);
+                console.error("    Stack:", err.stack);
+                console.error("    Device:", state.devices[devIndex]);
+            }
         }
+
     } else {
         // Device not found in list (maybe new join?), trigger full fetch
         console.log("Device not found in local list, fetching all...");

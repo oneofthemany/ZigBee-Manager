@@ -50,7 +50,8 @@ export function renderCapsTab(device) {
 }
 
 /**
- * Discover attributes on a cluster — on-demand via click
+ * Discover attributes on a cluster — on-demand via click.
+ * Tries the DuckDB cache first (instant), falls back to live discovery.
  */
 window.discoverClusterAttributes = async function(ieee, epId, clusterId, badgeEl) {
     const panel = document.getElementById(`attr-panel-${epId}`);
@@ -64,19 +65,38 @@ window.discoverClusterAttributes = async function(ieee, epId, clusterId, badgeEl
     }
 
     panel.dataset.activeCluster = `${clusterId}`;
-    panel.innerHTML = `
-        <div class="text-center py-3">
-            <div class="spinner-border spinner-border-sm text-primary" role="status"></div>
-            <span class="ms-2 small text-muted">Discovering attributes on 0x${clusterId.toString(16).padStart(4, '0')}...</span>
-        </div>`;
 
     try {
-        const res = await fetch('/api/device/discover_attributes', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ ieee, endpoint_id: epId, cluster_id: clusterId })
-        });
-        const data = await res.json();
+        // 1) Try cache first — fast, no device traffic
+        let data = null;
+        let fromCache = false;
+        try {
+            const cached = await fetch(
+                `/api/device/${ieee}/cached_attributes?ep=${epId}&cluster=${clusterId}`
+            );
+            const cacheData = await cached.json();
+            if (cacheData.success && cacheData.cached && (cacheData.attributes || []).length > 0) {
+                data = cacheData;
+                fromCache = true;
+            }
+        } catch (e) {
+            // fall through to live
+        }
+
+        // 2) Cache miss — live discover (shows spinner)
+        if (!data) {
+            panel.innerHTML = `
+                <div class="text-center py-3">
+                    <div class="spinner-border spinner-border-sm text-primary" role="status"></div>
+                    <span class="ms-2 small text-muted">Discovering attributes on 0x${clusterId.toString(16).padStart(4, '0')}...</span>
+                </div>`;
+            const res = await fetch('/api/device/discover_attributes', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ieee, endpoint_id: epId, cluster_id: clusterId })
+            });
+            data = await res.json();
+        }
 
         if (!data.success) {
             panel.innerHTML = `<div class="alert alert-danger small py-1">${data.error}</div>`;
@@ -89,16 +109,30 @@ window.discoverClusterAttributes = async function(ieee, epId, clusterId, badgeEl
             return;
         }
 
+        const cachedBadge = fromCache
+            ? '<span class="badge bg-info ms-1" title="From cache">cached</span>'
+            : '';
+
         let tableHtml = `
             <div class="card mt-2">
                 <div class="card-header py-1 bg-white d-flex justify-content-between align-items-center">
                     <span class="fw-bold small">
                         <i class="fas fa-list"></i> EP${epId} — ${data.cluster_id}
                         <span class="badge bg-secondary ms-1">${attrs.length} attrs</span>
+                        ${cachedBadge}
                     </span>
-                    <button class="btn btn-sm btn-outline-secondary py-0" onclick="this.closest('.card').remove(); document.getElementById('attr-panel-${epId}').dataset.activeCluster=''">
-                        <i class="fas fa-times"></i>
-                    </button>
+                    <span>
+                        <button class="btn btn-sm btn-outline-primary py-0 me-1"
+                                onclick="refreshClusterAttributes('${ieee}', ${epId}, ${clusterId})"
+                                title="Force re-read from device">
+                            <i class="fas fa-sync-alt"></i>
+                        </button>
+                        <button class="btn btn-sm btn-outline-secondary py-0"
+                                onclick="this.closest('.card').remove(); document.getElementById('attr-panel-${epId}').dataset.activeCluster=''"
+                                title="Close">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </span>
                 </div>
                 <div class="card-body p-0">
                     <div class="table-responsive" style="max-height: 400px; overflow-y: auto">
@@ -149,4 +183,38 @@ window.discoverClusterAttributes = async function(ieee, epId, clusterId, badgeEl
     } catch (err) {
         panel.innerHTML = `<div class="alert alert-danger small py-1">Request failed: ${err.message}</div>`;
     }
+};
+
+/**
+ * Force a fresh live read from the device, bypassing the cache.
+ */
+window.refreshClusterAttributes = async function(ieee, epId, clusterId) {
+    const panel = document.getElementById(`attr-panel-${epId}`);
+    if (!panel) return;
+
+    panel.dataset.activeCluster = '';
+    panel.innerHTML = `
+        <div class="text-center py-3">
+            <div class="spinner-border spinner-border-sm text-primary"></div>
+            <span class="ms-2 small text-muted">Re-reading from device...</span>
+        </div>`;
+
+    try {
+        const res = await fetch('/api/device/discover_attributes', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ieee, endpoint_id: epId, cluster_id: clusterId })
+        });
+        // discover_attributes writes through to the cache server-side,
+        // so a subsequent discoverClusterAttributes will now return
+        // the fresh data from cache.
+        await res.json();
+    } catch (e) {
+        panel.innerHTML = `<div class="alert alert-danger small py-1">Refresh failed: ${e.message}</div>`;
+        return;
+    }
+
+    // Re-render via the normal path
+    panel.dataset.activeCluster = '';
+    window.discoverClusterAttributes(ieee, epId, clusterId);
 };

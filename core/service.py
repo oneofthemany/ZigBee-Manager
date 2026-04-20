@@ -461,6 +461,12 @@ class ZigbeeService(
 
                 self._rebuild_name_maps()
                 logger.info(f"Restored {len(self.devices)} devices from database")
+                # Purge cached topology/attrs/history
+                try:
+                    from zigbee_cache import purge_device
+                    purge_device(ieee)
+                except Exception as e:
+                    logger.warning(f"[{ieee}] Cache purge failed: {e}")
 
                 # OTA manager
                 if self.app:
@@ -746,13 +752,20 @@ class ZigbeeService(
             return
         try:
             zdev = self.devices[ieee]
-            # Philips-specific config, standard config, initial poll, HA discovery
-            # (keeping full logic from original core.py)
             await zdev.configure()
             logger.info(f"[{ieee}] Device configured successfully")
             await zdev.poll()
             if self.mqtt:
                 await self.announce_device(ieee)
+
+            # Cache topology (endpoints + clusters) — zero device traffic,
+            # reads already-interviewed state from zigpy.
+            try:
+                from zigbee_cache import record_topology
+                record_topology(zdev.zigpy_dev)
+            except Exception as e:
+                logger.warning(f"[{ieee}] Topology cache failed: {e}")
+
         except Exception as e:
             logger.warning(f"[{ieee}] Device configuration failed: {e}")
 
@@ -1635,8 +1648,16 @@ class ZigbeeService(
                     "value": safe_value,
                 })
 
+            # Persist to cache so future views can skip the live discovery
+            try:
+                from zigbee_cache import record_attribute_metadata
+                record_attribute_metadata(ieee, endpoint_id, cluster_id, attributes)
+            except Exception as e:
+                logger.warning(f"[{ieee}] Attribute cache write failed: {e}")
+
             return {
                 "success": True,
+                "cached": False,              # live response
                 "ieee": ieee,
                 "endpoint_id": endpoint_id,
                 "cluster_id": f"0x{cluster_id:04X}",
