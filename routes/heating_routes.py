@@ -310,30 +310,64 @@ def _generate_room_tips(room: dict, insulation: str) -> List[dict]:
             "action": "Consider a radiator shelf + thermally-lined curtains",
         })
 
-    # Reflective panel (if radiator is on an external wall)
     rad_wall = (rad.get("wall") or "").lower()
     walls = dim.get("walls") or {}
     rad_wall_type = (walls.get(rad_wall) or {}).get("type") if rad_wall else None
-    if rad.get("reflective_panel") is False and rad_wall_type == "external":
-        tips.append({
-            "id": "no_reflective_panel",
-            "severity": "info",
-            "title": "No reflective panel behind radiator",
-            "detail": (
-                "A reflective panel (foil or purpose-made board) behind a "
-                "radiator on an external wall returns 3–8% more heat into the "
-                "room by cutting radiative loss through the wall. ~£10 per panel."
-            ),
-            "action": "Fit a reflective panel behind this radiator",
-        })
-    elif rad.get("reflective_panel") is None and rad_wall_type == "external":
-        tips.append({
-            "id": "check_reflective_panel",
-            "severity": "info",
-            "title": "Reflective panel status unknown",
-            "detail": "Radiator is on an external wall. Check if a reflective panel is fitted behind it.",
-            "action": "Update the room config with reflective_panel true/false",
-        })
+    # Treat these as "radiator is on an external wall":
+    #   - selected wall is typed external
+    #   - placement is 'external_wall'
+    #   - placement is 'under_window' (windows are always on external walls)
+    rad_is_on_external_wall = (
+            rad_wall_type == "external"
+            or placement == "external_wall"
+            or placement == "under_window"
+    )
+
+    if rad.get("reflective_panel") is False:
+        if rad_is_on_external_wall:
+            tips.append({
+                "id": "no_reflective_panel_external",
+                "severity": "info",
+                "title": "No reflective panel behind radiator",
+                "detail": (
+                    "A reflective panel (foil or purpose-made board) behind a "
+                    "radiator on an external wall returns 3–8% more heat into "
+                    "the room by cutting conductive loss through the cold wall "
+                    "behind it. ~£10 per panel."
+                ),
+                "action": "Fit a reflective panel behind this radiator",
+            })
+        else:
+            tips.append({
+                "id": "no_reflective_panel_internal",
+                "severity": "info",
+                "title": "Consider a reflective panel",
+                "detail": (
+                    "Even on an internal wall, a reflective panel redirects "
+                    "heat back into the room instead of warming the wall "
+                    "fabric first. The gain is smaller than on external walls "
+                    "(~1–3%) but it improves setpoint responsiveness, which "
+                    "matters for TRV-controlled rooms."
+                ),
+                "action": "Fit a reflective panel behind this radiator",
+            })
+    elif rad.get("reflective_panel") is None:
+        if rad_is_on_external_wall:
+            tips.append({
+                "id": "check_reflective_panel_external",
+                "severity": "info",
+                "title": "Reflective panel status unknown",
+                "detail": "Radiator is on an external wall. Check whether a reflective panel is fitted — if not, it's worth adding.",
+                "action": "Update the room config with reflective_panel true/false",
+            })
+        else:
+            tips.append({
+                "id": "check_reflective_panel_internal",
+                "severity": "info",
+                "title": "Reflective panel status unknown",
+                "detail": "Mark whether a reflective panel is fitted behind this radiator. Useful on any wall, most impactful on external walls.",
+                "action": "Update the room config with reflective_panel true/false",
+            })
 
     # Radiator type (single vs double)
     rtype = (rad.get("type") or "").lower()

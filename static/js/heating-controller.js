@@ -775,7 +775,7 @@ function renderDimensionsPanel(room, ci, ri) {
                     <hr class="my-3">
 
                     <div class="small mb-2"><strong><i class="fas fa-fire me-1"></i>Radiator</strong></div>
-                    <div class="row g-2 mb-2 align-items-end">
+                    <div class="row g-2 mb-2 align-items-start">
                         <div class="col-md-3">
                             <label class="form-label small mb-1">Capacity</label>
                             <div class="input-group input-group-sm">
@@ -1377,21 +1377,48 @@ function renderTipsInline(room) {
 
     const walls = dim.walls || {};
     const radWallType = rad.wall ? (walls[rad.wall]?.type) : null;
-    if (rad.reflective_panel === false && radWallType === 'external') {
-        tips.push({
-            sev: 'info',
-            icon: 'lightbulb',
-            title: 'Fit a reflective panel',
-            detail: 'Radiator sits on an external wall without a reflective panel. A ~£10 panel returns 3–8% more heat into the room.',
-        });
+    // Treat these as "radiator is on an external wall":
+    //   - selected wall is typed external
+    //   - placement is 'external_wall'
+    //   - placement is 'under_window' (windows are always on external walls)
+    const radIsOnExternalWall =
+        radWallType === 'external' ||
+        rad.placement === 'external_wall' ||
+        rad.placement === 'under_window';
+
+    if (rad.reflective_panel === false) {
+        if (radIsOnExternalWall) {
+            tips.push({
+                sev: 'info',
+                icon: 'lightbulb',
+                title: 'Fit a reflective panel',
+                detail: 'Radiator is on an external wall without a reflective panel. A ~£10 foil panel returns 3–8% more heat into the room by cutting conductive loss through the cold wall behind it.',
+            });
+        } else {
+            tips.push({
+                sev: 'info',
+                icon: 'lightbulb',
+                title: 'Consider a reflective panel',
+                detail: 'Even on an internal wall, a reflective panel redirects heat back into the room instead of warming the wall fabric first. Smaller gain than on external walls (~1–3%), but still improves setpoint responsiveness — useful if this room uses a TRV.',
+            });
+        }
     }
-    if (rad.reflective_panel === undefined && radWallType === 'external') {
-        tips.push({
-            sev: 'info',
-            icon: 'question-circle',
-            title: 'Reflective panel status unknown',
-            detail: 'Radiator is on an external wall. Mark whether a reflective panel is fitted — it\'s worth checking.',
-        });
+    if (rad.reflective_panel === undefined) {
+        if (radIsOnExternalWall) {
+            tips.push({
+                sev: 'info',
+                icon: 'question-circle',
+                title: 'Reflective panel status unknown',
+                detail: 'Radiator is on an external wall. Mark whether a reflective panel is fitted — if not, it\'s worth adding.',
+            });
+        } else {
+            tips.push({
+                sev: 'info',
+                icon: 'question-circle',
+                title: 'Reflective panel status unknown',
+                detail: 'Mark whether a reflective panel is fitted behind this radiator. Useful on any wall, most impactful on external walls.',
+            });
+        }
     }
     if ((rad.type || '') === 'single_panel') {
         tips.push({
