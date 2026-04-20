@@ -4,12 +4,18 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="more new features to heating:&#10;&#10;radiator sizing&#10;thermal profiles per room&#10;heating anomaly detection">
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="sleepy client tweak for delayed_handler">
+      <change afterPath="$PROJECT_DIR$/config/matter_definitions/bilresa.json" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/matter_definitions/ikea_e2490_bilresa.json" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/modules/zigbee_cache.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/modules/thermal_profile.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/thermal_profile.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/routes/heating_controller_routes.py" beforeDir="false" afterPath="$PROJECT_DIR$/routes/heating_controller_routes.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/routes/heating_routes.py" beforeDir="false" afterPath="$PROJECT_DIR$/routes/heating_routes.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/static/js/heating-controller.js" beforeDir="false" afterPath="$PROJECT_DIR$/static/js/heating-controller.js" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/core/service.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/service.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/handlers/base.py" beforeDir="false" afterPath="$PROJECT_DIR$/handlers/base.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/routes/device_routes.py" beforeDir="false" afterPath="$PROJECT_DIR$/routes/device_routes.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/static/js/actions.js" beforeDir="false" afterPath="$PROJECT_DIR$/static/js/actions.js" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/static/js/device-modal.js" beforeDir="false" afterPath="$PROJECT_DIR$/static/js/device-modal.js" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/static/js/devices.js" beforeDir="false" afterPath="$PROJECT_DIR$/static/js/devices.js" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/static/js/modal/clusters.js" beforeDir="false" afterPath="$PROJECT_DIR$/static/js/modal/clusters.js" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -159,38 +165,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00292" summary="updated to be root container due to networking requirements for matter">
-      <option name="closed" value="true" />
-      <created>1775730653514</created>
-      <option name="number" value="00292" />
-      <option name="presentableId" value="LOCAL-00292" />
-      <option name="project" value="LOCAL" />
-      <updated>1775730653515</updated>
-    </task>
-    <task id="LOCAL-00293" summary="workspace">
-      <option name="closed" value="true" />
-      <created>1775734741295</created>
-      <option name="number" value="00293" />
-      <option name="presentableId" value="LOCAL-00293" />
-      <option name="project" value="LOCAL" />
-      <updated>1775734741295</updated>
-    </task>
-    <task id="LOCAL-00294" summary="__security option added for dbus bug">
-      <option name="closed" value="true" />
-      <created>1775736444934</created>
-      <option name="number" value="00294" />
-      <option name="presentableId" value="LOCAL-00294" />
-      <option name="project" value="LOCAL" />
-      <updated>1775736444934</updated>
-    </task>
-    <task id="LOCAL-00295" summary="read only to dbus">
-      <option name="closed" value="true" />
-      <created>1775736967240</created>
-      <option name="number" value="00295" />
-      <option name="presentableId" value="LOCAL-00295" />
-      <option name="project" value="LOCAL" />
-      <updated>1775736967240</updated>
     </task>
     <task id="LOCAL-00296" summary="removal of ro - needs to be open">
       <option name="closed" value="true" />
@@ -552,7 +526,39 @@
       <option name="project" value="LOCAL" />
       <updated>1776673007041</updated>
     </task>
-    <option name="localTasksCounter" value="341" />
+    <task id="LOCAL-00341" summary="final latch fix for tooltips">
+      <option name="closed" value="true" />
+      <created>1776677989861</created>
+      <option name="number" value="00341" />
+      <option name="presentableId" value="LOCAL-00341" />
+      <option name="project" value="LOCAL" />
+      <updated>1776677989861</updated>
+    </task>
+    <task id="LOCAL-00342" summary="new heating doc">
+      <option name="closed" value="true" />
+      <created>1776678012534</created>
+      <option name="number" value="00342" />
+      <option name="presentableId" value="LOCAL-00342" />
+      <option name="project" value="LOCAL" />
+      <updated>1776678012534</updated>
+    </task>
+    <task id="LOCAL-00343" summary="updated with thread, matter, heating and weather API">
+      <option name="closed" value="true" />
+      <created>1776678704124</created>
+      <option name="number" value="00343" />
+      <option name="presentableId" value="LOCAL-00343" />
+      <option name="project" value="LOCAL" />
+      <updated>1776678704124</updated>
+    </task>
+    <task id="LOCAL-00344" summary="sleepy client tweak for delayed_handler">
+      <option name="closed" value="true" />
+      <created>1776688163250</created>
+      <option name="number" value="00344" />
+      <option name="presentableId" value="LOCAL-00344" />
+      <option name="project" value="LOCAL" />
+      <updated>1776688163250</updated>
+    </task>
+    <option name="localTasksCounter" value="345" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -579,10 +585,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="removed duplicate attributes" />
-    <MESSAGE value="multi zone  settings added for hvac receivers" />
-    <MESSAGE value="new zbm heating css" />
-    <MESSAGE value="final improvements on hvac" />
     <MESSAGE value="weather api added for smart heating function" />
     <MESSAGE value="spaces added" />
     <MESSAGE value="weather config added" />
@@ -604,6 +606,10 @@
     <MESSAGE value="changing temp sensor update to be more aggressive for new heating controller" />
     <MESSAGE value="new thermal profile option" />
     <MESSAGE value="more new features to heating:&#10;&#10;radiator sizing&#10;thermal profiles per room&#10;heating anomaly detection" />
-    <option name="LAST_COMMIT_MESSAGE" value="more new features to heating:&#10;&#10;radiator sizing&#10;thermal profiles per room&#10;heating anomaly detection" />
+    <MESSAGE value="final latch fix for tooltips" />
+    <MESSAGE value="new heating doc" />
+    <MESSAGE value="updated with thread, matter, heating and weather API" />
+    <MESSAGE value="sleepy client tweak for delayed_handler" />
+    <option name="LAST_COMMIT_MESSAGE" value="sleepy client tweak for delayed_handler" />
   </component>
 </project>

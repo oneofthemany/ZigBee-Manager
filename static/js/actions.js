@@ -6,9 +6,127 @@
 import { addLogEntry } from './logging.js';
 import { getTimestamp } from './utils.js';
 import { state } from './state.js';
+import { refreshModalState } from './device-modal.js';
 
 // We need to expose these functions if they are called from HTML onclick handlers
 // But generally main.js handles the window assignment.
+
+/**
+ * Compute the optimistic state delta for a successful command.
+ * Returns an object of state keys to merge into device.state, or null
+ * if the command has no predictable state effect.
+ */
+function optimisticDeltaFor(command, value, endpoint) {
+    const ep = endpoint || 1;
+    const epSuffix = `_${ep}`;
+    const delta = {};
+
+    switch (command) {
+        case 'on':
+            delta.state = 'ON';
+            delta.on = true;
+            delta[`state${epSuffix}`] = 'ON';
+            delta[`on${epSuffix}`] = true;
+            return delta;
+
+        case 'off':
+            delta.state = 'OFF';
+            delta.on = false;
+            delta[`state${epSuffix}`] = 'OFF';
+            delta[`on${epSuffix}`] = false;
+            return delta;
+
+        case 'toggle': {
+            // Flip from current state
+            return null; // handled specially — caller reads current state
+        }
+
+        case 'brightness':
+        case 'level': {
+            if (value == null) return null;
+            const v = Number(value);
+            delta.brightness = v <= 100 ? v : Math.round(v / 2.54);
+            delta.level = v <= 100 ? Math.round(v * 2.54) : v;
+            delta[`brightness${epSuffix}`] = delta.brightness;
+            delta.state = 'ON';
+            delta.on = true;
+            return delta;
+        }
+
+        case 'color_temp':
+            if (value == null) return null;
+            // value is kelvin; ZCL stores mireds
+            delta.color_temp = Math.round(1000000 / Number(value));
+            return delta;
+
+        case 'temperature':
+            if (value == null) return null;
+            delta.occupied_heating_setpoint = Number(value);
+            delta.heating_setpoint = Number(value);
+            delta.temperature_setpoint = Number(value);
+            delta.target_temp = Number(value);
+            return delta;
+
+        case 'system_mode':
+            if (value == null) return null;
+            delta.system_mode = value;
+            return delta;
+
+        case 'position':
+            if (value == null) return null;
+            delta.position = Number(value);
+            return delta;
+
+        case 'open':
+            delta.state = 'open';
+            delta.position = 100;
+            return delta;
+
+        case 'close':
+            delta.state = 'closed';
+            delta.position = 0;
+            return delta;
+
+        default:
+            return null;  // unknown command → no optimistic update
+    }
+}
+
+ /**
+  * Apply an optimistic delta to the in-memory device and refresh visible UI.
+  */
+ function applyOptimisticUpdate(ieee, delta) {
+     if (!delta) return;
+     const normIeee = String(ieee).toLowerCase();
+     const devIndex = state.devices.findIndex(
+         d => String(d.ieee).toLowerCase() === normIeee
+     );
+     if (devIndex === -1) return;
+
+     const dev = state.devices[devIndex];
+     dev.state = { ...(dev.state || {}), ...delta };
+     dev.last_seen_ts = Date.now();
+     state.deviceCache[dev.ieee] = dev;
+
+     // Refresh the table row (if device-status.js or devices.js exposes it)
+     if (window._enhanceDeviceTable) {
+         const row = document.querySelector(`tr[data-ieee="${dev.ieee}"]`);
+         if (row) row.dataset.enhanced = 'false';
+         window._enhanceDeviceTable();
+     }
+
+     // Refresh the modal if it's open for this device
+     const openIeee = state.currentDeviceIeee
+         ? String(state.currentDeviceIeee).toLowerCase()
+         : null;
+     if (openIeee === normIeee) {
+         try {
+             refreshModalState(dev);
+         } catch (e) {
+             console.error('[optimistic] refreshModalState failed:', e);
+         }
+     }
+ }
 
 /**
  * Check pairing status on load
@@ -31,29 +149,75 @@ export async function checkPairingStatus() {
  * Send command to device (now with endpoint support)
  */
 export async function sendCommand(ieee, command, value = null, endpoint = null) {
+    const epLabel = endpoint ? ` (EP${endpoint})` : '';
+
     try {
-        const body = { ieee: ieee, command: command, value: value };
-        if (endpoint) {
-            body.endpoint = endpoint;
-        }
+        const body = { ieee, command, value };
+        if (endpoint) body.endpoint = endpoint;
 
         const res = await fetch('/api/device/command', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body)
+            body: JSON.stringify(body),
         });
         const data = await res.json();
+
         if (data.success) {
+            // --- OPTIMISTIC UI UPDATE ---
+            // Compute the expected state change from the command and apply
+            // it to the local device state immediately, then refresh the
+            // visible UI. We do not wait for the WebSocket echo.
+
+            if (command === 'toggle') {
+                // Flip based on current known state
+                const normIeee = String(ieee).toLowerCase();
+                const dev = state.devices.find(
+                    d => String(d.ieee).toLowerCase() === normIeee
+                );
+                if (dev && dev.state) {
+                    const ep = endpoint || 1;
+                    const currentOn =
+                        dev.state[`on_${ep}`] !== undefined
+                            ? dev.state[`on_${ep}`]
+                            : dev.state.on;
+                    const flipCommand = currentOn ? 'off' : 'on';
+                    applyOptimisticUpdate(ieee, optimisticDeltaFor(flipCommand, null, endpoint));
+                }
+            } else {
+                applyOptimisticUpdate(ieee, optimisticDeltaFor(command, value, endpoint));
+            }
+
             addLogEntry({
                 timestamp: getTimestamp(),
                 level: 'INFO',
-                message: `Command sent${endpoint ? ' (EP'+endpoint+')' : ''}`
+                message: `Command ${command}${epLabel} succeeded`,
             });
         } else {
-            alert(`Error: ${data.error}`);
+            // --- FAILURE: toast the user ---
+            const errMsg = data.error || 'Device did not respond';
+            if (window.toast) {
+                window.toast.error(`Command "${command}"${epLabel} failed: ${errMsg}`);
+            } else {
+                alert(`Command failed: ${errMsg}`);
+            }
+            addLogEntry({
+                timestamp: getTimestamp(),
+                level: 'ERROR',
+                message: `Command ${command}${epLabel} failed: ${errMsg}`,
+            });
         }
     } catch (e) {
-        alert("Command failed");
+        const errMsg = e?.message || 'Network error';
+        if (window.toast) {
+            window.toast.error(`Command "${command}"${epLabel} failed: ${errMsg}`);
+        } else {
+            alert(`Command failed: ${errMsg}`);
+        }
+        addLogEntry({
+            timestamp: getTimestamp(),
+            level: 'ERROR',
+            message: `Command ${command}${epLabel} exception: ${errMsg}`,
+        });
     }
 }
 

@@ -142,33 +142,40 @@ export async function openDeviceModal(d) {
 }
 
 export function refreshModalState(device) {
-    console.log("4. Refreshing Modal Content for:", device.friendly_name);
+    if (!device) return;
+
     const isZigbee = !device.protocol || device.protocol === 'zigbee';
 
-    // Update Overview Tab if it exists
+    // Overview tab — always full re-render
     const overviewTab = document.getElementById('tab-overview');
     if (overviewTab) {
         overviewTab.innerHTML = renderOverviewTab(device);
     }
 
-    // Update Control Tab - using targeted updates
+    // Control tab — only skip the full re-render if a slider is being
+    // actively dragged (otherwise we'd stomp the user's drag).
     const controlTab = document.getElementById('tab-control');
     if (controlTab) {
-        // Check if user is currently interacting with controls
-        if (state.controlInteractionActive) {
-            // Only update non-interactive elements (badges, labels)
+        const sliderActive =
+            state.controlInteractionActive &&
+            document.querySelector(
+                '#tab-control input[type="range"]:active, ' +
+                '#tab-control input[type="range"]:focus'
+            );
+
+        if (sliderActive) {
             updateControlValues(device);
         } else {
-            // Full re-render if no active interaction
-            controlTab.innerHTML = (!isZigbee ? renderMatterEventsTab(device) : '') + renderControlTab(device);
-            // Re-bind schedule events after re-render
+            controlTab.innerHTML =
+                (!isZigbee ? renderMatterEventsTab(device) : '') +
+                renderControlTab(device);
             if (hasCluster(device, 0x0201)) {
                 bindScheduleEvents(device.ieee);
             }
         }
     }
 
-    // Update Binding Tab if it exists
+    // Binding tab — always full re-render
     const bindingTab = document.getElementById('tab-binding');
     if (bindingTab) {
         bindingTab.innerHTML = renderBindingTab(device);
