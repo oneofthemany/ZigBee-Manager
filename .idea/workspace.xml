@@ -4,8 +4,10 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="improve optimistic updates on UI for device state - now trigger">
-      <change beforePath="$PROJECT_DIR$/config/matter_definitions/bilresa.json" beforeDir="false" />
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="removed as commited in error">
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/modules/zigbee_cache.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/zigbee_cache.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/routes/device_routes.py" beforeDir="false" afterPath="$PROJECT_DIR$/routes/device_routes.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -155,14 +157,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00298" summary="removal of :Z as no longer needed due to sec option">
-      <option name="closed" value="true" />
-      <created>1775738447132</created>
-      <option name="number" value="00298" />
-      <option name="presentableId" value="LOCAL-00298" />
-      <option name="project" value="LOCAL" />
-      <updated>1775738447132</updated>
     </task>
     <task id="LOCAL-00299" summary="handle_message fix">
       <option name="closed" value="true" />
@@ -548,7 +542,15 @@
       <option name="project" value="LOCAL" />
       <updated>1776696631072</updated>
     </task>
-    <option name="localTasksCounter" value="347" />
+    <task id="LOCAL-00347" summary="removed as commited in error">
+      <option name="closed" value="true" />
+      <created>1776696961816</created>
+      <option name="number" value="00347" />
+      <option name="presentableId" value="LOCAL-00347" />
+      <option name="project" value="LOCAL" />
+      <updated>1776696961816</updated>
+    </task>
+    <option name="localTasksCounter" value="348" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -575,7 +577,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="weather config added" />
     <MESSAGE value="new smart heating function" />
     <MESSAGE value="mac removal" />
     <MESSAGE value="heatpoint hold added" />
@@ -600,6 +601,7 @@
     <MESSAGE value="sleepy client tweak for delayed_handler" />
     <MESSAGE value="new device cache for EPs to duckdb" />
     <MESSAGE value="improve optimistic updates on UI for device state - now trigger" />
-    <option name="LAST_COMMIT_MESSAGE" value="improve optimistic updates on UI for device state - now trigger" />
+    <MESSAGE value="removed as commited in error" />
+    <option name="LAST_COMMIT_MESSAGE" value="removed as commited in error" />
   </component>
 </project>

@@ -170,13 +170,27 @@ def register_device_routes(app: FastAPI, get_zigbee_service, get_matter_bridge):
     @app.get("/api/device/{ieee}/cached_topology")
     async def cached_topology(ieee: str):
         """Return cached endpoints + clusters for a device (no device traffic)."""
-        from zigbee_cache import get_topology
+        from modules.zigbee_cache import get_topology
         return get_topology(ieee)
+
+    @app.get("/api/device/cache_debug")
+    async def cache_debug():
+        """Introspect the zigbee cache DuckDB — schemas, row counts, errors."""
+        try:
+            from modules.zigbee_cache import debug_info
+            return {"success": True, **debug_info()}
+        except Exception as e:
+            import traceback
+            return {
+                "success": False,
+                "error": str(e),
+                "traceback": traceback.format_exc(),
+            }
 
     @app.get("/api/device/{ieee}/cached_attributes")
     async def cached_attributes(ieee: str, ep: int, cluster: int):
         """Return cached attribute metadata + latest value for a cluster."""
-        from zigbee_cache import get_cached_attributes
+        from modules.zigbee_cache import get_cached_attributes
         return get_cached_attributes(ieee, ep, cluster)
 
     @app.get("/api/device/{ieee}/attribute_history")
