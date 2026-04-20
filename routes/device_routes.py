@@ -203,7 +203,7 @@ def register_device_routes(app: FastAPI, get_zigbee_service, get_matter_bridge):
             limit: int = 5000,
     ):
         """Return time-series history for a single attribute."""
-        from zigbee_cache import get_attribute_history
+        from modules.zigbee_cache import get_attribute_history
         return {
             "ieee": ieee,
             "endpoint_id": ep,

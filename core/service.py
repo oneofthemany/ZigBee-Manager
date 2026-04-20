@@ -463,7 +463,7 @@ class ZigbeeService(
                 logger.info(f"Restored {len(self.devices)} devices from database")
                 # Purge cached topology/attrs/history
                 try:
-                    from zigbee_cache import purge_device
+                    from modules.zigbee_cache import purge_device
                     purge_device(ieee)
                 except Exception as e:
                     logger.warning(f"[{ieee}] Cache purge failed: {e}")
@@ -761,7 +761,7 @@ class ZigbeeService(
             # Cache topology (endpoints + clusters) — zero device traffic,
             # reads already-interviewed state from zigpy.
             try:
-                from zigbee_cache import record_topology
+                from modules.zigbee_cache import record_topology
                 record_topology(zdev.zigpy_dev)
             except Exception as e:
                 logger.warning(f"[{ieee}] Topology cache failed: {e}")
@@ -1650,7 +1650,7 @@ class ZigbeeService(
 
             # Persist to cache so future views can skip the live discovery
             try:
-                from zigbee_cache import record_attribute_metadata
+                from modules.zigbee_cache import record_attribute_metadata
                 record_attribute_metadata(ieee, endpoint_id, cluster_id, attributes)
             except Exception as e:
                 logger.warning(f"[{ieee}] Attribute cache write failed: {e}")

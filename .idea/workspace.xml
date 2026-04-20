@@ -4,8 +4,9 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="removed as commited in error">
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="debugging added and improved zigbee cache">
+      <change beforePath="$PROJECT_DIR$/core/service.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/service.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/handlers/base.py" beforeDir="false" afterPath="$PROJECT_DIR$/handlers/base.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/modules/zigbee_cache.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/zigbee_cache.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/routes/device_routes.py" beforeDir="false" afterPath="$PROJECT_DIR$/routes/device_routes.py" afterDir="false" />
     </list>
@@ -157,14 +158,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00299" summary="handle_message fix">
-      <option name="closed" value="true" />
-      <created>1775750996890</created>
-      <option name="number" value="00299" />
-      <option name="presentableId" value="LOCAL-00299" />
-      <option name="project" value="LOCAL" />
-      <updated>1775750996890</updated>
     </task>
     <task id="LOCAL-00300" summary="device status updated to be responsive per row and not the entire page">
       <option name="closed" value="true" />
@@ -550,7 +543,15 @@
       <option name="project" value="LOCAL" />
       <updated>1776696961816</updated>
     </task>
-    <option name="localTasksCounter" value="348" />
+    <task id="LOCAL-00348" summary="debugging added and improved zigbee cache">
+      <option name="closed" value="true" />
+      <created>1776698013491</created>
+      <option name="number" value="00348" />
+      <option name="presentableId" value="LOCAL-00348" />
+      <option name="project" value="LOCAL" />
+      <updated>1776698013491</updated>
+    </task>
+    <option name="localTasksCounter" value="349" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -577,7 +578,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="new smart heating function" />
     <MESSAGE value="mac removal" />
     <MESSAGE value="heatpoint hold added" />
     <MESSAGE value="config export and stop skipping  manufacturer specific attributes" />
@@ -602,6 +602,7 @@
     <MESSAGE value="new device cache for EPs to duckdb" />
     <MESSAGE value="improve optimistic updates on UI for device state - now trigger" />
     <MESSAGE value="removed as commited in error" />
-    <option name="LAST_COMMIT_MESSAGE" value="removed as commited in error" />
+    <MESSAGE value="debugging added and improved zigbee cache" />
+    <option name="LAST_COMMIT_MESSAGE" value="debugging added and improved zigbee cache" />
   </component>
 </project>

@@ -21,7 +21,7 @@ from typing import Any, Dict, List, Optional
 logger = logging.getLogger("modules.zigbee_cache")
 
 try:
-    from zigbee_debug import CLUSTER_NAMES
+    from .zigbee_debug import CLUSTER_NAMES
 except Exception:
     CLUSTER_NAMES = {}
 

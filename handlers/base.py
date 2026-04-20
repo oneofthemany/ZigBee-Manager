@@ -99,7 +99,7 @@ class ClusterHandler:
 
         # --- feed attribute history cache ---
         try:
-            from zigbee_cache import record_value
+            from modules.zigbee_cache import record_value
             record_value(
                 str(self.device.ieee),
                 self.endpoint.endpoint_id,
