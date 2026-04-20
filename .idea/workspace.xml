@@ -4,9 +4,8 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="location update for zigbee_cache module">
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="diag attr patch to include all EP's">
       <change beforePath="$PROJECT_DIR$/core/service.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/service.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/modules/diag_attributes.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/diag_attributes.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -156,14 +155,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00301" summary="debugging remove from prod">
-      <option name="closed" value="true" />
-      <created>1775753708264</created>
-      <option name="number" value="00301" />
-      <option name="presentableId" value="LOCAL-00301" />
-      <option name="project" value="LOCAL" />
-      <updated>1775753708265</updated>
     </task>
     <task id="LOCAL-00302" summary="persistence added for keys and database">
       <option name="closed" value="true" />
@@ -549,7 +540,15 @@
       <option name="project" value="LOCAL" />
       <updated>1776698613872</updated>
     </task>
-    <option name="localTasksCounter" value="350" />
+    <task id="LOCAL-00350" summary="diag attr patch to include all EP's">
+      <option name="closed" value="true" />
+      <created>1776699481471</created>
+      <option name="number" value="00350" />
+      <option name="presentableId" value="LOCAL-00350" />
+      <option name="project" value="LOCAL" />
+      <updated>1776699481471</updated>
+    </task>
+    <option name="localTasksCounter" value="351" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -576,7 +575,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="heatpoint hold added" />
     <MESSAGE value="config export and stop skipping  manufacturer specific attributes" />
     <MESSAGE value="aqara updates for new heating controller" />
     <MESSAGE value="trv updates" />
@@ -601,6 +599,7 @@
     <MESSAGE value="removed as commited in error" />
     <MESSAGE value="debugging added and improved zigbee cache" />
     <MESSAGE value="location update for zigbee_cache module" />
-    <option name="LAST_COMMIT_MESSAGE" value="location update for zigbee_cache module" />
+    <MESSAGE value="diag attr patch to include all EP's" />
+    <option name="LAST_COMMIT_MESSAGE" value="diag attr patch to include all EP's" />
   </component>
 </project>

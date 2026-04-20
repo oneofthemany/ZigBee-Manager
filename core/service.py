@@ -1527,35 +1527,148 @@ class ZigbeeService(
             return {"success": False, "error": str(e)}
 
     async def discover_cluster_attributes(self, ieee, endpoint_id, cluster_id):
-        """
-        Exhaustive cluster introspection — attributes (including manufacturer-
-        specific), reporting config, and supported commands. Writes metadata
-        to the zigbee_cache for fast subsequent reads.
-        """
-        try:
-            from modules.diag_attributes import introspect_cluster
-            result = await introspect_cluster(
-                self, ieee, endpoint_id, cluster_id,
-                include_write_probe=True,
-                include_reporting_config=True,
-                include_commands=True,
-            )
-        except Exception as e:
-            logger.error(f"[{ieee}] Introspection failed: {e}")
-            return {"success": False, "error": str(e)}
+        """Discover attributes and their access control on a device cluster."""
+        if ieee not in self.devices:
+            return {"success": False, "error": "Device not found"}
 
-        # Persist metadata + values to the cache so next call is instant
-        if result.get("success"):
+        try:
+            zigpy_dev = self.devices[ieee].zigpy_dev
+            ep = zigpy_dev.endpoints.get(endpoint_id)
+            if not ep:
+                return {"success": False, "error": f"Endpoint {endpoint_id} not found"}
+
+            cluster = ep.in_clusters.get(cluster_id) or ep.out_clusters.get(cluster_id)
+            if not cluster:
+                return {"success": False, "error": f"Cluster 0x{cluster_id:04X} not found"}
+
+            # Step 1: Discover which attributes exist on the device
+            discovered_ids = set()
+            try:
+                async with asyncio.timeout(10.0):
+                    result = await cluster.discover_attributes(0, 255)
+                if result:
+                    for item in result:
+                        try:
+                            attr_id = item if isinstance(item, int) else getattr(item, 'attrid', None)
+                            if attr_id is not None and isinstance(attr_id, int):
+                                discovered_ids.add(attr_id)
+                        except (TypeError, AttributeError):
+                            continue
+            except Exception as e:
+                logger.warning(f"[{ieee}] Discover attributes failed: {e}")
+
+            # For manufacturer-specific clusters (0xFC00+), also try extended range
+            if cluster_id >= 0xFC00 or not discovered_ids:
+                scan_ranges = [(0x0000, 0x0020)]
+                if cluster_id >= 0xFC00:
+                    scan_ranges = [(0x0000, 0x0050)]
+                for start, end in scan_ranges:
+                    for attr_id in range(start, end):
+                        if attr_id in discovered_ids:
+                            continue
+                        try:
+                            async with asyncio.timeout(2.0):
+                                read_result = await cluster.read_attributes([attr_id])
+                            if read_result:
+                                success_attrs = read_result[0] if read_result else {}
+                                failure_attrs = read_result[1] if len(read_result) > 1 else {}
+                                # Only add if attr is in success dict (not in failures)
+                                if attr_id in success_attrs and attr_id not in failure_attrs:
+                                    discovered_ids.add(attr_id)
+                        except Exception:
+                            continue
+
+            # Fallback: use zigpy cluster definition if nothing discovered
+            if not discovered_ids and cluster.attributes:
+                discovered_ids = set(cluster.attributes.keys())
+
+            # Step 2: Read all discovered attributes and test write access
+            attributes = []
+            for attr_id in sorted(discovered_ids):
+
+                # Get name from zigpy definition
+                name = f"0x{attr_id:04X}"
+                attr_type = ""
+                if attr_id in cluster.attributes:
+                    attr_def = cluster.attributes[attr_id]
+                    if hasattr(attr_def, 'name'):
+                        name = attr_def.name
+                    if hasattr(attr_def, 'type') and attr_def.type:
+                        attr_type = attr_def.type.__name__
+
+                # Read value
+                readable = False
+                value = None
+                try:
+                    async with asyncio.timeout(5.0):
+                        read_result = await cluster.read_attributes([attr_id])
+                    if read_result and attr_id in read_result[0]:
+                        val = read_result[0][attr_id]
+                        if hasattr(val, 'value'):
+                            val = val.value
+                        value = val
+                        readable = True
+                except Exception:
+                    pass
+
+                # Write test: write current value back (non-destructive)
+                writable = None
+                if readable and value is not None:
+                    try:
+                        async with asyncio.timeout(5.0):
+                            write_result = await cluster.write_attributes({attr_id: value})
+                        if write_result and len(write_result) > 0:
+                            status = write_result[0]
+                            if hasattr(status, '__iter__'):
+                                writable = all(
+                                    getattr(s, 'status', s) == 0 for s in status
+                                )
+                            elif status == 0 or (hasattr(status, 'status') and status.status == 0):
+                                writable = True
+                            else:
+                                writable = False
+                    except Exception:
+                        writable = False
+
+                # Serialize value safely
+                safe_value = None
+                if value is not None:
+                    try:
+                        safe_value = prepare_for_json({0: value})[0]
+                    except Exception:
+                        safe_value = str(value)
+
+                attributes.append({
+                    "id": f"0x{attr_id:04X}",
+                    "id_int": attr_id,
+                    "name": name,
+                    "type": attr_type,
+                    "readable": readable,
+                    "writable": writable,
+                    "value": safe_value,
+                })
+
+            # Persist to cache so future views can skip the live discovery
             try:
                 from modules.zigbee_cache import record_attribute_metadata
-                record_attribute_metadata(
-                    ieee, endpoint_id, cluster_id,
-                    result.get("attributes", []),
-                )
+                record_attribute_metadata(ieee, endpoint_id, cluster_id, attributes)
             except Exception as e:
-                logger.warning(f"[{ieee}] Cache write failed: {e}")
+                logger.warning(f"[{ieee}] Attribute cache write failed: {e}")
 
-        return result
+            return {
+                "success": True,
+                "cached": False,              # live response
+                "ieee": ieee,
+                "endpoint_id": endpoint_id,
+                "cluster_id": f"0x{cluster_id:04X}",
+                "attributes": attributes,
+            }
+
+        except asyncio.TimeoutError:
+            return {"success": False, "error": "Discovery timed out"}
+        except Exception as e:
+            logger.error(f"[{ieee}] Attribute discovery failed: {e}")
+            return {"success": False, "error": str(e)}
 
     async def get_device_config(self, ieee):
         """
