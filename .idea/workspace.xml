@@ -4,18 +4,8 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="sleepy client tweak for delayed_handler">
-      <change afterPath="$PROJECT_DIR$/config/matter_definitions/bilresa.json" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/config/matter_definitions/ikea_e2490_bilresa.json" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/modules/zigbee_cache.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/core/service.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/service.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/handlers/base.py" beforeDir="false" afterPath="$PROJECT_DIR$/handlers/base.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/routes/device_routes.py" beforeDir="false" afterPath="$PROJECT_DIR$/routes/device_routes.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/static/js/actions.js" beforeDir="false" afterPath="$PROJECT_DIR$/static/js/actions.js" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/static/js/device-modal.js" beforeDir="false" afterPath="$PROJECT_DIR$/static/js/device-modal.js" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/static/js/devices.js" beforeDir="false" afterPath="$PROJECT_DIR$/static/js/devices.js" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/static/js/modal/clusters.js" beforeDir="false" afterPath="$PROJECT_DIR$/static/js/modal/clusters.js" afterDir="false" />
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="improve optimistic updates on UI for device state - now trigger">
+      <change beforePath="$PROJECT_DIR$/config/matter_definitions/bilresa.json" beforeDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -165,22 +155,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00296" summary="removal of ro - needs to be open">
-      <option name="closed" value="true" />
-      <created>1775737873807</created>
-      <option name="number" value="00296" />
-      <option name="presentableId" value="LOCAL-00296" />
-      <option name="project" value="LOCAL" />
-      <updated>1775737873807</updated>
-    </task>
-    <task id="LOCAL-00297" summary="sec option added">
-      <option name="closed" value="true" />
-      <created>1775738298024</created>
-      <option name="number" value="00297" />
-      <option name="presentableId" value="LOCAL-00297" />
-      <option name="project" value="LOCAL" />
-      <updated>1775738298025</updated>
     </task>
     <task id="LOCAL-00298" summary="removal of :Z as no longer needed due to sec option">
       <option name="closed" value="true" />
@@ -558,7 +532,23 @@
       <option name="project" value="LOCAL" />
       <updated>1776688163250</updated>
     </task>
-    <option name="localTasksCounter" value="345" />
+    <task id="LOCAL-00345" summary="new device cache for EPs to duckdb">
+      <option name="closed" value="true" />
+      <created>1776696606001</created>
+      <option name="number" value="00345" />
+      <option name="presentableId" value="LOCAL-00345" />
+      <option name="project" value="LOCAL" />
+      <updated>1776696606001</updated>
+    </task>
+    <task id="LOCAL-00346" summary="improve optimistic updates on UI for device state - now trigger">
+      <option name="closed" value="true" />
+      <created>1776696631072</created>
+      <option name="number" value="00346" />
+      <option name="presentableId" value="LOCAL-00346" />
+      <option name="project" value="LOCAL" />
+      <updated>1776696631072</updated>
+    </task>
+    <option name="localTasksCounter" value="347" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -585,8 +575,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="weather api added for smart heating function" />
-    <MESSAGE value="spaces added" />
     <MESSAGE value="weather config added" />
     <MESSAGE value="new smart heating function" />
     <MESSAGE value="mac removal" />
@@ -610,6 +598,8 @@
     <MESSAGE value="new heating doc" />
     <MESSAGE value="updated with thread, matter, heating and weather API" />
     <MESSAGE value="sleepy client tweak for delayed_handler" />
-    <option name="LAST_COMMIT_MESSAGE" value="sleepy client tweak for delayed_handler" />
+    <MESSAGE value="new device cache for EPs to duckdb" />
+    <MESSAGE value="improve optimistic updates on UI for device state - now trigger" />
+    <option name="LAST_COMMIT_MESSAGE" value="improve optimistic updates on UI for device state - now trigger" />
   </component>
 </project>
