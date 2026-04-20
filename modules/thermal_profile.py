@@ -167,77 +167,90 @@ class ThermalProfile:
 
 def compute_static(dimensions: Dict[str, Any], insulation: str = "partial") -> Tuple[Optional[float], StaticBreakdown, List[str]]:
     """
-    Compute W/K heat loss from room dimensions + dwelling insulation level.
-
-    Returns (total_w_per_k, breakdown, warnings). total is None if there's
-    not enough data to compute.
+    Per-wall heat loss. Each wall can be external / party / internal, so we
+    compute gross area from X×H or Y×H depending on orientation, subtract
+    windows and doors attributed to that wall, then apply the appropriate
+    U-value.
     """
     warnings: List[str] = []
     bd = StaticBreakdown()
-
     if not isinstance(dimensions, dict):
         return None, bd, ["no dimensions supplied"]
 
     u_table = U_VALUES.get(insulation) or U_VALUES["partial"]
 
-    # Walls
-    walls = dimensions.get("walls") or {}
-    ext_area = float(walls.get("external_m2") or 0.0)
-    party_area = float(walls.get("party_m2") or 0.0)
-    # Internal walls to other heated rooms lose no heat — skip.
+    x_m = float(dimensions.get("width_m") or 0.0)
+    y_m = float(dimensions.get("depth_m") or 0.0)
+    h_m = float(dimensions.get("ceiling_height_m") or 2.4)
+    floor_area = float(dimensions.get("floor_area_m2") or (x_m * y_m))
 
-    # We need to subtract window + door area from external walls so we don't
-    # double-count the "hole" area. Doors only if they're external.
+    walls = dimensions.get("walls") or {}
+    # Gross area per wall
+    gross = {
+        "front": x_m * h_m if x_m else 0.0,
+        "back":  x_m * h_m if x_m else 0.0,
+        "left":  y_m * h_m if y_m else 0.0,
+        "right": y_m * h_m if y_m else 0.0,
+    }
+
+    # Subtract per-wall windows/doors to get net area per wall
     windows = dimensions.get("windows") or []
     doors = dimensions.get("doors") or []
-    ext_door_area = sum(float(d.get("area_m2") or 0.0)
-                        for d in doors if d.get("type") == "external")
-    total_window_area = sum(float(w.get("area_m2") or 0.0) for w in windows)
+    per_wall_opening_area = {w: 0.0 for w in gross.keys()}
+    for item in windows + doors:
+        wall = item.get("wall")
+        if wall in per_wall_opening_area:
+            per_wall_opening_area[wall] += float(item.get("area_m2") or 0.0)
 
-    ext_wall_net = max(0.0, ext_area - total_window_area - ext_door_area)
-    if ext_area > 0 and ext_wall_net == 0:
-        warnings.append(
-            "window + door area exceeds external wall area — check inputs"
-        )
+    # Fold the per-wall U-values into the walls_external / walls_party buckets.
+    for w_name, w_def in walls.items():
+        if w_name not in gross:
+            continue
+        gross_a = gross[w_name]
+        opening_a = per_wall_opening_area.get(w_name, 0.0)
+        net_a = max(0.0, gross_a - opening_a)
+        if gross_a > 0 and net_a == 0:
+            warnings.append(f"openings exceed wall area on {w_name} wall")
+        w_type = w_def.get("type", "external") if isinstance(w_def, dict) else "external"
+        if w_type == "external":
+            bd.walls_external += net_a * u_table["wall_ext"]
+        elif w_type == "party":
+            bd.walls_party += net_a * u_table["wall_party"]
+        # internal / unknown → no loss (or treated as internal)
 
-    bd.walls_external = ext_wall_net * u_table["wall_ext"]
-    bd.walls_party = party_area * u_table["wall_party"]
-
-    # Windows (per-item glazing)
+    # Windows
     for w in windows:
         area = float(w.get("area_m2") or 0.0)
+        # Only count loss on windows attributed to external walls
+        wall = w.get("wall")
+        wall_kind = (walls.get(wall) or {}).get("type", "external") if wall else "external"
+        if wall_kind != "external":
+            continue
         glazing = str(w.get("glazing", "double")).lower()
         u = u_table["window"].get(glazing, u_table["window"]["double"])
         bd.windows += area * u
 
     # Doors
-    for d in doors:
-        area = float(d.get("area_m2") or 0.0)
-        if d.get("type") == "external":
+    for dr in doors:
+        area = float(dr.get("area_m2") or 0.0)
+        if dr.get("type") == "external":
             bd.doors += area * u_table["door_ext"]
-        # Internal doors: zero loss
 
-    # Floor
-    floor_area = float(dimensions.get("floor_area_m2") or 0.0)
+    # Floor / ceiling
     floor_type = str(dimensions.get("floor_type", "unknown")).lower()
     bd.floor = floor_area * u_table["floor"].get(floor_type, u_table["floor"]["unknown"])
-
-    # Ceiling — assume same footprint as floor
     ceiling_type = str(dimensions.get("ceiling_type", "unknown")).lower()
     bd.ceiling = floor_area * u_table["ceiling"].get(ceiling_type, u_table["ceiling"]["unknown"])
 
-    # Ventilation / infiltration
-    ceiling_h = float(dimensions.get("ceiling_height_m", 2.4))
-    volume_m3 = floor_area * ceiling_h
+    # Ventilation
+    volume_m3 = floor_area * h_m
     ach = ACH_BY_INSULATION.get(insulation, 1.0)
-    # Sensible heat loss from air exchange = ρ·Cp·V·(ACH/3600) W/K
     bd.ventilation = AIR_DENSITY_KG_M3 * AIR_CP_J_KG_K * volume_m3 * (ach / 3600.0)
 
     total = bd.total
     if total <= 0:
-        warnings.append("static calculation produced zero — check room dimensions")
+        warnings.append("static calculation produced zero — check dimensions")
         return None, bd, warnings
-
     return round(total, 1), bd, warnings
 
 

@@ -588,26 +588,42 @@ function renderRoomCard(room, ci, ri) {
 // ============================================================================
 function renderDimensionsPanel(room, ci, ri) {
     const dim = room.dimensions || {};
-    const walls = dim.walls || {};
+    const walls = dim.walls || {
+        front: { type: 'external' }, back: { type: 'external' },
+        left: { type: 'external' },  right: { type: 'external' },
+    };
     const windows = dim.windows || [];
     const doors = dim.doors || [];
-    const hasContent = !!(dim.floor_area_m2 || walls.external_m2 || windows.length || doors.length);
+    const rad = room.radiator || {};
+    const hasContent = !!(dim.width_m || dim.depth_m || windows.length || doors.length);
     const badgeHtml = hasContent
         ? `<span class="badge bg-success ms-1">set</span>`
         : `<span class="badge bg-secondary ms-1">not set</span>`;
 
     const collapseId = `dimensions-c${ci}-r${ri}`;
 
-    // Window rows
+    const wallOptions = (sel) => [
+        `<option value="" ${!sel ? 'selected' : ''}>— choose wall —</option>`,
+        ...['front', 'back', 'left', 'right'].map(w =>
+            `<option value="${w}" ${sel === w ? 'selected' : ''}>${w.charAt(0).toUpperCase() + w.slice(1)}</option>`
+        ),
+    ].join('');
+
     const windowRows = windows.map((w, wi) => `
-        <div class="row g-1 mb-1 align-items-center window-row" data-ci="${ci}" data-ri="${ri}" data-wi="${wi}">
-            <div class="col-md-3">
-                <input type="number" step="0.1" min="0" class="form-control form-control-sm window-area"
+        <div class="row g-1 mb-1 align-items-center">
+            <div class="col-md-2">
+                <input type="number" step="0.1" min="0" class="form-control form-control-sm win-area"
                        data-ci="${ci}" data-ri="${ri}" data-wi="${wi}"
                        value="${w.area_m2 ?? ''}" placeholder="m²">
             </div>
             <div class="col-md-3">
-                <select class="form-select form-select-sm window-glazing"
+                <select class="form-select form-select-sm win-wall"
+                        data-ci="${ci}" data-ri="${ri}" data-wi="${wi}">
+                    ${wallOptions(w.wall)}
+                </select>
+            </div>
+            <div class="col-md-3">
+                <select class="form-select form-select-sm win-glazing"
                         data-ci="${ci}" data-ri="${ri}" data-wi="${wi}">
                     <option value="single"  ${w.glazing === 'single'  ? 'selected' : ''}>Single</option>
                     <option value="double"  ${w.glazing === 'double' || !w.glazing ? 'selected' : ''}>Double</option>
@@ -615,104 +631,114 @@ function renderDimensionsPanel(room, ci, ri) {
                 </select>
             </div>
             <div class="col-md-3">
-                <select class="form-select form-select-sm window-orient"
+                <select class="form-select form-select-sm win-orient"
                         data-ci="${ci}" data-ri="${ri}" data-wi="${wi}">
                     ${['unknown', 'N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'].map(o =>
-                        `<option value="${o}" ${(w.orientation || 'unknown') === o ? 'selected' : ''}>${o === 'unknown' ? '— orientation —' : o}</option>`
+                        `<option value="${o}" ${(w.orientation || 'unknown') === o ? 'selected' : ''}>${o === 'unknown' ? '— orient —' : o}</option>`
                     ).join('')}
                 </select>
             </div>
-            <div class="col-md-3">
-                <button class="btn btn-sm btn-outline-danger btn-window-del"
-                        data-ci="${ci}" data-ri="${ri}" data-wi="${wi}" title="Remove window">
+            <div class="col-md-1">
+                <button class="btn btn-sm btn-outline-danger btn-win-del"
+                        data-ci="${ci}" data-ri="${ri}" data-wi="${wi}">
                     <i class="fas fa-times"></i>
                 </button>
             </div>
         </div>`).join('');
 
-    // Door rows
     const doorRows = doors.map((d, di) => `
-        <div class="row g-1 mb-1 align-items-center door-row" data-ci="${ci}" data-ri="${ri}" data-di="${di}">
-            <div class="col-md-4">
+        <div class="row g-1 mb-1 align-items-center">
+            <div class="col-md-3">
                 <input type="number" step="0.1" min="0" class="form-control form-control-sm door-area"
                        data-ci="${ci}" data-ri="${ri}" data-di="${di}"
                        value="${d.area_m2 ?? ''}" placeholder="m²">
             </div>
-            <div class="col-md-5">
+            <div class="col-md-4">
+                <select class="form-select form-select-sm door-wall"
+                        data-ci="${ci}" data-ri="${ri}" data-di="${di}">
+                    ${wallOptions(d.wall)}
+                </select>
+            </div>
+            <div class="col-md-4">
                 <select class="form-select form-select-sm door-type"
                         data-ci="${ci}" data-ri="${ri}" data-di="${di}">
                     <option value="internal" ${d.type === 'internal' || !d.type ? 'selected' : ''}>Internal</option>
-                    <option value="external" ${d.type === 'external' ? 'selected' : ''}>External (to outside)</option>
+                    <option value="external" ${d.type === 'external' ? 'selected' : ''}>External</option>
                 </select>
             </div>
-            <div class="col-md-3">
+            <div class="col-md-1">
                 <button class="btn btn-sm btn-outline-danger btn-door-del"
-                        data-ci="${ci}" data-ri="${ri}" data-di="${di}" title="Remove door">
+                        data-ci="${ci}" data-ri="${ri}" data-di="${di}">
                     <i class="fas fa-times"></i>
                 </button>
             </div>
         </div>`).join('');
 
+    // Radiator block — unit toggle (W or BTU/hr)
+    const radUnit = rad._unit_pref || 'W';   // UI-only; not persisted
+    const radWatts = rad.watts_at_dt50 ?? '';
+    const radBtu = radWatts ? Math.round(radWatts / 0.2931) : '';
+
     return `
         <div class="border-top pt-2 mt-2">
-            <a class="small text-decoration-none" data-bs-toggle="collapse" href="#${collapseId}" role="button"
-               aria-expanded="${hasContent ? 'true' : 'false'}">
-                <i class="fas fa-ruler-combined me-1"></i>Room dimensions ${badgeHtml}
+            <a class="small text-decoration-none" data-bs-toggle="collapse" href="#${collapseId}" role="button">
+                <i class="fas fa-ruler-combined me-1"></i>Room layout & radiator ${badgeHtml}
                 <i class="fas fa-caret-down ms-1"></i>
             </a>
             <div class="collapse ${hasContent ? 'show' : ''}" id="${collapseId}">
                 <div class="pt-2">
-                    <div class="row g-2 mb-2">
-                        <div class="col-md-4">
-                            <label class="form-label small mb-1">Floor area (m²)</label>
-                            <input type="number" step="0.1" min="0" class="form-control form-control-sm dim-floor-area"
-                                   data-ci="${ci}" data-ri="${ri}" value="${dim.floor_area_m2 ?? ''}">
+                    <div class="small text-muted mb-2">
+                        Enter room width (X) and depth (Y) in metres.
+                        Wall areas and per-wall loss are computed automatically.
+                    </div>
+                    <div class="row g-2 mb-3">
+                        <div class="col-md-3">
+                            <label class="form-label small mb-1">Width (X) m</label>
+                            <input type="number" step="0.1" min="0" class="form-control form-control-sm dim-x"
+                                   data-ci="${ci}" data-ri="${ri}" value="${dim.width_m ?? ''}">
                         </div>
-                        <div class="col-md-4">
-                            <label class="form-label small mb-1">Ceiling height (m)</label>
-                            <input type="number" step="0.1" min="1.5" max="5" class="form-control form-control-sm dim-ceiling-height"
+                        <div class="col-md-3">
+                            <label class="form-label small mb-1">Depth (Y) m</label>
+                            <input type="number" step="0.1" min="0" class="form-control form-control-sm dim-y"
+                                   data-ci="${ci}" data-ri="${ri}" value="${dim.depth_m ?? ''}">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label small mb-1">Ceiling h (m)</label>
+                            <input type="number" step="0.1" min="1.5" max="5"
+                                   class="form-control form-control-sm dim-h"
                                    data-ci="${ci}" data-ri="${ri}" value="${dim.ceiling_height_m ?? 2.4}">
                         </div>
-                    </div>
-
-                    <div class="row g-2 mb-2">
-                        <div class="col-md-4">
-                            <label class="form-label small mb-1" title="Walls facing outside — biggest heat loss">
-                                External wall area (m²) <i class="fas fa-question-circle text-muted"></i>
-                            </label>
-                            <input type="number" step="0.1" min="0" class="form-control form-control-sm dim-wall-ext"
-                                   data-ci="${ci}" data-ri="${ri}" value="${walls.external_m2 ?? ''}">
-                        </div>
-                        <div class="col-md-4">
-                            <label class="form-label small mb-1" title="Walls shared with neighbouring property">
-                                Party wall area (m²) <i class="fas fa-question-circle text-muted"></i>
-                            </label>
-                            <input type="number" step="0.1" min="0" class="form-control form-control-sm dim-wall-party"
-                                   data-ci="${ci}" data-ri="${ri}" value="${walls.party_m2 ?? ''}">
-                        </div>
-                        <div class="col-md-4">
-                            <label class="form-label small mb-1" title="Walls adjoining other rooms in this dwelling">
-                                Internal wall area (m²)
-                            </label>
-                            <input type="number" step="0.1" min="0" class="form-control form-control-sm dim-wall-int"
-                                   data-ci="${ci}" data-ri="${ri}" value="${walls.internal_m2 ?? ''}">
+                        <div class="col-md-3">
+                            <label class="form-label small mb-1">Floor area</label>
+                            <input type="text" class="form-control form-control-sm" readonly
+                                   value="${dim.width_m && dim.depth_m ? (dim.width_m * dim.depth_m).toFixed(1) + ' m²' : '—'}"
+                                   id="dim-floor-area-display-${ci}-${ri}">
                         </div>
                     </div>
 
-                    <div class="row g-2 mb-2">
+                    <div class="small text-muted mb-1"><strong>Wall types</strong>
+                        — mark each wall as external (to outside), party (shared with heated neighbour), or internal (to another room).
+                    </div>
+                    <div class="row g-2 mb-3">
+                        ${['front', 'back', 'left', 'right'].map(w => `
+                            <div class="col-md-3">
+                                <label class="form-label small mb-1">${w.charAt(0).toUpperCase() + w.slice(1)} wall</label>
+                                <select class="form-select form-select-sm wall-type"
+                                        data-ci="${ci}" data-ri="${ri}" data-wall="${w}">
+                                    <option value="external"  ${(walls[w]?.type || 'external') === 'external' ? 'selected' : ''}>External</option>
+                                    <option value="party"     ${walls[w]?.type === 'party' ? 'selected' : ''}>Party</option>
+                                    <option value="internal"  ${walls[w]?.type === 'internal' ? 'selected' : ''}>Internal</option>
+                                </select>
+                            </div>`).join('')}
+                    </div>
+
+                    <div class="row g-2 mb-3">
                         <div class="col-md-6">
                             <label class="form-label small mb-1">Floor type</label>
                             <select class="form-select form-select-sm dim-floor-type"
                                     data-ci="${ci}" data-ri="${ri}">
-                                ${[
-                                    'unknown',
-                                    'solid',
-                                    'suspended',
-                                    'carpet_over_concrete',
-                                    'tile_over_concrete',
-                                    'wooden',
-                                    'carpet_over_wooden',
-                                ].map(t =>
+                                ${['unknown', 'solid', 'suspended', 'carpet_over_concrete',
+                                   'tile_over_concrete', 'wooden', 'carpet_over_wooden'].map(t =>
                                     `<option value="${t}" ${(dim.floor_type || 'unknown') === t ? 'selected' : ''}>${t.replace(/_/g, ' ')}</option>`
                                 ).join('')}
                             </select>
@@ -735,7 +761,6 @@ function renderDimensionsPanel(room, ci, ri) {
                             <i class="fas fa-plus me-1"></i>Add window
                         </button>
                     </div>
-                    <div class="small text-muted mb-1">Area, glazing type and orientation per window</div>
                     ${windowRows || '<div class="small text-muted">No windows added.</div>'}
 
                     <div class="d-flex justify-content-between align-items-center mt-3 mb-1">
@@ -747,55 +772,74 @@ function renderDimensionsPanel(room, ci, ri) {
                     </div>
                     ${doorRows || '<div class="small text-muted">No doors added.</div>'}
 
-                    <div class="mt-3 pt-2 border-top">
-                        <div class="row g-2 mb-2 align-items-end">
-                            <div class="col-md-5">
-                                <label class="form-label small mb-1">
-                                    Installed radiator capacity (W at ΔT50)
-                                    <i class="fas fa-question-circle text-muted"
-                                       title="Rated output stamped on the radiator (e.g. 1200W). Leave blank if unknown."></i>
-                                </label>
-                                <input type="number" step="10" min="0" class="form-control form-control-sm dim-rad-watts"
-                                       data-ci="${ci}" data-ri="${ri}"
-                                       value="${(room.radiator && room.radiator.watts_at_dt50) ?? ''}"
-                                       placeholder="e.g. 1200">
-                            </div>
-                            <div class="col-md-7">
-                                <label class="form-label small mb-1">Description (optional)</label>
-                                <input type="text" class="form-control form-control-sm dim-rad-desc"
-                                       data-ci="${ci}" data-ri="${ri}"
-                                       value="${escapeAttr((room.radiator && room.radiator.description) || '')}"
-                                       placeholder="e.g. Type 22 600×1000 ×2">
-                            </div>
-                        </div>
+                    <hr class="my-3">
 
-                        <div class="d-flex gap-2 mb-2 flex-wrap">
-                            <button class="btn btn-sm btn-outline-primary btn-thermal-preview"
-                                    data-ci="${ci}" data-ri="${ri}"
-                                    data-room-id="${escapeAttr(room.id)}">
-                                <i class="fas fa-calculator me-1"></i>Thermal profile
-                            </button>
-                            <button class="btn btn-sm btn-outline-success btn-sizing-preview"
-                                    data-ci="${ci}" data-ri="${ri}"
-                                    data-room-id="${escapeAttr(room.id)}">
-                                <i class="fas fa-ruler-horizontal me-1"></i>Radiator sizing
-                            </button>
-                            <button class="btn btn-sm btn-outline-info btn-preheat-preview"
-                                    data-ci="${ci}" data-ri="${ri}"
-                                    data-room-id="${escapeAttr(room.id)}">
-                                <i class="fas fa-hourglass-half me-1"></i>Pre-heat time
-                            </button>
+                    <div class="small mb-2"><strong><i class="fas fa-fire me-1"></i>Radiator</strong></div>
+                    <div class="row g-2 mb-2 align-items-end">
+                        <div class="col-md-3">
+                            <label class="form-label small mb-1">Capacity</label>
+                            <div class="input-group input-group-sm">
+                                <input type="number" step="10" min="0" class="form-control rad-capacity"
+                                       data-ci="${ci}" data-ri="${ri}"
+                                       value="${radUnit === 'BTU' ? radBtu : radWatts}">
+                                <select class="form-select form-select-sm rad-unit"
+                                        data-ci="${ci}" data-ri="${ri}" style="max-width:90px;">
+                                    <option value="W"   ${radUnit === 'W'   ? 'selected' : ''}>W</option>
+                                    <option value="BTU" ${radUnit === 'BTU' ? 'selected' : ''}>BTU/hr</option>
+                                </select>
+                            </div>
+                            <div class="form-text small">Rated at ΔT50</div>
                         </div>
-
-                        <div class="mt-2 small thermal-preview-slot"
-                             data-ci="${ci}" data-ri="${ri}"></div>
-                        <div class="mt-2 small sizing-preview-slot"
-                             data-ci="${ci}" data-ri="${ri}"></div>
-                        <div class="mt-2 small preheat-preview-slot"
-                             data-ci="${ci}" data-ri="${ri}"></div>
+                        <div class="col-md-3">
+                            <label class="form-label small mb-1">Type</label>
+                            <select class="form-select form-select-sm rad-type"
+                                    data-ci="${ci}" data-ri="${ri}">
+                                ${['unknown', 'single_panel', 'double_panel_single_conv',
+                                   'double_panel_double_conv', 'column', 'towel_rail'].map(t =>
+                                    `<option value="${t}" ${(rad.type || 'unknown') === t ? 'selected' : ''}>${t.replace(/_/g, ' ')}</option>`
+                                ).join('')}
+                            </select>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label small mb-1">Wall</label>
+                            <select class="form-select form-select-sm rad-wall"
+                                    data-ci="${ci}" data-ri="${ri}">
+                                ${wallOptions(rad.wall)}
+                            </select>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label small mb-1">Placement</label>
+                            <select class="form-select form-select-sm rad-placement"
+                                    data-ci="${ci}" data-ri="${ri}">
+                                <option value="unknown"        ${!rad.placement || rad.placement === 'unknown' ? 'selected' : ''}>— unknown —</option>
+                                <option value="under_window"   ${rad.placement === 'under_window' ? 'selected' : ''}>Under window ⚠</option>
+                                <option value="external_wall"  ${rad.placement === 'external_wall' ? 'selected' : ''}>On external wall</option>
+                                <option value="internal_wall"  ${rad.placement === 'internal_wall' ? 'selected' : ''}>On internal wall</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="row g-2 mb-2">
+                        <div class="col-md-8">
+                            <label class="form-label small mb-1">Description (optional)</label>
+                            <input type="text" class="form-control form-control-sm rad-desc"
+                                   data-ci="${ci}" data-ri="${ri}"
+                                   value="${escapeAttr(rad.description || '')}"
+                                   placeholder="e.g. Type 22 600×1000">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label small mb-1">Reflective panel?</label>
+                            <select class="form-select form-select-sm rad-reflector"
+                                    data-ci="${ci}" data-ri="${ri}">
+                                <option value="unknown" ${rad.reflective_panel === undefined ? 'selected' : ''}>— unknown —</option>
+                                <option value="true"    ${rad.reflective_panel === true ? 'selected' : ''}>Yes (boosts efficiency ~5%)</option>
+                                <option value="false"   ${rad.reflective_panel === false ? 'selected' : ''}>No</option>
+                            </select>
+                        </div>
                     </div>
                 </div>
             </div>
+            <!-- Tips panel sits OUTSIDE the collapse so they're always visible -->
+            <div id="tips-c${ci}-r${ri}" class="mt-2"></div>
         </div>`;
 }
 
@@ -913,65 +957,75 @@ function bindCircuitCards() {
         });
     });
 
-    // ---- Dimensions block (room-level) ----
+    // ── Dimensions helpers ──
     function getDim(ci, ri) {
         const room = workingCircuits[ci].rooms[ri];
         if (!room.dimensions) {
             room.dimensions = {
-                floor_area_m2: null, ceiling_height_m: 2.4,
-                walls: { external_m2: 0, party_m2: 0, internal_m2: 0 },
+                width_m: null, depth_m: null, ceiling_height_m: 2.4,
+                walls: { front: { type: 'external' }, back: { type: 'external' },
+                         left: { type: 'external' },  right: { type: 'external' } },
                 windows: [], doors: [],
                 floor_type: 'unknown', ceiling_type: 'unknown',
             };
         }
-        if (!room.dimensions.walls) room.dimensions.walls = { external_m2: 0, party_m2: 0, internal_m2: 0 };
-        if (!room.dimensions.windows) room.dimensions.windows = [];
-        if (!room.dimensions.doors) room.dimensions.doors = [];
-        return room.dimensions;
+        const d = room.dimensions;
+        if (!d.walls) d.walls = { front: { type: 'external' }, back: { type: 'external' },
+                                   left: { type: 'external' },  right: { type: 'external' } };
+        for (const w of ['front', 'back', 'left', 'right']) {
+            if (!d.walls[w]) d.walls[w] = { type: 'external' };
+        }
+        if (!d.windows) d.windows = [];
+        if (!d.doors) d.doors = [];
+        return d;
+    }
+    function getRad(ci, ri) {
+        const room = workingCircuits[ci].rooms[ri];
+        if (!room.radiator) room.radiator = {};
+        return room.radiator;
+    }
+    const parseNum = s => { const v = parseFloat(s); return isNaN(v) ? null : v; };
+
+    // Refresh the auto-computed floor area
+    function refreshFloorAreaDisplay(ci, ri) {
+        const d = getDim(ci, ri);
+        const el = document.getElementById(`dim-floor-area-display-${ci}-${ri}`);
+        if (!el) return;
+        if (d.width_m && d.depth_m) el.value = (d.width_m * d.depth_m).toFixed(1) + ' m²';
+        else el.value = '—';
     }
 
-    function parseNumOrNull(s) {
-        const v = parseFloat(s);
-        return isNaN(v) ? null : v;
-    }
-
-    // Scalar fields
-    const scalarMap = [
-        ['.dim-floor-area',      d => ({ ...d, floor_area_m2: parseNumOrNull(event.target.value) })],
-    ];
-    document.querySelectorAll('.dim-floor-area').forEach(el => {
+    document.querySelectorAll('.dim-x').forEach(el => {
         el.addEventListener('change', e => {
-            const d = getDim(+e.target.dataset.ci, +e.target.dataset.ri);
-            d.floor_area_m2 = parseNumOrNull(e.target.value);
+            const ci = +e.target.dataset.ci, ri = +e.target.dataset.ri;
+            getDim(ci, ri).width_m = parseNum(e.target.value);
+            refreshFloorAreaDisplay(ci, ri);
         });
     });
-    document.querySelectorAll('.dim-ceiling-height').forEach(el => {
+    document.querySelectorAll('.dim-y').forEach(el => {
         el.addEventListener('change', e => {
-            const d = getDim(+e.target.dataset.ci, +e.target.dataset.ri);
-            d.ceiling_height_m = parseNumOrNull(e.target.value) || 2.4;
+            const ci = +e.target.dataset.ci, ri = +e.target.dataset.ri;
+            getDim(ci, ri).depth_m = parseNum(e.target.value);
+            refreshFloorAreaDisplay(ci, ri);
         });
     });
-    document.querySelectorAll('.dim-wall-ext').forEach(el => {
+    document.querySelectorAll('.dim-h').forEach(el => {
         el.addEventListener('change', e => {
-            const d = getDim(+e.target.dataset.ci, +e.target.dataset.ri);
-            d.walls.external_m2 = parseNumOrNull(e.target.value) || 0;
+            getDim(+e.target.dataset.ci, +e.target.dataset.ri).ceiling_height_m =
+                parseNum(e.target.value) || 2.4;
         });
     });
-    document.querySelectorAll('.dim-wall-party').forEach(el => {
+    document.querySelectorAll('.wall-type').forEach(el => {
         el.addEventListener('change', e => {
             const d = getDim(+e.target.dataset.ci, +e.target.dataset.ri);
-            d.walls.party_m2 = parseNumOrNull(e.target.value) || 0;
-        });
-    });
-    document.querySelectorAll('.dim-wall-int').forEach(el => {
-        el.addEventListener('change', e => {
-            const d = getDim(+e.target.dataset.ci, +e.target.dataset.ri);
-            d.walls.internal_m2 = parseNumOrNull(e.target.value) || 0;
+            d.walls[e.target.dataset.wall].type = e.target.value;
+            refreshTipsFor(+e.target.dataset.ci, +e.target.dataset.ri);
         });
     });
     document.querySelectorAll('.dim-floor-type').forEach(el => {
         el.addEventListener('change', e => {
             getDim(+e.target.dataset.ci, +e.target.dataset.ri).floor_type = e.target.value;
+            refreshTipsFor(+e.target.dataset.ci, +e.target.dataset.ri);
         });
     });
     document.querySelectorAll('.dim-ceiling-type').forEach(el => {
@@ -980,33 +1034,40 @@ function bindCircuitCards() {
         });
     });
 
-    // Window rows
+    // Windows
     document.querySelectorAll('.btn-window-add').forEach(btn => {
         btn.addEventListener('click', () => {
             const d = getDim(+btn.dataset.ci, +btn.dataset.ri);
-            d.windows.push({ area_m2: 1.0, glazing: 'double', orientation: 'unknown' });
+            d.windows.push({ area_m2: 1.0, glazing: 'double', orientation: 'unknown', wall: null });
             renderCircuitsList();
         });
     });
-    document.querySelectorAll('.window-area').forEach(el => {
+    document.querySelectorAll('.win-area').forEach(el => {
         el.addEventListener('change', e => {
             const d = getDim(+e.target.dataset.ci, +e.target.dataset.ri);
-            d.windows[+e.target.dataset.wi].area_m2 = parseNumOrNull(e.target.value) || 0;
+            d.windows[+e.target.dataset.wi].area_m2 = parseNum(e.target.value) || 0;
         });
     });
-    document.querySelectorAll('.window-glazing').forEach(el => {
+    document.querySelectorAll('.win-wall').forEach(el => {
+        el.addEventListener('change', e => {
+            const d = getDim(+e.target.dataset.ci, +e.target.dataset.ri);
+            d.windows[+e.target.dataset.wi].wall = e.target.value || null;
+        });
+    });
+    document.querySelectorAll('.win-glazing').forEach(el => {
         el.addEventListener('change', e => {
             const d = getDim(+e.target.dataset.ci, +e.target.dataset.ri);
             d.windows[+e.target.dataset.wi].glazing = e.target.value;
+            refreshTipsFor(+e.target.dataset.ci, +e.target.dataset.ri);
         });
     });
-    document.querySelectorAll('.window-orient').forEach(el => {
+    document.querySelectorAll('.win-orient').forEach(el => {
         el.addEventListener('change', e => {
             const d = getDim(+e.target.dataset.ci, +e.target.dataset.ri);
             d.windows[+e.target.dataset.wi].orientation = e.target.value;
         });
     });
-    document.querySelectorAll('.btn-window-del').forEach(btn => {
+    document.querySelectorAll('.btn-win-del').forEach(btn => {
         btn.addEventListener('click', () => {
             const d = getDim(+btn.dataset.ci, +btn.dataset.ri);
             d.windows.splice(+btn.dataset.wi, 1);
@@ -1014,24 +1075,31 @@ function bindCircuitCards() {
         });
     });
 
-    // Door rows
+    // Doors
     document.querySelectorAll('.btn-door-add').forEach(btn => {
         btn.addEventListener('click', () => {
             const d = getDim(+btn.dataset.ci, +btn.dataset.ri);
-            d.doors.push({ area_m2: 1.9, type: 'internal' });
+            d.doors.push({ area_m2: 1.9, type: 'internal', wall: null });
             renderCircuitsList();
         });
     });
     document.querySelectorAll('.door-area').forEach(el => {
         el.addEventListener('change', e => {
             const d = getDim(+e.target.dataset.ci, +e.target.dataset.ri);
-            d.doors[+e.target.dataset.di].area_m2 = parseNumOrNull(e.target.value) || 0;
+            d.doors[+e.target.dataset.di].area_m2 = parseNum(e.target.value) || 0;
+        });
+    });
+    document.querySelectorAll('.door-wall').forEach(el => {
+        el.addEventListener('change', e => {
+            const d = getDim(+e.target.dataset.ci, +e.target.dataset.ri);
+            d.doors[+e.target.dataset.di].wall = e.target.value || null;
         });
     });
     document.querySelectorAll('.door-type').forEach(el => {
         el.addEventListener('change', e => {
             const d = getDim(+e.target.dataset.ci, +e.target.dataset.ri);
             d.doors[+e.target.dataset.di].type = e.target.value;
+            refreshTipsFor(+e.target.dataset.ci, +e.target.dataset.ri);
         });
     });
     document.querySelectorAll('.btn-door-del').forEach(btn => {
@@ -1041,6 +1109,88 @@ function bindCircuitCards() {
             renderCircuitsList();
         });
     });
+
+    // Radiator bindings
+    document.querySelectorAll('.rad-capacity').forEach(el => {
+        el.addEventListener('change', e => {
+            const ci = +e.target.dataset.ci, ri = +e.target.dataset.ri;
+            const rad = getRad(ci, ri);
+            const v = parseNum(e.target.value);
+            if (v == null || v <= 0) {
+                delete rad.watts_at_dt50;
+            } else {
+                const unitSel = document.querySelector(
+                    `.rad-unit[data-ci="${ci}"][data-ri="${ri}"]`);
+                const unit = unitSel ? unitSel.value : 'W';
+                rad.watts_at_dt50 = unit === 'BTU' ? Math.round(v * 0.2931) : Math.round(v);
+                rad._unit_pref = unit;
+            }
+        });
+    });
+    document.querySelectorAll('.rad-unit').forEach(el => {
+        el.addEventListener('change', e => {
+            const ci = +e.target.dataset.ci, ri = +e.target.dataset.ri;
+            const rad = getRad(ci, ri);
+            rad._unit_pref = e.target.value;
+            // Re-render so the capacity number flips to the new unit
+            renderCircuitsList();
+        });
+    });
+    document.querySelectorAll('.rad-type').forEach(el => {
+        el.addEventListener('change', e => {
+            getRad(+e.target.dataset.ci, +e.target.dataset.ri).type = e.target.value;
+            refreshTipsFor(+e.target.dataset.ci, +e.target.dataset.ri);
+        });
+    });
+    document.querySelectorAll('.rad-wall').forEach(el => {
+        el.addEventListener('change', e => {
+            getRad(+e.target.dataset.ci, +e.target.dataset.ri).wall = e.target.value || undefined;
+            refreshTipsFor(+e.target.dataset.ci, +e.target.dataset.ri);
+        });
+    });
+    document.querySelectorAll('.rad-placement').forEach(el => {
+        el.addEventListener('change', e => {
+            getRad(+e.target.dataset.ci, +e.target.dataset.ri).placement =
+                e.target.value === 'unknown' ? undefined : e.target.value;
+            refreshTipsFor(+e.target.dataset.ci, +e.target.dataset.ri);
+        });
+    });
+    document.querySelectorAll('.rad-desc').forEach(el => {
+        el.addEventListener('change', e => {
+            const v = e.target.value.trim();
+            const rad = getRad(+e.target.dataset.ci, +e.target.dataset.ri);
+            if (v) rad.description = v.slice(0, 100);
+            else delete rad.description;
+        });
+    });
+    document.querySelectorAll('.rad-reflector').forEach(el => {
+        el.addEventListener('change', e => {
+            const rad = getRad(+e.target.dataset.ci, +e.target.dataset.ri);
+            const v = e.target.value;
+            if (v === 'true') rad.reflective_panel = true;
+            else if (v === 'false') rad.reflective_panel = false;
+            else delete rad.reflective_panel;
+            refreshTipsFor(+e.target.dataset.ci, +e.target.dataset.ri);
+        });
+    });
+
+    // Inline tips — refresh on any config-affecting change
+    function refreshTipsFor(ci, ri) {
+        const room = workingCircuits[ci].rooms[ri];
+        if (!room.id) return;
+        const target = document.getElementById(`tips-c${ci}-r${ri}`);
+        if (!target) return;
+        const circuit = workingCircuits[ci];
+        // Save hasn't happened — compute tips client-side against the current
+        // working copy, then render them inline. (Duplicates a slice of the
+        // backend _generate_room_tips but keeps the UX instant.)
+        target.innerHTML = renderTipsInline(room);
+    }
+
+    // Initial tips render
+    workingCircuits.forEach((c, ci) =>
+        (c.rooms || []).forEach((r, ri) => refreshTipsFor(ci, ri))
+    );
 
     document.querySelectorAll('.btn-thermal-preview').forEach(btn => {
         btn.addEventListener('click', async () => {
@@ -1182,6 +1332,149 @@ function bindCircuitCards() {
         });
     });
 
+}
+
+
+function renderTipsInline(room) {
+    const dim = room.dimensions || {};
+    const rad = room.radiator || {};
+    const tips = [];
+
+    // ---- Data-completeness nudges (always available, even without rules firing) ----
+    if (!dim.width_m || !dim.depth_m) {
+        tips.push({
+            sev: 'info',
+            icon: 'ruler-combined',
+            title: 'Room dimensions not set',
+            detail: 'Add width and depth so we can compute heat loss and size your radiator correctly.',
+        });
+    }
+    if (!rad.watts_at_dt50) {
+        tips.push({
+            sev: 'info',
+            icon: 'fire',
+            title: 'No radiator configured',
+            detail: 'Enter the radiator capacity (stamped on the unit, usually in W or BTU/hr) to check it\'s sized correctly for this room.',
+        });
+    } else if (!rad.placement) {
+        tips.push({
+            sev: 'info',
+            icon: 'map-marker-alt',
+            title: 'Radiator placement not set',
+            detail: 'Pick where the radiator sits (under window, external wall, internal wall). Placement affects real-world output.',
+        });
+    }
+
+    // ---- Rule-based detections ----
+    if ((rad.placement || '') === 'under_window') {
+        tips.push({
+            sev: 'warning',
+            icon: 'exclamation-triangle',
+            title: 'Radiator under window',
+            detail: 'Rising warm air mixes with cold air falling off the window, cutting efficiency by ~10%. Fit a radiator shelf and use thermally-lined curtains that don\'t drape over the radiator.',
+        });
+    }
+
+    const walls = dim.walls || {};
+    const radWallType = rad.wall ? (walls[rad.wall]?.type) : null;
+    if (rad.reflective_panel === false && radWallType === 'external') {
+        tips.push({
+            sev: 'info',
+            icon: 'lightbulb',
+            title: 'Fit a reflective panel',
+            detail: 'Radiator sits on an external wall without a reflective panel. A ~£10 panel returns 3–8% more heat into the room.',
+        });
+    }
+    if (rad.reflective_panel === undefined && radWallType === 'external') {
+        tips.push({
+            sev: 'info',
+            icon: 'question-circle',
+            title: 'Reflective panel status unknown',
+            detail: 'Radiator is on an external wall. Mark whether a reflective panel is fitted — it\'s worth checking.',
+        });
+    }
+    if ((rad.type || '') === 'single_panel') {
+        tips.push({
+            sev: 'info',
+            icon: 'layer-group',
+            title: 'Single-panel radiator',
+            detail: 'Single panels deliver about half the output of a double-panel double-convector. Upgrading in the same footprint is cheap and effective.',
+        });
+    }
+
+    const windows = dim.windows || [];
+    const singleGlazed = windows.filter(w => w.glazing === 'single').length;
+    if (singleGlazed) {
+        tips.push({
+            sev: 'warning',
+            icon: 'window-close',
+            title: `${singleGlazed} single-glazed window${singleGlazed > 1 ? 's' : ''}`,
+            detail: 'Single glazing loses ~4.8 W/m²/K — roughly 3× a double-glazed unit. Secondary glazing is non-invasive if replacement isn\'t possible.',
+        });
+    }
+
+    const extDoors = (dim.doors || []).filter(d => d.type === 'external').length;
+    if (extDoors) {
+        tips.push({
+            sev: 'info',
+            icon: 'door-open',
+            title: 'External door in this room',
+            detail: 'Check weather seals; a heavy door curtain helps significantly on older frames.',
+        });
+    }
+
+    if (['suspended', 'wooden'].includes(dim.floor_type)) {
+        tips.push({
+            sev: 'info',
+            icon: 'layer-group',
+            title: 'Suspended / wooden floor',
+            detail: 'Under-floor insulation (rockwool + mesh or spray foam from below) is the fastest retrofit payback without lifting the floor.',
+        });
+    }
+
+    if (!windows.length && dim.width_m) {
+        tips.push({
+            sev: 'info',
+            icon: 'square',
+            title: 'No windows listed',
+            detail: 'If this room has windows, add them so glazing losses are included in the thermal profile.',
+        });
+    }
+
+    // ---- Render ----
+    const noIssueBanner = tips.every(t => t.sev === 'info') && tips.length === 0
+        ? `<div class="small text-success">
+               <i class="fas fa-check-circle me-1"></i>
+               <strong>No issues detected</strong> — this room's configuration looks efficient.
+           </div>`
+        : '';
+
+    if (!tips.length) {
+        // Genuinely nothing to suggest (rare — but handle cleanly)
+        return `
+            <div class="border rounded p-2 bg-light small">
+                <strong class="small"><i class="fas fa-lightbulb text-warning me-1"></i>Efficiency tips</strong>
+                <div class="mt-1 small text-success">
+                    <i class="fas fa-check-circle me-1"></i>
+                    No suggestions for this room — configuration looks good.
+                </div>
+            </div>`;
+    }
+
+    return `
+        <div class="border rounded p-2 bg-light small">
+            <strong class="small"><i class="fas fa-lightbulb text-warning me-1"></i>Efficiency tips</strong>
+            <ul class="mb-0 mt-1" style="list-style:none;padding-left:0;">
+                ${tips.map(t => `
+                    <li class="mb-1">
+                        <span class="text-${t.sev === 'warning' ? 'warning' : 'primary'} me-1">
+                            <i class="fas fa-${t.icon}"></i>
+                        </span>
+                        <strong>${escapeHtml(t.title)}</strong>
+                        <div class="text-muted">${escapeHtml(t.detail)}</div>
+                    </li>`).join('')}
+            </ul>
+        </div>`;
 }
 
 function renderPreheatResult(p, meta) {

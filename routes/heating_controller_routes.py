@@ -41,6 +41,12 @@ VALID_GLAZING = ("single", "double", "triple")
 VALID_ORIENTATIONS = ("N", "NE", "E", "SE", "S", "SW", "W", "NW", "unknown")
 VALID_DOOR_TYPES = ("external", "internal")
 VALID_CEILING_TYPES = ("insulated", "uninsulated", "flat_roof", "unknown")
+VALID_WALLS = ("front", "back", "left", "right")
+VALID_RADIATOR_TYPES = ("single_panel", "double_panel_single_conv",
+                        "double_panel_double_conv", "column", "towel_rail",
+                        "unknown")
+VALID_RADIATOR_PLACEMENT = ("under_window", "external_wall",
+                            "internal_wall", "unknown")
 
 
 def _clean_window(w: dict) -> Optional[dict]:
@@ -74,50 +80,110 @@ def _clean_door(d: dict) -> Optional[dict]:
 
 def _clean_dimensions(d: dict) -> Optional[dict]:
     """
-    Normalise a room's dimensions block. Returns None (omitted from config)
-    if the user hasn't supplied anything meaningful — which is fine, rooms
-    without dimensions just skip thermal / BTU calculation.
+    New schema: X (width) × Y (depth) × height derives per-wall areas.
+
+    Walls are named by orientation from the room's main viewpoint:
+      front / back = X-axis walls  (the wider walls if X > Y)
+      left / right = Y-axis walls
+    Wall insulation overrides are allowed per-wall (the house may have one
+    external wall renovated, or a party wall on just one side).
+
+    Each window / door / radiator carries a `wall` field identifying which
+    of the four walls it sits on. The thermal profile calculation uses this
+    to compute each wall's *net* area (gross minus openings).
     """
     if not isinstance(d, dict):
         return None
 
-    floor_area = _as_float(d.get("floor_area_m2"))
-    ceiling_h = _as_float(d.get("ceiling_height_m"), 2.4)
+    x_m = _as_float(d.get("width_m") or d.get("x_m"))
+    y_m = _as_float(d.get("depth_m") or d.get("y_m"))
+    ceiling_h = _as_float(d.get("ceiling_height_m"), 2.4) or 2.4
 
+    floor_area = None
+    if x_m and y_m and x_m > 0 and y_m > 0:
+        floor_area = round(x_m * y_m, 2)
+    else:
+        # Back-compat: accept raw floor_area_m2 if legacy config
+        floor_area = _as_float(d.get("floor_area_m2"))
+
+    # Per-wall types: each wall is external | party | internal | unknown.
+    # Default all-external on a detached; user overrides per-wall as needed.
     walls_in = d.get("walls") if isinstance(d.get("walls"), dict) else {}
-    walls = {
-        "external_m2": max(0.0, _as_float(walls_in.get("external_m2"), 0.0) or 0.0),
-        "party_m2":    max(0.0, _as_float(walls_in.get("party_m2"),    0.0) or 0.0),
-        "internal_m2": max(0.0, _as_float(walls_in.get("internal_m2"), 0.0) or 0.0),
-    }
+    walls_out = {}
+    for w_name in VALID_WALLS:
+        w_def = walls_in.get(w_name) or {}
+        if not isinstance(w_def, dict):
+            w_def = {}
+        kind = str(w_def.get("type", "external")).lower()
+        if kind not in ("external", "party", "internal", "unknown"):
+            kind = "external"
+        walls_out[w_name] = {"type": kind}
 
+    # Helper to validate wall attribution
+    def _valid_wall(v):
+        s = str(v or "").lower()
+        return s if s in VALID_WALLS else None
+
+    # Windows
     raw_windows = d.get("windows") if isinstance(d.get("windows"), list) else []
-    windows = [w for w in (_clean_window(x) for x in raw_windows) if w]
+    windows = []
+    for w in raw_windows:
+        if not isinstance(w, dict):
+            continue
+        area = _as_float(w.get("area_m2"))
+        if not area or area <= 0:
+            continue
+        glazing = str(w.get("glazing", "double")).lower()
+        if glazing not in VALID_GLAZING:
+            glazing = "double"
+        orient = str(w.get("orientation", "unknown")).upper()
+        if orient.lower() == "unknown" or orient not in VALID_ORIENTATIONS:
+            orient = "unknown"
+        wall = _valid_wall(w.get("wall"))
+        windows.append({
+            "area_m2": round(area, 2),
+            "glazing": glazing,
+            "orientation": orient,
+            "wall": wall,
+        })
 
+    # Doors
     raw_doors = d.get("doors") if isinstance(d.get("doors"), list) else []
-    doors = [x for x in (_clean_door(y) for y in raw_doors) if x]
+    doors = []
+    for dr in raw_doors:
+        if not isinstance(dr, dict):
+            continue
+        area = _as_float(dr.get("area_m2"))
+        if not area or area <= 0:
+            continue
+        typ = str(dr.get("type", "internal")).lower()
+        if typ not in VALID_DOOR_TYPES:
+            typ = "internal"
+        wall = _valid_wall(dr.get("wall"))
+        doors.append({
+            "area_m2": round(area, 2),
+            "type": typ,
+            "wall": wall,
+        })
 
     floor_type = str(d.get("floor_type", "unknown")).lower()
     if floor_type not in VALID_FLOOR_TYPES:
         floor_type = "unknown"
-
     ceiling_type = str(d.get("ceiling_type", "unknown")).lower()
     if ceiling_type not in VALID_CEILING_TYPES:
         ceiling_type = "unknown"
 
-    # If nothing substantive was supplied, skip persistence entirely
-    has_content = (
-            (floor_area and floor_area > 0) or walls["external_m2"] > 0
-            or walls["party_m2"] > 0 or walls["internal_m2"] > 0
-            or windows or doors
-    )
+    has_content = bool(floor_area or x_m or y_m or windows or doors
+                       or any(w["type"] != "external" for w in walls_out.values()))
     if not has_content:
         return None
 
     out = {
-        "floor_area_m2": round(floor_area, 2) if floor_area else None,
+        "width_m": round(x_m, 2) if x_m else None,
+        "depth_m": round(y_m, 2) if y_m else None,
         "ceiling_height_m": round(max(1.5, min(5.0, ceiling_h)), 2),
-        "walls": walls,
+        "floor_area_m2": floor_area,
+        "walls": walls_out,
         "windows": windows,
         "doors": doors,
         "floor_type": floor_type,
@@ -255,19 +321,43 @@ def _clean_room(r: dict, existing_ids: Optional[set] = None) -> Optional[dict]:
     rad_raw = r.get("radiator") or {}
     radiator = None
     if isinstance(rad_raw, dict):
+        # Accept watts OR btu_hr — convert BTU to W if only BTU supplied
         watts = _as_float(rad_raw.get("watts_at_dt50"))
+        btu_hr = _as_float(rad_raw.get("btu_hr_at_dt50"))
+        if not watts and btu_hr and btu_hr > 0:
+            watts = btu_hr * 0.2931
+
         if watts and watts > 0:
-            radiator = {
-                "watts_at_dt50": round(watts, 0),
-            }
-            # Optional per-room flow temp override (otherwise uses property-level)
+            radiator = {"watts_at_dt50": round(watts, 0)}
+
             flow_c = _as_float(rad_raw.get("flow_temperature_c"))
             if flow_c and 30 <= flow_c <= 90:
                 radiator["flow_temperature_c"] = round(flow_c, 1)
-            # Optional human description for UI ("2x Type 22 600x1000")
+
             desc = rad_raw.get("description")
             if desc:
                 radiator["description"] = str(desc)[:100]
+
+            # Placement on a wall (optional) — ties to dimensions.walls.
+            wall = str(rad_raw.get("wall") or "").lower()
+            if wall in VALID_WALLS:
+                radiator["wall"] = wall
+
+            # Positioning within the room ('under_window' etc.) — this is
+            # what drives the efficiency flag.
+            placement = str(rad_raw.get("placement") or "").lower()
+            if placement in VALID_RADIATOR_PLACEMENT:
+                radiator["placement"] = placement
+
+            # Reflective panel behind the radiator — boosts output by 5-10%.
+            has_reflector = _as_bool(rad_raw.get("reflective_panel"), None)
+            if has_reflector is not None:
+                radiator["reflective_panel"] = has_reflector
+
+            # Type (affects heat output curve — informational only for now)
+            rtype = str(rad_raw.get("type") or "").lower()
+            if rtype in VALID_RADIATOR_TYPES:
+                radiator["type"] = rtype
 
     out = {
         "id": rid,

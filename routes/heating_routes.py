@@ -282,6 +282,142 @@ def _find_thermostats(devices: Dict[str, Any]) -> List[Dict[str, Any]]:
     return out
 
 
+def _generate_room_tips(room: dict, insulation: str) -> List[dict]:
+    """
+    Rule-based tips. Each tip is {id, severity, title, detail, action}.
+    severity: info | warning
+    """
+    tips = []
+    dim = room.get("dimensions") or {}
+    rad = room.get("radiator") or {}
+    windows = dim.get("windows") or []
+    doors = dim.get("doors") or []
+
+    # --- Radiator placement ---
+    placement = (rad.get("placement") or "").lower()
+    if placement == "under_window":
+        tips.append({
+            "id": "radiator_under_window",
+            "severity": "warning",
+            "title": "Radiator placed under a window",
+            "detail": (
+                "Rising warm air mixes with cold air falling off the window, "
+                "boosting perceived draught and losing ~10% efficiency. If relocating "
+                "isn't possible, fit a radiator shelf on top to deflect air into the "
+                "room, and add thermal lining to the curtains (never let curtains "
+                "drape over the radiator)."
+            ),
+            "action": "Consider a radiator shelf + thermally-lined curtains",
+        })
+
+    # Reflective panel (if radiator is on an external wall)
+    rad_wall = (rad.get("wall") or "").lower()
+    walls = dim.get("walls") or {}
+    rad_wall_type = (walls.get(rad_wall) or {}).get("type") if rad_wall else None
+    if rad.get("reflective_panel") is False and rad_wall_type == "external":
+        tips.append({
+            "id": "no_reflective_panel",
+            "severity": "info",
+            "title": "No reflective panel behind radiator",
+            "detail": (
+                "A reflective panel (foil or purpose-made board) behind a "
+                "radiator on an external wall returns 3–8% more heat into the "
+                "room by cutting radiative loss through the wall. ~£10 per panel."
+            ),
+            "action": "Fit a reflective panel behind this radiator",
+        })
+    elif rad.get("reflective_panel") is None and rad_wall_type == "external":
+        tips.append({
+            "id": "check_reflective_panel",
+            "severity": "info",
+            "title": "Reflective panel status unknown",
+            "detail": "Radiator is on an external wall. Check if a reflective panel is fitted behind it.",
+            "action": "Update the room config with reflective_panel true/false",
+        })
+
+    # Radiator type (single vs double)
+    rtype = (rad.get("type") or "").lower()
+    if rtype == "single_panel":
+        tips.append({
+            "id": "single_panel_radiator",
+            "severity": "info",
+            "title": "Single-panel radiator",
+            "detail": (
+                "Single panels deliver roughly half the output of a same-sized "
+                "double-panel + double-convector type. If this room struggles "
+                "to reach target, upgrading the panel type is often cheaper "
+                "than replacing to a larger footprint."
+            ),
+            "action": "Consider upgrading to a K2 / P+ type in the same footprint",
+        })
+
+    # --- Insulation ---
+    if insulation == "none":
+        tips.append({
+            "id": "no_insulation",
+            "severity": "warning",
+            "title": "No insulation recorded",
+            "detail": (
+                "The whole-dwelling insulation level is set to 'none'. Wall, "
+                "loft and floor insulation have the biggest single impact on "
+                "running cost. A UK ECO-funded assessment may cover 100% of "
+                "cavity-wall and loft works if eligible."
+            ),
+            "action": "Check eligibility for ECO4 grants; update property config after any works",
+        })
+
+    # --- Glazing ---
+    single_glazed_count = sum(
+        1 for w in windows if str(w.get("glazing", "")).lower() == "single"
+    )
+    if single_glazed_count:
+        tips.append({
+            "id": "single_glazing",
+            "severity": "warning",
+            "title": f"{single_glazed_count} single-glazed window{'s' if single_glazed_count > 1 else ''}",
+            "detail": (
+                "Single glazing loses ~4.8 W/m²/K — roughly 3× a modern double-glazed "
+                "unit. Secondary glazing is a non-invasive alternative if replacement "
+                "is not possible (listed buildings, rental)."
+            ),
+            "action": "Upgrade to double/triple glazing, or fit secondary glazing",
+        })
+
+    # --- External doors ---
+    ext_door_area = sum(
+        float(d.get("area_m2") or 0) for d in doors if d.get("type") == "external"
+    )
+    if ext_door_area > 0:
+        tips.append({
+            "id": "external_door",
+            "severity": "info",
+            "title": "External door in this room",
+            "detail": (
+                "External doors (especially older wooden ones) leak heat through "
+                "their frame seals. Check compression on the weather seals, "
+                "consider a draught excluder at the base, and a heavy curtain on "
+                "the inside if the frame is particularly poor."
+            ),
+            "action": "Inspect seals, add a door curtain if needed",
+        })
+
+    # --- Floor type ---
+    floor_type = (dim.get("floor_type") or "").lower()
+    if floor_type in ("suspended", "wooden"):
+        tips.append({
+            "id": "suspended_floor",
+            "severity": "info",
+            "title": "Suspended / wooden floor",
+            "detail": (
+                "Suspended floors lose ~0.6 W/m²/K — about 40% more than a carpeted "
+                "floor. Under-floor insulation (rockwool + mesh, or spray foam) is "
+                "the fastest payback you can retrofit without lifting the floor."
+            ),
+            "action": "Consider under-floor insulation from below",
+        })
+
+    return tips
+
 # ═══════════════════════════════════════════════════════════════════
 def register_heating_routes(app: FastAPI, get_heating_advisor, get_zigbee_service,get_anomaly_watcher=None):
     """
@@ -365,6 +501,40 @@ def register_heating_routes(app: FastAPI, get_heating_advisor, get_zigbee_servic
             return {"success": True, "data": dashboard.get("tips", [])}
         except Exception as e:
             logger.error(f"Tips endpoint failed: {e}", exc_info=True)
+            return {"success": False, "error": str(e)}
+
+
+    @app.get("/api/heating/circuits/{circuit_id}/rooms/{room_id}/tips")
+    async def circuit_room_tips(circuit_id: str, room_id: str):
+        """
+        Return actionable efficiency tips for a room based on its config.
+        Generated from the room's dimensions / radiator / insulation data.
+        """
+        try:
+            cfg = _load_config()
+            heating = cfg.get("heating") or {}
+
+            found_room = None
+            found_circuit = None
+            for c in (heating.get("circuits") or []):
+                if str(c.get("id")) != str(circuit_id):
+                    continue
+                found_circuit = c
+                for r in (c.get("rooms") or []):
+                    if str(r.get("id")) == room_id:
+                        found_room = r
+                        break
+                break
+            if not found_room:
+                return {"success": False, "error": "Room not found"}
+
+            insulation = (heating.get("property") or {}).get("insulation", "partial")
+            tips = _generate_room_tips(found_room, insulation)
+            return {"success": True, "tips": tips,
+                    "meta": {"room_name": found_room.get("name"),
+                             "circuit_name": found_circuit.get("name")}}
+        except Exception as e:
+            logger.error(f"Tips failed for {room_id}: {e}", exc_info=True)
             return {"success": False, "error": str(e)}
 
     @app.get("/api/heating/anomalies")

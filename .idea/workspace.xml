@@ -4,17 +4,12 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="new thermal profile option">
-      <change afterPath="$PROJECT_DIR$/modules/heating_anomaly_watcher.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/modules/radiator_sizing.py" afterDir="false" />
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="more new features to heating:&#10;&#10;radiator sizing&#10;thermal profiles per room&#10;heating anomaly detection">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/main.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/modules/heating_controller.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/heating_controller.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/modules/thermal_profile.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/thermal_profile.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/routes/heating_controller_routes.py" beforeDir="false" afterPath="$PROJECT_DIR$/routes/heating_controller_routes.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/routes/heating_routes.py" beforeDir="false" afterPath="$PROJECT_DIR$/routes/heating_routes.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/static/js/heating-controller.js" beforeDir="false" afterPath="$PROJECT_DIR$/static/js/heating-controller.js" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/static/js/heating.js" beforeDir="false" afterPath="$PROJECT_DIR$/static/js/heating.js" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -164,14 +159,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00291" summary="project root not app dir for delete">
-      <option name="closed" value="true" />
-      <created>1775666074342</created>
-      <option name="number" value="00291" />
-      <option name="presentableId" value="LOCAL-00291" />
-      <option name="project" value="LOCAL" />
-      <updated>1775666074342</updated>
     </task>
     <task id="LOCAL-00292" summary="updated to be root container due to networking requirements for matter">
       <option name="closed" value="true" />
@@ -557,7 +544,15 @@
       <option name="project" value="LOCAL" />
       <updated>1776594318418</updated>
     </task>
-    <option name="localTasksCounter" value="340" />
+    <task id="LOCAL-00340" summary="more new features to heating:&#10;&#10;radiator sizing&#10;thermal profiles per room&#10;heating anomaly detection">
+      <option name="closed" value="true" />
+      <created>1776673007041</created>
+      <option name="number" value="00340" />
+      <option name="presentableId" value="LOCAL-00340" />
+      <option name="project" value="LOCAL" />
+      <updated>1776673007041</updated>
+    </task>
+    <option name="localTasksCounter" value="341" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -584,7 +579,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="controls updated for hive and standard hvac controls" />
     <MESSAGE value="removed duplicate attributes" />
     <MESSAGE value="multi zone  settings added for hvac receivers" />
     <MESSAGE value="new zbm heating css" />
@@ -609,6 +603,7 @@
     <MESSAGE value="theme change update" />
     <MESSAGE value="changing temp sensor update to be more aggressive for new heating controller" />
     <MESSAGE value="new thermal profile option" />
-    <option name="LAST_COMMIT_MESSAGE" value="new thermal profile option" />
+    <MESSAGE value="more new features to heating:&#10;&#10;radiator sizing&#10;thermal profiles per room&#10;heating anomaly detection" />
+    <option name="LAST_COMMIT_MESSAGE" value="more new features to heating:&#10;&#10;radiator sizing&#10;thermal profiles per room&#10;heating anomaly detection" />
   </component>
 </project>
