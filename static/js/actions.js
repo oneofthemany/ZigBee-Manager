@@ -904,3 +904,43 @@ export async function checkMatterStatus() {
         }
     }
 }
+
+// Export device configuration to JSON file
+window.exportDeviceConfig = async function(ieee) {
+    try {
+        const res = await fetch(`/api/device/${ieee}/config`);
+        const data = await res.json();
+
+        if (!data.success) {
+            alert('Failed to fetch config: ' + (data.error || 'unknown error'));
+            return;
+        }
+
+        const config = data.config || {};
+        const payload = {
+            exported_at: new Date().toISOString(),
+            ...config
+        };
+
+        const ts = new Date().toISOString().replace(/[:.]/g, '-').split('T')[0];
+        const model = (config.model || 'unknown').replace(/[^a-zA-Z0-9_-]/g, '');
+        const ieeeSafe = ieee.replace(/:/g, '');
+        const filename = `device_config_${model}_${ieeeSafe}_${ts}.json`;
+
+        const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(() => {
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }, 100);
+
+    } catch (e) {
+        console.error('Export device config error:', e);
+        alert('Export failed: ' + e.message);
+    }
+};

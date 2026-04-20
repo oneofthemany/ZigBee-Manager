@@ -166,6 +166,11 @@ def register_device_routes(app: FastAPI, get_zigbee_service, get_matter_bridge):
             request.ieee, request.endpoint_id, request.cluster_id
         )
 
+    @app.get("/api/device/{ieee}/config")
+    async def get_device_config(ieee: str):
+        """Retrieve complete device configuration (identification, endpoints, attributes, bindings, neighbors)."""
+        return await get_zigbee_service().get_device_config(ieee)
+
     @app.post("/api/device/bind")
     async def bind_devices(request: BindRequest):
         """Bind two devices."""

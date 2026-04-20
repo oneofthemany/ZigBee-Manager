@@ -258,6 +258,9 @@ export function renderOverviewTab(device) {
         <button type="button" class="btn btn-outline-primary" onclick="window.doAction('interview', '${device.ieee}')">
             <i class="fas fa-fingerprint"></i> Re-Interview
         </button>
+        <button type="button" class="btn btn-outline-success" onclick="window.exportDeviceConfig('${device.ieee}')" title="Download full device configuration as JSON">
+            <i class="fas fa-file-download"></i> Export Config
+        </button>
     ` : '';
 
     // Protocol badge
