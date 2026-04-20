@@ -251,6 +251,24 @@ def _clean_room(r: dict, existing_ids: Optional[set] = None) -> Optional[dict]:
 
     dimensions = _clean_dimensions(r.get("dimensions"))
 
+    # Radiator info
+    rad_raw = r.get("radiator") or {}
+    radiator = None
+    if isinstance(rad_raw, dict):
+        watts = _as_float(rad_raw.get("watts_at_dt50"))
+        if watts and watts > 0:
+            radiator = {
+                "watts_at_dt50": round(watts, 0),
+            }
+            # Optional per-room flow temp override (otherwise uses property-level)
+            flow_c = _as_float(rad_raw.get("flow_temperature_c"))
+            if flow_c and 30 <= flow_c <= 90:
+                radiator["flow_temperature_c"] = round(flow_c, 1)
+            # Optional human description for UI ("2x Type 22 600x1000")
+            desc = rad_raw.get("description")
+            if desc:
+                radiator["description"] = str(desc)[:100]
+
     out = {
         "id": rid,
         "name": str(r["name"]),
@@ -265,6 +283,9 @@ def _clean_room(r: dict, existing_ids: Optional[set] = None) -> Optional[dict]:
     }
     if dimensions is not None:
         out["dimensions"] = dimensions
+
+    if radiator is not None:
+        out["radiator"] = radiator
     return out
 
 

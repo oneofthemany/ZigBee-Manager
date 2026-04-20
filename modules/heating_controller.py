@@ -376,6 +376,8 @@ class HeatingController:
             # Controller itself doesn't need them but preserves them verbatim.
             if isinstance(r.get("dimensions"), dict):
                 room_out["dimensions"] = r["dimensions"]
+            if isinstance(r.get("radiator"), dict):
+                room_out["radiator"] = r["radiator"]
             out.append(room_out)
         return out
 

@@ -493,3 +493,366 @@ def compute_profile(
         )
 
     return prof
+
+
+# ──────────────────────────────────────────────────────────────────────
+# PRE-HEAT TIME PREDICTION
+# ──────────────────────────────────────────────────────────────────────
+
+from dataclasses import dataclass as _dc
+
+
+@_dc
+class PreheatEstimate:
+    room_id: str
+    from_temp_c: float
+    to_temp_c: float
+    outdoor_temp_c: float
+    tau_seconds: Optional[float]
+    radiator_watts_effective: Optional[float]
+    w_per_k: Optional[float]
+    steady_state_temp_c: Optional[float]   # where the room would plateau
+    minutes_needed: Optional[float]        # None if unreachable / no data
+    reachable: bool
+    confidence: str                         # "high" | "medium" | "low" | "none"
+    warnings: List[str] = field(default_factory=list)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "room_id": self.room_id,
+            "from_temp_c": self.from_temp_c,
+            "to_temp_c": self.to_temp_c,
+            "outdoor_temp_c": self.outdoor_temp_c,
+            "tau_seconds": self.tau_seconds,
+            "radiator_watts_effective": self.radiator_watts_effective,
+            "w_per_k": self.w_per_k,
+            "steady_state_temp_c": self.steady_state_temp_c,
+            "minutes_needed": self.minutes_needed,
+            "reachable": self.reachable,
+            "confidence": self.confidence,
+            "warnings": self.warnings,
+        }
+
+
+def compute_preheat(
+        room_id: str,
+        from_temp_c: float,
+        to_temp_c: float,
+        outdoor_temp_c: float,
+        w_per_k: Optional[float],
+        tau_seconds: Optional[float],
+        radiator_watts_effective: Optional[float],
+        confidence_in: str = "medium",
+        max_minutes: int = 240,
+) -> PreheatEstimate:
+    """
+    Predict minutes needed to heat from_temp → to_temp given steady-state physics.
+
+    Inputs:
+      w_per_k: blended W/K from Phase 3
+      tau_seconds: thermal time constant from Phase 3 (measured, if available)
+      radiator_watts_effective: output at the *current flow temp* for the
+          installed radiator. If None, we fall back to using the target
+          (with-margin) output from Phase 4 sizing, which is the "ideal"
+          installation. Returns lower confidence in that case.
+    """
+    est = PreheatEstimate(
+        room_id=room_id,
+        from_temp_c=from_temp_c,
+        to_temp_c=to_temp_c,
+        outdoor_temp_c=outdoor_temp_c,
+        tau_seconds=tau_seconds,
+        radiator_watts_effective=radiator_watts_effective,
+        w_per_k=w_per_k,
+        steady_state_temp_c=None,
+        minutes_needed=None,
+        reachable=False,
+        confidence="none",
+    )
+
+    if from_temp_c >= to_temp_c:
+        est.minutes_needed = 0.0
+        est.reachable = True
+        est.confidence = "high"
+        return est
+
+    if w_per_k is None or w_per_k <= 0:
+        est.warnings.append("no heat loss rate available — cannot predict pre-heat")
+        return est
+
+    if tau_seconds is None or tau_seconds <= 0:
+        # No measured tau — synthesise one from static model alone:
+        #   tau = (m·c) / UA, where m·c is the thermal mass the Phase 3
+        #   static block would have assumed if it could. Rough estimate.
+        # This is less accurate but keeps a value available from day one.
+        # m·c ~= 3 × (ρ·V·Cp) per room (same factor as compute_measured)
+        # Without floor area here we can't estimate V directly; fall back
+        # to a typical indoor tau of 3h as a coarse default.
+        tau_seconds = 3 * 3600
+        est.tau_seconds = tau_seconds
+        est.warnings.append("using default tau of 3h (no measured data)")
+        confidence_in = "low"
+
+    if radiator_watts_effective is None or radiator_watts_effective <= 0:
+        est.warnings.append(
+            "no radiator capacity configured — pre-heat assumes the radiator "
+            "is exactly sized to need. Real-world heat-up may be slower."
+        )
+        # Assume steady-state = target (i.e. radiator perfectly sized).
+        # This gives an optimistic answer. Flag it.
+        steady = to_temp_c + 2.0    # +2°C headroom to avoid singular math
+        est.steady_state_temp_c = round(steady, 1)
+        confidence_in = "low"
+    else:
+        steady = outdoor_temp_c + (radiator_watts_effective / w_per_k)
+        est.steady_state_temp_c = round(steady, 1)
+
+    if steady <= to_temp_c + 0.1:
+        est.reachable = False
+        est.warnings.append(
+            f"radiator + flow temp can only push room to {steady:.1f}°C — "
+            f"cannot reach target {to_temp_c}°C at outdoor {outdoor_temp_c}°C"
+        )
+        est.confidence = "high"   # the negative answer is confident
+        return est
+
+    numerator = steady - to_temp_c
+    denominator = steady - from_temp_c
+    if denominator <= 0:
+        est.minutes_needed = 0.0
+        est.reachable = True
+        est.confidence = confidence_in
+        return est
+
+    import math as _math
+    t_seconds = -tau_seconds * _math.log(numerator / denominator)
+    if t_seconds < 0:
+        t_seconds = 0.0
+
+    minutes = t_seconds / 60.0
+    if minutes > max_minutes:
+        est.warnings.append(
+            f"predicted {minutes:.0f} min exceeds max of {max_minutes} min — "
+            f"clamped. Check radiator sizing or flow temp."
+        )
+        minutes = max_minutes
+
+    est.minutes_needed = round(minutes, 0)
+    est.reachable = True
+    est.confidence = confidence_in
+    return est
+
+# ──────────────────────────────────────────────────────────────────────
+# ANOMALY DETECTION
+# ──────────────────────────────────────────────────────────────────────
+
+@_dc
+class Anomaly:
+    room_id: str
+    kind: str                          # "fast_cool" | "slow_heat"
+    severity: str                      # "info" | "warning" | "critical"
+    detected_at: float                 # epoch seconds
+    observed_tau_seconds: Optional[float] = None
+    baseline_tau_seconds: Optional[float] = None
+    tau_ratio: Optional[float] = None  # observed / baseline; <1 = faster cooling
+    message: str = ""
+    window_start_ts: Optional[float] = None
+    window_end_ts: Optional[float] = None
+    temp_drop_c: Optional[float] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "room_id": self.room_id,
+            "kind": self.kind,
+            "severity": self.severity,
+            "detected_at": self.detected_at,
+            "observed_tau_seconds": self.observed_tau_seconds,
+            "baseline_tau_seconds": self.baseline_tau_seconds,
+            "tau_ratio": round(self.tau_ratio, 2) if self.tau_ratio else None,
+            "message": self.message,
+            "window_start_ts": self.window_start_ts,
+            "window_end_ts": self.window_end_ts,
+            "temp_drop_c": self.temp_drop_c,
+        }
+
+
+def detect_fast_cooling(
+        room_id: str,
+        recent_temperature_series: List[Dict[str, Any]],
+        outdoor_temp_c: float,
+        baseline_tau_seconds: float,
+        min_duration_minutes: int = 20,
+        fast_ratio_threshold: float = 0.5,   # observed tau < 50% of baseline → alert
+        critical_ratio_threshold: float = 0.3,
+) -> Optional[Anomaly]:
+    """
+    Look at the most recent cool-down interval. If its fitted tau is
+    significantly shorter than the baseline, it's likely a window is open.
+    """
+    if not recent_temperature_series or not baseline_tau_seconds:
+        return None
+
+    windows = _find_cooldown_windows(
+        recent_temperature_series, None,
+        min_duration_sec=min_duration_minutes * 60,
+        max_duration_sec=3 * 3600,
+        min_drop_c=0.3,
+    )
+    if not windows:
+        return None
+
+    # Most recent window
+    t0, t1, samples = windows[-1]
+    tau, r2 = _fit_newton_cooling(samples, outdoor_temp_c)
+    if tau is None or r2 is None or r2 < 0.5:
+        return None
+
+    ratio = tau / baseline_tau_seconds
+    if ratio >= fast_ratio_threshold:
+        return None  # within normal range
+
+    import time as _t
+    severity = "critical" if ratio < critical_ratio_threshold else "warning"
+    temp_drop = round(samples[0][1] - samples[-1][1], 1)
+    mins = round((t1 - t0) / 60)
+
+    return Anomaly(
+        room_id=room_id,
+        kind="fast_cool",
+        severity=severity,
+        detected_at=_t.time(),
+        observed_tau_seconds=round(tau, 0),
+        baseline_tau_seconds=round(baseline_tau_seconds, 0),
+        tau_ratio=ratio,
+        window_start_ts=t0,
+        window_end_ts=t1,
+        temp_drop_c=temp_drop,
+        message=(
+            f"Room cooling {int((1 - ratio) * 100)}% faster than normal: "
+            f"dropped {temp_drop}°C in {mins} min. Check for an open window, "
+            f"door left open, or sudden weather change."
+        ),
+    )
+
+
+def detect_slow_heating(
+        room_id: str,
+        recent_temperature_series: List[Dict[str, Any]],
+        expected_tau_seconds: float,
+        min_duration_minutes: int = 20,
+        slow_ratio_threshold: float = 2.0,   # observed tau > 2× baseline → alert
+        critical_ratio_threshold: float = 3.0,
+) -> Optional[Anomaly]:
+    """
+    Check the most recent heat-up interval. Room should be warming toward an
+    unknown steady state; if it's warming much slower than expected, flag.
+
+    The tau here is the heat-up constant, which should be similar-ish to the
+    cool-down constant for the same room (same thermal mass, same UA). Large
+    divergence = something's wrong.
+    """
+    if not recent_temperature_series or not expected_tau_seconds:
+        return None
+    if len(recent_temperature_series) < 4:
+        return None
+
+    # Find heat-up intervals: monotonically rising temperature
+    import datetime as _dt
+    pts = []
+    for p in recent_temperature_series:
+        ts = p.get("ts")
+        v = p.get("numeric_val")
+        if v is None:
+            try:
+                v = float(p.get("value"))
+            except (TypeError, ValueError):
+                continue
+        if not isinstance(ts, _dt.datetime):
+            continue
+        pts.append((ts.timestamp(), float(v)))
+    if len(pts) < 4:
+        return None
+    pts.sort(key=lambda x: x[0])
+
+    NOISE = 0.1
+    cur_start = 0
+    heatup_windows = []
+
+    def _commit(i0, i1):
+        if i1 - i0 < 3:
+            return
+        t0 = pts[i0][0]; t1 = pts[i1][0]
+        if t1 - t0 < min_duration_minutes * 60:
+            return
+        if pts[i1][1] - pts[i0][1] < 0.3:  # need actual rise
+            return
+        heatup_windows.append((t0, t1, [(p[0] - t0, p[1]) for p in pts[i0:i1 + 1]]))
+
+    for i in range(1, len(pts)):
+        if pts[i][1] < pts[i - 1][1] - NOISE:
+            _commit(cur_start, i - 1)
+            cur_start = i
+    _commit(cur_start, len(pts) - 1)
+
+    if not heatup_windows:
+        return None
+
+    t0, t1, samples = heatup_windows[-1]
+    # For heat-up: T(t) = T_steady - (T_steady - T0) * exp(-t/tau)
+    # We don't know T_steady. Estimate it as the max reached + a small margin.
+    reached = max(s[1] for s in samples)
+    steady_est = reached + 0.5
+    # Same log-linear fit
+    import math as _m
+    xs, ys = [], []
+    T0 = samples[0][1]
+    for (t, T) in samples:
+        delta = steady_est - T
+        denom = steady_est - T0
+        if delta <= 0 or denom <= 0:
+            continue
+        ratio = delta / denom
+        if ratio <= 0 or ratio > 1.0:
+            continue
+        xs.append(t)
+        ys.append(_m.log(ratio))
+    if len(xs) < 3:
+        return None
+    n = len(xs); mx = sum(xs)/n; my = sum(ys)/n
+    num = sum((x-mx)*(y-my) for x, y in zip(xs, ys))
+    den = sum((x-mx)**2 for x in xs)
+    if den <= 0:
+        return None
+    slope = num/den
+    if slope >= 0:
+        return None
+    tau = -1.0/slope
+    if tau < 60 or tau > 48*3600:
+        return None
+
+    ratio = tau / expected_tau_seconds
+    if ratio <= slow_ratio_threshold:
+        return None
+
+    import time as _t
+    severity = "critical" if ratio > critical_ratio_threshold else "warning"
+    temp_rise = round(samples[-1][1] - samples[0][1], 1)
+    mins = round((t1 - t0) / 60)
+
+    return Anomaly(
+        room_id=room_id,
+        kind="slow_heat",
+        severity=severity,
+        detected_at=_t.time(),
+        observed_tau_seconds=round(tau, 0),
+        baseline_tau_seconds=round(expected_tau_seconds, 0),
+        tau_ratio=ratio,
+        window_start_ts=t0,
+        window_end_ts=t1,
+        temp_drop_c=-temp_rise,  # negative = rise
+        message=(
+            f"Room warming {int(ratio)}× slower than expected: "
+            f"rose {temp_rise}°C in {mins} min. Check radiator is not blocked, "
+            f"valve is opening, and no cold draught is present."
+        ),
+    )

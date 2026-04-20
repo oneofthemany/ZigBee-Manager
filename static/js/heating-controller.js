@@ -52,6 +52,12 @@ export async function loadControllerStatus(targetSelector = '#heatingControllerP
         controllerState = json.state;
         container.innerHTML = renderControllerPanel(controllerState);
         bindControllerPanel();
+        controllerState = json.state;
+        container.innerHTML = renderControllerPanel(controllerState);
+        bindControllerPanel();
+        // Phase 5: populate per-room pre-heat hints asynchronously so the
+        // panel renders immediately without blocking on these calculations.
+        fillRoomPreheatSlots();
     } catch (err) {
         console.warn('Controller status fetch failed:', err);
         container.innerHTML = `<div class="alert alert-warning small">Controller status unavailable</div>`;
@@ -152,6 +158,16 @@ function renderCircuitStatusCard(c) {
             unknown: { c: '#6c757d', icon: 'question', label: 'Unknown' },
         }[r.status] || { c: '#6c757d', icon: 'question', label: 'Unknown' };
 
+        // Pre-heat hint: only show for rooms currently below target
+        const preheatSlotId = `preheat-${escapeAttr(c.id)}-${escapeAttr(r.room_id)}`;
+        const preheatSlot = (r.status === 'cold')
+            ? `<div class="small ms-3 mt-1" id="${preheatSlotId}"
+                    data-circuit-id="${escapeAttr(c.id)}" data-room-id="${escapeAttr(r.room_id)}">
+                   <i class="fas fa-hourglass-half text-muted me-1"></i>
+                   <span class="text-muted">calculating pre-heat…</span>
+               </div>`
+            : '';
+
         const trvLines = (r.trvs || []).map(t => {
             const offline = !t.online ? ` <small class="text-danger">offline</small>` : '';
             const sp = t.intended_setpoint != null ? ` → <strong>${t.intended_setpoint}°</strong>` : '';
@@ -176,6 +192,7 @@ function renderCircuitStatusCard(c) {
                 ${trvLines || `<div class="small text-muted fst-italic">
                     <i class="fas fa-broadcast-tower me-1"></i>Sensor-only room — radiator runs on circuit flow
                 </div>`}
+                ${preheatSlot}
             </div>`;
     }).join('');
 
@@ -731,12 +748,50 @@ function renderDimensionsPanel(room, ci, ri) {
                     ${doorRows || '<div class="small text-muted">No doors added.</div>'}
 
                     <div class="mt-3 pt-2 border-top">
-                        <button class="btn btn-sm btn-outline-primary btn-thermal-preview"
-                                data-ci="${ci}" data-ri="${ri}"
-                                data-room-id="${escapeAttr(room.id)}">
-                            <i class="fas fa-calculator me-1"></i>Preview thermal profile
-                        </button>
+                        <div class="row g-2 mb-2 align-items-end">
+                            <div class="col-md-5">
+                                <label class="form-label small mb-1">
+                                    Installed radiator capacity (W at ΔT50)
+                                    <i class="fas fa-question-circle text-muted"
+                                       title="Rated output stamped on the radiator (e.g. 1200W). Leave blank if unknown."></i>
+                                </label>
+                                <input type="number" step="10" min="0" class="form-control form-control-sm dim-rad-watts"
+                                       data-ci="${ci}" data-ri="${ri}"
+                                       value="${(room.radiator && room.radiator.watts_at_dt50) ?? ''}"
+                                       placeholder="e.g. 1200">
+                            </div>
+                            <div class="col-md-7">
+                                <label class="form-label small mb-1">Description (optional)</label>
+                                <input type="text" class="form-control form-control-sm dim-rad-desc"
+                                       data-ci="${ci}" data-ri="${ri}"
+                                       value="${escapeAttr((room.radiator && room.radiator.description) || '')}"
+                                       placeholder="e.g. Type 22 600×1000 ×2">
+                            </div>
+                        </div>
+
+                        <div class="d-flex gap-2 mb-2 flex-wrap">
+                            <button class="btn btn-sm btn-outline-primary btn-thermal-preview"
+                                    data-ci="${ci}" data-ri="${ri}"
+                                    data-room-id="${escapeAttr(room.id)}">
+                                <i class="fas fa-calculator me-1"></i>Thermal profile
+                            </button>
+                            <button class="btn btn-sm btn-outline-success btn-sizing-preview"
+                                    data-ci="${ci}" data-ri="${ri}"
+                                    data-room-id="${escapeAttr(room.id)}">
+                                <i class="fas fa-ruler-horizontal me-1"></i>Radiator sizing
+                            </button>
+                            <button class="btn btn-sm btn-outline-info btn-preheat-preview"
+                                    data-ci="${ci}" data-ri="${ri}"
+                                    data-room-id="${escapeAttr(room.id)}">
+                                <i class="fas fa-hourglass-half me-1"></i>Pre-heat time
+                            </button>
+                        </div>
+
                         <div class="mt-2 small thermal-preview-slot"
+                             data-ci="${ci}" data-ri="${ri}"></div>
+                        <div class="mt-2 small sizing-preview-slot"
+                             data-ci="${ci}" data-ri="${ri}"></div>
+                        <div class="mt-2 small preheat-preview-slot"
                              data-ci="${ci}" data-ri="${ri}"></div>
                     </div>
                 </div>
@@ -1026,6 +1081,181 @@ function bindCircuitCards() {
         });
     });
 
+    // Radiator capacity + description
+    function ensureRadiator(room) {
+        if (!room.radiator || typeof room.radiator !== 'object') room.radiator = {};
+        return room.radiator;
+    }
+    document.querySelectorAll('.dim-rad-watts').forEach(el => {
+        el.addEventListener('change', e => {
+            const ci = +e.target.dataset.ci, ri = +e.target.dataset.ri;
+            const room = workingCircuits[ci].rooms[ri];
+            const v = parseFloat(e.target.value);
+            if (isNaN(v) || v <= 0) {
+                // Empty or invalid: strip the radiator block so config stays tidy
+                if (room.radiator) {
+                    delete room.radiator.watts_at_dt50;
+                    if (!room.radiator.description) delete room.radiator;
+                }
+            } else {
+                ensureRadiator(room).watts_at_dt50 = Math.round(v);
+            }
+        });
+    });
+    document.querySelectorAll('.dim-rad-desc').forEach(el => {
+        el.addEventListener('change', e => {
+            const ci = +e.target.dataset.ci, ri = +e.target.dataset.ri;
+            const room = workingCircuits[ci].rooms[ri];
+            const v = e.target.value.trim();
+            if (!v) {
+                if (room.radiator) {
+                    delete room.radiator.description;
+                    if (!room.radiator.watts_at_dt50) delete room.radiator;
+                }
+            } else {
+                ensureRadiator(room).description = v.slice(0, 100);
+            }
+        });
+    });
+
+    // Radiator sizing preview
+    document.querySelectorAll('.btn-sizing-preview').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            const ci = +btn.dataset.ci, ri = +btn.dataset.ri;
+            const circuit = workingCircuits[ci];
+            const room = circuit?.rooms?.[ri];
+            if (!room) return;
+            const out = document.querySelector(
+                `.sizing-preview-slot[data-ci="${ci}"][data-ri="${ri}"]`
+            );
+            if (!out) return;
+
+            out.innerHTML = `<span class="spinner-border spinner-border-sm me-1"></span>Computing sizing…`;
+            btn.disabled = true;
+            try {
+                const res = await fetch(
+                    `/api/heating/circuits/${encodeURIComponent(circuit.id)}/rooms/${encodeURIComponent(room.id)}/sizing`
+                );
+                const json = await res.json();
+                if (!json.success) {
+                    out.innerHTML = `<div class="text-danger">${escapeHtml(json.error || 'Failed')}</div>`;
+                    return;
+                }
+                out.innerHTML = renderSizingResult(json.sizing, json.meta);
+            } catch (e) {
+                out.innerHTML = `<div class="text-danger">Request failed: ${escapeHtml(e.message)}</div>`;
+            } finally {
+                btn.disabled = false;
+            }
+        });
+    });
+
+
+    document.querySelectorAll('.btn-preheat-preview').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            const ci = +btn.dataset.ci, ri = +btn.dataset.ri;
+            const circuit = workingCircuits[ci];
+            const room = circuit?.rooms?.[ri];
+            if (!room) return;
+            const out = document.querySelector(
+                `.preheat-preview-slot[data-ci="${ci}"][data-ri="${ri}"]`
+            );
+            if (!out) return;
+
+            out.innerHTML = `<span class="spinner-border spinner-border-sm me-1"></span>Computing pre-heat…`;
+            btn.disabled = true;
+            try {
+                const res = await fetch(
+                    `/api/heating/circuits/${encodeURIComponent(circuit.id)}/rooms/${encodeURIComponent(room.id)}/preheat`
+                );
+                const json = await res.json();
+                if (!json.success) {
+                    out.innerHTML = `<div class="text-danger">${escapeHtml(json.error || 'Failed')}</div>`;
+                    return;
+                }
+                out.innerHTML = renderPreheatResult(json.preheat, json.meta);
+            } catch (e) {
+                out.innerHTML = `<div class="text-danger">Request failed: ${escapeHtml(e.message)}</div>`;
+            } finally {
+                btn.disabled = false;
+            }
+        });
+    });
+
+}
+
+function renderPreheatResult(p, meta) {
+    if (!p) return '<div class="text-muted">No data</div>';
+
+    const warnings = (p.warnings || []).map(w =>
+        `<li class="text-warning">${escapeHtml(w)}</li>`).join('');
+
+    const headline = (() => {
+        if (!p.reachable) {
+            return `<div>
+                <i class="fas fa-exclamation-triangle text-warning me-1"></i>
+                <strong>Cannot reach target</strong> at current flow temp
+                ${p.steady_state_temp_c != null ? `— radiator can only push room to <strong>${p.steady_state_temp_c}°C</strong>` : ''}
+            </div>`;
+        }
+        if (p.minutes_needed == null || p.minutes_needed === 0) {
+            return `<div class="text-success">
+                <i class="fas fa-check me-1"></i>
+                Already at target
+            </div>`;
+        }
+        const mins = Math.round(p.minutes_needed);
+        const hrs = Math.floor(mins / 60);
+        const rem = mins % 60;
+        const timeStr = hrs ? `${hrs}h ${rem}m` : `${mins}m`;
+        return `<div>
+            <i class="fas fa-hourglass-half me-1"></i>
+            Pre-heat needed: <strong class="fs-5 text-info">${timeStr}</strong>
+        </div>`;
+    })();
+
+    const confBadge = p.confidence === 'high'
+        ? '<span class="badge bg-success">high confidence</span>'
+        : p.confidence === 'medium'
+        ? '<span class="badge bg-warning text-dark">medium confidence</span>'
+        : p.confidence === 'low'
+        ? '<span class="badge bg-secondary">low confidence</span>'
+        : '<span class="badge bg-secondary">no data</span>';
+
+    return `
+        <div class="card card-body bg-light p-2">
+            <div class="d-flex justify-content-between mb-2 align-items-start">
+                ${headline}
+                <div>${confBadge}</div>
+            </div>
+
+            <div class="row g-2 small">
+                <div class="col-md-6">
+                    <strong>Now</strong>
+                    <ul class="mb-1 mt-1" style="list-style:none;padding-left:0;">
+                        <li>Current indoor: <strong>${p.from_temp_c?.toFixed(1)}°C</strong></li>
+                        <li>Target: <strong>${p.to_temp_c?.toFixed(1)}°C</strong></li>
+                        <li>Outdoor: <strong>${p.outdoor_temp_c?.toFixed(1)}°C</strong></li>
+                    </ul>
+                </div>
+                <div class="col-md-6">
+                    <strong>Model inputs</strong>
+                    <ul class="mb-1 mt-1" style="list-style:none;padding-left:0;">
+                        <li>Heat loss: ${p.w_per_k != null ? `<strong>${p.w_per_k} W/K</strong>` : '—'}</li>
+                        <li>Time constant τ: ${p.tau_seconds != null ? `<strong>${(p.tau_seconds / 60).toFixed(0)} min</strong>` : '—'}</li>
+                        <li>Radiator effective: ${p.radiator_watts_effective != null ? `<strong>${Math.round(p.radiator_watts_effective)} W</strong>` : '—'}</li>
+                        <li>Steady-state ceiling: ${p.steady_state_temp_c != null ? `<strong>${p.steady_state_temp_c}°C</strong>` : '—'}</li>
+                    </ul>
+                </div>
+            </div>
+
+            ${warnings ? `<ul class="small mt-2 mb-0">${warnings}</ul>` : ''}
+            <div class="small text-muted mt-1">
+                Based on Newton's law of cooling, applied in reverse. Accuracy
+                improves once measured τ stabilises (typically after ~14 days
+                of cool-down samples).
+            </div>
+        </div>`;
 }
 
 function renderThermalResult(t, meta) {
@@ -1102,6 +1332,158 @@ function renderThermalResult(t, meta) {
                 Used in Phase 4 for BTU / radiator sizing.
             </div>
         </div>`;
+}
+
+function renderSizingResult(s, meta) {
+    if (!s) return '<div class="text-muted">No data</div>';
+
+    const fmt = v => v == null ? '—' : `${Math.round(v).toLocaleString()} W`;
+    const fmtBtu = v => v == null ? '—' : `${Math.round(v).toLocaleString()} BTU/hr`;
+
+    const warnings = (s.warnings || []).map(w =>
+        `<li class="text-warning">${escapeHtml(w)}</li>`).join('');
+
+    const statusBadge = (() => {
+        switch (s.status) {
+            case 'adequate':
+                return '<span class="badge bg-success"><i class="fas fa-check me-1"></i>Adequate</span>';
+            case 'undersized':
+                return `<span class="badge bg-danger">
+                    <i class="fas fa-exclamation-triangle me-1"></i>
+                    Undersized by ${Math.round(s.deficit_watts)} W
+                </span>`;
+            case 'oversized':
+                return `<span class="badge bg-warning text-dark">
+                    <i class="fas fa-info-circle me-1"></i>
+                    Oversized by ${Math.round(s.surplus_watts)} W
+                </span>`;
+            default:
+                return '<span class="badge bg-secondary">No installed data</span>';
+        }
+    })();
+
+    const installedLine = s.installed_watts_at_dt50 != null ? `
+        <li>Installed (ΔT50 rating): <strong>${fmt(s.installed_watts_at_dt50)}</strong>
+            ${meta?.radiator_description ? `<small class="text-muted d-block">${escapeHtml(meta.radiator_description)}</small>` : ''}
+        </li>
+        ${s.installed_watts_at_flow_temp != null
+            ? `<li>Effective output at flow ${s.flow_temperature_c}°C: <strong>${fmt(s.installed_watts_at_flow_temp)}</strong></li>`
+            : ''}
+    ` : `
+        <li class="text-muted">
+            No installed capacity recorded.
+            Enter radiator rating above and re-check to see fit analysis.
+        </li>`;
+
+    const nothingToShow = s.required_watts == null;
+    if (nothingToShow) {
+        return `
+            <div class="card card-body bg-light p-2">
+                <div class="small text-muted">
+                    Can't compute sizing yet —
+                    ${(s.warnings || []).length ? escapeHtml(s.warnings[0]) : 'set room dimensions first.'}
+                </div>
+            </div>`;
+    }
+
+    return `
+        <div class="card card-body bg-light p-2">
+            <div class="d-flex justify-content-between align-items-baseline mb-2">
+                <div>
+                    <strong>Required radiator output:</strong>
+                    <span class="fs-5 text-success">${fmt(s.required_watts_with_margin)}</span>
+                    <small class="text-muted">(${fmtBtu(s.required_btu_hr)})</small>
+                </div>
+                <div>${statusBadge}</div>
+            </div>
+
+            <div class="row g-2 small">
+                <div class="col-md-6">
+                    <strong>Calculation</strong>
+                    <ul class="mb-1 mt-1" style="list-style:none;padding-left:0;">
+                        <li>Room target: <strong>${s.target_temp_c}°C</strong></li>
+                        <li>Design outdoor: <strong>${s.design_outdoor_c}°C</strong></li>
+                        <li>ΔT: <strong>${s.delta_t}°C</strong></li>
+                        <li>Heat loss: <strong>${s.w_per_k != null ? s.w_per_k + ' W/K' : '—'}</strong></li>
+                        <li>Raw requirement: ${fmt(s.required_watts)}</li>
+                        <li>With ${Math.round((s.oversize_factor - 1) * 100)}% margin: <strong>${fmt(s.required_watts_with_margin)}</strong></li>
+                    </ul>
+                </div>
+                <div class="col-md-6">
+                    <strong>Installed</strong>
+                    <ul class="mb-1 mt-1" style="list-style:none;padding-left:0;">
+                        ${installedLine}
+                    </ul>
+                </div>
+            </div>
+
+            ${warnings ? `<ul class="small mt-2 mb-0">${warnings}</ul>` : ''}
+            <div class="small text-muted mt-1">
+                Sized to maintain ${s.target_temp_c}°C when outdoor is ${s.design_outdoor_c}°C.
+                Lower flow temps (condensing boilers, heat pumps) mean rated radiators
+                deliver less than their ΔT50 number.
+            </div>
+        </div>`;
+}
+
+async function fillRoomPreheatSlots() {
+    const slots = document.querySelectorAll('[id^="preheat-"][data-circuit-id]');
+    if (!slots.length) return;
+
+    // Batch the fetches — keep concurrency modest so we don't thrash the
+    // backend on a large setup
+    const CONCURRENCY = 3;
+    const queue = Array.from(slots);
+
+    async function workOne() {
+        while (queue.length) {
+            const slot = queue.shift();
+            if (!slot) return;
+            const circuitId = slot.dataset.circuitId;
+            const roomId = slot.dataset.roomId;
+            try {
+                const res = await fetch(
+                    `/api/heating/circuits/${encodeURIComponent(circuitId)}/rooms/${encodeURIComponent(roomId)}/preheat`
+                );
+                const json = await res.json();
+                if (!json.success) {
+                    slot.innerHTML = `<i class="fas fa-times-circle text-muted me-1"></i>
+                        <span class="text-muted small">${escapeHtml(json.error || 'pre-heat unavailable')}</span>`;
+                    continue;
+                }
+                slot.innerHTML = renderPreheatSnippet(json.preheat, json.meta);
+            } catch (e) {
+                slot.innerHTML = `<i class="fas fa-times-circle text-muted me-1"></i>
+                    <span class="text-muted small">pre-heat lookup failed</span>`;
+            }
+        }
+    }
+
+    await Promise.all(Array.from({ length: CONCURRENCY }, workOne));
+}
+
+function renderPreheatSnippet(p, meta) {
+    if (!p) return '';
+    if (!p.reachable) {
+        return `<i class="fas fa-exclamation-triangle text-warning me-1"></i>
+            <span class="text-warning">Can't reach target at current flow temp</span>`;
+    }
+    if (p.minutes_needed == null || p.minutes_needed === 0) {
+        return `<i class="fas fa-check text-success me-1"></i>
+            <span class="text-success">Already at target</span>`;
+    }
+    const confidenceColour = p.confidence === 'high'
+        ? 'text-success'
+        : p.confidence === 'medium'
+        ? 'text-warning'
+        : 'text-muted';
+    const mins = Math.round(p.minutes_needed);
+    const hrs = Math.floor(mins / 60);
+    const rem = mins % 60;
+    const timeStr = hrs ? `${hrs}h ${rem}m` : `${mins}m`;
+    return `<i class="fas fa-hourglass-half me-1"></i>
+        Pre-heat: <strong>${timeStr}</strong>
+        <span class="${confidenceColour} small ms-1">(${p.confidence} confidence)</span>`;
 }
 
 async function saveControllerSettings() {

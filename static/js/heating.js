@@ -160,7 +160,17 @@ export async function loadHeatingDashboard({ silent = false } = {}) {
         await Promise.all([
             loadHeatingRuntime(),
             loadControllerOverlay(),
+            loadHeatingAnomalies(),
         ]);
+        // Pull the controller config to expose the per-room list to the
+        // Efficiency card (per-room thermal profile buttons).
+        try {
+            const cfgRes = await fetch('/api/heating/controller/config');
+            const cfgJson = await cfgRes.json();
+            if (cfgJson.success) {
+                json.data._heating_config_circuits = cfgJson.config?.circuits || [];
+            }
+        } catch (e) { /* ignore */ }
         // Inject sensor-only rooms as pseudo-devices in the heating devices
         // table so bathrooms etc. are visible alongside TRV-equipped rooms.
         try {
@@ -302,6 +312,7 @@ function renderDashboard(d) {
                 <div class="col-md-6">${renderForecastCard(d.outdoor)}</div>
             </div>
 
+            <div id="heatingAnomaliesPanel" class="mb-3"></div>
             <div id="heatingControllerPanel"></div>
 
             ${renderZonesDashboard(d.zones || [])}
@@ -333,9 +344,120 @@ function renderDashboard(d) {
         </div>`;
 }
 
+async function loadHeatingAnomalies() {
+    const container = document.getElementById('heatingAnomaliesPanel');
+    if (!container) return;
+    try {
+        const res = await fetch('/api/heating/anomalies');
+        const json = await res.json();
+        if (!json.success) { container.innerHTML = ''; return; }
+        const data = json.data || {};
+        const active = data.active || [];
+        const recent = (data.recently_resolved || []).slice(0, 3);
+
+        if (!active.length && !recent.length) {
+            container.innerHTML = '';   // hide the section entirely when quiet
+            return;
+        }
+
+        const severityBadge = s => s === 'critical'
+            ? '<span class="badge bg-danger ms-1">critical</span>'
+            : s === 'warning'
+            ? '<span class="badge bg-warning text-dark ms-1">warning</span>'
+            : '<span class="badge bg-info text-dark ms-1">info</span>';
+
+        const kindIcon = k => k === 'fast_cool'
+            ? '<i class="fas fa-snowflake text-info me-1"></i>'
+            : '<i class="fas fa-hourglass-half text-warning me-1"></i>';
+
+        const activeHtml = active.map(a => `
+            <div class="alert alert-${a.severity === 'critical' ? 'danger' : 'warning'} d-flex justify-content-between align-items-start py-2 px-3 mb-2">
+                <div>
+                    ${kindIcon(a.kind)}
+                    <strong>${escapeHtml(a.circuit_name)} › ${escapeHtml(a.room_name)}</strong>
+                    ${severityBadge(a.severity)}
+                    <div class="small mt-1">${escapeHtml(a.message)}</div>
+                </div>
+                <button class="btn btn-sm btn-outline-secondary btn-room-thermal-link"
+                        data-circuit-id="${escapeAttr(a.circuit_id)}"
+                        data-room-id="${escapeAttr(a.room_id)}"
+                        data-circuit-name="${escapeAttr(a.circuit_name || '')}"
+                        data-room-name="${escapeAttr(a.room_name || '')}">
+                    <i class="fas fa-thermometer-half"></i> Profile
+                </button>
+            </div>`).join('');
+
+        const recentHtml = recent.map(r => `
+            <div class="small text-muted mb-1">
+                ${kindIcon(r.kind)}
+                <em>Resolved:</em> ${escapeHtml(r.circuit_name)} › ${escapeHtml(r.room_name)}
+                <span class="text-muted">— ${escapeHtml(r.message)}</span>
+            </div>`).join('');
+
+        container.innerHTML = `
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <span><i class="fas fa-exclamation-triangle me-2"></i>Anomalies
+                        <span class="badge bg-${active.length ? 'danger' : 'secondary'} ms-1">${active.length}</span>
+                    </span>
+                    <small class="text-muted">
+                        ${data.last_scan_age_seconds != null
+                            ? `scanned ${Math.round(data.last_scan_age_seconds)}s ago`
+                            : 'idle'}
+                    </small>
+                </div>
+                <div class="card-body">
+                    ${activeHtml || '<div class="small text-muted mb-2">No active anomalies.</div>'}
+                    ${recent.length ? `<hr class="my-2"><strong class="small">Recently resolved</strong>${recentHtml}` : ''}
+                </div>
+            </div>`;
+
+        // Rebind the "Profile" buttons so they open the detail modal
+        document.querySelectorAll('#heatingAnomaliesPanel .btn-room-thermal-link')
+            .forEach(btn => btn.addEventListener('click', () =>
+                openRoomThermalModal(
+                    btn.dataset.circuitId, btn.dataset.roomId,
+                    btn.dataset.circuitName, btn.dataset.roomName
+                )
+            ));
+    } catch (e) {
+        container.innerHTML = '';
+    }
+}
+
 function renderEpcCard(epc, prop) {
     if (!epc) return emptyCard('EPC Rating', 'No EPC data');
     const colour = EPC_COLOURS[epc.band] || '#888';
+
+    // Collect every room from the configured circuits for the "Room thermals" list
+    const cfg = (lastDashboard && lastDashboard._heating_config_circuits) || [];
+    const rooms = [];
+    for (const c of cfg) {
+        for (const r of (c.rooms || [])) {
+            rooms.push({
+                circuit_id: c.id, circuit_name: c.name,
+                room_id: r.id, room_name: r.name,
+                has_dimensions: !!(r.dimensions && r.dimensions.floor_area_m2),
+            });
+        }
+    }
+
+    const roomListHtml = rooms.length ? `
+        <hr class="my-2">
+        <div class="small mb-1"><strong>Per-room thermal profiles</strong></div>
+        <div class="small d-flex flex-wrap gap-1">
+            ${rooms.map(r => `
+                <button class="btn btn-sm btn-outline-${r.has_dimensions ? 'primary' : 'secondary'}
+                               py-0 px-2 btn-room-thermal-link"
+                        data-circuit-id="${escapeAttr(r.circuit_id)}"
+                        data-room-id="${escapeAttr(r.room_id)}"
+                        data-room-name="${escapeAttr(r.room_name)}"
+                        data-circuit-name="${escapeAttr(r.circuit_name)}"
+                        title="${r.has_dimensions ? 'View thermal profile' : 'No dimensions set — click to view anyway'}">
+                    <i class="fas fa-thermometer-half me-1"></i>${escapeHtml(r.room_name)}
+                </button>`).join('')}
+        </div>` : '';
+
     return `
         <div class="card h-100">
             <div class="card-header"><i class="fas fa-home me-2"></i>Efficiency Rating</div>
@@ -353,6 +475,7 @@ function renderEpcCard(epc, prop) {
                     ${kvRow('Annual cost', `£${formatNumber(epc.annual_cost_gbp)}`)}
                     ${kvRow('Glazing', escapeHtml(prop?.glazing || '—'))}
                 </div>
+                ${roomListHtml}
             </div>
         </div>`;
 }
@@ -1043,6 +1166,16 @@ function bindDashboardControls(data) {
             }
         });
     });
+    document.querySelectorAll('.btn-room-thermal-link').forEach(btn => {
+        btn.addEventListener('click', () => {
+            openRoomThermalModal(
+                btn.dataset.circuitId,
+                btn.dataset.roomId,
+                btn.dataset.circuitName,
+                btn.dataset.roomName,
+            );
+        });
+    });
 }
 
 // ============================================================================
@@ -1583,6 +1716,133 @@ async function saveSettings() {
         saveBtn.disabled = false;
         saveBtn.innerHTML = `<i class="fas fa-save me-1"></i> Save`;
     }
+}
+
+// ============================================================================
+// ROOM THERMAL / SIZING / PREHEAT DETAIL MODAL
+// ============================================================================
+function ensureRoomThermalModal() {
+    if (document.getElementById('roomThermalModal')) return;
+    const html = `
+        <div class="modal fade" id="roomThermalModal" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog modal-xl modal-dialog-scrollable">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title"><i class="fas fa-thermometer-half me-2"></i>
+                            <span id="roomThermalTitle">Room thermal profile</span>
+                        </h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body" id="roomThermalBody">
+                        <div class="text-center text-muted py-4">
+                            <div class="spinner-border spinner-border-sm me-2"></div>Loading…
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>`;
+    document.body.insertAdjacentHTML('beforeend', html);
+}
+
+async function openRoomThermalModal(circuitId, roomId, circuitName, roomName) {
+    ensureRoomThermalModal();
+    const modalEl = document.getElementById('roomThermalModal');
+    const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+    document.getElementById('roomThermalTitle').textContent =
+        `${circuitName} › ${roomName}`;
+    const body = document.getElementById('roomThermalBody');
+    body.innerHTML = `<div class="text-center text-muted py-4">
+        <div class="spinner-border spinner-border-sm me-2"></div>Loading…</div>`;
+    modal.show();
+
+    try {
+        const cid = encodeURIComponent(circuitId);
+        const rid = encodeURIComponent(roomId);
+        const [thermal, sizing, preheat] = await Promise.all([
+            fetch(`/api/heating/circuits/${cid}/rooms/${rid}/thermal`).then(r => r.json()),
+            fetch(`/api/heating/circuits/${cid}/rooms/${rid}/sizing`).then(r => r.json()),
+            fetch(`/api/heating/circuits/${cid}/rooms/${rid}/preheat`).then(r => r.json()),
+        ]);
+
+        let html = '';
+        if (thermal.success) {
+            html += `<h6 class="mt-2"><i class="fas fa-calculator me-1"></i>Thermal profile</h6>
+                     <div class="mb-3">${_renderThermalCard(thermal.thermal, thermal.meta)}</div>`;
+        }
+        if (sizing.success) {
+            html += `<h6 class="mt-3"><i class="fas fa-ruler-horizontal me-1"></i>Radiator sizing</h6>
+                     <div class="mb-3">${_renderSizingCard(sizing.sizing, sizing.meta)}</div>`;
+        }
+        if (preheat.success) {
+            html += `<h6 class="mt-3"><i class="fas fa-hourglass-half me-1"></i>Pre-heat time</h6>
+                     <div class="mb-3">${_renderPreheatCard(preheat.preheat, preheat.meta)}</div>`;
+        }
+        if (!html) {
+            html = `<div class="alert alert-warning">Could not load thermal data for this room.</div>`;
+        }
+        body.innerHTML = html;
+    } catch (e) {
+        body.innerHTML = `<div class="alert alert-danger">Load failed: ${escapeHtml(e.message)}</div>`;
+    }
+}
+
+// Thin wrappers that delegate to the controller modal's renderers. We can't
+// import them, so duplicate the minimal renderer inline here. To avoid drift,
+// keep these simple — if you want richer displays, extract shared functions
+// into a separate module later.
+function _renderThermalCard(t, meta) {
+    if (!t) return '<div class="text-muted">No data</div>';
+    const fmt = v => v == null ? '—' : `${Number(v).toFixed(1)} W/K`;
+    return `<div class="card card-body bg-light p-2 small">
+        <div><strong>Blended heat loss:</strong>
+             <span class="fs-6 text-primary">${fmt(t.blended_w_per_k)}</span></div>
+        <div>Static: ${fmt(t.static_w_per_k)} · Measured: ${fmt(t.measured_w_per_k)}</div>
+        <div>Samples: ${t.measured_sample_count || 0} · τ: ${t.tau_seconds ? Math.round(t.tau_seconds/60)+' min' : '—'}</div>
+        <div class="text-muted small mt-1">Insulation: ${escapeHtml(meta?.insulation || '—')}</div>
+    </div>`;
+}
+
+function _renderSizingCard(s, meta) {
+    if (!s) return '';
+    const w = v => v == null ? '—' : `${Math.round(v)} W`;
+    const btu = v => v == null ? '—' : `${Math.round(v)} BTU/hr`;
+    const statusBadge = s.status === 'adequate'
+        ? '<span class="badge bg-success ms-1">Adequate</span>'
+        : s.status === 'undersized'
+        ? `<span class="badge bg-danger ms-1">Undersized by ${Math.round(s.deficit_watts)}W</span>`
+        : s.status === 'oversized'
+        ? `<span class="badge bg-warning text-dark ms-1">Oversized by ${Math.round(s.surplus_watts)}W</span>`
+        : '';
+    return `<div class="card card-body bg-light p-2 small">
+        <div><strong>Required:</strong> ${w(s.required_watts_with_margin)} (${btu(s.required_btu_hr)}) ${statusBadge}</div>
+        <div>ΔT: ${s.delta_t}°C · Target ${s.target_temp_c}°C, design outdoor ${s.design_outdoor_c}°C</div>
+        ${s.installed_watts_at_dt50 != null ?
+            `<div>Installed: ${w(s.installed_watts_at_dt50)} (ΔT50)${s.installed_watts_at_flow_temp != null ?
+                ` → ${w(s.installed_watts_at_flow_temp)} at flow ${s.flow_temperature_c}°C` : ''}</div>` :
+            `<div class="text-muted">No installed capacity recorded</div>`}
+    </div>`;
+}
+
+function _renderPreheatCard(p, meta) {
+    if (!p) return '';
+    if (!p.reachable) {
+        return `<div class="alert alert-warning small mb-0">
+            <i class="fas fa-exclamation-triangle me-1"></i>
+            Cannot reach target at current flow temp (${p.steady_state_temp_c}°C ceiling).
+        </div>`;
+    }
+    if (!p.minutes_needed) {
+        return `<div class="alert alert-success small mb-0">
+            <i class="fas fa-check me-1"></i>Already at target.</div>`;
+    }
+    const mins = Math.round(p.minutes_needed);
+    const hrs = Math.floor(mins / 60);
+    const timeStr = hrs ? `${hrs}h ${mins % 60}m` : `${mins}m`;
+    return `<div class="card card-body bg-light p-2 small">
+        <div><strong>Pre-heat needed:</strong> <span class="fs-6 text-info">${timeStr}</span>
+             <span class="badge bg-${p.confidence === 'high' ? 'success' : p.confidence === 'medium' ? 'warning text-dark' : 'secondary'} ms-1">${p.confidence} confidence</span></div>
+        <div>${p.from_temp_c?.toFixed(1)}°C → ${p.to_temp_c?.toFixed(1)}°C at outdoor ${p.outdoor_temp_c?.toFixed(1)}°C</div>
+    </div>`;
 }
 
 // ============================================================================
