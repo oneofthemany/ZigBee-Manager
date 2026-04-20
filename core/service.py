@@ -628,27 +628,71 @@ class ZigbeeService(
         asyncio.create_task(self._delayed_handler_init(ieee))
 
     async def _delayed_handler_init(self, ieee: str):
+        """
+        Wait for zigpy to finish interviewing the device, then build handlers.
+        """
+        # Poll config: check every 3s for up to 180s (60 attempts)
+        POLL_INTERVAL = 3.0
+        MAX_WAIT_SECONDS = 180
+        attempts = int(MAX_WAIT_SECONDS / POLL_INTERVAL)
+
+        # Initial short wait so the node descriptor reply has a chance to land
         await asyncio.sleep(2)
-        if ieee not in self.devices:
-            return
 
-        dev = self.devices[ieee]
-        zigpy_dev = dev.zigpy_dev
+        for attempt in range(attempts):
+            if ieee not in self.devices:
+                return
 
-        logger.info(f"[{ieee}] Zigpy status: is_initialized={zigpy_dev.is_initialized}, "
-                    f"status={zigpy_dev.status}, endpoints={list(zigpy_dev.endpoints.keys())}")
+            dev = self.devices[ieee]
+            zigpy_dev = dev.zigpy_dev
 
-        endpoint_count = len([ep for ep in zigpy_dev.endpoints.keys() if ep != 0])
-        handler_count = len(dev.handlers)
+            endpoint_count = len([ep for ep in zigpy_dev.endpoints.keys() if ep != 0])
+            handler_count = len(dev.handlers)
 
-        if endpoint_count > 0 and handler_count == 0:
-            logger.info(f"[{ieee}] Re-running handler identification ({endpoint_count} endpoints, 0 handlers)")
-            dev._identify_handlers()
-            dev.capabilities._detect_capabilities()
-            await self.announce_device(ieee)
-            await self._async_device_initialized(ieee)
-        elif handler_count == 0:
-            logger.warning(f"[{ieee}] No endpoints discovered after 2s delay")
+            # Success path: endpoints discovered and handlers not yet built
+            if endpoint_count > 0 and handler_count == 0:
+                logger.info(
+                    f"[{ieee}] Endpoints discovered after ~{2 + attempt * POLL_INTERVAL:.0f}s "
+                    f"({endpoint_count} endpoints) - building handlers"
+                )
+                logger.info(
+                    f"[{ieee}] Zigpy status: is_initialized={zigpy_dev.is_initialized}, "
+                    f"status={zigpy_dev.status}, endpoints={list(zigpy_dev.endpoints.keys())}"
+                )
+                dev._identify_handlers()
+                dev.capabilities._detect_capabilities()
+                await self.announce_device(ieee)
+                await self._async_device_initialized(ieee)
+                return
+
+            # Already fully initialised by device_initialized() path - nothing to do
+            if handler_count > 0:
+                logger.debug(f"[{ieee}] Handlers already built ({handler_count}) - nothing to do")
+                return
+
+            # Log progress every ~30s so it's visible what we're waiting for
+            if attempt > 0 and attempt % 10 == 0:
+                logger.info(
+                    f"[{ieee}] Still waiting for endpoint discovery "
+                    f"(attempt {attempt}/{attempts}, "
+                    f"is_initialized={zigpy_dev.is_initialized}, "
+                    f"endpoints={list(zigpy_dev.endpoints.keys())})"
+                )
+
+            await asyncio.sleep(POLL_INTERVAL)
+
+        # Timeout - log final state so we know where it got stuck
+        if ieee in self.devices:
+            dev = self.devices[ieee]
+            zigpy_dev = dev.zigpy_dev
+            logger.warning(
+                f"[{ieee}] No endpoints discovered after {MAX_WAIT_SECONDS}s "
+                f"(is_initialized={zigpy_dev.is_initialized}, "
+                f"status={zigpy_dev.status}, "
+                f"endpoints={list(zigpy_dev.endpoints.keys())}). "
+                f"Device may be sleeping - handlers will be built when zigpy "
+                f"fires device_initialized."
+            )
 
     def device_initialized(self, device: zigpy.device.Device):
         """Called when a device is fully initialised."""
