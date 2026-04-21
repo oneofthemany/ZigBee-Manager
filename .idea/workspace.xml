@@ -4,12 +4,12 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="new attribute-list + histogram endpoints">
-      <change afterPath="$PROJECT_DIR$/static/js/modal/history.js" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/misc.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/misc.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/device.py" beforeDir="false" afterPath="$PROJECT_DIR$/device.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/static/js/device-modal.js" beforeDir="false" afterPath="$PROJECT_DIR$/static/js/device-modal.js" afterDir="false" />
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="history bumped to 30 days">
+      <change afterPath="$PROJECT_DIR$/zmm_telemetry/Cargo.toml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/zmm_telemetry/build.sh" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/zmm_telemetry/pyproject.toml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/zmm_telemetry/src/lib.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/build.sh" beforeDir="false" afterPath="$PROJECT_DIR$/build.sh" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -159,30 +159,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00304" summary="updated to cater for install methods">
-      <option name="closed" value="true" />
-      <created>1776070371986</created>
-      <option name="number" value="00304" />
-      <option name="presentableId" value="LOCAL-00304" />
-      <option name="project" value="LOCAL" />
-      <updated>1776070371986</updated>
-    </task>
-    <task id="LOCAL-00305" summary="cert dir added">
-      <option name="closed" value="true" />
-      <created>1776070463393</created>
-      <option name="number" value="00305" />
-      <option name="presentableId" value="LOCAL-00305" />
-      <option name="project" value="LOCAL" />
-      <updated>1776070463393</updated>
-    </task>
-    <task id="LOCAL-00306" summary="cert fix in main entry point">
-      <option name="closed" value="true" />
-      <created>1776071006567</created>
-      <option name="number" value="00306" />
-      <option name="presentableId" value="LOCAL-00306" />
-      <option name="project" value="LOCAL" />
-      <updated>1776071006567</updated>
     </task>
     <task id="LOCAL-00307" summary="updated to be ./data/device_settings.json">
       <option name="closed" value="true" />
@@ -552,7 +528,31 @@
       <option name="project" value="LOCAL" />
       <updated>1776760573653</updated>
     </task>
-    <option name="localTasksCounter" value="353" />
+    <task id="LOCAL-00353" summary="new history tab function">
+      <option name="closed" value="true" />
+      <created>1776761841586</created>
+      <option name="number" value="00353" />
+      <option name="presentableId" value="LOCAL-00353" />
+      <option name="project" value="LOCAL" />
+      <updated>1776761841586</updated>
+    </task>
+    <task id="LOCAL-00354" summary="history tab added">
+      <option name="closed" value="true" />
+      <created>1776761863144</created>
+      <option name="number" value="00354" />
+      <option name="presentableId" value="LOCAL-00354" />
+      <option name="project" value="LOCAL" />
+      <updated>1776761863144</updated>
+    </task>
+    <task id="LOCAL-00355" summary="history bumped to 30 days">
+      <option name="closed" value="true" />
+      <created>1776762914578</created>
+      <option name="number" value="00355" />
+      <option name="presentableId" value="LOCAL-00355" />
+      <option name="project" value="LOCAL" />
+      <updated>1776762914578</updated>
+    </task>
+    <option name="localTasksCounter" value="356" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -579,9 +579,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="trv updates" />
-    <MESSAGE value="improvements for disablement for when heating controiller is enabled" />
-    <MESSAGE value="dictionary added" />
     <MESSAGE value="heating tab updates" />
     <MESSAGE value="heating tab bug fixes" />
     <MESSAGE value="adding in the ability to use any device as an external temp source for TRV with overrides in place to remove receivers as options" />
@@ -604,6 +601,9 @@
     <MESSAGE value="diag attr patch to include all EP's" />
     <MESSAGE value="hooking record_state_change into the state pipeline" />
     <MESSAGE value="new attribute-list + histogram endpoints" />
-    <option name="LAST_COMMIT_MESSAGE" value="new attribute-list + histogram endpoints" />
+    <MESSAGE value="new history tab function" />
+    <MESSAGE value="history tab added" />
+    <MESSAGE value="history bumped to 30 days" />
+    <option name="LAST_COMMIT_MESSAGE" value="history bumped to 30 days" />
   </component>
 </project>

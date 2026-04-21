@@ -375,6 +375,16 @@ RUN rm -rf ${SDK_DIR} /tmp/otbr /tmp/cpc-daemon
 
 WORKDIR /app
 
+# ── Build zmm_telemetry from source inside the container ──
+RUN apt-get install -y rust cargo gcc make python3-devel \
+ && pip install --no-cache-dir maturin
+
+COPY zmm_telemetry/ /tmp/zmm_telemetry/
+RUN cd /tmp/zmm_telemetry \
+ && maturin build --release --out /tmp/wheels \
+ && pip install --no-cache-dir /tmp/wheels/zmm_telemetry-*.whl \
+ && rm -rf /tmp/zmm_telemetry /tmp/wheels ~/.cargo /root/.cache
+
 # Dependencies first (layer cache)
 COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip \
