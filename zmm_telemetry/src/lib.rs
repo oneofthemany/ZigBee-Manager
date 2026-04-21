@@ -68,6 +68,32 @@ struct SpectrumRow {
     energy: i32,
 }
 
+struct HeatingRoomRow {
+    ts: chrono::DateTime<Utc>,
+    circuit_id: String,
+    room_id: String,
+    classification: Option<String>,
+    current_temp_c: Option<f64>,
+    setpoint_c: Option<f64>,
+    outdoor_temp_c: Option<f64>,
+    calling_for_heat: bool,
+    trv_setpoint_c: Option<f64>,
+    trv_valve_open_pct: Option<f64>,
+    dry_run: bool,
+    reason: Option<String>,
+}
+
+struct HeatingBoilerRow {
+    ts: chrono::DateTime<Utc>,
+    circuit_id: String,
+    boiler_called: bool,
+    rooms_cold: i32,
+    rooms_ontarget: i32,
+    rooms_hot: i32,
+    receiver_command: Option<String>,
+    dry_run: bool,
+}
+
 // ───────────────────────── inner state ─────────────────────────
 
 struct Inner {
@@ -76,6 +102,8 @@ struct Inner {
     packet_stats: Vec<PacketStatRow>,
     system_metrics: Vec<SystemMetricRow>,
     spectrum: Vec<SpectrumRow>,
+    heating_rooms: Vec<HeatingRoomRow>,
+    heating_boiler: Vec<HeatingBoilerRow>,
 }
 
 impl Inner {
@@ -87,6 +115,8 @@ impl Inner {
             packet_stats: Vec::with_capacity(AUTO_FLUSH_THRESHOLD),
             system_metrics: Vec::with_capacity(64),
             spectrum: Vec::with_capacity(256),
+            heating_rooms: Vec::with_capacity(256),
+            heating_boiler: Vec::with_capacity(64),
         })
     }
 
@@ -151,11 +181,47 @@ impl Inner {
         Ok(())
     }
 
+
+    fn flush_heating_rooms(&mut self) -> duckdb::Result<()> {
+        if self.heating_rooms.is_empty() {
+            return Ok(());
+        }
+        let mut app = self.conn.appender("heating_tick_rooms")?;
+        for r in self.heating_rooms.drain(..) {
+            app.append_row(params![
+                r.ts, r.circuit_id, r.room_id, r.classification,
+                r.current_temp_c, r.setpoint_c, r.outdoor_temp_c,
+                r.calling_for_heat, r.trv_setpoint_c, r.trv_valve_open_pct,
+                r.dry_run, r.reason,
+            ])?;
+        }
+        app.flush()?;
+        Ok(())
+    }
+
+    fn flush_heating_boiler(&mut self) -> duckdb::Result<()> {
+        if self.heating_boiler.is_empty() {
+            return Ok(());
+        }
+        let mut app = self.conn.appender("heating_tick_boiler")?;
+        for r in self.heating_boiler.drain(..) {
+            app.append_row(params![
+                r.ts, r.circuit_id, r.boiler_called,
+                r.rooms_cold, r.rooms_ontarget, r.rooms_hot,
+                r.receiver_command, r.dry_run,
+            ])?;
+        }
+        app.flush()?;
+        Ok(())
+    }
+
     fn flush_all(&mut self) -> duckdb::Result<()> {
         self.flush_device_states()?;
         self.flush_packet_stats()?;
         self.flush_system_metrics()?;
         self.flush_spectrum()?;
+        self.flush_heating_rooms()?;
+        self.flush_heating_boiler()?;
         Ok(())
     }
 }
@@ -274,6 +340,70 @@ impl Appender {
         Ok(())
     }
 
+
+    #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (ts_epoch, circuit_id, room_id, classification, current_temp_c, setpoint_c, outdoor_temp_c, calling_for_heat, trv_setpoint_c, trv_valve_open_pct, dry_run, reason))]
+    fn append_heating_room(
+        &self,
+        ts_epoch: f64,
+        circuit_id: String,
+        room_id: String,
+        classification: Option<String>,
+        current_temp_c: Option<f64>,
+        setpoint_c: Option<f64>,
+        outdoor_temp_c: Option<f64>,
+        calling_for_heat: bool,
+        trv_setpoint_c: Option<f64>,
+        trv_valve_open_pct: Option<f64>,
+        dry_run: bool,
+        reason: Option<String>,
+    ) -> PyResult<()> {
+        let ts = chrono::DateTime::<Utc>::from_timestamp(
+            ts_epoch as i64, ((ts_epoch.fract()) * 1e9) as u32,
+        ).ok_or_else(|| PyRuntimeError::new_err("invalid ts_epoch"))?;
+
+        let mut g = self.inner.lock();
+        g.heating_rooms.push(HeatingRoomRow {
+            ts, circuit_id, room_id, classification,
+            current_temp_c, setpoint_c, outdoor_temp_c,
+            calling_for_heat, trv_setpoint_c, trv_valve_open_pct,
+            dry_run, reason,
+        });
+        if g.heating_rooms.len() >= 256 {
+            g.flush_heating_rooms().map_err(db_err)?;
+        }
+        Ok(())
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (ts_epoch, circuit_id, boiler_called, rooms_cold, rooms_ontarget, rooms_hot, receiver_command, dry_run))]
+    fn append_heating_boiler(
+        &self,
+        ts_epoch: f64,
+        circuit_id: String,
+        boiler_called: bool,
+        rooms_cold: i32,
+        rooms_ontarget: i32,
+        rooms_hot: i32,
+        receiver_command: Option<String>,
+        dry_run: bool,
+    ) -> PyResult<()> {
+        let ts = chrono::DateTime::<Utc>::from_timestamp(
+            ts_epoch as i64, ((ts_epoch.fract()) * 1e9) as u32,
+        ).ok_or_else(|| PyRuntimeError::new_err("invalid ts_epoch"))?;
+
+        let mut g = self.inner.lock();
+        g.heating_boiler.push(HeatingBoilerRow {
+            ts, circuit_id, boiler_called,
+            rooms_cold, rooms_ontarget, rooms_hot,
+            receiver_command, dry_run,
+        });
+        if g.heating_boiler.len() >= 64 {
+            g.flush_heating_boiler().map_err(db_err)?;
+        }
+        Ok(())
+    }
+
     fn flush(&self) -> PyResult<()> {
         self.inner.lock().flush_all().map_err(db_err)
     }
@@ -285,6 +415,8 @@ impl Appender {
         d.set_item("packet_stats", g.packet_stats.len())?;
         d.set_item("system_metrics", g.system_metrics.len())?;
         d.set_item("spectrum_scans", g.spectrum.len())?;
+        d.set_item("heating_rooms", g.heating_rooms.len())?;
+        d.set_item("heating_boiler", g.heating_boiler.len())?;
         Ok(d)
     }
 }

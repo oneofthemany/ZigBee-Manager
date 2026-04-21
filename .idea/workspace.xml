@@ -4,14 +4,10 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="updated report values for database">
-      <change beforePath="$PROJECT_DIR$/handlers/hvac.py" beforeDir="false" afterPath="$PROJECT_DIR$/handlers/hvac.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/handlers/sensors.py" beforeDir="false" afterPath="$PROJECT_DIR$/handlers/sensors.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/modules/heating_anomaly_watcher.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/heating_anomaly_watcher.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/modules/heating_controller.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/heating_controller.py" afterDir="false" />
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="improved thermal profiles">
+      <change beforePath="$PROJECT_DIR$/modules/telemetry_collector.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/telemetry_collector.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/modules/telemetry_db.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/telemetry_db.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/modules/thermal_profile.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/thermal_profile.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/routes/heating_routes.py" beforeDir="false" afterPath="$PROJECT_DIR$/routes/heating_routes.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/zmm_telemetry/src/lib.rs" beforeDir="false" afterPath="$PROJECT_DIR$/zmm_telemetry/src/lib.rs" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -161,14 +157,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00313" summary="discover_attributes update">
-      <option name="closed" value="true" />
-      <created>1776174365381</created>
-      <option name="number" value="00313" />
-      <option name="presentableId" value="LOCAL-00313" />
-      <option name="project" value="LOCAL" />
-      <updated>1776174365382</updated>
     </task>
     <task id="LOCAL-00314" summary="discover_attributes update">
       <option name="closed" value="true" />
@@ -554,7 +542,15 @@
       <option name="project" value="LOCAL" />
       <updated>1776770640959</updated>
     </task>
-    <option name="localTasksCounter" value="362" />
+    <task id="LOCAL-00362" summary="improved thermal profiles">
+      <option name="closed" value="true" />
+      <created>1776775150983</created>
+      <option name="number" value="00362" />
+      <option name="presentableId" value="LOCAL-00362" />
+      <option name="project" value="LOCAL" />
+      <updated>1776775150983</updated>
+    </task>
+    <option name="localTasksCounter" value="363" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -581,7 +577,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="theme change update" />
     <MESSAGE value="changing temp sensor update to be more aggressive for new heating controller" />
     <MESSAGE value="new thermal profile option" />
     <MESSAGE value="more new features to heating:&#10;&#10;radiator sizing&#10;thermal profiles per room&#10;heating anomaly detection" />
@@ -606,6 +601,7 @@
     <MESSAGE value="include wal file updated in restore for duckdb" />
     <MESSAGE value="comment out --user for service" />
     <MESSAGE value="updated report values for database" />
-    <option name="LAST_COMMIT_MESSAGE" value="updated report values for database" />
+    <MESSAGE value="improved thermal profiles" />
+    <option name="LAST_COMMIT_MESSAGE" value="improved thermal profiles" />
   </component>
 </project>

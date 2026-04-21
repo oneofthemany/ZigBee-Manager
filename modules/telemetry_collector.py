@@ -17,6 +17,7 @@ logger = logging.getLogger("modules.telemetry_collector")
 FLUSH_INTERVAL = 60          # seconds between packet stats flushes
 PRUNE_INTERVAL = 86400       # seconds between retention prune runs (24h)
 DEFAULT_RETENTION_DAYS = 30
+APPENDER_FLUSH_INTERVAL = 5  # seconds — keeps History tab queries near-realtime
 
 
 class TelemetryCollector:
@@ -44,14 +45,30 @@ class TelemetryCollector:
             self._running = True
             self._flush_task = asyncio.create_task(self._flush_loop())
             self._prune_task = asyncio.create_task(self._prune_loop())
+            self._appender_flush_task = asyncio.create_task(self._appender_flush_loop())
             logger.info("Telemetry collector started")
 
     def stop(self):
         """Stop background tasks."""
         self._running = False
-        for task in (self._flush_task, self._prune_task):
+        for task in (self._flush_task, self._prune_task,
+                     getattr(self, '_appender_flush_task', None)):
             if task:
                 task.cancel()
+
+
+    async def _appender_flush_loop(self):
+        """Drain the Rust appender's buffers periodically so readers see fresh rows."""
+        while self._running:
+            try:
+                await asyncio.sleep(APPENDER_FLUSH_INTERVAL)
+            except asyncio.CancelledError:
+                break
+            try:
+                from modules.telemetry_db import flush_appender
+                flush_appender()
+            except Exception as e:
+                logger.debug(f"Appender flush loop error: {e}")
 
     async def _flush_loop(self):
         """Periodically flush packet stats to DuckDB."""

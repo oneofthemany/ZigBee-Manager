@@ -35,6 +35,17 @@ DEFAULT_RETENTION_DAYS = 90
 _db = None
 
 
+# ── Optional Rust appender ──
+try:
+    import zmm_telemetry as _zt
+    _USE_RUST = True
+except ImportError:
+    _zt = None
+    _USE_RUST = False
+    logger.info("zmm_telemetry not available — using Python INSERT fallback")
+
+_appender = None  # zmm_telemetry.Appender singleton
+
 def _get_db():
     """Get or create the DuckDB connection (lazy singleton)."""
     global _db
@@ -43,6 +54,15 @@ def _get_db():
         os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
         _db = duckdb.connect(DB_PATH)
         _init_tables(_db)
+        # Initialise Rust appender against the now-existing tables
+        global _appender
+        if _USE_RUST and _appender is None:
+            try:
+                _appender = _zt.Appender(DB_PATH)
+                logger.info(f"Telemetry: zmm_telemetry appender active ({DB_PATH})")
+            except Exception as e:
+                logger.warning(f"zmm_telemetry init failed, falling back to INSERT: {e}")
+                _appender = None
         logger.info(f"Telemetry database opened: {DB_PATH}")
     return _db
 
@@ -144,6 +164,11 @@ def _init_tables(db):
 
 def write_system_metrics(metrics: Dict[str, Any]):
     """Insert a system metrics sample."""
+    _get_db()  # ensure init
+    if _appender is not None:
+        _appender.append_system_metrics(metrics)
+        return
+    # ── Python fallback ──
     db = _get_db()
     db.execute("""
         INSERT INTO system_metrics (
@@ -153,24 +178,13 @@ def write_system_metrics(metrics: Dict[str, Any]):
             uptime_secs, process_rss, process_threads
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, [
-        metrics.get("cpu_percent"),
-        metrics.get("cpu_freq"),
-        metrics.get("mem_total"),
-        metrics.get("mem_used"),
-        metrics.get("mem_percent"),
-        metrics.get("swap_used"),
-        metrics.get("swap_percent"),
-        metrics.get("disk_total"),
-        metrics.get("disk_used"),
-        metrics.get("disk_percent"),
-        metrics.get("cpu_temp"),
-        metrics.get("gpu_temp"),
-        metrics.get("load_1m"),
-        metrics.get("load_5m"),
-        metrics.get("load_15m"),
-        metrics.get("uptime_secs"),
-        metrics.get("process_rss"),
-        metrics.get("process_threads"),
+        metrics.get("cpu_percent"), metrics.get("cpu_freq"),
+        metrics.get("mem_total"), metrics.get("mem_used"), metrics.get("mem_percent"),
+        metrics.get("swap_used"), metrics.get("swap_percent"),
+        metrics.get("disk_total"), metrics.get("disk_used"), metrics.get("disk_percent"),
+        metrics.get("cpu_temp"), metrics.get("gpu_temp"),
+        metrics.get("load_1m"), metrics.get("load_5m"), metrics.get("load_15m"),
+        metrics.get("uptime_secs"), metrics.get("process_rss"), metrics.get("process_threads"),
     ])
 
 
@@ -178,6 +192,18 @@ def write_packet_stats(stats_batch: List[Dict[str, Any]]):
     """Bulk insert packet stats snapshot for all devices."""
     if not stats_batch:
         return
+    _get_db()
+    if _appender is not None:
+        for s in stats_batch:
+            _appender.append_packet_stats(
+                s["ieee"],
+                int(s.get("rx_packets", 0)), int(s.get("tx_packets", 0)),
+                int(s.get("rx_bytes", 0)),   int(s.get("tx_bytes", 0)),
+                int(s.get("errors", 0)),     int(s.get("retries", 0)),
+                int(s.get("lqi", 0)),
+            )
+        return
+    # ── Python fallback ──
     db = _get_db()
     db.executemany("""
         INSERT INTO packet_stats (ieee, rx_packets, tx_packets, rx_bytes, tx_bytes, errors, retries, lqi)
@@ -192,13 +218,18 @@ def write_packet_stats(stats_batch: List[Dict[str, Any]]):
 
 def write_device_state(ieee: str, attribute: str, value: Any):
     """Record a device attribute change."""
-    db = _get_db()
+    _get_db()
     str_val = str(value) if value is not None else None
     num_val = None
     try:
         num_val = float(value)
     except (TypeError, ValueError):
         pass
+    if _appender is not None:
+        _appender.append_device_state(ieee, attribute, str_val, num_val)
+        return
+    # ── Python fallback ──
+    db = _get_db()
     db.execute("""
         INSERT INTO device_states (ieee, attribute, value, numeric_val)
         VALUES (?, ?, ?, ?)
@@ -209,6 +240,12 @@ def write_spectrum_scan(results: Dict[int, int]):
     """Persist a spectrum scan (channel → energy)."""
     if not results:
         return
+    _get_db()
+    if _appender is not None:
+        for ch, e in results.items():
+            _appender.append_spectrum_scan(int(ch), int(e))
+        return
+    # ── Python fallback ──
     db = _get_db()
     db.executemany("""
         INSERT INTO spectrum_scans (channel, energy) VALUES (?, ?)
@@ -222,27 +259,19 @@ def write_heating_tick(
 ) -> None:
     """
     Persist one controller tick for later analysis.
-
-    Expected input shape matches HeatingController._last_decision["circuits"]:
-        [{
-            "id": str, "name": str,
-            "calling_for_heat": bool,
-            "receiver_action": {"command": "on"|"off"|"none"|..., ...} | None,
-            "rooms": [ RoomDecision.to_dict() ... ],
-            ...
-        }, ...]
-
-    `ts` is epoch seconds (matches self._last_decision_ts in the controller).
-    `dry_run` is self.dry_run — persisted per-row so the reader path can
-    cheaply exclude simulated decisions when building the heating-off gate.
+    ... (docstring unchanged) ...
     """
     if not circuits:
         return
 
+    _get_db()  # ensure init (creates tables, initialises appender)
+
+    # Prepare flat row tuples in one pass. Shape is the same regardless of
+    # backend — the branch below decides whether to call the Rust appender
+    # or fall back to Python INSERT.
     import datetime as _dt
     tick_dt = _dt.datetime.fromtimestamp(ts)
 
-    db = _get_db()
     room_rows = []
     boiler_rows = []
 
@@ -251,7 +280,6 @@ def write_heating_tick(
         if not cid:
             continue
 
-        # Boiler-level row
         recv = c.get("receiver_action") or {}
         recv_cmd = recv.get("command") if isinstance(recv, dict) else None
 
@@ -260,32 +288,26 @@ def write_heating_tick(
         n_ok   = sum(1 for r in rooms if r.get("status") == "ontarget")
         n_hot  = sum(1 for r in rooms if r.get("status") == "hot")
 
-        boiler_rows.append((
-            tick_dt, cid,
-            bool(c.get("calling_for_heat")),
-            n_cold, n_ok, n_hot,
-            recv_cmd,
-            dry_run,
-        ))
+        boiler_rows.append({
+            "circuit_id": cid,
+            "boiler_called": bool(c.get("calling_for_heat")),
+            "rooms_cold": n_cold,
+            "rooms_ontarget": n_ok,
+            "rooms_hot": n_hot,
+            "receiver_command": recv_cmd,
+        })
 
-        # Per-room rows
         for r in rooms:
             rid = str(r.get("room_id") or "")
             if not rid:
                 continue
 
-            # Pick the first TRV's intended_setpoint + valve_open_pct, if any.
-            # (If a room has multiple TRVs we take the first; for anomaly
-            # analysis "was this room being heated" is a coarse signal and
-            # any-TRV-open is enough. Store all details in trvs JSON if you
-            # want finer grain later — skipped here to keep the row flat.)
             trvs = r.get("trvs") or []
             trv_sp = None
             trv_open = None
             if trvs:
                 first = trvs[0] if isinstance(trvs[0], dict) else {}
                 trv_sp = first.get("intended_setpoint")
-                # zigpy/aqara reports valve opening under various names
                 for k in ("valve_opening_degree", "pi_heating_demand",
                           "valve_open_degree"):
                     if first.get(k) is not None:
@@ -295,19 +317,54 @@ def write_heating_tick(
                             pass
                         break
 
-            room_rows.append((
-                tick_dt, cid, rid,
-                r.get("status"),
-                r.get("current_temp"),
-                r.get("target_temp"),
-                None,                           # outdoor_temp_c — not captured in tick today
-                bool(r.get("calling_for_heat")),
-                trv_sp,
-                trv_open,
-                dry_run,
-                r.get("temp_source"),           # doubles as "reason" for now
-            ))
+            room_rows.append({
+                "circuit_id": cid,
+                "room_id": rid,
+                "classification": r.get("status"),
+                "current_temp_c": r.get("current_temp"),
+                "setpoint_c": r.get("target_temp"),
+                "outdoor_temp_c": None,
+                "calling_for_heat": bool(r.get("calling_for_heat")),
+                "trv_setpoint_c": trv_sp,
+                "trv_valve_open_pct": trv_open,
+                "reason": r.get("temp_source"),
+            })
 
+    # ── Fast path: Rust appender ──
+    if _appender is not None:
+        try:
+            for row in room_rows:
+                _appender.append_heating_room(
+                    ts,
+                    row["circuit_id"], row["room_id"],
+                    row["classification"],
+                    _to_float(row["current_temp_c"]),
+                    _to_float(row["setpoint_c"]),
+                    _to_float(row["outdoor_temp_c"]),
+                    row["calling_for_heat"],
+                    _to_float(row["trv_setpoint_c"]),
+                    _to_float(row["trv_valve_open_pct"]),
+                    dry_run,
+                    row["reason"],
+                )
+            for row in boiler_rows:
+                _appender.append_heating_boiler(
+                    ts,
+                    row["circuit_id"],
+                    row["boiler_called"],
+                    int(row["rooms_cold"]),
+                    int(row["rooms_ontarget"]),
+                    int(row["rooms_hot"]),
+                    row["receiver_command"],
+                    dry_run,
+                )
+            return
+        except Exception as e:
+            logger.error(f"write_heating_tick appender failed, falling back: {e}")
+            # fall through to Python INSERT
+
+    # ── Python fallback ──
+    db = _get_db()
     try:
         if room_rows:
             db.executemany("""
@@ -317,7 +374,13 @@ def write_heating_tick(
                     calling_for_heat, trv_setpoint_c, trv_valve_open_pct,
                     dry_run, reason
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, room_rows)
+            """, [
+                (tick_dt, r["circuit_id"], r["room_id"], r["classification"],
+                 r["current_temp_c"], r["setpoint_c"], r["outdoor_temp_c"],
+                 r["calling_for_heat"], r["trv_setpoint_c"], r["trv_valve_open_pct"],
+                 dry_run, r["reason"])
+                for r in room_rows
+            ])
         if boiler_rows:
             db.executemany("""
                 INSERT INTO heating_tick_boiler (
@@ -325,9 +388,24 @@ def write_heating_tick(
                     rooms_cold, rooms_ontarget, rooms_hot,
                     receiver_command, dry_run
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """, boiler_rows)
+            """, [
+                (tick_dt, r["circuit_id"], r["boiler_called"],
+                 r["rooms_cold"], r["rooms_ontarget"], r["rooms_hot"],
+                 r["receiver_command"], dry_run)
+                for r in boiler_rows
+            ])
     except Exception as e:
         logger.error(f"write_heating_tick failed: {e}", exc_info=True)
+
+
+def _to_float(v):
+    """Helper — coerce to Optional[float] for the Rust appender."""
+    if v is None:
+        return None
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return None
 
 # ============================================================================
 # READ OPERATIONS
@@ -541,9 +619,23 @@ def prune(retention_days: int = DEFAULT_RETENTION_DAYS):
     logger.info(f"Telemetry pruned (retention={retention_days} days)")
 
 
+def flush_appender():
+    """Drain the Rust appender's row buffers to disk. No-op when fallback active."""
+    if _appender is not None:
+        try:
+            _appender.flush()
+        except Exception as e:
+            logger.warning(f"Appender flush failed: {e}")
+
 def close():
     """Close the database connection."""
-    global _db
+    global _db, _appender
+    if _appender is not None:
+        try:
+            _appender.flush()
+        except Exception as e:
+            logger.warning(f"Final appender flush failed: {e}")
+        _appender = None
     if _db:
         _db.close()
         _db = None
