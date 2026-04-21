@@ -419,7 +419,7 @@ async def lifespan(app: FastAPI):
 
     telemetry_collector = TelemetryCollector(
         device_registry_getter=lambda: zigbee_service.devices,
-        retention_days=7,
+        retention_days=30,
     )
     telemetry_collector.start()
     logger.info("Telemetry collector started")

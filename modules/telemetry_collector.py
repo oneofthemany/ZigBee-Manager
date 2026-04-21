@@ -16,7 +16,7 @@ logger = logging.getLogger("modules.telemetry_collector")
 
 FLUSH_INTERVAL = 60          # seconds between packet stats flushes
 PRUNE_INTERVAL = 86400       # seconds between retention prune runs (24h)
-DEFAULT_RETENTION_DAYS = 7
+DEFAULT_RETENTION_DAYS = 30
 
 
 class TelemetryCollector:
