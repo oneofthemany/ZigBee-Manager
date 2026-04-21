@@ -46,6 +46,7 @@ BACKUP_MANIFEST = [
 # Optional files (toggled via query param)
 OPTIONAL_BACKUP_FILES = [
     "data/telemetry.duckdb",
+    "data/zigbee_cache.duckdb",
 ]
 
 APP_DIR = os.environ.get("ZMM_APP_DIR", "/app")
@@ -224,6 +225,22 @@ def register_backup_routes(app: FastAPI, get_zigbee_service):
                     except Exception as e:
                         errors.append({"file": entry, "error": str(e)})
                         logger.error(f"Failed to restore {entry}: {e}")
+
+            # Clean up stale DuckDB WAL files after restore.
+            # WAL references page offsets from the pre-restore main file; keeping
+            # it causes DuckDB to replay stale journal entries against the new
+            # file on next open, which at best drops the restored data and at
+            # worst corrupts it.
+            duckdb_restored = [e for e in restored if e.endswith(".duckdb")]
+            for entry in duckdb_restored:
+                wal_path = os.path.join(APP_DIR, entry + ".wal")
+                if os.path.isfile(wal_path):
+                    try:
+                        os.remove(wal_path)
+                        logger.info(f"Removed stale WAL: {entry}.wal")
+                    except Exception as e:
+                        logger.warning(f"Could not remove stale WAL {wal_path}: {e}")
+
 
             # After extracting all files, fix up config.yaml if needed
             config_target = os.path.join(APP_DIR, "config/config.yaml")

@@ -4,9 +4,11 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="update to staging and deps in containerfile">
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="improved backup to indlude telemetry database">
       <change afterPath="$PROJECT_DIR$/zmm_telemetry/build.sh" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/routes/backup_routes.py" beforeDir="false" afterPath="$PROJECT_DIR$/routes/backup_routes.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/teardown.sh" beforeDir="false" afterPath="$PROJECT_DIR$/teardown.sh" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -156,14 +158,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00309" summary="new diag attributes to help determine read and write availability for clusters attrs">
-      <option name="closed" value="true" />
-      <created>1776174264366</created>
-      <option name="number" value="00309" />
-      <option name="presentableId" value="LOCAL-00309" />
-      <option name="project" value="LOCAL" />
-      <updated>1776174264366</updated>
     </task>
     <task id="LOCAL-00310" summary="DiscoverAttributesRequest added">
       <option name="closed" value="true" />
@@ -549,7 +543,15 @@
       <option name="project" value="LOCAL" />
       <updated>1776764148324</updated>
     </task>
-    <option name="localTasksCounter" value="358" />
+    <task id="LOCAL-00358" summary="improved backup to indlude telemetry database">
+      <option name="closed" value="true" />
+      <created>1776764676882</created>
+      <option name="number" value="00358" />
+      <option name="presentableId" value="LOCAL-00358" />
+      <option name="project" value="LOCAL" />
+      <updated>1776764676883</updated>
+    </task>
+    <option name="localTasksCounter" value="359" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -576,7 +578,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="adding in the ability to use any device as an external temp source for TRV with overrides in place to remove receivers as options" />
     <MESSAGE value="dark mode for heating tab" />
     <MESSAGE value="colout pallette and controleroverlay patches" />
     <MESSAGE value="adding in option for TRV less rooms where control of heating pull can be undertaken  by a temp sensor" />
@@ -601,6 +602,7 @@
     <MESSAGE value="history bumped to 30 days" />
     <MESSAGE value="new rust appender for duckdb" />
     <MESSAGE value="update to staging and deps in containerfile" />
-    <option name="LAST_COMMIT_MESSAGE" value="update to staging and deps in containerfile" />
+    <MESSAGE value="improved backup to indlude telemetry database" />
+    <option name="LAST_COMMIT_MESSAGE" value="improved backup to indlude telemetry database" />
   </component>
 </project>
