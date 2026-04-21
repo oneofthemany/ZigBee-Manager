@@ -375,21 +375,28 @@ RUN rm -rf ${SDK_DIR} /tmp/otbr /tmp/cpc-daemon
 
 WORKDIR /app
 
-# ── Build zmm_telemetry from source inside the container ──
-RUN apt-get install -y rust cargo gcc make python3-devel \
+# ── Application requirements (layer cache) ──
+COPY requirements.txt .
+RUN pip install --no-cache-dir --upgrade pip \
+ && pip install --no-cache-dir -r requirements.txt \
+ && pip install --no-cache-dir "python-matter-server[server]"
+
+# ── Build zmm_telemetry ──
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        python3-dev \
+        pkg-config \
+ && rm -rf /var/lib/apt/lists/* \
+ && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+        | sh -s -- -y --default-toolchain stable --profile minimal \
  && pip install --no-cache-dir maturin
+
+ENV PATH="/root/.cargo/bin:${PATH}"
 
 COPY zmm_telemetry/ /tmp/zmm_telemetry/
 RUN cd /tmp/zmm_telemetry \
  && maturin build --release --out /tmp/wheels \
  && pip install --no-cache-dir /tmp/wheels/zmm_telemetry-*.whl \
- && rm -rf /tmp/zmm_telemetry /tmp/wheels ~/.cargo /root/.cache
-
-# Dependencies first (layer cache)
-COPY requirements.txt .
-RUN pip install --no-cache-dir --upgrade pip \
- && pip install --no-cache-dir -r requirements.txt \
- && pip install --no-cache-dir "python-matter-server[server]"
+ && rm -rf /tmp/zmm_telemetry /tmp/wheels /root/.cargo /root/.rustup /root/.cache
 
 # Application source
 COPY . .
