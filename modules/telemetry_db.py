@@ -264,7 +264,45 @@ def query_device_state_history(ieee: str, attribute: str, hours: int = 24) -> Li
     """, [ieee, attribute]).fetchall()
     return [{"ts": r[0], "value": r[1], "numeric_val": r[2]} for r in result]
 
+def query_device_attributes(ieee: str, hours: int = 168) -> List[str]:
+    """Distinct attribute names recorded for a device within lookback."""
+    db = _get_db()
+    hours = int(hours)
+    result = db.execute(f"""
+        SELECT DISTINCT attribute
+        FROM device_states
+        WHERE ieee = ? AND ts >= now() - INTERVAL '{hours} hours'
+        ORDER BY attribute
+    """, [ieee]).fetchall()
+    return [r[0] for r in result]
 
+
+def query_device_state_bucketed(ieee: str, attribute: str,
+                                hours: int = 24,
+                                bucket_minutes: int = 5) -> List[Dict]:
+    """
+    Time-bucketed aggregation of a numeric attribute for chart rendering.
+    Falls back to the last string value per bucket for non-numeric attrs.
+    """
+    db = _get_db()
+    hours = int(hours)
+    bucket_minutes = int(bucket_minutes)
+    result = db.execute(f"""
+        SELECT
+            time_bucket(INTERVAL '{bucket_minutes} minutes', ts) AS bucket,
+            AVG(numeric_val) AS avg_val,
+            MIN(numeric_val) AS min_val,
+            MAX(numeric_val) AS max_val,
+            COUNT(*) AS samples,
+            ANY_VALUE(value) AS last_str
+        FROM device_states
+        WHERE ieee = ? AND attribute = ?
+          AND ts >= now() - INTERVAL '{hours} hours'
+        GROUP BY bucket
+        ORDER BY bucket ASC
+    """, [ieee, attribute]).fetchall()
+    cols = ["ts", "avg", "min", "max", "samples", "last_str"]
+    return [dict(zip(cols, row)) for row in result]
 def query_spectrum_history(hours: int = 24) -> List[Dict]:
     """Get spectrum scan history."""
     db = _get_db()

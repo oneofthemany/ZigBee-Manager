@@ -107,6 +107,40 @@ async def device_state_history(ieee: str, attribute: str = "state", hours: int =
         return {"success": False, "error": str(e)}
 
 
+@router.get("/device/{ieee}/attributes")
+async def device_attributes(ieee: str, hours: int = 168):
+    """Distinct attribute names recorded for a device."""
+    hours = min(max(hours, 1), 168)
+    try:
+        from modules.telemetry_db import query_device_attributes
+        data = query_device_attributes(ieee=ieee, hours=hours)
+        return {"success": True, "ieee": ieee, "attributes": data}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@router.get("/device/{ieee}/history")
+async def device_history_bucketed(ieee: str, attribute: str,
+                                  hours: int = 24, bucket: int = 5):
+    """Bucketed numeric history for chart rendering."""
+    hours = min(max(hours, 1), 168)
+    bucket = min(max(bucket, 1), 60)
+    try:
+        from modules.telemetry_db import query_device_state_bucketed
+        data = query_device_state_bucketed(
+            ieee=ieee, attribute=attribute,
+            hours=hours, bucket_minutes=bucket
+        )
+        for row in data:
+            if row.get("ts"):
+                row["ts"] = str(row["ts"])
+        return {
+            "success": True, "ieee": ieee, "attribute": attribute,
+            "hours": hours, "bucket_minutes": bucket, "data": data,
+        }
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
 # ============================================================================
 # DATABASE MANAGEMENT
 # ============================================================================
