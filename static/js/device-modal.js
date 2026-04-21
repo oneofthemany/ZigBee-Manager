@@ -13,6 +13,7 @@ import { renderAutomationTab, initAutomationTab } from './modal/automation.js';
 import { renderMappingsTab, initMappingsTab, hasGenericContent } from './modal/mappings.js';
 import { bindScheduleEvents } from './modal/schedule.js';
 import { renderOTATab, handleOTAProgress } from './modal/ota.js';
+import { renderHistoryTab, initHistoryTab } from './modal/history.js';
 import { renderMatterClustersTab, initMatterClustersTab } from './modal/matter-clusters.js';
 import { renderMatterEventsTab } from './modal/matter-events.js';
 import { renderMatterEndpointsTab, initMatterEndpointsTab } from './modal/matter-endpoints.js';
@@ -52,6 +53,7 @@ export async function openDeviceModal(d) {
         <ul class="nav nav-tabs mb-3" id="devTabs">
             <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-overview">Overview</button></li>
             <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-control">Control</button></li>
+            <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-history">History</button></li>
             <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-ota"></i>OTA</button></li>
             ${isZigbee ? '<li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-binding">Binding</button></li>' : ''}
             <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-caps">Clusters</button></li>
@@ -67,6 +69,9 @@ export async function openDeviceModal(d) {
             <div class="tab-pane fade" id="tab-control">
                 ${!isZigbee ? renderMatterEventsTab(cachedDev) : ''}
                 ${renderControlTab(cachedDev)}
+            </div>
+            <div class="tab-pane fade" id="tab-history">
+                ${renderHistoryTab(cachedDev)}
             </div>
             <div class="tab-pane fade" id="tab-ota">
                 ${renderOTATab(cachedDev)}
@@ -128,6 +133,13 @@ export async function openDeviceModal(d) {
         });
     }
 
+
+    const histTab = modalBody.querySelector('[data-bs-target="#tab-history"]');
+    if (histTab) {
+        histTab.addEventListener('shown.bs.tab', () => {
+            initHistoryTab(cachedDev.ieee);
+        });
+    }
     const modalEl = document.getElementById('capModal');
     if (modalEl) new bootstrap.Modal(modalEl).show();
 

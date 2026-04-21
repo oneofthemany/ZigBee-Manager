@@ -440,8 +440,12 @@ class ZigManDevice:
 
         # Always report these fields even if value unchanged
         ALWAYS_REPORT = {'occupancy', 'presence', 'motion', 'contact', 'alarm',
-                         'temperature', 'tamper', 'battery_low', 'vibration',
-                         'on_with_timed_off', 'action'}
+                 'temperature', 'local_temperature',
+                 'humidity', 'pressure', 'illuminance',
+                 'pi_heating_demand', 'running_state',
+                 'battery', 'battery_voltage',
+                 'tamper', 'battery_low', 'vibration',
+                 'on_with_timed_off', 'action'}
 
         for k, v in data.items():
             # --- DUPLICATE DETECTION ---

@@ -1,0 +1,188 @@
+/**
+ * Device History Tab
+ * Location: static/js/modal/history.js
+ *
+ * Renders time-series charts for attribute changes stored in DuckDB.
+ * Data source: /api/telemetry/device/{ieee}/...
+ */
+
+const HOURS_OPTIONS = [
+    { v: 1,   label: '1h'  },
+    { v: 6,   label: '6h'  },
+    { v: 24,  label: '24h' },
+    { v: 72,  label: '3d'  },
+    { v: 168, label: '7d'  },
+];
+
+export function renderHistoryTab(device) {
+    return `
+        <div class="mb-3 d-flex gap-2 align-items-center flex-wrap">
+            <label class="small text-muted mb-0">Attribute</label>
+            <select class="form-select form-select-sm" id="hist-attr" style="width:auto"></select>
+            <label class="small text-muted mb-0 ms-2">Range</label>
+            <select class="form-select form-select-sm" id="hist-hours" style="width:auto">
+                ${HOURS_OPTIONS.map(o =>
+                    `<option value="${o.v}" ${o.v === 24 ? 'selected' : ''}>${o.label}</option>`
+                ).join('')}
+            </select>
+            <button class="btn btn-sm btn-outline-secondary" id="hist-refresh">
+                <i class="fas fa-sync-alt"></i>
+            </button>
+            <span class="ms-auto small text-muted" id="hist-meta"></span>
+        </div>
+        <div id="hist-chart-wrap">
+            <div class="text-muted small text-center py-4">Loading history…</div>
+        </div>
+        <div id="hist-raw" class="mt-3"></div>
+    `;
+}
+
+export async function initHistoryTab(ieee) {
+    const attrSel   = document.getElementById('hist-attr');
+    const hoursSel  = document.getElementById('hist-hours');
+    const refreshBtn = document.getElementById('hist-refresh');
+    if (!attrSel || !hoursSel) return;
+
+    // Populate attribute list
+    try {
+        const res = await fetch(`/api/telemetry/device/${ieee}/attributes?hours=168`);
+        const json = await res.json();
+        const attrs = (json.success && json.attributes) ? json.attributes : [];
+        if (!attrs.length) {
+            document.getElementById('hist-chart-wrap').innerHTML =
+                '<div class="text-muted small text-center py-4">' +
+                'No history recorded yet — data accumulates as the device reports.' +
+                '</div>';
+            return;
+        }
+        attrSel.innerHTML = attrs.map(a =>
+            `<option value="${a}">${a}</option>`
+        ).join('');
+    } catch (e) {
+        document.getElementById('hist-chart-wrap').innerHTML =
+            `<div class="text-danger small py-4">Failed to load attributes: ${e.message}</div>`;
+        return;
+    }
+
+    const refresh = () => _refreshHistoryChart(ieee);
+    attrSel.addEventListener('change', refresh);
+    hoursSel.addEventListener('change', refresh);
+    refreshBtn.addEventListener('click', refresh);
+    refresh();
+}
+
+async function _refreshHistoryChart(ieee) {
+    const attr = document.getElementById('hist-attr')?.value;
+    const hours = parseInt(document.getElementById('hist-hours')?.value || '24');
+    if (!attr) return;
+
+    const bucket = hours <= 1 ? 1 : hours <= 6 ? 2 : hours <= 24 ? 5 : hours <= 72 ? 15 : 30;
+
+    const wrap = document.getElementById('hist-chart-wrap');
+    wrap.innerHTML = '<div class="text-muted small text-center py-4">Loading…</div>';
+
+    try {
+        const res = await fetch(
+            `/api/telemetry/device/${ieee}/history?attribute=${encodeURIComponent(attr)}&hours=${hours}&bucket=${bucket}`
+        );
+        const json = await res.json();
+        if (!json.success || !json.data?.length) {
+            wrap.innerHTML = '<div class="text-muted small text-center py-4">No data in this range.</div>';
+            document.getElementById('hist-meta').textContent = '';
+            return;
+        }
+        _buildHistChart(json.data, attr);
+        const total = json.data.reduce((s, r) => s + (r.samples || 0), 0);
+        document.getElementById('hist-meta').textContent =
+            `${total} samples · ${bucket}m buckets`;
+    } catch (e) {
+        wrap.innerHTML = `<div class="text-danger small py-4">Query failed: ${e.message}</div>`;
+    }
+}
+
+function _buildHistChart(data, attr) {
+    const wrap = document.getElementById('hist-chart-wrap');
+    if (!wrap) return;
+
+    const numeric = data.some(r => r.avg !== null && r.avg !== undefined);
+
+    if (!numeric) {
+        // Non-numeric: show timeline table of state changes
+        wrap.innerHTML = `
+            <div class="table-responsive" style="max-height:400px">
+                <table class="table table-sm table-striped">
+                    <thead><tr><th>Time</th><th>${attr}</th><th class="text-end">Samples</th></tr></thead>
+                    <tbody>
+                        ${data.map(r => `
+                            <tr>
+                                <td class="small font-monospace">${new Date(r.ts).toLocaleString()}</td>
+                                <td class="small">${r.last_str ?? ''}</td>
+                                <td class="small text-end text-muted">${r.samples}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            </div>
+        `;
+        return;
+    }
+
+    // Numeric: SVG line + min/max band
+    const W = wrap.clientWidth || 700;
+    const H = 220;
+    const pad = { top: 10, right: 10, bottom: 25, left: 45 };
+    const plotW = W - pad.left - pad.right;
+    const plotH = H - pad.top - pad.bottom;
+
+    const times = data.map(d => new Date(d.ts).getTime());
+    const tMin = Math.min(...times);
+    const tMax = Math.max(...times);
+    const tRange = tMax - tMin || 1;
+
+    const values = data.flatMap(d => [d.min, d.max, d.avg].filter(v => v !== null && v !== undefined));
+    const vMin = Math.min(...values);
+    const vMax = Math.max(...values);
+    const vRange = (vMax - vMin) || 1;
+
+    const x = t => pad.left + ((t - tMin) / tRange) * plotW;
+    const y = v => pad.top + plotH - ((v - vMin) / vRange) * plotH;
+
+    // Build min/max band polygon
+    const topPts = data.map(d => `${x(new Date(d.ts).getTime())},${y(d.max)}`).join(' ');
+    const botPts = data.slice().reverse().map(d => `${x(new Date(d.ts).getTime())},${y(d.min)}`).join(' ');
+    const bandPoints = `${topPts} ${botPts}`;
+
+    const avgPoints = data.map(d => `${x(new Date(d.ts).getTime())},${y(d.avg)}`).join(' ');
+
+    // Y-axis ticks
+    const yTicks = 4;
+    const yLabels = Array.from({ length: yTicks + 1 }, (_, i) => {
+        const v = vMin + (vRange * i / yTicks);
+        const yp = y(v);
+        return `
+            <line x1="${pad.left}" x2="${W - pad.right}" y1="${yp}" y2="${yp}" stroke="#eee" stroke-width="0.5"/>
+            <text x="${pad.left - 4}" y="${yp + 3}" font-size="9" fill="#888" text-anchor="end">${v.toFixed(2)}</text>
+        `;
+    }).join('');
+
+    // X-axis ticks (5 labels)
+    const xTicks = 5;
+    const xLabels = Array.from({ length: xTicks + 1 }, (_, i) => {
+        const t = tMin + (tRange * i / xTicks);
+        const xp = x(t);
+        const d = new Date(t);
+        const label = tRange > 86400000 * 2
+            ? `${d.getMonth() + 1}/${d.getDate()}`
+            : `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+        return `<text x="${xp}" y="${H - 8}" font-size="9" fill="#888" text-anchor="middle">${label}</text>`;
+    }).join('');
+
+    wrap.innerHTML = `
+        <svg id="hist-chart-svg" width="100%" height="${H}" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet">
+            <g>${yLabels}</g>
+            <g>${xLabels}</g>
+            <polygon points="${bandPoints}" fill="#4a90e2" fill-opacity="0.15" stroke="none"/>
+            <polyline points="${avgPoints}" fill="none" stroke="#4a90e2" stroke-width="1.5" stroke-linejoin="round"/>
+        </svg>
+    `;
+}
