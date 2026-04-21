@@ -15,8 +15,8 @@ fi
 
 rm -rf ~/zigbee-matter-manager/ ~/.zigbee-matter-manager/
 
-rm -f ~/.config/systemd/user/container-zigbee-matter-manager.service
+#rm -f ~/.config/systemd/user/container-zigbee-matter-manager.service
 
-systemctl --user daemon-reload
+#systemctl --user daemon-reload
 
 curl -fsSL https://raw.githubusercontent.com/oneofthemany/ZigBee-Matter-Manager/${branch}/build.sh | bash -s -- --usb /dev/ttyUSB0
