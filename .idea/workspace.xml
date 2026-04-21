@@ -4,10 +4,8 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="improved thermal profiles">
-      <change beforePath="$PROJECT_DIR$/modules/telemetry_collector.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/telemetry_collector.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/modules/telemetry_db.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/telemetry_db.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/zmm_telemetry/src/lib.rs" beforeDir="false" afterPath="$PROJECT_DIR$/zmm_telemetry/src/lib.rs" afterDir="false" />
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="updated telemetry to include new zmm_ appender">
+      <change beforePath="$PROJECT_DIR$/build.sh" beforeDir="false" afterPath="$PROJECT_DIR$/build.sh" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -157,14 +155,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00314" summary="discover_attributes update">
-      <option name="closed" value="true" />
-      <created>1776174375534</created>
-      <option name="number" value="00314" />
-      <option name="presentableId" value="LOCAL-00314" />
-      <option name="project" value="LOCAL" />
-      <updated>1776174375534</updated>
     </task>
     <task id="LOCAL-00315" summary="controls updated for hive and standard hvac controls">
       <option name="closed" value="true" />
@@ -550,7 +540,15 @@
       <option name="project" value="LOCAL" />
       <updated>1776775150983</updated>
     </task>
-    <option name="localTasksCounter" value="363" />
+    <task id="LOCAL-00363" summary="updated telemetry to include new zmm_ appender">
+      <option name="closed" value="true" />
+      <created>1776777682387</created>
+      <option name="number" value="00363" />
+      <option name="presentableId" value="LOCAL-00363" />
+      <option name="project" value="LOCAL" />
+      <updated>1776777682387</updated>
+    </task>
+    <option name="localTasksCounter" value="364" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -577,7 +575,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="changing temp sensor update to be more aggressive for new heating controller" />
     <MESSAGE value="new thermal profile option" />
     <MESSAGE value="more new features to heating:&#10;&#10;radiator sizing&#10;thermal profiles per room&#10;heating anomaly detection" />
     <MESSAGE value="final latch fix for tooltips" />
@@ -602,6 +599,7 @@
     <MESSAGE value="comment out --user for service" />
     <MESSAGE value="updated report values for database" />
     <MESSAGE value="improved thermal profiles" />
-    <option name="LAST_COMMIT_MESSAGE" value="improved thermal profiles" />
+    <MESSAGE value="updated telemetry to include new zmm_ appender" />
+    <option name="LAST_COMMIT_MESSAGE" value="updated telemetry to include new zmm_ appender" />
   </component>
 </project>

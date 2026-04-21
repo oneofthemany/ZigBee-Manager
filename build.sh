@@ -14,6 +14,22 @@ export DBUS_SESSION_BUS_ADDRESS="unix:path=${XDG_RUNTIME_DIR}/bus"
 
 set -euo pipefail
 
+# ── Build host capability detection ──
+detect_build_jobs() {
+    local cores
+    if command -v nproc >/dev/null 2>&1; then
+        cores=$(nproc)
+    elif [[ -r /proc/cpuinfo ]]; then
+        cores=$(grep -c ^processor /proc/cpuinfo)
+    else
+        cores=2
+    fi
+    # Cap at 8 — diminishing returns past that, and DuckDB's compile
+    # link step occasionally OOMs on -j16+ with only a few GB free.
+    (( cores > 8 )) && cores=8
+    echo "$cores"
+}
+
 # ── Colours ──────────────────────────────────────────────────────────────────
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
 CYAN='\033[0;36m'; BOLD='\033[1m'; NC='\033[0m'
@@ -23,6 +39,9 @@ ok()      { echo -e "${GREEN}${BOLD}[ OK ]${NC}  $*"; }
 warn()    { echo -e "${YELLOW}${BOLD}[WARN]${NC}  $*"; }
 error()   { echo -e "${RED}${BOLD}[ERR ]${NC}  $*" >&2; }
 die()     { error "$*"; exit 1; }
+
+BUILD_JOBS=$(detect_build_jobs)
+info "Detected ${BUILD_JOBS} build jobs for parallel compile"
 
 # ── Defaults ─────────────────────────────────────────────────────────────────
 REPO_URL="https://github.com/oneofthemany/ZigBee-Matter-Manager.git"
@@ -375,13 +394,7 @@ RUN rm -rf ${SDK_DIR} /tmp/otbr /tmp/cpc-daemon
 
 WORKDIR /app
 
-# ── Application requirements (layer cache) ──
-COPY requirements.txt .
-RUN pip install --no-cache-dir --upgrade pip \
- && pip install --no-cache-dir -r requirements.txt \
- && pip install --no-cache-dir "python-matter-server[server]"
-
-# ── Build zmm_telemetry ──
+# ── Build zmm_telemetry from source inside the container ──
 RUN apt-get update && apt-get install -y --no-install-recommends \
         python3-dev \
         pkg-config \
@@ -391,6 +404,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
  && pip install --no-cache-dir maturin
 
 ENV PATH="/root/.cargo/bin:${PATH}"
+
+ARG BUILD_JOBS=4
+ENV CMAKE_BUILD_PARALLEL_LEVEL=${BUILD_JOBS}
+ENV MAKEFLAGS="-j${BUILD_JOBS}"
 
 COPY zmm_telemetry/ /tmp/zmm_telemetry/
 RUN cd /tmp/zmm_telemetry \
@@ -422,10 +439,11 @@ DOCKERFILE
 # BUILD IMAGE
 # =============================================================================
 build_image() {
-    info "Building image ${BOLD}${IMAGE_NAME}${NC} ..."
+    info "Building image ${BOLD}${IMAGE_NAME}${NC} with ${BUILD_JOBS} parallel jobs ..."
 
     "$RUNTIME" build \
         --format docker \
+        --build-arg BUILD_JOBS="${BUILD_JOBS}" \
         --tag "${IMAGE_NAME}:latest" \
         --file "$APP_DIR/Containerfile" \
         "$APP_DIR"
@@ -681,6 +699,9 @@ HOST_MATTER_PORT=$(check_host_port "$MATTER_INTERNAL_PORT")
 
 # Step 5: Build
 write_containerfile
+
+BUILD_JOBS=$(detect_build_jobs)
+info "Detected ${BUILD_JOBS} build jobs for parallel compile"
 
 if "$FORCE_REBUILD" || ! "$RUNTIME" image inspect "${IMAGE_NAME}:latest" &>/dev/null 2>&1; then
     build_image
