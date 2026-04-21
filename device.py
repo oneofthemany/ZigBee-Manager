@@ -440,12 +440,19 @@ class ZigManDevice:
 
         # Always report these fields even if value unchanged
         ALWAYS_REPORT = {'occupancy', 'presence', 'motion', 'contact', 'alarm',
-                 'temperature', 'local_temperature',
-                 'humidity', 'pressure', 'illuminance',
-                 'pi_heating_demand', 'running_state',
-                 'battery', 'battery_voltage',
-                 'tamper', 'battery_low', 'vibration',
-                 'on_with_timed_off', 'action'}
+                         'temperature', 'local_temperature',
+                         'humidity', 'pressure', 'illuminance',
+                         'pi_heating_demand', 'running_state',
+                         'battery', 'battery_voltage',
+                         'tamper', 'battery_low', 'vibration',
+                         'on_with_timed_off', 'action'}
+
+        # Prefix-matched attributes — catches endpoint-suffixed variants like
+        # voltage_1, current_2, power_3, local_temperature_2, etc.
+        ALWAYS_REPORT_PREFIXES = ('voltage_', 'current_', 'power_',
+                                  'local_temperature_', 'temperature_',
+                                  'humidity_', 'pressure_', 'illuminance_',
+                                  'battery_')
 
         for k, v in data.items():
             # --- DUPLICATE DETECTION ---
@@ -469,8 +476,10 @@ class ZigManDevice:
                             })
                             continue
 
-            # Report if always-report field OR value changed
-            if k in ALWAYS_REPORT or self.state.get(k) != v:
+            # Report if always-report field, always-report prefix, OR value changed
+            if (k in ALWAYS_REPORT
+                    or k.startswith(ALWAYS_REPORT_PREFIXES)
+                    or self.state.get(k) != v):
                 changed[k] = v
 
         # --- INTELLIGENT STATE MERGING FOR LIGHTS ---

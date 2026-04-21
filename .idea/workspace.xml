@@ -4,11 +4,8 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="improved backup to indlude telemetry database">
-      <change afterPath="$PROJECT_DIR$/zmm_telemetry/build.sh" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/routes/backup_routes.py" beforeDir="false" afterPath="$PROJECT_DIR$/routes/backup_routes.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/teardown.sh" beforeDir="false" afterPath="$PROJECT_DIR$/teardown.sh" afterDir="false" />
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="comment out --user for service">
+      <change beforePath="$PROJECT_DIR$/device.py" beforeDir="false" afterPath="$PROJECT_DIR$/device.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -158,22 +155,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00310" summary="DiscoverAttributesRequest added">
-      <option name="closed" value="true" />
-      <created>1776174286637</created>
-      <option name="number" value="00310" />
-      <option name="presentableId" value="LOCAL-00310" />
-      <option name="project" value="LOCAL" />
-      <updated>1776174286638</updated>
-    </task>
-    <task id="LOCAL-00311" summary="adjusted to 0.25 degrees">
-      <option name="closed" value="true" />
-      <created>1776174312800</created>
-      <option name="number" value="00311" />
-      <option name="presentableId" value="LOCAL-00311" />
-      <option name="project" value="LOCAL" />
-      <updated>1776174312800</updated>
     </task>
     <task id="LOCAL-00312" summary="last seen and permit join via fixes">
       <option name="closed" value="true" />
@@ -551,7 +532,23 @@
       <option name="project" value="LOCAL" />
       <updated>1776764676883</updated>
     </task>
-    <option name="localTasksCounter" value="359" />
+    <task id="LOCAL-00359" summary="include wal file updated in restore for duckdb">
+      <option name="closed" value="true" />
+      <created>1776770164119</created>
+      <option name="number" value="00359" />
+      <option name="presentableId" value="LOCAL-00359" />
+      <option name="project" value="LOCAL" />
+      <updated>1776770164119</updated>
+    </task>
+    <task id="LOCAL-00360" summary="comment out --user for service">
+      <option name="closed" value="true" />
+      <created>1776770205146</created>
+      <option name="number" value="00360" />
+      <option name="presentableId" value="LOCAL-00360" />
+      <option name="project" value="LOCAL" />
+      <updated>1776770205146</updated>
+    </task>
+    <option name="localTasksCounter" value="361" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -578,8 +575,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="dark mode for heating tab" />
-    <MESSAGE value="colout pallette and controleroverlay patches" />
     <MESSAGE value="adding in option for TRV less rooms where control of heating pull can be undertaken  by a temp sensor" />
     <MESSAGE value="theme change update" />
     <MESSAGE value="changing temp sensor update to be more aggressive for new heating controller" />
@@ -603,6 +598,8 @@
     <MESSAGE value="new rust appender for duckdb" />
     <MESSAGE value="update to staging and deps in containerfile" />
     <MESSAGE value="improved backup to indlude telemetry database" />
-    <option name="LAST_COMMIT_MESSAGE" value="improved backup to indlude telemetry database" />
+    <MESSAGE value="include wal file updated in restore for duckdb" />
+    <MESSAGE value="comment out --user for service" />
+    <option name="LAST_COMMIT_MESSAGE" value="comment out --user for service" />
   </component>
 </project>
