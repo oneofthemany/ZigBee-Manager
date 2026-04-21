@@ -512,10 +512,7 @@ class TemperatureMeasurementHandler(ClusterHandler, SensorReportingMixin):
             if paired_ieee and paired_ieee in self.device.service.devices:
                 dev = self.device.service.devices[paired_ieee]
                 dev.update_state({
-                    "local_temperature": temp_c,
-                    "internal_temperature": temp_c,
-                    "current_temperature": temp_c,
-                    "temperature": temp_c,
+                    "paired_thermostat_temperature": temp_c,
                 })
                 logger.info(
                     f"[{self.device.ieee}] Propagated temperature "

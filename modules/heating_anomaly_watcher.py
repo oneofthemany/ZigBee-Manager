@@ -14,12 +14,82 @@ import asyncio
 import logging
 import time
 from typing import Any, Callable, Dict, List, Optional
+# Used to build the heating-off gate passed into compute_profile, so cool-down
+# windows that overlapped active heating are excluded from the baseline fit.
+try:
+    from modules.telemetry_db import query_room_heating_state
+except Exception:
+    query_room_heating_state = None
 
 logger = logging.getLogger("modules.heating_anomaly_watcher")
 
 SCAN_INTERVAL_SEC = 300        # every 5 minutes
 HISTORY_KEEP_SEC = 6 * 3600    # keep resolved anomalies for 6h on dashboard
 
+
+# ── Heating-state gate builder ────────────────────────────────────────
+# Ticks are ~1/min; telemetry samples can be at different cadences. We
+# build a piecewise lookup that returns True for any timestamp falling
+# inside or immediately after a "heating active" tick, with a short
+# staleness grace so gaps in the tick log don't silently flip to "off".
+
+GATE_STALENESS_SEC = 180   # 3× expected tick interval — if the last tick
+# is older than this, we don't trust the gate
+# and conservatively return True (i.e. assume
+# heating was on, rejecting the window).
+
+
+def _build_heating_state_getter(tick_rows: List[Dict[str, Any]]):
+    """
+    Return a callable `getter(ts_seconds) -> bool` where True means
+    "heating was likely active at ts, so this sample is not a clean
+    natural cool-down and should not feed the baseline fit."
+
+    tick_rows come from telemetry_db.query_room_heating_state and are
+    already sorted ascending by ts. Each row carries a boolean
+    'heating_active'.
+
+    If we have no tick data at all (e.g. the new schema was just added
+    and nothing has been written yet), the getter returns False — i.e.
+    no gate is applied. This preserves today's behaviour for a fresh
+    install, so we never regress the data flow.
+    """
+    if not tick_rows:
+        return lambda _ts: False
+
+    # Pre-extract as two parallel lists for bisect.
+    import bisect
+    import datetime as _dt
+
+    tick_ts: List[float] = []
+    tick_active: List[bool] = []
+    for r in tick_rows:
+        t = r.get("ts")
+        if isinstance(t, _dt.datetime):
+            tick_ts.append(t.timestamp())
+        elif isinstance(t, (int, float)):
+            tick_ts.append(float(t))
+        else:
+            continue
+        tick_active.append(bool(r.get("heating_active")))
+
+    if not tick_ts:
+        return lambda _ts: False
+
+    def _getter(ts_seconds: float) -> bool:
+        # Find the last tick at or before ts_seconds.
+        idx = bisect.bisect_right(tick_ts, ts_seconds) - 1
+        if idx < 0:
+            # ts is before our earliest tick → we don't know.
+            # Conservative: assume on (exclude from baseline).
+            return True
+        last_ts = tick_ts[idx]
+        # If the tick is too stale, don't trust it.
+        if ts_seconds - last_ts > GATE_STALENESS_SEC:
+            return True
+        return tick_active[idx]
+
+    return _getter
 
 class HeatingAnomalyWatcher:
     def __init__(
@@ -113,12 +183,31 @@ class HeatingAnomalyWatcher:
                     continue
 
                 outdoor_getter = lambda _ts, _v=outdoor: _v
+
+                # Build the heating-off gate from persisted controller ticks.
+                # If the schema/function isn't available (fresh install, old
+                # build), or there are simply no ticks yet, the getter is
+                # None and compute_profile falls back to today's behaviour.
+                heating_state_getter = None
+                if query_room_heating_state is not None:
+                    try:
+                        tick_rows = query_room_heating_state(
+                            circuit_id=cid, room_id=rid, hours=14 * 24,
+                        )
+                        if tick_rows:
+                            heating_state_getter = _build_heating_state_getter(tick_rows)
+                    except Exception as e:
+                        logger.debug(
+                            f"heating-state gate unavailable for {cid}/{rid}: {e}"
+                        )
+
                 profile = compute_profile(
                     room_id=rid,
                     dimensions=dimensions,
                     insulation=insulation,
                     temperature_series=long_series,
                     outdoor_temp_getter=outdoor_getter,
+                    heating_state_getter=heating_state_getter,
                 )
                 baseline_tau = profile.tau_seconds
                 if baseline_tau is None:

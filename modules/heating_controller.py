@@ -80,6 +80,13 @@ import time
 from datetime import datetime
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
+# Telemetry persistence for tick decisions. Lazy import inside _tick would
+# also work; top-level is fine because telemetry_db has no heavy deps.
+try:
+    from modules.telemetry_db import write_heating_tick as _write_heating_tick
+except Exception:
+    _write_heating_tick = None
+
 logger = logging.getLogger("modules.heating_controller")
 
 # Hysteresis bands (°C) — prevents oscillation
@@ -582,6 +589,19 @@ class HeatingController:
 
         self._last_decision = {"circuits": circuits_out}
         self._last_decision_ts = time.time()
+
+        # Persist this tick for anomaly detection & post-hoc analysis.
+        # Non-blocking in spirit: if the DB write fails we log and move on,
+        # we never want a telemetry issue to stop control.
+        if _write_heating_tick is not None:
+            try:
+                _write_heating_tick(
+                    ts=self._last_decision_ts,
+                    dry_run=self.dry_run,
+                    circuits=circuits_out,
+                )
+            except Exception as e:
+                logger.warning(f"tick persistence failed (non-fatal): {e}")
 
     # ── Device snapshot ────────────────────────────────────────────
     def _snapshot_devices(self) -> Dict[str, Any]:

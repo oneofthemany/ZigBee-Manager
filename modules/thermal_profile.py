@@ -258,6 +258,20 @@ def compute_static(dimensions: Dict[str, Any], insulation: str = "partial") -> T
 # LEARNED (FROM TELEMETRY)
 # ──────────────────────────────────────────────────────────────────────
 
+
+# ── Cool-down window thresholds ───────────────────────────────────────
+# Two profiles:
+#   LEARN_* — used when fitting baseline τ from the long telemetry window.
+#     Loose, so we accept more candidate windows and let the R² filter in
+#     _fit_newton_cooling cull the noisy ones. Rooms that are held near
+#     setpoint most of the time still produce enough usable drifts.
+#   ALERT_* — used by the anomaly detector (detect_fast_cooling) where we
+#     compare a single recent window to the baseline. Kept stricter to
+#     avoid false "window open" alarms from small natural drifts.
+LEARN_MIN_DURATION_SEC = 20 * 60
+LEARN_MIN_DROP_C       = 0.3
+LEARN_MAX_DURATION_SEC = 6 * 3600
+
 @dataclass
 class CoolDownWindow:
     """One identified cool-down interval."""
@@ -277,6 +291,8 @@ def _find_cooldown_windows(
         min_duration_sec: int = 30 * 60,
         max_duration_sec: int = 6 * 3600,
         min_drop_c: float = 0.5,
+        heating_state_getter=None,          # callable(ts_sec) -> bool or None
+        heating_active_tolerance: float = 0.1,   # allow up to 10% tainted samples
 ) -> List[Tuple[float, float, List[Tuple[float, float]]]]:
     """
     Identify continuous intervals where temperature is monotonically falling
@@ -326,6 +342,21 @@ def _find_cooldown_windows(
         temp_drop = pts[i0][1] - pts[i1][1]
         if temp_drop < min_drop_c:
             return
+        # Heating-state gate: reject windows where too many samples
+        # overlap a period when heating was active. A tolerance > 0
+        # covers transient TRV cycling at the window boundaries.
+        if heating_state_getter is not None:
+            tainted = 0
+            total = i1 - i0 + 1
+            for p in pts[i0:i1 + 1]:
+                try:
+                    if heating_state_getter(p[0]):
+                        tainted += 1
+                except Exception:
+                    # If the gate raises, fail closed — reject the window.
+                    return
+            if total == 0 or (tainted / total) > heating_active_tolerance:
+                return
         samples = [(p[0] - t0, p[1]) for p in pts[i0:i1 + 1]]
         windows.append((t0, t1, samples))
 
@@ -395,9 +426,13 @@ def _fit_newton_cooling(samples: List[Tuple[float, float]], outdoor_temp: float)
 
 def compute_measured(
         temperature_series: List[Dict[str, Any]],
-        outdoor_temp_getter,        # callable(ts_seconds) -> float | None
+        outdoor_temp_getter,
         floor_area_m2: float,
         ceiling_height_m: float = 2.4,
+        min_duration_sec: int = LEARN_MIN_DURATION_SEC,
+        min_drop_c: float = LEARN_MIN_DROP_C,
+        max_duration_sec: int = LEARN_MAX_DURATION_SEC,
+        heating_state_getter=None,
 ) -> Tuple[Optional[float], float, int, Optional[float], Optional[float]]:
     """
     Measure W/K from cool-down history.
@@ -407,6 +442,17 @@ def compute_measured(
     if not temperature_series or len(temperature_series) < 10:
         return None, 0.0, 0, None, None
     if not floor_area_m2 or floor_area_m2 <= 0:
+        return None, 0.0, 0, None, None
+
+    windows = _find_cooldown_windows(
+        temperature_series,
+        outdoor_temp_getter,
+        min_duration_sec=min_duration_sec,
+        max_duration_sec=max_duration_sec,
+        min_drop_c=min_drop_c,
+        heating_state_getter=heating_state_getter,
+    )
+    if not windows:
         return None, 0.0, 0, None, None
 
     windows = _find_cooldown_windows(temperature_series, outdoor_temp_getter)
@@ -460,6 +506,7 @@ def compute_profile(
         temperature_series: Optional[List[Dict[str, Any]]] = None,
         outdoor_temp_getter=None,
         blend_weight_measured: float = 0.7,
+        heating_state_getter=None,
 ) -> ThermalProfile:
     """Top-level orchestrator. Static + learned + blend."""
     prof = ThermalProfile(room_id=room_id)
@@ -480,7 +527,8 @@ def compute_profile(
     # Measured
     if temperature_series and outdoor_temp_getter and floor_area > 0:
         m_ua, conf, n, r2, tau = compute_measured(
-            temperature_series, outdoor_temp_getter, floor_area, ceiling_h
+            temperature_series, outdoor_temp_getter, floor_area, ceiling_h,
+            heating_state_getter=heating_state_getter,
         )
         prof.measured_w_per_k = m_ua
         prof.measured_confidence = conf

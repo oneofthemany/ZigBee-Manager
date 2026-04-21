@@ -249,6 +249,7 @@ class ThermostatHandler(ClusterHandler):
                 updates["internal_temperature"] = parsed_value
                 updates["current_temperature"] = parsed_value  # HA climate needs this
                 updates["temperature"] = parsed_value
+                updates["local_temperature"] = parsed_value
             else:
                 updates["local_temperature"] = parsed_value
                 updates["current_temperature"] = parsed_value

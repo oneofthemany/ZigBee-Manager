@@ -79,6 +79,274 @@ def _save_config(cfg: Dict[str, Any]) -> None:
         yaml.dump(cfg, f, default_flow_style=False, sort_keys=False)
 
 
+# ─── Diagnostics helpers ───────────────────────────────────────────
+def _safe_outdoor(advisor) -> Optional[float]:
+    if advisor and getattr(advisor, "weather", None):
+        try:
+            return advisor.weather.get_outdoor_temperature()
+        except Exception:
+            return None
+    return None
+
+
+def _summarise_telemetry(temp_series: List[Dict[str, Any]],
+                         attr_used: Optional[str]) -> Dict[str, Any]:
+    import datetime as _dt
+    if not temp_series:
+        return {
+            "sample_count": 0,
+            "attribute": attr_used,
+            "first_ts": None, "last_ts": None,
+            "span_hours": 0,
+            "min_value": None, "max_value": None,
+        }
+    vals, tss = [], []
+    for p in temp_series:
+        v = p.get("numeric_val")
+        if v is None:
+            try: v = float(p.get("value"))
+            except (TypeError, ValueError): continue
+        t = p.get("ts")
+        if isinstance(t, _dt.datetime):
+            tss.append(t.timestamp())
+            vals.append(float(v))
+    if not vals:
+        return {"sample_count": 0, "attribute": attr_used,
+                "first_ts": None, "last_ts": None, "span_hours": 0,
+                "min_value": None, "max_value": None}
+    first_ts, last_ts = min(tss), max(tss)
+    return {
+        "sample_count": len(vals),
+        "attribute": attr_used,
+        "first_ts": first_ts,
+        "last_ts": last_ts,
+        "span_hours": round((last_ts - first_ts) / 3600.0, 1),
+        "min_value": round(min(vals), 2),
+        "max_value": round(max(vals), 2),
+        "range_c": round(max(vals) - min(vals), 2),
+    }
+
+
+def _summarise_ticks(tick_rows: List[Dict[str, Any]]) -> Dict[str, Any]:
+    import datetime as _dt
+    if not tick_rows:
+        return {
+            "tick_count": 0,
+            "active_count": 0,
+            "active_fraction": None,
+            "first_ts": None, "last_ts": None,
+            "gap_count_over_3min": 0,
+            "longest_gap_sec": 0,
+            "status": "no_data",
+        }
+    tss: List[float] = []
+    active = 0
+    for r in tick_rows:
+        t = r.get("ts")
+        if isinstance(t, _dt.datetime):
+            tss.append(t.timestamp())
+        if r.get("heating_active"):
+            active += 1
+    tss.sort()
+    gaps = [tss[i] - tss[i-1] for i in range(1, len(tss))]
+    big_gaps = sum(1 for g in gaps if g > 180)  # > 3× expected cadence
+    longest = max(gaps) if gaps else 0
+    total = len(tick_rows)
+    frac = active / total if total else None
+    # Status classification
+    if total < 60:
+        status = "sparse"       # < ~1h of data at 1/min
+    elif frac is not None and frac > 0.9:
+        status = "heating_dominant"
+    elif frac is not None and frac < 0.05:
+        status = "heating_idle"
+    else:
+        status = "healthy"
+    return {
+        "tick_count": total,
+        "active_count": active,
+        "active_fraction": round(frac, 3) if frac is not None else None,
+        "first_ts": tss[0] if tss else None,
+        "last_ts": tss[-1] if tss else None,
+        "gap_count_over_3min": big_gaps,
+        "longest_gap_sec": round(longest),
+        "status": status,
+    }
+
+
+def _summarise_windows(
+        temp_series: List[Dict[str, Any]],
+        tick_rows: List[Dict[str, Any]],
+        outdoor_temp_c: Optional[float],
+        floor_area_m2: float,
+        ceiling_height_m: float,
+) -> Dict[str, Any]:
+    """
+    Run _find_cooldown_windows twice (no gate, gate) and score each window
+    with _fit_newton_cooling so we can report the full funnel:
+      raw candidates → survived heating gate → survived R² → counted in τ.
+    """
+    from modules.thermal_profile import (
+        _find_cooldown_windows, _fit_newton_cooling,
+        LEARN_MIN_DURATION_SEC, LEARN_MIN_DROP_C, LEARN_MAX_DURATION_SEC,
+    )
+
+    summary = {
+        "raw_candidates": 0,
+        "after_heating_gate": 0,
+        "after_r2_filter": 0,
+        "r2_threshold": 0.5,
+        "thresholds": {
+            "min_duration_sec": LEARN_MIN_DURATION_SEC,
+            "min_drop_c": LEARN_MIN_DROP_C,
+            "max_duration_sec": LEARN_MAX_DURATION_SEC,
+        },
+        "rejection_reasons": {
+            "heating_active": 0,
+            "r2_below_threshold": 0,
+            "fit_failed": 0,
+        },
+        "samples": [],  # Up to last 5 passing windows, compact
+    }
+
+    if not temp_series:
+        return summary
+
+    # Raw: no gate
+    raw = _find_cooldown_windows(
+        temp_series, None,
+        min_duration_sec=LEARN_MIN_DURATION_SEC,
+        min_drop_c=LEARN_MIN_DROP_C,
+        max_duration_sec=LEARN_MAX_DURATION_SEC,
+    )
+    summary["raw_candidates"] = len(raw)
+
+    # With gate (if we have tick rows)
+    if tick_rows:
+        try:
+            from modules.heating_anomaly_watcher import _build_heating_state_getter
+            getter = _build_heating_state_getter(tick_rows)
+        except Exception:
+            getter = None
+    else:
+        getter = None
+
+    if getter is not None:
+        gated = _find_cooldown_windows(
+            temp_series, None,
+            min_duration_sec=LEARN_MIN_DURATION_SEC,
+            min_drop_c=LEARN_MIN_DROP_C,
+            max_duration_sec=LEARN_MAX_DURATION_SEC,
+            heating_state_getter=getter,
+        )
+        summary["after_heating_gate"] = len(gated)
+        summary["rejection_reasons"]["heating_active"] = max(0, len(raw) - len(gated))
+    else:
+        gated = raw
+        summary["after_heating_gate"] = len(gated)  # no gate applied
+
+    # Score each gated window with Newton fit
+    outdoor = outdoor_temp_c if outdoor_temp_c is not None else 10.0
+    passed = 0
+    recent_samples = []
+    for (t0, t1, samples) in gated:
+        tau, r2 = _fit_newton_cooling(samples, outdoor)
+        if tau is None:
+            summary["rejection_reasons"]["fit_failed"] += 1
+            continue
+        if r2 is None or r2 < 0.5:
+            summary["rejection_reasons"]["r2_below_threshold"] += 1
+            continue
+        passed += 1
+        recent_samples.append({
+            "start_ts": t0, "end_ts": t1,
+            "duration_min": round((t1 - t0) / 60),
+            "temp_drop_c": round(samples[0][1] - samples[-1][1], 2),
+            "tau_hours": round(tau / 3600.0, 2),
+            "r2": round(r2, 3),
+        })
+    summary["after_r2_filter"] = passed
+    # Most recent 5 passing windows, newest first
+    recent_samples.sort(key=lambda s: s["end_ts"], reverse=True)
+    summary["samples"] = recent_samples[:5]
+    return summary
+
+
+def _derive_verdict(
+        dimensions: Optional[Dict[str, Any]],
+        telemetry: Dict[str, Any],
+        ticks: Dict[str, Any],
+        windows: Dict[str, Any],
+        profile,
+) -> Dict[str, str]:
+    """Plain-English summary of why a room is or isn't learning."""
+    if not dimensions or not dimensions.get("floor_area_m2"):
+        return {"code": "dimensions_missing",
+                "message": "Room has no floor area configured — static profile "
+                           "cannot be computed and measured τ has no thermal "
+                           "mass to reference. Add dimensions in heating config."}
+
+    if telemetry["sample_count"] < 10:
+        return {"code": "no_temperature_data",
+                "message": "Fewer than 10 temperature samples in the window. "
+                           "Check the room's temperature sensor is reporting."}
+
+    if telemetry.get("range_c", 0) < 0.5:
+        return {"code": "telemetry_flat",
+                "message": f"Temperature only varied by "
+                           f"{telemetry.get('range_c', 0)}°C over "
+                           f"{telemetry['span_hours']}h. Sensor may be stuck "
+                           f"or quantising too coarsely."}
+
+    if ticks["status"] == "no_data":
+        return {"code": "no_tick_data_yet",
+                "message": "No heating controller ticks recorded for this room "
+                           "yet. The heating-off gate is not active — baseline "
+                           "may be noisy. Give it an hour of controller runtime."}
+
+    if ticks["status"] == "heating_dominant":
+        return {"code": "heating_always_on",
+                "message": f"Heating was active in "
+                           f"{int(ticks['active_fraction']*100)}% of ticks. "
+                           f"Natural cool-down windows are rare — baseline "
+                           f"learning needs at least some heating-off periods "
+                           f"(e.g. overnight setback, away mode, or mild days)."}
+
+    if windows["raw_candidates"] == 0:
+        return {"code": "no_candidate_windows",
+                "message": "No monotonically-falling temperature runs met the "
+                           "minimum duration and drop thresholds. Temperature "
+                           "may be too noisy or oscillating tightly around setpoint."}
+
+    if windows["after_heating_gate"] == 0:
+        return {"code": "all_windows_during_heating",
+                "message": "All cool-down candidates overlapped active heating. "
+                           "Wait for a natural off period, or loosen heating "
+                           "schedules to create learning opportunities."}
+
+    if windows["after_r2_filter"] == 0:
+        return {"code": "all_windows_failed_r2",
+                "message": "Cool-down windows exist but Newton's-law fits are "
+                           "poor (R² < 0.5). Usually means sensor noise or "
+                           "residual radiator warmth extending into the window."}
+
+    if profile.measured_w_per_k is None:
+        return {"code": "measured_not_applied",
+                "message": "Windows passed fitting but no measured W/K was "
+                           "computed — check dimensions and fit outputs."}
+
+    if profile.measured_confidence < 0.3:
+        return {"code": "low_confidence",
+                "message": f"Measured τ exists "
+                           f"({windows['after_r2_filter']} windows) but "
+                           f"confidence is {profile.measured_confidence:.2f}. "
+                           f"Blended profile still favours static. Needs ~10 "
+                           f"good windows for full confidence."}
+
+    return {"code": "ok",
+            "message": f"Learning healthily: {windows['after_r2_filter']} "
+                       f"windows, confidence {profile.measured_confidence:.2f}."}
+
 def _with_defaults(d: Optional[dict], defaults: dict) -> dict:
     out = dict(defaults)
     if isinstance(d, dict):
@@ -745,6 +1013,170 @@ def register_heating_routes(app: FastAPI, get_heating_advisor, get_zigbee_servic
     async def circuit_room_thermal(circuit_id: str, room_id: str, days: int = 14):
         """Thermal profile for a specific room in a specific circuit."""
         return await _thermal_for_room(circuit_id, room_id, days)
+
+
+    # ── Diagnostics: why isn't this room learning its τ? ──────────────
+    @app.get("/api/heating/diagnostics/{circuit_id}/rooms/{room_id}")
+    async def circuit_room_diagnostics(circuit_id: str, room_id: str,
+                                       days: int = 14):
+        return await _diagnostics_for_room(circuit_id, room_id, days)
+
+    @app.get("/api/heating/diagnostics/rooms/{room_id}")
+    async def room_diagnostics_legacy(room_id: str, days: int = 14):
+        """Back-compat when circuit_id isn't known (e.g. ambiguous 'room_1')."""
+        return await _diagnostics_for_room(None, room_id, days)
+
+    async def _diagnostics_for_room(circuit_id, room_id: str, days: int):
+        """
+        Walk the thermal-profile learning pipeline and count what survives
+        at each stage. This is the endpoint the UI uses to explain *why* a
+        room is or isn't producing a measured τ, without anyone needing to
+        run SQL against the telemetry DB.
+
+        Cheap-ish — runs compute_measured once with instrumentation — but
+        not something to call every second. Meant for an on-demand "why?"
+        button on the thermal panel.
+        """
+        adv = _resolve_advisor()
+        if not adv:
+            return {"success": False, "error": "Heating advisor not available"}
+
+        try:
+            cfg = _load_config()
+            heating = cfg.get("heating") or {}
+            insulation = (heating.get("property") or {}).get("insulation", "partial")
+
+            # ── Resolve the room (same logic as /thermal) ─────────────
+            circuits = heating.get("circuits") or []
+            found_room = None
+            found_circuit = None
+            matches = 0
+            for c in circuits:
+                if circuit_id is not None and str(c.get("id")) != str(circuit_id):
+                    continue
+                for r in (c.get("rooms") or []):
+                    if str(r.get("id")) == room_id:
+                        matches += 1
+                        if not found_room:
+                            found_room = r
+                            found_circuit = c
+                        if circuit_id is not None:
+                            break
+                if found_room and circuit_id is not None:
+                    break
+            if not found_room:
+                return {"success": False,
+                        "error": f"Room '{room_id}' not found"
+                                 + (f" in circuit '{circuit_id}'" if circuit_id else "")}
+
+            cid = str(found_circuit.get("id")) if found_circuit else None
+            dimensions = found_room.get("dimensions")
+            sensor_ieee = found_room.get("temperature_sensor_ieee")
+            if not sensor_ieee:
+                trvs = found_room.get("trvs") or []
+                if trvs and isinstance(trvs[0], dict):
+                    sensor_ieee = trvs[0].get("ieee")
+
+            # ── Stage 1: Telemetry ────────────────────────────────────
+            temp_series = []
+            telemetry_attr_used = None
+            if sensor_ieee:
+                try:
+                    from modules.telemetry_db import query_device_state_history
+                    hours = max(24, int(days) * 24)
+                    for attr in ("temperature", "local_temperature",
+                                 "current_temperature", "internal_temperature"):
+                        rows = query_device_state_history(sensor_ieee, attr, hours) or []
+                        if rows:
+                            temp_series = rows
+                            telemetry_attr_used = attr
+                            break
+                except Exception as e:
+                    logger.warning(f"diagnostics: telemetry fetch failed: {e}")
+
+            telemetry_section = _summarise_telemetry(temp_series, telemetry_attr_used)
+
+            # ── Stage 2: Ticks (heating-state gate data) ──────────────
+            tick_rows = []
+            if cid:
+                try:
+                    from modules.telemetry_db import query_room_heating_state
+                    tick_rows = query_room_heating_state(
+                        circuit_id=cid, room_id=room_id, hours=int(days) * 24,
+                    )
+                except Exception as e:
+                    logger.debug(f"diagnostics: tick fetch failed: {e}")
+
+            ticks_section = _summarise_ticks(tick_rows)
+
+            # ── Stage 3: Cool-down window funnel ──────────────────────
+            # Recompute the funnel with instrumentation. We call
+            # _find_cooldown_windows twice: once WITHOUT the gate, once WITH,
+            # so we can report how many candidates the gate rejected.
+            windows_section = _summarise_windows(
+                temp_series=temp_series,
+                tick_rows=tick_rows,
+                outdoor_temp_c=_safe_outdoor(adv),
+                floor_area_m2=float((dimensions or {}).get("floor_area_m2") or 0.0),
+                ceiling_height_m=float((dimensions or {}).get("ceiling_height_m") or 2.4),
+            )
+
+            # ── Stage 4: Final profile (same call as /thermal would make) ──
+            from modules.thermal_profile import compute_profile
+            outdoor_getter = None
+            current_out = _safe_outdoor(adv)
+            if current_out is not None:
+                outdoor_getter = lambda _ts, _v=current_out: _v
+
+            heating_state_getter = None
+            try:
+                from modules.heating_anomaly_watcher import _build_heating_state_getter
+                if tick_rows:
+                    heating_state_getter = _build_heating_state_getter(tick_rows)
+            except Exception:
+                pass
+
+            profile = compute_profile(
+                room_id=room_id,
+                dimensions=dimensions,
+                insulation=insulation,
+                temperature_series=temp_series,
+                outdoor_temp_getter=outdoor_getter,
+                heating_state_getter=heating_state_getter,
+            )
+
+            # ── Verdict ───────────────────────────────────────────────
+            verdict = _derive_verdict(
+                dimensions=dimensions,
+                telemetry=telemetry_section,
+                ticks=ticks_section,
+                windows=windows_section,
+                profile=profile,
+            )
+
+            return {
+                "success": True,
+                "verdict": verdict["code"],
+                "verdict_message": verdict["message"],
+                "meta": {
+                    "circuit_id": cid,
+                    "circuit_name": found_circuit.get("name") if found_circuit else None,
+                    "room_name": found_room.get("name"),
+                    "sensor_ieee": sensor_ieee,
+                    "insulation": insulation,
+                    "days": int(days),
+                    "ambiguous_id": (circuit_id is None and matches > 1),
+                    "match_count": matches,
+                },
+                "telemetry": telemetry_section,
+                "ticks": ticks_section,
+                "cooldown_windows": windows_section,
+                "profile": profile.to_dict(),
+            }
+
+        except Exception as e:
+            logger.error(f"Diagnostics failed for {room_id}: {e}", exc_info=True)
+            return {"success": False, "error": str(e)}
 
     @app.get("/api/heating/rooms/{room_id}/thermal")
     async def room_thermal_legacy(room_id: str, days: int = 14):

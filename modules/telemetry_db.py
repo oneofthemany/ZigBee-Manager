@@ -105,6 +105,36 @@ def _init_tables(db):
         )
     """)
 
+    db.execute("""
+            CREATE TABLE IF NOT EXISTS heating_tick_rooms (
+                ts                  TIMESTAMP NOT NULL DEFAULT now(),
+                circuit_id          VARCHAR NOT NULL,
+                room_id             VARCHAR NOT NULL,
+                classification      VARCHAR,
+                current_temp_c      DOUBLE,
+                setpoint_c          DOUBLE,
+                outdoor_temp_c      DOUBLE,
+                calling_for_heat    BOOLEAN,
+                trv_setpoint_c      DOUBLE,
+                trv_valve_open_pct  DOUBLE,
+                dry_run             BOOLEAN DEFAULT FALSE,
+                reason              VARCHAR
+            )
+        """)
+
+    db.execute("""
+            CREATE TABLE IF NOT EXISTS heating_tick_boiler (
+                ts                  TIMESTAMP NOT NULL DEFAULT now(),
+                circuit_id          VARCHAR NOT NULL,
+                boiler_called       BOOLEAN NOT NULL,
+                rooms_cold          INTEGER DEFAULT 0,
+                rooms_ontarget      INTEGER DEFAULT 0,
+                rooms_hot           INTEGER DEFAULT 0,
+                receiver_command    VARCHAR,
+                dry_run             BOOLEAN DEFAULT FALSE
+            )
+        """)
+
     logger.debug("Telemetry tables initialised")
 
 
@@ -184,6 +214,120 @@ def write_spectrum_scan(results: Dict[int, int]):
         INSERT INTO spectrum_scans (channel, energy) VALUES (?, ?)
     """, [(int(ch), int(e)) for ch, e in results.items()])
 
+
+def write_heating_tick(
+        ts: float,
+        dry_run: bool,
+        circuits: List[Dict[str, Any]],
+) -> None:
+    """
+    Persist one controller tick for later analysis.
+
+    Expected input shape matches HeatingController._last_decision["circuits"]:
+        [{
+            "id": str, "name": str,
+            "calling_for_heat": bool,
+            "receiver_action": {"command": "on"|"off"|"none"|..., ...} | None,
+            "rooms": [ RoomDecision.to_dict() ... ],
+            ...
+        }, ...]
+
+    `ts` is epoch seconds (matches self._last_decision_ts in the controller).
+    `dry_run` is self.dry_run — persisted per-row so the reader path can
+    cheaply exclude simulated decisions when building the heating-off gate.
+    """
+    if not circuits:
+        return
+
+    import datetime as _dt
+    tick_dt = _dt.datetime.fromtimestamp(ts)
+
+    db = _get_db()
+    room_rows = []
+    boiler_rows = []
+
+    for c in circuits:
+        cid = str(c.get("id") or "")
+        if not cid:
+            continue
+
+        # Boiler-level row
+        recv = c.get("receiver_action") or {}
+        recv_cmd = recv.get("command") if isinstance(recv, dict) else None
+
+        rooms = c.get("rooms") or []
+        n_cold = sum(1 for r in rooms if r.get("status") == "cold")
+        n_ok   = sum(1 for r in rooms if r.get("status") == "ontarget")
+        n_hot  = sum(1 for r in rooms if r.get("status") == "hot")
+
+        boiler_rows.append((
+            tick_dt, cid,
+            bool(c.get("calling_for_heat")),
+            n_cold, n_ok, n_hot,
+            recv_cmd,
+            dry_run,
+        ))
+
+        # Per-room rows
+        for r in rooms:
+            rid = str(r.get("room_id") or "")
+            if not rid:
+                continue
+
+            # Pick the first TRV's intended_setpoint + valve_open_pct, if any.
+            # (If a room has multiple TRVs we take the first; for anomaly
+            # analysis "was this room being heated" is a coarse signal and
+            # any-TRV-open is enough. Store all details in trvs JSON if you
+            # want finer grain later — skipped here to keep the row flat.)
+            trvs = r.get("trvs") or []
+            trv_sp = None
+            trv_open = None
+            if trvs:
+                first = trvs[0] if isinstance(trvs[0], dict) else {}
+                trv_sp = first.get("intended_setpoint")
+                # zigpy/aqara reports valve opening under various names
+                for k in ("valve_opening_degree", "pi_heating_demand",
+                          "valve_open_degree"):
+                    if first.get(k) is not None:
+                        try:
+                            trv_open = float(first[k])
+                        except (TypeError, ValueError):
+                            pass
+                        break
+
+            room_rows.append((
+                tick_dt, cid, rid,
+                r.get("status"),
+                r.get("current_temp"),
+                r.get("target_temp"),
+                None,                           # outdoor_temp_c — not captured in tick today
+                bool(r.get("calling_for_heat")),
+                trv_sp,
+                trv_open,
+                dry_run,
+                r.get("temp_source"),           # doubles as "reason" for now
+            ))
+
+    try:
+        if room_rows:
+            db.executemany("""
+                INSERT INTO heating_tick_rooms (
+                    ts, circuit_id, room_id, classification,
+                    current_temp_c, setpoint_c, outdoor_temp_c,
+                    calling_for_heat, trv_setpoint_c, trv_valve_open_pct,
+                    dry_run, reason
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, room_rows)
+        if boiler_rows:
+            db.executemany("""
+                INSERT INTO heating_tick_boiler (
+                    ts, circuit_id, boiler_called,
+                    rooms_cold, rooms_ontarget, rooms_hot,
+                    receiver_command, dry_run
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, boiler_rows)
+    except Exception as e:
+        logger.error(f"write_heating_tick failed: {e}", exc_info=True)
 
 # ============================================================================
 # READ OPERATIONS
@@ -332,6 +476,53 @@ def get_db_stats() -> Dict[str, Any]:
 
     return stats
 
+
+def query_room_heating_state(
+        circuit_id: str,
+        room_id: str,
+        hours: int = 14 * 24,
+) -> List[Dict[str, Any]]:
+    """
+    Return per-tick heating state for a room over the last N hours.
+
+    Used by the heating anomaly watcher to build a heating_state_getter(ts)
+    closure, so baseline-τ fitting can reject cool-down windows that
+    overlapped a period when heating was actively running.
+
+    Rows are returned in ascending ts order (oldest first) to make bisect
+    lookups cheap on the caller side. Dry-run ticks are excluded because
+    their decisions didn't actually drive TRVs or the boiler.
+
+    The 'heating_active' column is derived: a room counts as "being heated"
+    if it was calling for heat OR its TRV valve was reported open. Either
+    signal is sufficient — we want a conservative gate (bias toward
+    rejecting windows, not including contaminated ones).
+    """
+    db = _get_db()
+    hours = int(hours)
+    rows = db.execute(f"""
+        SELECT
+            ts,
+            calling_for_heat,
+            trv_valve_open_pct,
+            classification,
+            current_temp_c,
+            setpoint_c,
+            (
+                COALESCE(calling_for_heat, FALSE)
+                OR COALESCE(trv_valve_open_pct, 0) > 0
+            ) AS heating_active
+        FROM heating_tick_rooms
+        WHERE circuit_id = ?
+          AND room_id = ?
+          AND ts >= now() - INTERVAL '{hours} hours'
+          AND dry_run = FALSE
+        ORDER BY ts ASC
+    """, [circuit_id, room_id]).fetchall()
+
+    cols = ["ts", "calling_for_heat", "trv_valve_open_pct",
+            "classification", "current_temp_c", "setpoint_c", "heating_active"]
+    return [dict(zip(cols, r)) for r in rows]
 
 # ============================================================================
 # MAINTENANCE

@@ -4,8 +4,14 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="comment out --user for service">
-      <change beforePath="$PROJECT_DIR$/device.py" beforeDir="false" afterPath="$PROJECT_DIR$/device.py" afterDir="false" />
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="updated report values for database">
+      <change beforePath="$PROJECT_DIR$/handlers/hvac.py" beforeDir="false" afterPath="$PROJECT_DIR$/handlers/hvac.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/handlers/sensors.py" beforeDir="false" afterPath="$PROJECT_DIR$/handlers/sensors.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/modules/heating_anomaly_watcher.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/heating_anomaly_watcher.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/modules/heating_controller.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/heating_controller.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/modules/telemetry_db.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/telemetry_db.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/modules/thermal_profile.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/thermal_profile.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/routes/heating_routes.py" beforeDir="false" afterPath="$PROJECT_DIR$/routes/heating_routes.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -155,14 +161,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00312" summary="last seen and permit join via fixes">
-      <option name="closed" value="true" />
-      <created>1776174346240</created>
-      <option name="number" value="00312" />
-      <option name="presentableId" value="LOCAL-00312" />
-      <option name="project" value="LOCAL" />
-      <updated>1776174346240</updated>
     </task>
     <task id="LOCAL-00313" summary="discover_attributes update">
       <option name="closed" value="true" />
@@ -548,7 +546,15 @@
       <option name="project" value="LOCAL" />
       <updated>1776770205146</updated>
     </task>
-    <option name="localTasksCounter" value="361" />
+    <task id="LOCAL-00361" summary="updated report values for database">
+      <option name="closed" value="true" />
+      <created>1776770640959</created>
+      <option name="number" value="00361" />
+      <option name="presentableId" value="LOCAL-00361" />
+      <option name="project" value="LOCAL" />
+      <updated>1776770640959</updated>
+    </task>
+    <option name="localTasksCounter" value="362" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -575,7 +581,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="adding in option for TRV less rooms where control of heating pull can be undertaken  by a temp sensor" />
     <MESSAGE value="theme change update" />
     <MESSAGE value="changing temp sensor update to be more aggressive for new heating controller" />
     <MESSAGE value="new thermal profile option" />
@@ -600,6 +605,7 @@
     <MESSAGE value="improved backup to indlude telemetry database" />
     <MESSAGE value="include wal file updated in restore for duckdb" />
     <MESSAGE value="comment out --user for service" />
-    <option name="LAST_COMMIT_MESSAGE" value="comment out --user for service" />
+    <MESSAGE value="updated report values for database" />
+    <option name="LAST_COMMIT_MESSAGE" value="updated report values for database" />
   </component>
 </project>
