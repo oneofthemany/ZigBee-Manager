@@ -244,21 +244,59 @@ def register_backup_routes(app: FastAPI, get_zigbee_service):
 
             # After extracting all files, fix up config.yaml if needed
             config_target = os.path.join(APP_DIR, "config/config.yaml")
+            config_warnings = []
             if os.path.isfile(config_target):
                 try:
                     import yaml as _yaml
                     with open(config_target, "r") as f:
                         cfg = _yaml.safe_load(f) or {}
+                    cfg_dirty = False
 
+                    # ── MQTT enabled inference ──
                     mqtt = cfg.setdefault("mqtt", {})
                     if "enabled" not in mqtt:
-                        # Infer: if broker_host is set, MQTT was intended to be enabled
                         mqtt["enabled"] = bool(mqtt.get("broker_host", ""))
+                        cfg_dirty = True
+                        logger.info("Patched mqtt.enabled into restored config.yaml")
+
+                    # ── SSL safety check ──
+                    # If SSL is enabled in the restored config but the referenced
+                    # cert/key files do not exist on disk, the server would fail
+                    # to start. Force-disable SSL so the service comes back up;
+                    # surface the change to the operator via the response.
+                    server = cfg.get("server", {}) or {}
+                    ssl_cfg = server.get("ssl", {}) or {}
+                    if ssl_cfg.get("enabled"):
+                        cert_rel = ssl_cfg.get("cert_file", "./data/certs/cert.pem")
+                        key_rel  = ssl_cfg.get("key_file",  "./data/certs/key.pem")
+                        # Resolve relative to APP_DIR (matches main.py uvicorn launch CWD)
+                        cert_abs = (cert_rel if os.path.isabs(cert_rel)
+                                    else os.path.join(APP_DIR, cert_rel.lstrip("./")))
+                        key_abs  = (key_rel  if os.path.isabs(key_rel)
+                                    else os.path.join(APP_DIR, key_rel.lstrip("./")))
+                        missing = []
+                        if not os.path.isfile(cert_abs):
+                            missing.append(cert_rel)
+                        if not os.path.isfile(key_abs):
+                            missing.append(key_rel)
+
+                        if missing:
+                            cfg["server"]["ssl"]["enabled"] = False
+                            cfg_dirty = True
+                            warning = (
+                                f"SSL was enabled in the restored config but cert files are missing "
+                                f"({', '.join(missing)}). SSL has been disabled so the server can start. "
+                                f"Regenerate certificates and re-enable SSL in config.yaml."
+                            )
+                            config_warnings.append(warning)
+                            logger.warning(warning)
+
+                    if cfg_dirty:
                         with open(config_target, "w") as f:
                             _yaml.dump(cfg, f, default_flow_style=False, sort_keys=False)
-                        logger.info("Patched mqtt.enabled into restored config.yaml")
                 except Exception as e:
                     logger.warning(f"Could not patch config.yaml after restore: {e}")
+                    config_warnings.append(f"Config post-processing error: {e}")
 
 
             result = {
@@ -266,6 +304,7 @@ def register_backup_routes(app: FastAPI, get_zigbee_service):
                 "restored": restored,
                 "restored_count": len(restored),
                 "errors": errors,
+                "warnings": config_warnings,
                 "manifest": manifest,
                 "message": (
                     f"Restored {len(restored)} files. Restart the service to apply."
