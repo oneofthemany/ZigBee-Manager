@@ -4,9 +4,9 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="new rust appender for duckdb">
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="update to staging and deps in containerfile">
       <change afterPath="$PROJECT_DIR$/zmm_telemetry/build.sh" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/build.sh" beforeDir="false" afterPath="$PROJECT_DIR$/build.sh" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/routes/backup_routes.py" beforeDir="false" afterPath="$PROJECT_DIR$/routes/backup_routes.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -156,14 +156,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00308" summary="new permit join and auto bind for hive receivers plus cluster attributes">
-      <option name="closed" value="true" />
-      <created>1776174223127</created>
-      <option name="number" value="00308" />
-      <option name="presentableId" value="LOCAL-00308" />
-      <option name="project" value="LOCAL" />
-      <updated>1776174223127</updated>
     </task>
     <task id="LOCAL-00309" summary="new diag attributes to help determine read and write availability for clusters attrs">
       <option name="closed" value="true" />
@@ -549,7 +541,15 @@
       <option name="project" value="LOCAL" />
       <updated>1776763834863</updated>
     </task>
-    <option name="localTasksCounter" value="357" />
+    <task id="LOCAL-00357" summary="update to staging and deps in containerfile">
+      <option name="closed" value="true" />
+      <created>1776764148324</created>
+      <option name="number" value="00357" />
+      <option name="presentableId" value="LOCAL-00357" />
+      <option name="project" value="LOCAL" />
+      <updated>1776764148324</updated>
+    </task>
+    <option name="localTasksCounter" value="358" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -576,7 +576,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="heating tab bug fixes" />
     <MESSAGE value="adding in the ability to use any device as an external temp source for TRV with overrides in place to remove receivers as options" />
     <MESSAGE value="dark mode for heating tab" />
     <MESSAGE value="colout pallette and controleroverlay patches" />
@@ -601,6 +600,7 @@
     <MESSAGE value="history tab added" />
     <MESSAGE value="history bumped to 30 days" />
     <MESSAGE value="new rust appender for duckdb" />
-    <option name="LAST_COMMIT_MESSAGE" value="new rust appender for duckdb" />
+    <MESSAGE value="update to staging and deps in containerfile" />
+    <option name="LAST_COMMIT_MESSAGE" value="update to staging and deps in containerfile" />
   </component>
 </project>

@@ -20,7 +20,7 @@ from fastapi.responses import StreamingResponse
 
 logger = logging.getLogger("routes.backup")
 
-# All files to include in a full backup (relative to /app)
+# Core files always included
 BACKUP_MANIFEST = [
     # Network credentials & config
     "config/config.yaml",
@@ -43,6 +43,11 @@ BACKUP_MANIFEST = [
     "groups/groups.json",
 ]
 
+# Optional files (toggled via query param)
+OPTIONAL_BACKUP_FILES = [
+    "data/telemetry.duckdb",
+]
+
 APP_DIR = os.environ.get("ZMM_APP_DIR", "/app")
 
 
@@ -50,10 +55,11 @@ def register_backup_routes(app: FastAPI, get_zigbee_service):
     """Register backup & restore API routes."""
 
     @app.get("/api/backup/create")
-    async def create_backup():
+    async def create_backup(include_telemetry: bool = True):
         """
         Create a full network backup as a downloadable .zip file.
-        Includes: config, zigbee.db, all data/*.json, zones, groups.
+        Includes: config, zigbee.db, all data/*.json, zones, groups,
+        and (optionally) the telemetry DuckDB.
         """
         try:
             svc = get_zigbee_service()
@@ -73,6 +79,20 @@ def register_backup_routes(app: FastAPI, get_zigbee_service):
                 except Exception as e:
                     logger.warning(f"Could not flush zones before backup: {e}")
 
+            # Flush telemetry: drain Rust appender buffers + CHECKPOINT to merge WAL
+            if include_telemetry:
+                try:
+                    from modules.telemetry_db import flush_appender, _get_db
+                    flush_appender()
+                    _get_db().execute("CHECKPOINT")
+                except Exception as e:
+                    logger.warning(f"Could not flush telemetry DB before backup: {e}")
+
+            # Build manifest list for this run
+            manifest_files = list(BACKUP_MANIFEST)
+            if include_telemetry:
+                manifest_files.extend(OPTIONAL_BACKUP_FILES)
+
             # Build zip in memory
             buffer = io.BytesIO()
             ts = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -80,15 +100,15 @@ def register_backup_routes(app: FastAPI, get_zigbee_service):
             skipped = []
 
             with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as zf:
-                # Write manifest metadata
                 meta = {
                     "created_at": datetime.now().isoformat(),
-                    "version": "1.0",
+                    "version": "1.1",
+                    "include_telemetry": include_telemetry,
                     "device_count": len(svc.devices) if svc else 0,
                     "files": [],
                 }
 
-                for rel_path in BACKUP_MANIFEST:
+                for rel_path in manifest_files:
                     full = os.path.join(APP_DIR, rel_path)
                     if os.path.isfile(full):
                         zf.write(full, rel_path)
@@ -110,7 +130,8 @@ def register_backup_routes(app: FastAPI, get_zigbee_service):
                 zf.writestr("backup_manifest.json", json.dumps(meta, indent=2))
 
             buffer.seek(0)
-            filename = f"zmm_backup_{ts}.zip"
+            tail = "_full" if include_telemetry else "_config"
+            filename = f"zmm_backup_{ts}{tail}.zip"
 
             logger.info(f"Backup created: {filename} ({len(included)} files)")
 
@@ -181,7 +202,7 @@ def register_backup_routes(app: FastAPI, get_zigbee_service):
                     f"zip entries: {[n for n in names if n != 'backup_manifest.json']})"
                 )
 
-                allowed = set(BACKUP_MANIFEST)
+                allowed = set(BACKUP_MANIFEST) | set(OPTIONAL_BACKUP_FILES)
                 restored = []
                 errors = []
 
@@ -255,22 +276,28 @@ def register_backup_routes(app: FastAPI, get_zigbee_service):
         """
         files = []
         total_size = 0
+        telemetry_size = 0
 
         for rel_path in BACKUP_MANIFEST:
             full = os.path.join(APP_DIR, rel_path)
             exists = os.path.isfile(full)
             size = os.path.getsize(full) if exists else 0
             total_size += size
+            files.append({"path": rel_path, "exists": exists, "size": size, "optional": False})
 
-            files.append({
-                "path": rel_path,
-                "exists": exists,
-                "size": size,
-            })
+        for rel_path in OPTIONAL_BACKUP_FILES:
+            full = os.path.join(APP_DIR, rel_path)
+            exists = os.path.isfile(full)
+            size = os.path.getsize(full) if exists else 0
+            telemetry_size += size
+            files.append({"path": rel_path, "exists": exists, "size": size, "optional": True})
 
         return {
             "success": True,
             "files": files,
             "total_size": total_size,
             "total_size_mb": round(total_size / (1024 * 1024), 2),
+            "telemetry_size": telemetry_size,
+            "telemetry_size_mb": round(telemetry_size / (1024 * 1024), 2),
+            "total_with_telemetry_mb": round((total_size + telemetry_size) / (1024 * 1024), 2),
         }
