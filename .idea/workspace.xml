@@ -4,8 +4,12 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="diag attr patch to include all EP's">
-      <change beforePath="$PROJECT_DIR$/core/service.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/service.py" afterDir="false" />
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="new attribute-list + histogram endpoints">
+      <change afterPath="$PROJECT_DIR$/static/js/modal/history.js" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/misc.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/misc.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/device.py" beforeDir="false" afterPath="$PROJECT_DIR$/device.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/static/js/device-modal.js" beforeDir="false" afterPath="$PROJECT_DIR$/static/js/device-modal.js" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -36,12 +40,12 @@
     &quot;assignee&quot;: &quot;oneofthemany&quot;
   }
 }</component>
-  <component name="GithubPullRequestsUISettings">{
-  &quot;selectedUrlAndAccountId&quot;: {
-    &quot;url&quot;: &quot;https://github.com/oneofthemany/ZigBee-Matter-Manager.git&quot;,
-    &quot;accountId&quot;: &quot;e255082e-bca2-4e88-a50f-e3452f07b5b3&quot;
+  <component name="GithubPullRequestsUISettings"><![CDATA[{
+  "selectedUrlAndAccountId": {
+    "url": "https://github.com/oneofthemany/ZigBee-Matter-Manager.git",
+    "accountId": "b00be1dc-7b4f-4311-ab84-b3d2175df6fb"
   }
-}</component>
+}]]></component>
   <component name="ProjectColorInfo">{
   &quot;associatedIndex&quot;: 2
 }</component>
@@ -155,22 +159,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00302" summary="persistence added for keys and database">
-      <option name="closed" value="true" />
-      <created>1776069385354</created>
-      <option name="number" value="00302" />
-      <option name="presentableId" value="LOCAL-00302" />
-      <option name="project" value="LOCAL" />
-      <updated>1776069385355</updated>
-    </task>
-    <task id="LOCAL-00303" summary="updated to cater for install methods">
-      <option name="closed" value="true" />
-      <created>1776070365029</created>
-      <option name="number" value="00303" />
-      <option name="presentableId" value="LOCAL-00303" />
-      <option name="project" value="LOCAL" />
-      <updated>1776070365029</updated>
     </task>
     <task id="LOCAL-00304" summary="updated to cater for install methods">
       <option name="closed" value="true" />
@@ -548,7 +536,23 @@
       <option name="project" value="LOCAL" />
       <updated>1776699481471</updated>
     </task>
-    <option name="localTasksCounter" value="351" />
+    <task id="LOCAL-00351" summary="hooking record_state_change into the state pipeline">
+      <option name="closed" value="true" />
+      <created>1776760251460</created>
+      <option name="number" value="00351" />
+      <option name="presentableId" value="LOCAL-00351" />
+      <option name="project" value="LOCAL" />
+      <updated>1776760251461</updated>
+    </task>
+    <task id="LOCAL-00352" summary="new attribute-list + histogram endpoints">
+      <option name="closed" value="true" />
+      <created>1776760573653</created>
+      <option name="number" value="00352" />
+      <option name="presentableId" value="LOCAL-00352" />
+      <option name="project" value="LOCAL" />
+      <updated>1776760573653</updated>
+    </task>
+    <option name="localTasksCounter" value="353" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -575,8 +579,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="config export and stop skipping  manufacturer specific attributes" />
-    <MESSAGE value="aqara updates for new heating controller" />
     <MESSAGE value="trv updates" />
     <MESSAGE value="improvements for disablement for when heating controiller is enabled" />
     <MESSAGE value="dictionary added" />
@@ -600,6 +602,8 @@
     <MESSAGE value="debugging added and improved zigbee cache" />
     <MESSAGE value="location update for zigbee_cache module" />
     <MESSAGE value="diag attr patch to include all EP's" />
-    <option name="LAST_COMMIT_MESSAGE" value="diag attr patch to include all EP's" />
+    <MESSAGE value="hooking record_state_change into the state pipeline" />
+    <MESSAGE value="new attribute-list + histogram endpoints" />
+    <option name="LAST_COMMIT_MESSAGE" value="new attribute-list + histogram endpoints" />
   </component>
 </project>
