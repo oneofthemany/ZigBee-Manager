@@ -144,8 +144,7 @@ class TelemetryCollector:
         Only records attributes that are interesting for history —
         skips metadata fields.
         """
-        skip = {"last_seen", "available", "manufacturer", "model",
-                "power_source", "lqi", "linkquality"}
+        skip = {"last_seen", "available", "manufacturer", "model", "power_source"}
 
         try:
             from modules.telemetry_db import write_device_state

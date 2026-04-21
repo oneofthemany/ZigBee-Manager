@@ -1066,6 +1066,16 @@ class ZigbeeService(
             except Exception as e:
                 logger.error(f"[{ieee}] Instant automation trigger failed: {e}")
 
+
+        # >>> Telemetry history recording <
+        # Persist attribute changes to DuckDB for History tab / trend charts.
+        # Covers both reports and poll() results (both funnel through here).
+        if getattr(self, 'telemetry_collector', None) and changed_data:
+            try:
+                self.telemetry_collector.record_state_change(ieee, changed_data)
+            except Exception as e:
+                logger.debug(f"[{ieee}] Telemetry record failed: {e}")
+
         # Cancel any pending debounced update for this device
         if ieee in self._update_debounce_tasks:
             self._update_debounce_tasks[ieee].cancel()
