@@ -237,17 +237,31 @@ class ResilienceManager:
 
             # Exponential backoff
             backoff = self.recovery_backoff * (2 ** (self.recovery_attempts - 1))
-            logger.info(f"Waiting {backoff}s before recovery attempt")
+            logger.info(f"Waiting {backoff}s before reconnect attempt")
             await asyncio.sleep(backoff)
 
-            # The actual recovery is handled by zigpy/bellows automatically
-            # We just need to wait and monitor
-            logger.info("Waiting for automatic reconnection...")
+            # Actually reconnect — bellows doesn't auto-recover from
+            # ERROR_EXCEEDED_MAXIMUM_ACK_TIMEOUT_COUNT
+            try:
+                logger.info("Disconnecting NCP...")
+                await self.app.disconnect()
+            except Exception as e:
+                logger.warning(f"Disconnect raised (expected): {e}")
 
-            # Give it time to reconnect
-            await asyncio.sleep(10)
+            await asyncio.sleep(2)
 
-            # Check if we're back online
+            try:
+                logger.info("Reconnecting NCP...")
+                await self.app.connect()
+                logger.info("NCP reconnected successfully")
+            except Exception as e:
+                logger.error(f"NCP reconnect failed: {e}")
+                self.recovery_in_progress = False
+                return False
+
+            # Give the stack a moment to stabilise
+            await asyncio.sleep(3)
+
             if await self._verify_connection():
                 logger.info("Recovery successful!")
                 self.recovery_attempts = 0
@@ -257,11 +271,8 @@ class ResilienceManager:
                 self.recovery_in_progress = False
                 return True
             else:
-                logger.warning("Recovery attempt failed - connection not restored")
+                logger.warning("Reconnect succeeded but verification failed")
                 self.recovery_in_progress = False
-
-                # Try again after delay
-                await asyncio.sleep(5)
                 return False
 
         except Exception as e:

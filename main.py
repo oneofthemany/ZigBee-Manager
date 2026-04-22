@@ -313,6 +313,8 @@ async def lifespan(app: FastAPI):
         await zigbee_service.start(network_key=network_key)
         logger.info("Zigbee network started")
 
+        heating_controller._resilience_manager = getattr(zigbee_service.app, "_resilience_manager", None)
+
         # Wire group callback
         if mqtt_enabled:
             mqtt_service.group_command_callback = zigbee_service.group_manager.handle_mqtt_group_command

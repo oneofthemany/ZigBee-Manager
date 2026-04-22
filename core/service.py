@@ -1347,6 +1347,8 @@ class ZigbeeService(
         try:
             device = self.devices[ieee]
             result = await device.send_command(command, value, endpoint_id)
+            if result is False:
+                return {"success": False, "error": "Device rejected command"}
             return {"success": True, "result": result}
         except NcpFailure as e:
             logger.error(f"[{ieee}] NCP Failure during command: {e}")

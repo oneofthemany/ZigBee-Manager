@@ -238,7 +238,7 @@ class HeatingController:
         self.dry_run = bool(controller_cfg.get("dry_run", False))
 
         self._get_devices = device_getter
-        self._send_command = command_sender
+        self._throttled_send = command_sender
 
         defaults = comfort_defaults or {}
         self._default_target = _as_float(defaults.get("target_temp"), 21.0)
@@ -263,6 +263,10 @@ class HeatingController:
 
         self._task: Optional[asyncio.Task] = None
         self._ext_push_task: Optional[asyncio.Task] = None
+
+        self._radio_write_lock = asyncio.Lock()
+        self._last_radio_write_ts = 0.0
+        self._min_write_gap = 0.5  # seconds between writes
 
         if self.enabled:
             mode = "DRY-RUN" if self.dry_run else "LIVE"
@@ -387,6 +391,19 @@ class HeatingController:
                 room_out["radiator"] = r["radiator"]
             out.append(room_out)
         return out
+
+
+    async def _throttled_send(self, ieee: str, command: str, value=None):
+        """Serialised wrapper around _send_command with inter-write pacing."""
+        async with self._radio_write_lock:
+            gap = time.time() - self._last_radio_write_ts
+            if gap < self._min_write_gap:
+                await asyncio.sleep(self._min_write_gap - gap)
+            try:
+                resp = await self._throttled_send(ieee, command, value)
+            finally:
+                self._last_radio_write_ts = time.time()
+            return resp
 
     def _clean_trvs(self, room: dict) -> List[Dict]:
         """
@@ -520,6 +537,23 @@ class HeatingController:
 
     # ── Core control loop ──────────────────────────────────────────
     async def _tick(self):
+        # Gate: don't fire radio operations when the stack is in recovery
+        try:
+            from modules.resilience import ConnectionState
+            res_mgr = getattr(self, "_resilience_manager", None)
+            if res_mgr is None:
+                # Fallback: try to find it on the zigbee app
+                app = getattr(self._get_devices, "__self__", None)
+                if app and hasattr(app, "_resilience_manager"):
+                    res_mgr = app._resilience_manager
+            if res_mgr and res_mgr.state != ConnectionState.CONNECTED:
+                logger.debug(
+                    f"Skipping heating tick — radio state is {res_mgr.state}"
+                )
+                return
+        except Exception:
+            pass  # if we can't check, proceed — fail-open
+
         devices = self._snapshot_devices()
         now = datetime.now()
         circuits_out = []
@@ -759,18 +793,18 @@ class HeatingController:
                 last_sp = self._last_command.get(f"{ieee}:setpoint")
                 if not last_sp or last_sp[0] != target_setpoint:
                     try:
-                        await self._send_command(
+                        await self._throttled_send(
                             ieee, "temperature", target_setpoint,
                             endpoint_id=circuit.get("receiver_endpoint"),
                         )
                     except TypeError:
-                        await self._send_command(ieee, "temperature", target_setpoint)
+                        await self._throttled_send(ieee, "temperature", target_setpoint)
                     self._last_command[f"{ieee}:setpoint"] = (target_setpoint, time.time())
                     logger.info(
                         f"Receiver '{circuit['name']}' setpoint → {target_setpoint}°C"
                     )
             # 2) Then push mode / on-off
-            await self._send_command(ieee, target_command, target_value,
+            await self._throttled_send(ieee, target_command, target_value,
                                      endpoint_id=circuit.get("receiver_endpoint"))
             self._last_command[ieee] = (target_command, target_value, time.time())
             logger.info(f"Receiver '{circuit['name']}' ({ieee}) → {display}")
@@ -781,7 +815,7 @@ class HeatingController:
             }
         except TypeError:
             try:
-                await self._send_command(ieee, target_command, target_value)
+                await self._throttled_send(ieee, target_command, target_value)
                 self._last_command[ieee] = (target_command, target_value, time.time())
                 return {"sent": True, "command": display}
             except Exception as e:
@@ -884,7 +918,7 @@ class HeatingController:
                 continue
 
             try:
-                await self._send_command(ieee, "temperature", intended)
+                await self._throttled_send(ieee, "temperature", intended)
                 self._last_command[ieee] = ("temperature", intended, now)
                 logger.info(
                     f"TRV {trv['name']} ({ieee}) → {intended}°C "
@@ -956,7 +990,7 @@ class HeatingController:
                 continue
 
             try:
-                ok = await self._send_command(ieee, command, 1 if desired else 0)
+                ok = await self._throttled_send(ieee, command, 1 if desired else 0)
                 if ok is False:
                     results["failed"][cfg_key] = "device rejected write"
                 else:
@@ -979,7 +1013,7 @@ class HeatingController:
                 results["sent"]["sensor_type"] = {"value": "external", "dry_run": True}
             else:
                 try:
-                    ok = await self._send_command(ieee, "sensor_type", 1)
+                    ok = await self._throttled_send(ieee, "sensor_type", 1)
                     if ok is False:
                         results["failed"]["sensor_type"] = "device rejected write"
                     else:
@@ -1005,7 +1039,7 @@ class HeatingController:
             logger.info(f"[DRY-RUN] Would start calibration on TRV {ieee}")
             return {"success": True, "dry_run": True, "ieee": ieee}
         try:
-            await self._send_command(ieee, "motor_calibration", 1)
+            await self._throttled_send(ieee, "motor_calibration", 1)
             logger.info(f"TRV {ieee}: motor calibration started")
             return {"success": True, "ieee": ieee}
         except Exception as e:
@@ -1076,18 +1110,39 @@ class HeatingController:
                         continue
 
                     try:
-                        ok = await self._send_command(ieee, "external_temp", sensor_temp)
-                        if ok is False:
-                            logger.warning(
-                                f"TRV {ieee}: external temp push rejected "
-                                f"(room {room['id']})"
+                        resp = await self._throttled_send(ieee, "external_temp", sensor_temp)
+                        succeeded = isinstance(resp, dict) and resp.get("success", False)
+                        err = resp.get("error", "") if isinstance(resp, dict) else ""
+
+                        if "NCP" in err or "ACK_TIMEOUT" in err:
+                            logger.error(
+                                "NCP failure detected — aborting heating tick to "
+                                "allow radio recovery"
                             )
-                            # Don't update _last_ext_push — next interval will retry
-                        else:
+                            return  # exit _push_external_temps_once entirely
+
+                        if succeeded:
                             self._last_ext_push[ieee] = (sensor_temp, now_ts)
                             logger.info(
                                 f"TRV {ieee}: pushed external temp {sensor_temp:.2f}°C "
                                 f"(room {room['id']})"
                             )
+                        else:
+                            err = resp.get("error", "unknown") if isinstance(resp, dict) else "no response"
+                            logger.warning(
+                                f"TRV {ieee}: external temp push rejected ({err})"
+                            )
+                            # On NCP failure, abort the rest of this cycle
+                            # — radio needs time to recover, further writes will stack failures
+                            if "NCP" in err or "ACK_TIMEOUT" in err:
+                                logger.warning(
+                                    "Aborting remaining external-temp pushes for this cycle "
+                                    "— radio needs recovery time"
+                                )
+                                return
                     except Exception as e:
                         logger.warning(f"TRV {ieee}: external temp push failed: {e}")
+                        return
+
+                    # Small yield between TRVs so radio doesn't choke on back-to-back writes
+                    await asyncio.sleep(0.5)
