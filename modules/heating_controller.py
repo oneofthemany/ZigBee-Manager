@@ -916,7 +916,8 @@ class HeatingController:
     async def apply_trv_config(self, ieee: str) -> Dict[str, Any]:
         """
         Apply persistent Aqara-cluster settings for a single TRV.
-        Safe to call repeatedly; returns a report of what was sent.
+        Reads current device state first; skips writes where value already matches.
+        Safe to call repeatedly.
         """
         loc = self.find_trv(ieee)
         if not loc:
@@ -925,40 +926,71 @@ class HeatingController:
 
         results: Dict[str, Any] = {"ieee": ieee, "sent": {}, "skipped": {}, "failed": {}}
 
-        for attr, command in (
-                ("window_detection", "window_detection"),
-                ("child_lock",       "child_lock"),
-                ("valve_detection",  "valve_detection"),
-        ):
-            val = trv.get(attr)
-            if val is None:
-                results["skipped"][attr] = "not configured"
-                continue
-            if self.dry_run:
-                logger.info(f"[DRY-RUN] Would set TRV {ieee} {attr} = {val}")
-                results["sent"][attr] = {"value": bool(val), "dry_run": True}
-                continue
-            try:
-                await self._send_command(ieee, command, 1 if val else 0)
-                results["sent"][attr] = {"value": bool(val)}
-            except Exception as e:
-                logger.error(f"TRV {ieee} {attr} write failed: {e}")
-                results["failed"][attr] = str(e)
+        # Try to read current device state first so we can skip no-op writes.
+        # Falls back to state cache if direct read isn't possible (sleepy device).
+        dev = (self._get_devices() or {}).get(ieee)
+        current_state = getattr(dev, "state", {}) if dev else {}
 
-        # If the room is in push mode, tell the TRV to honour the external feed.
-        if room.get("external_temp_mode") == "push":
+        # Map: config key → (command name, current state key, expected-type coerce)
+        config_attrs = (
+            ("window_detection", "window_detection", "window_detection"),
+            ("child_lock",       "child_lock",       "child_lock"),
+            ("valve_detection",  "valve_detection",  "valve_detection"),
+        )
+
+        for cfg_key, command, state_key in config_attrs:
+            desired = trv.get(cfg_key)
+            if desired is None:
+                results["skipped"][cfg_key] = "not configured"
+                continue
+
+            current = current_state.get(state_key)
+            # State values may be bool, int, or None
+            if current is not None and bool(current) == bool(desired):
+                results["skipped"][cfg_key] = f"already {bool(desired)}"
+                continue
+
             if self.dry_run:
+                logger.info(f"[DRY-RUN] Would set TRV {ieee} {cfg_key} = {desired}")
+                results["sent"][cfg_key] = {"value": bool(desired), "dry_run": True}
+                continue
+
+            try:
+                ok = await self._send_command(ieee, command, 1 if desired else 0)
+                if ok is False:
+                    results["failed"][cfg_key] = "device rejected write"
+                else:
+                    results["sent"][cfg_key] = {"value": bool(desired)}
+            except Exception as e:
+                logger.error(f"TRV {ieee} {cfg_key} write failed: {e}")
+                results["failed"][cfg_key] = str(e)
+
+        # Sensor type — only write if room is in push mode AND device isn't already external
+        if room.get("external_temp_mode") == "push":
+            current_sensor = current_state.get("sensor_type")
+            # sensor_type: 1 = external, 0 = internal (stored as int or str)
+            already_external = (
+                    current_sensor in (1, "1", "external", True)
+            )
+            if already_external:
+                results["skipped"]["sensor_type"] = "already external"
+            elif self.dry_run:
                 logger.info(f"[DRY-RUN] Would set TRV {ieee} sensor_type = external")
                 results["sent"]["sensor_type"] = {"value": "external", "dry_run": True}
             else:
                 try:
-                    await self._send_command(ieee, "sensor_type", 1)  # 1 = external
-                    results["sent"]["sensor_type"] = {"value": "external"}
+                    ok = await self._send_command(ieee, "sensor_type", 1)
+                    if ok is False:
+                        results["failed"]["sensor_type"] = "device rejected write"
+                    else:
+                        results["sent"]["sensor_type"] = {"value": "external"}
                 except Exception as e:
                     logger.error(f"TRV {ieee} sensor_type write failed: {e}")
                     results["failed"]["sensor_type"] = str(e)
 
-        self._trv_config_applied.add(ieee)
+        # Only mark as applied if nothing failed — otherwise retry next time
+        if not results["failed"]:
+            self._trv_config_applied.add(ieee)
         results["success"] = not results["failed"]
         return results
 
@@ -1045,15 +1077,16 @@ class HeatingController:
 
                     try:
                         ok = await self._send_command(ieee, "external_temp", sensor_temp)
-                        if ok:
+                        if ok is False:
+                            logger.warning(
+                                f"TRV {ieee}: external temp push rejected "
+                                f"(room {room['id']})"
+                            )
+                            # Don't update _last_ext_push — next interval will retry
+                        else:
                             self._last_ext_push[ieee] = (sensor_temp, now_ts)
                             logger.info(
                                 f"TRV {ieee}: pushed external temp {sensor_temp:.2f}°C "
-                                f"(room {room['id']})"
-                            )
-                        else:
-                            logger.warning(
-                                f"TRV {ieee}: external temp push rejected by device "
                                 f"(room {room['id']})"
                             )
                     except Exception as e:
