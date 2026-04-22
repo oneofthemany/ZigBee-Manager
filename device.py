@@ -871,6 +871,26 @@ class ZigManDevice:
             except:
                 success = False
 
+        # >>> Direct telemetry write — bypass the report/debounce path <
+        # Polling is an authoritative read: every value the device returned
+        # gets a DuckDB row, regardless of whether it matches the cached
+        # state or whether handle_device_update later debounces this update.
+        if results:
+            try:
+                from modules.telemetry_db import write_device_state
+                written = 0
+                for attr, value in results.items():
+                    if attr.endswith('_raw') or attr.startswith('attr_'):
+                        continue
+                    if attr in ('manufacturer', 'model', 'power_source',
+                                'last_seen', 'available'):
+                        continue
+                    write_device_state(self.ieee, attr, value)
+                    written += 1
+                logger.info(f"[{self.ieee}] Poll telemetry: {written} attrs written to DuckDB")
+            except Exception as e:
+                logger.debug(f"[{self.ieee}] Poll telemetry write failed: {e}")
+
         if results: self.update_state(results)
         results['__poll_success'] = success
         return results
