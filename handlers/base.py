@@ -246,24 +246,43 @@ class ClusterHandler:
                 result = await self.cluster.bind()
             logger.info(f"[{self.device.ieee}] ✅ Bound {cluster_name}, result: {result}")
 
-            # Configure reporting if defined
-            for config in self.REPORT_CONFIG:
+            # Configure reporting if defined — batched so sleepy devices complete in one wake
+            if self.REPORT_CONFIG:
+                records = {
+                    attr_name: (min_int, max_int, change)
+                    for attr_name, min_int, max_int, change in self.REPORT_CONFIG
+                }
+
                 try:
-                    attr_name, min_int, max_int, change = config
-                    async with asyncio.timeout(5.0):
-                        result = await self.cluster.configure_reporting(
-                            attr_name,
-                            min_int,
-                            max_int,
-                            change
-                        )
+                    async with asyncio.timeout(8.0):
+                        result = await self.cluster.configure_reporting_multiple(records)
                     logger.info(
-                        f"[{self.device.ieee}] ✅ Configured reporting for {attr_name}: "
-                        f"min={min_int}s, max={max_int}s, change={change}"
+                        f"[{self.device.ieee}] ✅ Batched reporting config for {cluster_name}: "
+                        f"{len(records)} attrs, result={result}"
                     )
+                except AttributeError:
+                    # Older zigpy without configure_reporting_multiple — fall back to per-attr
+                    logger.debug(
+                        f"[{self.device.ieee}] configure_reporting_multiple unavailable — "
+                        f"falling back to sequential reporting config"
+                    )
+                    for attr_name, min_int, max_int, change in self.REPORT_CONFIG:
+                        try:
+                            async with asyncio.timeout(4.0):
+                                await self.cluster.configure_reporting(
+                                    attr_name, min_int, max_int, change
+                                )
+                            logger.info(
+                                f"[{self.device.ieee}] ✅ Configured reporting for {attr_name}: "
+                                f"min={min_int}s, max={max_int}s, change={change}"
+                            )
+                        except Exception as e:
+                            logger.debug(
+                                f"[{self.device.ieee}] reporting {attr_name} failed: {e}"
+                            )
                 except Exception as e:
                     logger.warning(
-                        f"[{self.device.ieee}] ⚠️ Failed to configure reporting for {attr_name}: {e}"
+                        f"[{self.device.ieee}] ⚠️ Batched reporting on {cluster_name} failed: {e}"
                     )
 
             return True
@@ -290,41 +309,49 @@ class ClusterHandler:
         logger.info(f"[{self.device.ieee}] Polling {cluster_name}...")
 
         results = {}
+        pollable = self.get_pollable_attributes()
+        if not pollable:
+            return results
 
-        for attr_id, attr_name in self.get_pollable_attributes().items():
-            try:
-                result = await self.cluster.read_attributes([attr_id])
+        attr_ids = list(pollable.keys())
 
-                logger.debug(f"[{self.device.ieee}] Poll result for 0x{attr_id:04X}: {result}")
+        try:
+            result = await self.cluster.read_attributes(attr_ids)
+        except Exception as e:
+            logger.warning(
+                f"[{self.device.ieee}] Batched read on {cluster_name} failed: {e}"
+            )
+            return results
 
-                if result and attr_id in result[0]:
-                    value = result[0][attr_id]
-                    if hasattr(value, 'value'):
-                        value = value.value
+        if not result:
+            return results
 
-                    # Skip None values - device doesn't support this attribute
-                    if value is None:
-                        logger.debug(f"[{self.device.ieee}] Skipping {attr_name} - returned None")
-                        continue
+        success = result[0] if len(result) > 0 else {}
+        failure = result[1] if len(result) > 1 else {}
 
+        for attr_id, attr_name in pollable.items():
+            if attr_id in success:
+                value = success[attr_id]
+                if hasattr(value, 'value'):
+                    value = value.value
+                if value is None:
+                    logger.debug(f"[{self.device.ieee}] {attr_name} returned None")
+                    continue
+                try:
                     formatted = self.parse_value(attr_id, value)
                     results[attr_name] = formatted
-                    results[attr_name + "_raw"] = value  # Store raw for config forms
+                    results[attr_name + "_raw"] = value
                     logger.info(f"[{self.device.ieee}] Polled {attr_name} = {formatted}")
-
-                elif result and attr_id in result[1]:
-                    # Attribute in failure dict — unsupported or read error
-                    logger.debug(
-                        f"[{self.device.ieee}] Attribute {attr_name} (0x{attr_id:04X}) "
-                        f"read failed: {result[1][attr_id]}"
+                except Exception as e:
+                    logger.warning(
+                        f"[{self.device.ieee}] Failed to parse {attr_name} "
+                        f"(0x{attr_id:04X}): {e}"
                     )
-
-            except Exception as e:
-                logger.warning(
-                    f"[{self.device.ieee}] Failed to read {attr_name} "
-                    f"(0x{attr_id:04X}): {e}"
+            elif attr_id in failure:
+                logger.debug(
+                    f"[{self.device.ieee}] {attr_name} (0x{attr_id:04X}) "
+                    f"unsupported: {failure[attr_id]}"
                 )
-                continue
 
         return results
 
