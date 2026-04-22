@@ -130,13 +130,32 @@ class DatabaseMixin:
             try:
                 from device import ZigManDevice
                 z_ieee = zigpy.types.EUI64.convert(ieee)
-                if z_ieee in self.app.devices:
-                    self.devices[ieee] = ZigManDevice(self, self.app.devices[z_ieee])
-                    self.devices[ieee]._available = False
-                    if ieee in self.state_cache:
-                        self.devices[ieee].restore_state(self.state_cache[ieee])
-                    recovered.append(ieee)
-                    logger.info(f"Recovered stale device: {ieee}")
+
+                if z_ieee not in self.app.devices:
+                    continue
+
+                zigpy_dev = self.app.devices[z_ieee]
+
+                # Guard: wrapping an un-interviewed device iterates endpoints
+                # that may contain ZDO-only stubs — triggers the
+                # "No such 'in_clusters' ZDO command" error from zigpy
+                endpoints = getattr(zigpy_dev, 'endpoints', {}) or {}
+                real_endpoints = {k: v for k, v in endpoints.items() if k != 0}
+
+                if not zigpy_dev.is_initialized or not real_endpoints:
+                    logger.info(
+                        f"Skipping uninterviewed device {ieee}: "
+                        f"is_initialized={zigpy_dev.is_initialized}, "
+                        f"endpoints={list(endpoints.keys())}"
+                    )
+                    continue
+
+                self.devices[ieee] = ZigManDevice(self, zigpy_dev)
+                self.devices[ieee]._available = False
+                if ieee in self.state_cache:
+                    self.devices[ieee].restore_state(self.state_cache[ieee])
+                recovered.append(ieee)
+                logger.info(f"Recovered stale device: {ieee}")
             except Exception as e:
                 failed.append({"ieee": ieee, "error": str(e)})
                 logger.error(f"Failed to recover {ieee}: {e}")
