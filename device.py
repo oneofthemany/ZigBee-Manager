@@ -191,7 +191,8 @@ class ZigManDevice:
         try:
             for ep_id, ep in self.zigpy_dev.endpoints.items():
                 if ep_id == 0: continue
-                if Basic.cluster_id in ep.in_clusters:
+                in_cl = getattr(ep, 'in_clusters', None) or {}
+                if Basic.cluster_id in in_cl:
                     # Attr 0x0004=Manuf, 0x0005=Model
                     results = await ep.basic.read_attributes([0x0004, 0x0005])
 
@@ -352,8 +353,17 @@ class ZigManDevice:
                 except Exception as e:
                     logger.error(f"[{self.ieee}] Failed to attach handler for EP{ep_id} 0x{cid:04x}: {e}")
 
-            for cluster in ep.in_clusters.values(): attach_handler(cluster, is_server=True)
-            for cluster in ep.out_clusters.values(): attach_handler(cluster, is_server=False)
+        in_clusters = getattr(ep, 'in_clusters', None) or {}
+        out_clusters = getattr(ep, 'out_clusters', None) or {}
+
+        for cluster in in_clusters.values():
+            attach_handler(cluster, is_server=True)
+
+        for cluster in out_clusters.values():
+            # Skip if a server-side handler already owns this (ep, cid)
+            if (ep_id, cluster.cluster_id) in self.handlers:
+                continue
+            attach_handler(cluster, is_server=False)
 
         # FORCE POWER SOURCE UPDATE
         self._is_battery_powered()
@@ -751,7 +761,9 @@ class ZigManDevice:
         try:
             for ep_id, ep in self.zigpy_dev.endpoints.items():
                 if ep_id == 0: continue
-                if 0x0021 in ep.in_clusters or 0x0021 in ep.out_clusters:
+                in_cl = getattr(ep, 'in_clusters', None) or {}
+                out_cl = getattr(ep, 'out_clusters', None) or {}
+                if 0x0021 in in_cl or 0x0021 in out_cl:
                     is_battery = False
                     break
         except Exception:
@@ -1136,7 +1148,9 @@ class ZigManDevice:
     async def read_attribute_raw(self, ep_id: int, cluster_id: int, attr_name: str) -> Any:
         ep = self.zigpy_dev.endpoints.get(ep_id)
         if not ep: raise ValueError(f"EP {ep_id} not found")
-        c = ep.in_clusters.get(cluster_id) or ep.out_clusters.get(cluster_id)
+        in_cl = getattr(ep, 'in_clusters', None) or {}
+        out_cl = getattr(ep, 'out_clusters', None) or {}
+        c = in_cl.get(cluster_id) or out_cl.get(cluster_id)
         if not c: raise ValueError(f"Cluster 0x{cluster_id:04x} not found")
         res = await c.read_attributes([attr_name])
         return res[0][attr_name] if res and attr_name in res[0] else None

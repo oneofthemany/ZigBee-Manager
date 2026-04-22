@@ -305,7 +305,8 @@ class DeviceCapabilities:
             }
 
             # INPUT clusters
-            for cluster in ep.in_clusters.values():
+            in_clusters = getattr(ep, 'in_clusters', None) or {}
+            for cluster in in_clusters.values():
                 cid = cluster.cluster_id
                 self._cluster_ids.add(cid)
                 ep_info['input_clusters'].add(cid)
@@ -315,7 +316,8 @@ class DeviceCapabilities:
                         ep_info['configurable_clusters'].add(cid)
 
             # OUTPUT clusters
-            for cluster in ep.out_clusters.values():
+            out_clusters = getattr(ep, 'out_clusters', None) or {}
+            for cluster in out_clusters.values():
                 cid = cluster.cluster_id
                 self._cluster_ids.add(cid)
                 ep_info['output_clusters'].add(cid)
