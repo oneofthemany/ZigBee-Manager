@@ -68,9 +68,11 @@ class PollingScheduler:
                 is_battery = power_source in ('Battery', 'DC Source') or device.state.get('battery_percentage') is not None
 
                 # Skip passive battery sensors
+                cluster_ids = [h.CLUSTER_ID for h in device.handlers.values()]
                 is_sensor = any([
-                    0x0406 in [h.CLUSTER_ID for h in device.handlers.values()],
-                    0x0500 in [h.CLUSTER_ID for h in device.handlers.values()],
+                    0x0406 in cluster_ids,                       # Occupancy
+                    0x0500 in cluster_ids,                       # IAS Zone
+                    0x0201 in cluster_ids and is_battery,        # Battery TRV / thermostat
                     device.get_role() == "EndDevice" and not any([
                         0x0006 in ep.in_clusters for ep in device.zigpy_dev.endpoints.values()
                     ])
