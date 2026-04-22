@@ -726,9 +726,26 @@ class ZigbeeService(
             if ieee in self.state_cache:
                 logger.info(f"[{ieee}] Restoring state from cache")
                 zdev.restore_state(self.state_cache[ieee])
+
+            # Build handlers if interview completed AFTER wrapper creation
+            # (i.e. sleepy device joined with endpoints=[0], interview
+            # completed later when it woke up)
+            endpoints = getattr(device, 'endpoints', {}) or {}
+            real_endpoints = [k for k in endpoints if k != 0]
+            if real_endpoints and not zdev.handlers:
+                logger.info(
+                    f"[{ieee}] Late interview completion — building handlers "
+                    f"for {len(real_endpoints)} endpoint(s)"
+                )
+                zdev._identify_handlers()
+                if hasattr(zdev, 'capabilities'):
+                    zdev.capabilities._detect_capabilities()
         else:
             self.devices[ieee] = ZigManDevice(self, device)
             self.devices[ieee].last_seen = int(time.time() * 1000)
+            if ieee in self.state_cache:
+                logger.info(f"[{ieee}] Restoring state from cache")
+                self.devices[ieee].restore_state(self.state_cache[ieee])
 
         # --- Auto-pair Hive thermostat ↔ receiver ---
         # Model is now known at this point (unlike device_joined where it's None)
