@@ -54,26 +54,28 @@ class ThermostatHandler(ClusterHandler):
     """
     CLUSTER_ID = 0x0201
 
-    # Reporting configuration
+    # Minimal always-supported report config
     REPORT_CONFIG = [
-        # Local Temperature: Min 30s, Max 300s, Change 0.25°C (25)
         ("local_temperature", 60, 300, 25),
-
-        # Setpoints: Min 10s, Max 300s, Change 0.1°C (10)
-        ("occupied_heating_setpoint", 0, 300, 10),   # min=0 for instant updates
-        ("occupied_cooling_setpoint", 0, 300, 10),
-        ("unoccupied_heating_setpoint", 0, 300, 10),
-
-        # PI Demand: Min 60s, Max 300s, Change 10% (10)
+        ("occupied_heating_setpoint", 0, 300, 10),
         ("pi_heating_demand", 60, 300, 10),
-        ("pi_cooling_demand", 60, 300, 10),
-
-        # States: Min 10s, Max 300s, Change 1 (Discrete)
         ("system_mode", 10, 300, 1),
         ("running_state", 10, 300, 1),
         ("running_mode", 10, 300, 1),
-        ("occupancy", 10, 300, 1),
     ]
+
+    async def configure(self):
+        # Extend with cooling attrs only for mains-powered multi-mode devices
+        model = str(self.device.zigpy_dev.model or "").upper()
+        is_heat_only = any(m in model for m in ("AGL001", "SRTS", "TRV"))
+        if not is_heat_only:
+            self.REPORT_CONFIG = self.REPORT_CONFIG + [
+                ("occupied_cooling_setpoint", 0, 300, 10),
+                ("unoccupied_heating_setpoint", 0, 300, 10),
+                ("pi_cooling_demand", 60, 300, 10),
+                ("occupancy", 10, 300, 1),
+            ]
+        return await super().configure()
 
     # Attribute IDs
     ATTR_LOCAL_TEMP = 0x0000
