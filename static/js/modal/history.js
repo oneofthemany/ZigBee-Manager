@@ -127,37 +127,55 @@ function _buildHistChart(data, attr) {
         return;
     }
 
-    // Numeric: SVG line + min/max band
+    // Numeric: SVG with dots + line + min/max band
     const W = wrap.clientWidth || 700;
-    const H = 220;
-    const pad = { top: 10, right: 10, bottom: 25, left: 45 };
+    const H = 240;
+    const pad = { top: 10, right: 10, bottom: 38, left: 50 };
     const plotW = W - pad.left - pad.right;
     const plotH = H - pad.top - pad.bottom;
 
     const times = data.map(d => new Date(d.ts).getTime());
     const tMin = Math.min(...times);
     const tMax = Math.max(...times);
-    const tRange = tMax - tMin || 1;
+    const tRange = (tMax - tMin) || 1;
 
     const values = data.flatMap(d => [d.min, d.max, d.avg].filter(v => v !== null && v !== undefined));
     const vMin = Math.min(...values);
     const vMax = Math.max(...values);
-    const vRange = (vMax - vMin) || 1;
+    // Pad value range by 5% so a single point doesn't sit flush on the axis
+    const vPad = ((vMax - vMin) || Math.max(Math.abs(vMin), 1)) * 0.05;
+    const vLo = vMin - vPad;
+    const vHi = vMax + vPad;
+    const vRange = vHi - vLo || 1;
 
     const x = t => pad.left + ((t - tMin) / tRange) * plotW;
-    const y = v => pad.top + plotH - ((v - vMin) / vRange) * plotH;
+    const y = v => pad.top + plotH - ((v - vLo) / vRange) * plotH;
 
-    // Build min/max band polygon
-    const topPts = data.map(d => `${x(new Date(d.ts).getTime())},${y(d.max)}`).join(' ');
-    const botPts = data.slice().reverse().map(d => `${x(new Date(d.ts).getTime())},${y(d.min)}`).join(' ');
-    const bandPoints = `${topPts} ${botPts}`;
+    // Min/max band — only meaningful with ≥ 2 points
+    let bandPolygon = '';
+    let linePolyline = '';
+    if (data.length >= 2) {
+        const topPts = data.map(d => `${x(new Date(d.ts).getTime())},${y(d.max)}`).join(' ');
+        const botPts = data.slice().reverse().map(d => `${x(new Date(d.ts).getTime())},${y(d.min)}`).join(' ');
+        bandPolygon = `<polygon points="${topPts} ${botPts}" fill="#4a90e2" fill-opacity="0.15" stroke="none"/>`;
+        const avgPoints = data.map(d => `${x(new Date(d.ts).getTime())},${y(d.avg)}`).join(' ');
+        linePolyline = `<polyline points="${avgPoints}" fill="none" stroke="#4a90e2" stroke-width="1.5" stroke-linejoin="round"/>`;
+    }
 
-    const avgPoints = data.map(d => `${x(new Date(d.ts).getTime())},${y(d.avg)}`).join(' ');
+    // Always render dots — guarantees visibility for single-point series too
+    const dots = data.map(d => {
+        const cx = x(new Date(d.ts).getTime());
+        const cy = y(d.avg);
+        const iso = new Date(d.ts).toISOString().replace('T', ' ').slice(0, 19);
+        return `<circle cx="${cx}" cy="${cy}" r="2.5" fill="#4a90e2" stroke="#fff" stroke-width="1">
+                    <title>${iso} — ${d.avg?.toFixed(2)} (${d.samples} samples)</title>
+                </circle>`;
+    }).join('');
 
     // Y-axis ticks
     const yTicks = 4;
     const yLabels = Array.from({ length: yTicks + 1 }, (_, i) => {
-        const v = vMin + (vRange * i / yTicks);
+        const v = vLo + (vRange * i / yTicks);
         const yp = y(v);
         return `
             <line x1="${pad.left}" x2="${W - pad.right}" y1="${yp}" y2="${yp}" stroke="#eee" stroke-width="0.5"/>
@@ -165,24 +183,44 @@ function _buildHistChart(data, attr) {
         `;
     }).join('');
 
-    // X-axis ticks (5 labels)
-    const xTicks = 5;
-    const xLabels = Array.from({ length: xTicks + 1 }, (_, i) => {
-        const t = tMin + (tRange * i / xTicks);
+    // X-axis ticks — format depends on the range being shown
+    const xTickCount = 5;
+    const spanMs = tRange;
+    // Rules:
+    //   <= 90min window:  HH:MM:SS
+    //   <= 24h window:    HH:MM
+    //   <= 7d window:     MM/DD HH:MM  (first tick and midnight-crossers show MM/DD)
+    //   >  7d window:     MM/DD
+    const fmt = (d) => {
+        const pad2 = n => String(n).padStart(2, '0');
+        const MM = pad2(d.getMonth() + 1);
+        const DD = pad2(d.getDate());
+        const hh = pad2(d.getHours());
+        const mm = pad2(d.getMinutes());
+        const ss = pad2(d.getSeconds());
+        if (spanMs <= 90 * 60 * 1000)          return { top: `${hh}:${mm}:${ss}`, bot: `${MM}/${DD}` };
+        if (spanMs <= 24 * 60 * 60 * 1000)     return { top: `${hh}:${mm}`, bot: `${MM}/${DD}` };
+        if (spanMs <= 7 * 24 * 60 * 60 * 1000) return { top: `${hh}:${mm}`, bot: `${MM}/${DD}` };
+        return { top: `${MM}/${DD}`, bot: `${d.getFullYear()}` };
+    };
+
+    const xLabels = Array.from({ length: xTickCount + 1 }, (_, i) => {
+        const t = tMin + (tRange * i / xTickCount);
         const xp = x(t);
-        const d = new Date(t);
-        const label = tRange > 86400000 * 2
-            ? `${d.getMonth() + 1}/${d.getDate()}`
-            : `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-        return `<text x="${xp}" y="${H - 8}" font-size="9" fill="#888" text-anchor="middle">${label}</text>`;
+        const parts = fmt(new Date(t));
+        return `
+            <text x="${xp}" y="${H - 18}" font-size="9" fill="#666" text-anchor="middle">${parts.top}</text>
+            <text x="${xp}" y="${H - 6}"  font-size="8" fill="#aaa" text-anchor="middle">${parts.bot}</text>
+        `;
     }).join('');
 
     wrap.innerHTML = `
         <svg id="hist-chart-svg" width="100%" height="${H}" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet">
             <g>${yLabels}</g>
             <g>${xLabels}</g>
-            <polygon points="${bandPoints}" fill="#4a90e2" fill-opacity="0.15" stroke="none"/>
-            <polyline points="${avgPoints}" fill="none" stroke="#4a90e2" stroke-width="1.5" stroke-linejoin="round"/>
+            ${bandPolygon}
+            ${linePolyline}
+            ${dots}
         </svg>
     `;
 }
