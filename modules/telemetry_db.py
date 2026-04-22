@@ -525,6 +525,8 @@ def query_device_state_bucketed(ieee: str, attribute: str,
     """, [ieee, attribute]).fetchall()
     cols = ["ts", "avg", "min", "max", "samples", "last_str"]
     return [dict(zip(cols, row)) for row in result]
+
+
 def query_spectrum_history(hours: int = 24) -> List[Dict]:
     """Get spectrum scan history."""
     db = _get_db()
