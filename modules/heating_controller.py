@@ -1044,11 +1044,17 @@ class HeatingController:
                         continue
 
                     try:
-                        await self._send_command(ieee, "external_temp", sensor_temp)
-                        self._last_ext_push[ieee] = (sensor_temp, now_ts)
-                        logger.info(
-                            f"TRV {ieee}: pushed external temp {sensor_temp:.2f}°C "
-                            f"(room {room['id']})"
-                        )
+                        ok = await self._send_command(ieee, "external_temp", sensor_temp)
+                        if ok:
+                            self._last_ext_push[ieee] = (sensor_temp, now_ts)
+                            logger.info(
+                                f"TRV {ieee}: pushed external temp {sensor_temp:.2f}°C "
+                                f"(room {room['id']})"
+                            )
+                        else:
+                            logger.warning(
+                                f"TRV {ieee}: external temp push rejected by device "
+                                f"(room {room['id']})"
+                            )
                     except Exception as e:
                         logger.warning(f"TRV {ieee}: external temp push failed: {e}")

@@ -4,10 +4,10 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="zigpy interview stalled fix">
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="roll back on service and device - WIP">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/core/service.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/service.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/device.py" beforeDir="false" afterPath="$PROJECT_DIR$/device.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/handlers/aqara.py" beforeDir="false" afterPath="$PROJECT_DIR$/handlers/aqara.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/modules/heating_controller.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/heating_controller.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -157,14 +157,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00330" summary="dictionary added">
-      <option name="closed" value="true" />
-      <created>1776501928840</created>
-      <option name="number" value="00330" />
-      <option name="presentableId" value="LOCAL-00330" />
-      <option name="project" value="LOCAL" />
-      <updated>1776501928840</updated>
     </task>
     <task id="LOCAL-00331" summary="heating tab updates">
       <option name="closed" value="true" />
@@ -550,7 +542,15 @@
       <option name="project" value="LOCAL" />
       <updated>1776855992251</updated>
     </task>
-    <option name="localTasksCounter" value="379" />
+    <task id="LOCAL-00379" summary="roll back on service and device - WIP">
+      <option name="closed" value="true" />
+      <created>1776859295013</created>
+      <option name="number" value="00379" />
+      <option name="presentableId" value="LOCAL-00379" />
+      <option name="project" value="LOCAL" />
+      <updated>1776859295014</updated>
+    </task>
+    <option name="localTasksCounter" value="380" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -577,7 +577,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="history tab added" />
     <MESSAGE value="history bumped to 30 days" />
     <MESSAGE value="new rust appender for duckdb" />
     <MESSAGE value="update to staging and deps in containerfile" />
@@ -602,6 +601,7 @@
     <MESSAGE value="stale device removal improvements" />
     <MESSAGE value="reporting improvements" />
     <MESSAGE value="zigpy interview stalled fix" />
-    <option name="LAST_COMMIT_MESSAGE" value="zigpy interview stalled fix" />
+    <MESSAGE value="roll back on service and device - WIP" />
+    <option name="LAST_COMMIT_MESSAGE" value="roll back on service and device - WIP" />
   </component>
 </project>

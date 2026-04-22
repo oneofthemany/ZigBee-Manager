@@ -625,10 +625,15 @@ class AqaraManufacturerCluster(ClusterHandler):
             f"(type=0x{type_id:02X} {target_type.__name__})"
         )
 
+        # If the target cluster is a quirk with manufacturer_id_override set,
+        # it already injects the manufacturer code — passing it again triggers
+        # "got multiple values for keyword argument 'manufacturer'"
+        write_kwargs = {}
+        if not getattr(target_cluster, "manufacturer_id_override", None):
+            write_kwargs["manufacturer"] = self.MANUFACTURER_CODE
+
         try:
-            result = await target_cluster.write_attributes_raw(
-                [attr], manufacturer=self.MANUFACTURER_CODE
-            )
+            result = await target_cluster.write_attributes_raw([attr], **write_kwargs)
         except Exception as e:
             logger.error(
                 f"[{self.device.ieee}] Write 0x{attr_id:04X} exception: "
