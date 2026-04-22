@@ -4,11 +4,9 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="new core detection added for build jobs">
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/device.py" beforeDir="false" afterPath="$PROJECT_DIR$/device.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/modules/telemetry_db.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/telemetry_db.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/static/js/modal/history.js" beforeDir="false" afterPath="$PROJECT_DIR$/static/js/modal/history.js" afterDir="false" />
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="xml updated">
+      <change beforePath="$PROJECT_DIR$/static/css/device-status.css" beforeDir="false" afterPath="$PROJECT_DIR$/static/css/device-status.css" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/static/js/device-status.js" beforeDir="false" afterPath="$PROJECT_DIR$/static/js/device-status.js" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -158,30 +156,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00316" summary="removed duplicate attributes">
-      <option name="closed" value="true" />
-      <created>1776176039592</created>
-      <option name="number" value="00316" />
-      <option name="presentableId" value="LOCAL-00316" />
-      <option name="project" value="LOCAL" />
-      <updated>1776176039592</updated>
-    </task>
-    <task id="LOCAL-00317" summary="multi zone  settings added for hvac receivers">
-      <option name="closed" value="true" />
-      <created>1776176095551</created>
-      <option name="number" value="00317" />
-      <option name="presentableId" value="LOCAL-00317" />
-      <option name="project" value="LOCAL" />
-      <updated>1776176095551</updated>
-    </task>
-    <task id="LOCAL-00318" summary="new zbm heating css">
-      <option name="closed" value="true" />
-      <created>1776176119004</created>
-      <option name="number" value="00318" />
-      <option name="presentableId" value="LOCAL-00318" />
-      <option name="project" value="LOCAL" />
-      <updated>1776176119004</updated>
     </task>
     <task id="LOCAL-00319" summary="final improvements on hvac">
       <option name="closed" value="true" />
@@ -551,7 +525,31 @@
       <option name="project" value="LOCAL" />
       <updated>1776782093269</updated>
     </task>
-    <option name="localTasksCounter" value="365" />
+    <task id="LOCAL-00365" summary="improved polling with better logging for debugging">
+      <option name="closed" value="true" />
+      <created>1776846454634</created>
+      <option name="number" value="00365" />
+      <option name="presentableId" value="LOCAL-00365" />
+      <option name="project" value="LOCAL" />
+      <updated>1776846454634</updated>
+    </task>
+    <task id="LOCAL-00366" summary="adding point data to improve histogram">
+      <option name="closed" value="true" />
+      <created>1776846514300</created>
+      <option name="number" value="00366" />
+      <option name="presentableId" value="LOCAL-00366" />
+      <option name="project" value="LOCAL" />
+      <updated>1776846514300</updated>
+    </task>
+    <task id="LOCAL-00367" summary="xml updated">
+      <option name="closed" value="true" />
+      <created>1776846527529</created>
+      <option name="number" value="00367" />
+      <option name="presentableId" value="LOCAL-00367" />
+      <option name="project" value="LOCAL" />
+      <updated>1776846527529</updated>
+    </task>
+    <option name="localTasksCounter" value="368" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -578,9 +576,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="more new features to heating:&#10;&#10;radiator sizing&#10;thermal profiles per room&#10;heating anomaly detection" />
-    <MESSAGE value="final latch fix for tooltips" />
-    <MESSAGE value="new heating doc" />
     <MESSAGE value="updated with thread, matter, heating and weather API" />
     <MESSAGE value="sleepy client tweak for delayed_handler" />
     <MESSAGE value="new device cache for EPs to duckdb" />
@@ -603,6 +598,9 @@
     <MESSAGE value="improved thermal profiles" />
     <MESSAGE value="updated telemetry to include new zmm_ appender" />
     <MESSAGE value="new core detection added for build jobs" />
-    <option name="LAST_COMMIT_MESSAGE" value="new core detection added for build jobs" />
+    <MESSAGE value="improved polling with better logging for debugging" />
+    <MESSAGE value="adding point data to improve histogram" />
+    <MESSAGE value="xml updated" />
+    <option name="LAST_COMMIT_MESSAGE" value="xml updated" />
   </component>
 </project>

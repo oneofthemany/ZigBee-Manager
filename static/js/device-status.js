@@ -95,6 +95,47 @@
     }
 
     // ----------------------------------------------------------
+    // 4b. THERMOSTAT / TRV EXTRAS (setpoint, mode, demand)
+    // ----------------------------------------------------------
+
+    function renderSetpoint(device) {
+        var s = device.state || {};
+        var sp = s.occupied_heating_setpoint;
+        if (sp === undefined || sp === null) sp = s.target_temp;
+        if (sp === undefined || sp === null) return '';
+        var n = Number(sp);
+        if (isNaN(n) || n === 0) return '';
+        return '<span class="zbm-setpoint-mini" title="Setpoint: ' + n.toFixed(1) + '°C">' +
+               '<i class="fas fa-bullseye"></i> ' + n.toFixed(1) + '°</span>';
+    }
+
+    function renderSystemMode(device) {
+        var s = device.state || {};
+        var mode = s.system_mode;
+        if (!mode) return '';
+        mode = String(mode).toLowerCase();
+        var cls, label;
+        if (mode === 'heat')       { cls = 'heat';  label = 'HEAT';  }
+        else if (mode === 'auto')  { cls = 'auto';  label = 'AUTO';  }
+        else if (mode === 'off')   { cls = 'off';   label = 'OFF';   }
+        else if (mode === 'cool')  { cls = 'cool';  label = 'COOL';  }
+        else                       { cls = 'other'; label = mode.toUpperCase(); }
+        return '<span class="zbm-mode-badge ' + cls + '" title="Mode: ' + label + '">' + label + '</span>';
+    }
+
+    function renderHeatingDemand(device) {
+        var s = device.state || {};
+        var d = s.heating_demand;
+        if (d === undefined || d === null) d = s.pi_heating_demand;
+        if (d === undefined || d === null) return '';
+        var n = Number(d);
+        if (isNaN(n)) return '';
+        var cls = (n >= 75) ? 'high' : (n >= 25 ? 'med' : 'low');
+        return '<span class="zbm-demand-mini ' + cls + '" title="Valve / heating demand: ' + n + '%">' +
+               '<i class="fas fa-faucet"></i> ' + n + '%</span>';
+    }
+
+    // ----------------------------------------------------------
     // 5. CHECK IF DEVICE IS A THERMOSTAT
     // ----------------------------------------------------------
 
@@ -176,6 +217,41 @@
         return html;
     }
 
+
+    // ----------------------------------------------------------
+    // 5c. COVER / BLINDS STATUS
+    // ----------------------------------------------------------
+
+    function renderCoverStatus(device) {
+        var capList = device.capability_list || [];
+        if (capList.indexOf('cover') === -1 && capList.indexOf('window_covering') === -1) return '';
+
+        var s = device.state || {};
+        var position = null;
+        if (typeof s.position === 'number') position = s.position;
+        else if (typeof s.cover_position === 'number') position = s.cover_position;
+
+        var isOpen, isClosed;
+        if (s.is_open === true) { isOpen = true; isClosed = false; }
+        else if (s.is_closed === true) { isOpen = false; isClosed = true; }
+        else if (position !== null) { isOpen = position >= 99; isClosed = position <= 1; }
+        else { return ''; }
+
+        var label, cls, icon;
+        if (isOpen) { label = 'OPEN'; cls = 'zbm-cover-open'; icon = 'fa-window-maximize'; }
+        else if (isClosed) { label = 'CLOSED'; cls = 'zbm-cover-closed'; icon = 'fa-window-minimize'; }
+        else { label = (position !== null ? position + '%' : 'PARTIAL'); cls = 'zbm-cover-partial'; icon = 'fa-arrows-alt-v'; }
+
+        var posSuffix = (!isOpen && !isClosed && position !== null) ? '' :
+                        (position !== null ? ' <span class="zbm-cover-pos">' + position + '%</span>' : '');
+
+        var tilt = (typeof s.tilt_position === 'number') ?
+                   ' <span class="zbm-cover-tilt" title="Tilt">↕' + s.tilt_position + '%</span>' : '';
+
+        return '<span class="' + cls + '" title="Cover: ' + label + '">' +
+               '<i class="fas ' + icon + '"></i> ' + label + '</span>' + posSuffix + tilt;
+    }
+
     // ----------------------------------------------------------
     // 6. ENHANCE TABLE ROWS
     // ----------------------------------------------------------
@@ -221,10 +297,13 @@
                     extras += ' ' + renderBattery(battery);
                 }
 
-                // Thermostat heating status
+                // Thermostat / TRV heating status
                 if (isThermostat(device)) {
                     extras += ' ' + renderHeatingStatus(device);
                     extras += ' ' + renderTempMini(device);
+                    extras += ' ' + renderSetpoint(device);
+                    extras += ' ' + renderSystemMode(device);
+                    extras += ' ' + renderHeatingDemand(device);
                 }
 
                 // Temperature sensors (not thermostats) — show temp
@@ -257,6 +336,12 @@
                     extras += ' <span class="' + motionClass + '" title="Motion: ' + motionLabel + '">' +
                               '<i class="fas ' + (motion ? 'fa-running' : 'fa-shield-alt') + '"></i> ' +
                               motionLabel + '</span>';
+                }
+
+
+                // Cover / blinds status
+                if (capList.indexOf('cover') !== -1 || capList.indexOf('window_covering') !== -1) {
+                    extras += ' ' + renderCoverStatus(device);
                 }
 
                 // Replace the simple Online/Offline badge with dot + extras

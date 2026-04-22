@@ -213,6 +213,54 @@
 [data-theme="dark"] .zbm-temp-mini.hot { color: #f87171; }
 [data-theme="dark"] .zbm-temp-mini.cold { color: #60a5fa; }
 
+
+/* --- Thermostat / TRV extras --- */
+.zbm-setpoint-mini {
+    color: #8b5cf6;
+    font-size: 0.7rem;
+    font-weight: 600;
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+}
+.zbm-setpoint-mini i { font-size: 0.6rem; }
+
+.zbm-mode-badge {
+    display: inline-flex;
+    align-items: center;
+    font-size: 0.6rem;
+    font-weight: 700;
+    padding: 1px 5px;
+    border-radius: 3px;
+    letter-spacing: 0.03em;
+}
+.zbm-mode-badge.heat  { color: #dc2626; background: rgba(220, 38, 38, 0.1); }
+.zbm-mode-badge.auto  { color: #0891b2; background: rgba(8, 145, 178, 0.1); }
+.zbm-mode-badge.cool  { color: #2563eb; background: rgba(37, 99, 235, 0.1); }
+.zbm-mode-badge.off   { color: #6b7280; background: rgba(107, 114, 128, 0.1); }
+.zbm-mode-badge.other { color: #6b7280; background: rgba(107, 114, 128, 0.08); }
+
+.zbm-demand-mini {
+    font-size: 0.65rem;
+    font-weight: 600;
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+}
+.zbm-demand-mini i   { font-size: 0.55rem; }
+.zbm-demand-mini.low  { color: #6b7280; }
+.zbm-demand-mini.med  { color: #f59e0b; }
+.zbm-demand-mini.high { color: #ef4444; }
+
+[data-theme="dark"] .zbm-setpoint-mini { color: #a78bfa; }
+[data-theme="dark"] .zbm-mode-badge.heat  { background: rgba(220, 38, 38, 0.18); color: #f87171; }
+[data-theme="dark"] .zbm-mode-badge.auto  { background: rgba(8, 145, 178, 0.18); color: #22d3ee; }
+[data-theme="dark"] .zbm-mode-badge.cool  { background: rgba(37, 99, 235, 0.18); color: #60a5fa; }
+[data-theme="dark"] .zbm-mode-badge.off   { background: rgba(107, 114, 128, 0.15); color: #9ca3af; }
+[data-theme="dark"] .zbm-demand-mini.low  { color: #9ca3af; }
+[data-theme="dark"] .zbm-demand-mini.med  { color: #fbbf24; }
+[data-theme="dark"] .zbm-demand-mini.high { color: #f87171; }
+
 /* --- On/Off status mini badges --- */
 
 .zbm-onoff-badge {
@@ -248,3 +296,14 @@
     background: rgba(107, 114, 128, 0.12);
     color: #9ca3af;
 }
+
+/* --- Cover / blinds status --- */
+.zbm-cover-open    { color: #3b82f6; font-size: 0.7rem; font-weight: 600; }
+.zbm-cover-closed  { color: #6b7280; font-size: 0.7rem; font-weight: 600; }
+.zbm-cover-partial { color: #f59e0b; font-size: 0.7rem; font-weight: 600; }
+.zbm-cover-pos     { color: var(--text-muted, #6b7280); font-size: 0.65rem; margin-left: 2px; }
+.zbm-cover-tilt    { color: var(--text-muted, #6b7280); font-size: 0.65rem; margin-left: 4px; }
+
+[data-theme="dark"] .zbm-cover-open    { color: #60a5fa; }
+[data-theme="dark"] .zbm-cover-closed  { color: #9ca3af; }
+[data-theme="dark"] .zbm-cover-partial { color: #fbbf24; }
