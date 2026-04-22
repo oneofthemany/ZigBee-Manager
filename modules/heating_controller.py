@@ -394,13 +394,22 @@ class HeatingController:
 
 
     async def _throttled_send(self, ieee: str, command: str, value=None):
-        """Serialised wrapper around _send_command with inter-write pacing."""
+        # Bail if the radio isn't healthy
+        res_mgr = getattr(self, "_resilience_manager", None)
+        if res_mgr is not None:
+            from modules.resilience import ConnectionState
+            if res_mgr.state != ConnectionState.CONNECTED:
+                logger.debug(
+                    f"Skip send {command} to {ieee} — radio is {res_mgr.state}"
+                )
+                return {"success": False, "error": "Radio not connected"}
+
         async with self._radio_write_lock:
             gap = time.time() - self._last_radio_write_ts
             if gap < self._min_write_gap:
                 await asyncio.sleep(self._min_write_gap - gap)
             try:
-                resp = await self._throttled_send(ieee, command, value)
+                resp = await self._send_command(ieee, command, value)
             finally:
                 self._last_radio_write_ts = time.time()
             return resp
@@ -476,10 +485,10 @@ class HeatingController:
         # Initial delay so other services finish startup
         await asyncio.sleep(15)
         # Apply persistent per-TRV config once devices are online
-        try:
-            await self._apply_all_trv_config()
-        except Exception as e:
-            logger.error(f"Initial TRV config apply failed: {e}", exc_info=True)
+        #try:
+        #    await self._apply_all_trv_config()
+        #except Exception as e:
+        #    logger.error(f"Initial TRV config apply failed: {e}", exc_info=True)
 
         while True:
             try:
