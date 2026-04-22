@@ -65,6 +65,9 @@ class ZigManDevice:
 
         self.state: Dict[str, Any] = {}
 
+        self._pending_configure = False
+        self._awake_proof_received = False
+
         # Initialize basic info from Zigpy device
         self.manufacturer = zigpy_dev.manufacturer
         self.model = zigpy_dev.model
@@ -564,6 +567,13 @@ class ZigManDevice:
                 self.service._emit_sync("duplicate_attribute_warning", {
                     "ieee": self.ieee, "details": duplicates_detected
                 })
+
+        # If configure is pending, first attribute report = proof of wake → fire it
+        if self._pending_configure and not self._awake_proof_received:
+            self._awake_proof_received = True
+            self._pending_configure = False
+            logger.info(f"[{self.ieee}] First attribute from device — triggering deferred configure")
+            asyncio.create_task(self.configure())
 
 
     def _publish_json_state(self, changed_data: Dict[str, Any], endpoint_id: Optional[int] = None):

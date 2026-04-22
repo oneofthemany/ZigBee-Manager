@@ -4,9 +4,10 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="xml updated">
-      <change beforePath="$PROJECT_DIR$/static/css/device-status.css" beforeDir="false" afterPath="$PROJECT_DIR$/static/css/device-status.css" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/static/js/device-status.js" beforeDir="false" afterPath="$PROJECT_DIR$/static/js/device-status.js" afterDir="false" />
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="zigpy interview stalled fix">
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/core/service.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/service.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/device.py" beforeDir="false" afterPath="$PROJECT_DIR$/device.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -156,94 +157,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00319" summary="final improvements on hvac">
-      <option name="closed" value="true" />
-      <created>1776242458925</created>
-      <option name="number" value="00319" />
-      <option name="presentableId" value="LOCAL-00319" />
-      <option name="project" value="LOCAL" />
-      <updated>1776242458926</updated>
-    </task>
-    <task id="LOCAL-00320" summary="weather api added for smart heating function">
-      <option name="closed" value="true" />
-      <created>1776244884209</created>
-      <option name="number" value="00320" />
-      <option name="presentableId" value="LOCAL-00320" />
-      <option name="project" value="LOCAL" />
-      <updated>1776244884209</updated>
-    </task>
-    <task id="LOCAL-00321" summary="spaces added">
-      <option name="closed" value="true" />
-      <created>1776244905791</created>
-      <option name="number" value="00321" />
-      <option name="presentableId" value="LOCAL-00321" />
-      <option name="project" value="LOCAL" />
-      <updated>1776244905791</updated>
-    </task>
-    <task id="LOCAL-00322" summary="weather config added">
-      <option name="closed" value="true" />
-      <created>1776246319779</created>
-      <option name="number" value="00322" />
-      <option name="presentableId" value="LOCAL-00322" />
-      <option name="project" value="LOCAL" />
-      <updated>1776246319779</updated>
-    </task>
-    <task id="LOCAL-00323" summary="new smart heating function">
-      <option name="closed" value="true" />
-      <created>1776257118869</created>
-      <option name="number" value="00323" />
-      <option name="presentableId" value="LOCAL-00323" />
-      <option name="project" value="LOCAL" />
-      <updated>1776257118869</updated>
-    </task>
-    <task id="LOCAL-00324" summary="mac removal">
-      <option name="closed" value="true" />
-      <created>1776257174017</created>
-      <option name="number" value="00324" />
-      <option name="presentableId" value="LOCAL-00324" />
-      <option name="project" value="LOCAL" />
-      <updated>1776257174017</updated>
-    </task>
-    <task id="LOCAL-00325" summary="heatpoint hold added">
-      <option name="closed" value="true" />
-      <created>1776422995999</created>
-      <option name="number" value="00325" />
-      <option name="presentableId" value="LOCAL-00325" />
-      <option name="project" value="LOCAL" />
-      <updated>1776422995999</updated>
-    </task>
-    <task id="LOCAL-00326" summary="config export and stop skipping  manufacturer specific attributes">
-      <option name="closed" value="true" />
-      <created>1776423083421</created>
-      <option name="number" value="00326" />
-      <option name="presentableId" value="LOCAL-00326" />
-      <option name="project" value="LOCAL" />
-      <updated>1776423083421</updated>
-    </task>
-    <task id="LOCAL-00327" summary="aqara updates for new heating controller">
-      <option name="closed" value="true" />
-      <created>1776429764164</created>
-      <option name="number" value="00327" />
-      <option name="presentableId" value="LOCAL-00327" />
-      <option name="project" value="LOCAL" />
-      <updated>1776429764164</updated>
-    </task>
-    <task id="LOCAL-00328" summary="trv updates">
-      <option name="closed" value="true" />
-      <created>1776431750107</created>
-      <option name="number" value="00328" />
-      <option name="presentableId" value="LOCAL-00328" />
-      <option name="project" value="LOCAL" />
-      <updated>1776431750107</updated>
-    </task>
-    <task id="LOCAL-00329" summary="improvements for disablement for when heating controiller is enabled">
-      <option name="closed" value="true" />
-      <created>1776501908656</created>
-      <option name="number" value="00329" />
-      <option name="presentableId" value="LOCAL-00329" />
-      <option name="project" value="LOCAL" />
-      <updated>1776501908657</updated>
     </task>
     <task id="LOCAL-00330" summary="dictionary added">
       <option name="closed" value="true" />
@@ -549,7 +462,95 @@
       <option name="project" value="LOCAL" />
       <updated>1776846527529</updated>
     </task>
-    <option name="localTasksCounter" value="368" />
+    <task id="LOCAL-00368" summary="improved device status for cover blinds and hvac devices">
+      <option name="closed" value="true" />
+      <created>1776847859008</created>
+      <option name="number" value="00368" />
+      <option name="presentableId" value="LOCAL-00368" />
+      <option name="project" value="LOCAL" />
+      <updated>1776847859008</updated>
+    </task>
+    <task id="LOCAL-00369" summary="improved aqara scheduler">
+      <option name="closed" value="true" />
+      <created>1776851811561</created>
+      <option name="number" value="00369" />
+      <option name="presentableId" value="LOCAL-00369" />
+      <option name="project" value="LOCAL" />
+      <updated>1776851811561</updated>
+    </task>
+    <task id="LOCAL-00370" summary="reinterview loop">
+      <option name="closed" value="true" />
+      <created>1776855019316</created>
+      <option name="number" value="00370" />
+      <option name="presentableId" value="LOCAL-00370" />
+      <option name="project" value="LOCAL" />
+      <updated>1776855019316</updated>
+    </task>
+    <task id="LOCAL-00371" summary="spaces added at query_spectrum_history">
+      <option name="closed" value="true" />
+      <created>1776855098305</created>
+      <option name="number" value="00371" />
+      <option name="presentableId" value="LOCAL-00371" />
+      <option name="project" value="LOCAL" />
+      <updated>1776855098305</updated>
+    </task>
+    <task id="LOCAL-00372" summary="stale device patch">
+      <option name="closed" value="true" />
+      <created>1776855200479</created>
+      <option name="number" value="00372" />
+      <option name="presentableId" value="LOCAL-00372" />
+      <option name="project" value="LOCAL" />
+      <updated>1776855200479</updated>
+    </task>
+    <task id="LOCAL-00373" summary="reinterview to mitigate stale device">
+      <option name="closed" value="true" />
+      <created>1776855222430</created>
+      <option name="number" value="00373" />
+      <option name="presentableId" value="LOCAL-00373" />
+      <option name="project" value="LOCAL" />
+      <updated>1776855222430</updated>
+    </task>
+    <task id="LOCAL-00374" summary="improved polling for battery sensors">
+      <option name="closed" value="true" />
+      <created>1776855276212</created>
+      <option name="number" value="00374" />
+      <option name="presentableId" value="LOCAL-00374" />
+      <option name="project" value="LOCAL" />
+      <updated>1776855276212</updated>
+    </task>
+    <task id="LOCAL-00375" summary="dynamic configure for ThermostatHandler">
+      <option name="closed" value="true" />
+      <created>1776855306698</created>
+      <option name="number" value="00375" />
+      <option name="presentableId" value="LOCAL-00375" />
+      <option name="project" value="LOCAL" />
+      <updated>1776855306698</updated>
+    </task>
+    <task id="LOCAL-00376" summary="stale device removal improvements">
+      <option name="closed" value="true" />
+      <created>1776855325300</created>
+      <option name="number" value="00376" />
+      <option name="presentableId" value="LOCAL-00376" />
+      <option name="project" value="LOCAL" />
+      <updated>1776855325301</updated>
+    </task>
+    <task id="LOCAL-00377" summary="reporting improvements">
+      <option name="closed" value="true" />
+      <created>1776855346895</created>
+      <option name="number" value="00377" />
+      <option name="presentableId" value="LOCAL-00377" />
+      <option name="project" value="LOCAL" />
+      <updated>1776855346895</updated>
+    </task>
+    <task id="LOCAL-00378" summary="zigpy interview stalled fix">
+      <option name="closed" value="true" />
+      <created>1776855992251</created>
+      <option name="number" value="00378" />
+      <option name="presentableId" value="LOCAL-00378" />
+      <option name="project" value="LOCAL" />
+      <updated>1776855992251</updated>
+    </task>
+    <option name="localTasksCounter" value="379" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -576,17 +577,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="updated with thread, matter, heating and weather API" />
-    <MESSAGE value="sleepy client tweak for delayed_handler" />
-    <MESSAGE value="new device cache for EPs to duckdb" />
-    <MESSAGE value="improve optimistic updates on UI for device state - now trigger" />
-    <MESSAGE value="removed as commited in error" />
-    <MESSAGE value="debugging added and improved zigbee cache" />
-    <MESSAGE value="location update for zigbee_cache module" />
-    <MESSAGE value="diag attr patch to include all EP's" />
-    <MESSAGE value="hooking record_state_change into the state pipeline" />
-    <MESSAGE value="new attribute-list + histogram endpoints" />
-    <MESSAGE value="new history tab function" />
     <MESSAGE value="history tab added" />
     <MESSAGE value="history bumped to 30 days" />
     <MESSAGE value="new rust appender for duckdb" />
@@ -601,6 +591,17 @@
     <MESSAGE value="improved polling with better logging for debugging" />
     <MESSAGE value="adding point data to improve histogram" />
     <MESSAGE value="xml updated" />
-    <option name="LAST_COMMIT_MESSAGE" value="xml updated" />
+    <MESSAGE value="improved device status for cover blinds and hvac devices" />
+    <MESSAGE value="improved aqara scheduler" />
+    <MESSAGE value="reinterview loop" />
+    <MESSAGE value="spaces added at query_spectrum_history" />
+    <MESSAGE value="stale device patch" />
+    <MESSAGE value="reinterview to mitigate stale device" />
+    <MESSAGE value="improved polling for battery sensors" />
+    <MESSAGE value="dynamic configure for ThermostatHandler" />
+    <MESSAGE value="stale device removal improvements" />
+    <MESSAGE value="reporting improvements" />
+    <MESSAGE value="zigpy interview stalled fix" />
+    <option name="LAST_COMMIT_MESSAGE" value="zigpy interview stalled fix" />
   </component>
 </project>
