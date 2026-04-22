@@ -551,10 +551,7 @@ class AqaraManufacturerCluster(ClusterHandler):
             logger.debug(f"[{self.device.ieee}] Reading Aqara attrs: {[hex(a) for a in attrs_to_read]}")
 
             # CRITICAL: Must specify manufacturer=0x115F for Aqara devices
-            result = await self.cluster.read_attributes(
-                attrs_to_read,
-                manufacturer=self.MANUFACTURER_CODE
-            )
+            result = await self.cluster.read_attributes(attrs_to_read)
 
             # Parse results: result is (success_dict, failure_dict)
             if result and result[0]:
@@ -625,15 +622,10 @@ class AqaraManufacturerCluster(ClusterHandler):
             f"(type=0x{type_id:02X} {target_type.__name__})"
         )
 
-        # If the target cluster is a quirk with manufacturer_id_override set,
-        # it already injects the manufacturer code — passing it again triggers
-        # "got multiple values for keyword argument 'manufacturer'"
-        write_kwargs = {}
-        if not getattr(target_cluster, "manufacturer_id_override", None):
-            write_kwargs["manufacturer"] = self.MANUFACTURER_CODE
-
         try:
-            result = await target_cluster.write_attributes_raw([attr], **write_kwargs)
+            result = await target_cluster.write_attributes_raw(
+                [attr], manufacturer=self.MANUFACTURER_CODE
+            )
         except Exception as e:
             logger.error(
                 f"[{self.device.ieee}] Write 0x{attr_id:04X} exception: "
@@ -675,7 +667,6 @@ class AqaraManufacturerCluster(ClusterHandler):
             f"status=0x{status_int:02X}"
         )
         return False
-
 
     async def read_attribute(self, attr_id: int) -> Any:
         """Read a single attribute with manufacturer code."""
@@ -806,7 +797,7 @@ class AqaraManufacturerCluster(ClusterHandler):
             return await self.write_attribute(self.ATTR_VALVE_DETECTION, val_int)
 
         elif command == "child_lock":
-            return await self.write_attribute(self.ATTR_CHILD_LOCK, val_int)
+            asyncio.create_task(self.write_attribute(self.ATTR_CHILD_LOCK, val_int))
 
         elif command == "external_temp":
             # Accept float °C; convert to signed int16 centidegrees, clamp to -40..+80 °C.
@@ -814,10 +805,10 @@ class AqaraManufacturerCluster(ClusterHandler):
                 temp_c = float(value)
             except (TypeError, ValueError):
                 logger.error(f"[{self.device.ieee}] external_temp: invalid value {value!r}")
-                return False
+                return
             temp_c = max(-40.0, min(80.0, temp_c))
             centi = int(round(temp_c * 100))
-            return await self.write_attribute(self.ATTR_EXTERNAL_TEMP, centi)
+            asyncio.create_task(self.write_attribute(self.ATTR_EXTERNAL_TEMP, centi))
 
         elif command == "sensor_type":
             # Accept 'internal'/'external' strings or 0/1/bool.
@@ -826,7 +817,7 @@ class AqaraManufacturerCluster(ClusterHandler):
                 st_int = 1 if sv in ("external", "1", "true", "on", "yes") else 0
             else:
                 st_int = 1 if value else 0
-            return await self.write_attribute(self.ATTR_SENSOR_TYPE, st_int)
+            asyncio.create_task(self.write_attribute(self.ATTR_SENSOR_TYPE, st_int))
 
         logger.debug(f"[{self.device.ieee}] Unhandled Aqara command: {command}")
         return False
