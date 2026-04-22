@@ -1056,21 +1056,21 @@ class ZigManDevice:
                                            'child_lock', 'external_temp', 'sensor_type']:
                 h = get_handler(0xFCC0)
                 if h and hasattr(h, 'process_command'):
-                    h.process_command(command, value)
-                    success = True
-                    # Optimistic updates
-                    if command == 'motor_calibration':
-                        optimistic_state['motor_calibration'] = 'calibrating' if value else 'idle'
-                    elif command == 'external_temp':
-                        try:
-                            optimistic_state['external_temperature'] = float(value)
-                        except (TypeError, ValueError):
-                            pass
-                    elif command == 'sensor_type':
-                        sv = str(value).lower()
-                        optimistic_state['sensor_type'] = 'external' if sv in ('1', 'external', 'true', 'on') else 'internal'
-                    else:
-                        optimistic_state[command] = bool(value)
+                    success = await h.process_command(command, value)
+                    # Only apply optimistic update if the device actually accepted the write
+                    if success:
+                        if command == 'motor_calibration':
+                            optimistic_state['motor_calibration'] = 'calibrating' if value else 'idle'
+                        elif command == 'external_temp':
+                            try:
+                                optimistic_state['external_temperature'] = float(value)
+                            except (TypeError, ValueError):
+                                pass
+                        elif command == 'sensor_type':
+                            sv = str(value).lower()
+                            optimistic_state['sensor_type'] = 'external' if sv in ('1', 'external', 'true', 'on') else 'internal'
+                        else:
+                            optimistic_state[command] = bool(value)
 
             # HVAC COMMANDS - route to handler if process_command exists
             if not success and command in ['temperature', 'system_mode']:

@@ -781,8 +781,11 @@ class AqaraManufacturerCluster(ClusterHandler):
         )
 
 
-    def process_command(self, command: str, value: Any):
-        """Process commands - write_attribute handles typing."""
+    async def process_command(self, command: str, value: Any) -> bool:
+        """
+        Process commands — returns True on successful device write, False otherwise.
+        Callers (device.send_command) rely on this return value to set success status.
+        """
 
         def to_bool_int(val):
             if isinstance(val, str):
@@ -794,16 +797,16 @@ class AqaraManufacturerCluster(ClusterHandler):
         val_int = to_bool_int(value)
 
         if command in ("motor_calibration", "calibrate"):
-            asyncio.create_task(self.write_attribute(self.ATTR_MOTOR_CALIBRATION, 1))  # ← Just pass int
+            return await self.write_attribute(self.ATTR_MOTOR_CALIBRATION, 1)
 
         elif command == "window_detection":
-            asyncio.create_task(self.write_attribute(self.ATTR_WINDOW_DETECTION, val_int))
+            return await self.write_attribute(self.ATTR_WINDOW_DETECTION, val_int)
 
         elif command == "valve_detection":
-            asyncio.create_task(self.write_attribute(self.ATTR_VALVE_DETECTION, val_int))
+            return await self.write_attribute(self.ATTR_VALVE_DETECTION, val_int)
 
         elif command == "child_lock":
-            asyncio.create_task(self.write_attribute(self.ATTR_CHILD_LOCK, val_int))
+            return await self.write_attribute(self.ATTR_CHILD_LOCK, val_int)
 
         elif command == "external_temp":
             # Accept float °C; convert to signed int16 centidegrees, clamp to -40..+80 °C.
@@ -811,10 +814,10 @@ class AqaraManufacturerCluster(ClusterHandler):
                 temp_c = float(value)
             except (TypeError, ValueError):
                 logger.error(f"[{self.device.ieee}] external_temp: invalid value {value!r}")
-                return
+                return False
             temp_c = max(-40.0, min(80.0, temp_c))
             centi = int(round(temp_c * 100))
-            asyncio.create_task(self.write_attribute(self.ATTR_EXTERNAL_TEMP, centi))
+            return await self.write_attribute(self.ATTR_EXTERNAL_TEMP, centi)
 
         elif command == "sensor_type":
             # Accept 'internal'/'external' strings or 0/1/bool.
@@ -823,7 +826,10 @@ class AqaraManufacturerCluster(ClusterHandler):
                 st_int = 1 if sv in ("external", "1", "true", "on", "yes") else 0
             else:
                 st_int = 1 if value else 0
-            asyncio.create_task(self.write_attribute(self.ATTR_SENSOR_TYPE, st_int))
+            return await self.write_attribute(self.ATTR_SENSOR_TYPE, st_int)
+
+        logger.debug(f"[{self.device.ieee}] Unhandled Aqara command: {command}")
+        return False
 
 
     def get_configuration_options(self) -> List[Dict]:

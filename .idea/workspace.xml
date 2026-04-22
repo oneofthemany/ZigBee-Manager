@@ -4,10 +4,14 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="roll back on service and device - WIP">
+    <list default="true" id="37bc6cfe-eb98-487c-aada-20b9dc237d8b" name="Changes" comment="update the read before write on apply config for TRV">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/core/service.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/service.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/device.py" beforeDir="false" afterPath="$PROJECT_DIR$/device.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/handlers/aqara.py" beforeDir="false" afterPath="$PROJECT_DIR$/handlers/aqara.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/main.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/modules/heating_controller.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/heating_controller.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/modules/resilience.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/resilience.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -157,22 +161,6 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772810468546</updated>
-    </task>
-    <task id="LOCAL-00331" summary="heating tab updates">
-      <option name="closed" value="true" />
-      <created>1776502661258</created>
-      <option name="number" value="00331" />
-      <option name="presentableId" value="LOCAL-00331" />
-      <option name="project" value="LOCAL" />
-      <updated>1776502661258</updated>
-    </task>
-    <task id="LOCAL-00332" summary="heating tab bug fixes">
-      <option name="closed" value="true" />
-      <created>1776504108653</created>
-      <option name="number" value="00332" />
-      <option name="presentableId" value="LOCAL-00332" />
-      <option name="project" value="LOCAL" />
-      <updated>1776504108653</updated>
     </task>
     <task id="LOCAL-00333" summary="adding in the ability to use any device as an external temp source for TRV with overrides in place to remove receivers as options">
       <option name="closed" value="true" />
@@ -550,7 +538,23 @@
       <option name="project" value="LOCAL" />
       <updated>1776859295014</updated>
     </task>
-    <option name="localTasksCounter" value="380" />
+    <task id="LOCAL-00380" summary="reducing noise in heating controller">
+      <option name="closed" value="true" />
+      <created>1776865370956</created>
+      <option name="number" value="00380" />
+      <option name="presentableId" value="LOCAL-00380" />
+      <option name="project" value="LOCAL" />
+      <updated>1776865370957</updated>
+    </task>
+    <task id="LOCAL-00381" summary="update the read before write on apply config for TRV">
+      <option name="closed" value="true" />
+      <created>1776865695093</created>
+      <option name="number" value="00381" />
+      <option name="presentableId" value="LOCAL-00381" />
+      <option name="project" value="LOCAL" />
+      <updated>1776865695093</updated>
+    </task>
+    <option name="localTasksCounter" value="382" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -577,8 +581,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="history bumped to 30 days" />
-    <MESSAGE value="new rust appender for duckdb" />
     <MESSAGE value="update to staging and deps in containerfile" />
     <MESSAGE value="improved backup to indlude telemetry database" />
     <MESSAGE value="include wal file updated in restore for duckdb" />
@@ -602,6 +604,8 @@
     <MESSAGE value="reporting improvements" />
     <MESSAGE value="zigpy interview stalled fix" />
     <MESSAGE value="roll back on service and device - WIP" />
-    <option name="LAST_COMMIT_MESSAGE" value="roll back on service and device - WIP" />
+    <MESSAGE value="reducing noise in heating controller" />
+    <MESSAGE value="update the read before write on apply config for TRV" />
+    <option name="LAST_COMMIT_MESSAGE" value="update the read before write on apply config for TRV" />
   </component>
 </project>
