@@ -14,6 +14,8 @@ from .base import (
     register_handler,
 )
 
+from . import aqara_agl001_schedule_patch
+
 # Import all handler modules to trigger registration decorators
 # The order matters - security should be first to handle IAS Zone
 from .security import *
