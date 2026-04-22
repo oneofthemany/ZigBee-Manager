@@ -492,6 +492,11 @@ class ZigbeeService(
                 logger.info(f"Zigbee network started successfully on {self.port} ({radio_type})")
 
 
+                # Reinterview cron — detects catalogue drift from firmware updates
+                self._reinterview_task = asyncio.create_task(
+                    self._reinterview_loop(interval_hours=24, stale_days=14)
+                )
+
                 # Reset resilience watchdog after successful start
                 if hasattr(self, 'resilience') and self.resilience:
                     self.resilience.last_watchdog_feed = time.time()
@@ -589,6 +594,9 @@ class ZigbeeService(
         if self.multipan and self.multipan.is_running:
             await self.multipan.stop()
             self.multipan = None
+
+        if hasattr(self, '_reinterview_task') and self._reinterview_task:
+            self._reinterview_task.cancel()
 
     # =========================================================================
     # ZIGPY LISTENER INTERFACE
@@ -706,11 +714,18 @@ class ZigbeeService(
         logger.info(f"Device initialised: {ieee}")
 
         if ieee in self.devices:
-            self.devices[ieee] = ZigManDevice(self, device)
-            self.devices[ieee].last_seen = int(time.time() * 1000)
+            # Reuse existing wrapper — just refresh metadata now that model is known
+            zdev = self.devices[ieee]
+            zdev.manufacturer = device.manufacturer
+            zdev.model = device.model
+            if device.manufacturer:
+                zdev.state["manufacturer"] = str(device.manufacturer)
+            if device.model:
+                zdev.state["model"] = str(device.model)
+            zdev.last_seen = int(time.time() * 1000)
             if ieee in self.state_cache:
                 logger.info(f"[{ieee}] Restoring state from cache")
-                self.devices[ieee].restore_state(self.state_cache[ieee])
+                zdev.restore_state(self.state_cache[ieee])
         else:
             self.devices[ieee] = ZigManDevice(self, device)
             self.devices[ieee].last_seen = int(time.time() * 1000)
@@ -766,8 +781,101 @@ class ZigbeeService(
             except Exception as e:
                 logger.warning(f"[{ieee}] Topology cache failed: {e}")
 
+            # ttribute discovery → zigbee_cache.duckdb
+            try:
+                from modules.zigbee_cache import record_attribute_metadata
+                asyncio.create_task(self._discover_and_cache_attributes(ieee))
+            except Exception as e:
+                logger.warning(f"[{ieee}] Discovery scheduling failed: {e}")
+
         except Exception as e:
             logger.warning(f"[{ieee}] Device configuration failed: {e}")
+
+
+    async def _discover_and_cache_attributes(self, ieee: str):
+        """
+        Phase 6 of join pipeline: discover attributes on every in_cluster
+        and persist metadata to zigbee_cache.duckdb. Non-blocking,
+        survives partial failures per-cluster.
+        """
+        from modules.zigbee_cache import record_attribute_metadata
+
+        if ieee not in self.devices:
+            return
+
+        zdev = self.devices[ieee]
+        zigpy_dev = zdev.zigpy_dev
+        total_attrs = 0
+
+        for ep_id, ep in zigpy_dev.endpoints.items():
+            if ep_id == 0:
+                continue
+
+            for cid in list(ep.in_clusters.keys()):
+                try:
+                    res = await self.discover_cluster_attributes(ieee, ep_id, cid)
+                    if not res.get("success"):
+                        continue
+
+                    attrs = res.get("attributes") or []
+                    # Normalise shape for record_attribute_metadata (expects id_int)
+                    for a in attrs:
+                        if "id_int" not in a:
+                            a["id_int"] = int(a.get("id") or a.get("attr_id") or 0)
+
+                    manuf = 0x115F if cid >= 0xFC00 and "LUMI" in str(zigpy_dev.manufacturer or "").upper() else None
+                    record_attribute_metadata(ieee, ep_id, cid, attrs, manufacturer_code=manuf)
+                    total_attrs += len(attrs)
+
+                except Exception as e:
+                    logger.debug(f"[{ieee}] Discover EP{ep_id} 0x{cid:04X}: {e}")
+
+        logger.info(f"[{ieee}] Attribute discovery complete: {total_attrs} attrs cached")
+
+
+    async def _reinterview_loop(self, interval_hours: int = 24, stale_days: int = 14,
+                                per_device_delay: float = 30.0):
+        """
+        Periodic reinterview for catalogue drift.
+        Wakes once per `interval_hours`, finds devices whose attribute metadata
+        is older than `stale_days`, and re-runs discovery on each with
+        `per_device_delay` seconds between them to avoid flooding sleepy devices.
+        """
+        from modules.zigbee_cache import get_devices_with_stale_discovery
+
+        # Initial delay so reinterview never collides with startup announce / initial polling
+        await asyncio.sleep(300)  # 5 min after service start
+
+        while True:
+            try:
+                stale = get_devices_with_stale_discovery(stale_days)
+                # Keep only devices we currently know about and that are available
+                candidates = [
+                    ieee for ieee in stale
+                    if ieee in self.devices and self.devices[ieee].is_available()
+                ]
+
+                if candidates:
+                    logger.info(
+                        f"Reinterview: {len(candidates)}/{len(stale)} stale device(s) "
+                        f"(>{stale_days}d) queued for rediscovery"
+                    )
+                    for ieee in candidates:
+                        try:
+                            await self._discover_and_cache_attributes(ieee)
+                        except Exception as e:
+                            logger.warning(f"[{ieee}] Reinterview failed: {e}")
+                        await asyncio.sleep(per_device_delay)
+                    logger.info(f"Reinterview cycle complete ({len(candidates)} devices)")
+                else:
+                    logger.debug("Reinterview: no stale devices")
+
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                logger.error(f"Reinterview loop error: {e}")
+
+            await asyncio.sleep(interval_hours * 3600)
 
     def device_left(self, device: zigpy.device.Device):
         ieee = str(device.ieee)
