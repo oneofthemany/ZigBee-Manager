@@ -406,6 +406,36 @@ def get_cached_attributes(ieee, endpoint_id, cluster_id) -> Dict[str, Any]:
 
 
 # ============================================================================
+# READ: STALE DISCOVERY LOOKUP (for reinterview cron)
+# ============================================================================
+
+def get_devices_with_stale_discovery(max_age_days: int = 14) -> List[str]:
+    """
+    Return IEEEs whose most-recent attribute discovery is older than
+    max_age_days. Devices that have never been discovered (only topology
+    cached, no row in device_attributes) are also included, so first-pass
+    discovery failures self-heal.
+    """
+    _init_schema()
+
+    cursor = _safe_execute(
+        f"""
+        SELECT DISTINCT e.ieee
+        FROM device_endpoints e
+        LEFT JOIN (
+            SELECT ieee, MAX(last_discovered) AS max_disc
+            FROM device_attributes
+            GROUP BY ieee
+        ) a USING (ieee)
+        WHERE a.max_disc IS NULL
+           OR a.max_disc < now() - INTERVAL '{int(max_age_days)} days'
+        """,
+        context="select stale discovery devices"
+    )
+    rows = cursor.fetchall() if cursor else []
+    return [r[0] for r in rows]
+
+# ============================================================================
 # READ: ATTRIBUTE HISTORY
 # ============================================================================
 
