@@ -31,6 +31,7 @@ ALLOWED_DIRS = [
     "config/matter_definitions",
     "docs",
     "data",
+    "scripts",
 ]
 
 # Editable file extensions
