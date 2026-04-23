@@ -118,6 +118,7 @@ try:
     from routes import (
         register_backup_routes,
         register_config_routes,
+        register_upgrade_routes,
         register_device_routes,
         register_network_routes,
         register_system_routes,
