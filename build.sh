@@ -425,6 +425,9 @@ RUN cd /tmp/zmm_telemetry \
 # Application source
 COPY . .
 
+# Application version control - used for upgrades
+COPY VERSION /app/VERSION
+
 # Required directories
 RUN mkdir -p /data /app/data/matter /app/data/backups /app/data/certs /app/logs /app/config /var/lib/thread \
         /usr/local/lib/python3.11/site-packages/credentials/development/paa-root-certs
@@ -728,6 +731,29 @@ run_container "$HOST_PORT" "$HOST_MATTER_PORT"
 # Step 9: Auto-start
 if [[ "$INSTALL_AUTOSTART" == true ]]; then
     install_autostart
+fi
+
+# Step 10: Install upgrade watcher (first-time only)
+if [[ ! -f "${DATA_DIR}/data/upgrade/.watcher_installed" ]]; then
+    info "Installing in-app upgrade watcher ..."
+    mkdir -p "${DATA_DIR}/scripts"
+    # Copy the scripts from the cloned repo
+    if [[ -f "${APP_DIR}/scripts/upgrade.sh" ]]; then
+        cp "${APP_DIR}/scripts/upgrade.sh" "${DATA_DIR}/scripts/"
+        cp "${APP_DIR}/scripts/run_container.sh" "${DATA_DIR}/scripts/"
+        chmod +x "${DATA_DIR}/scripts/"*.sh
+        # Run the installer
+        if [[ -f "${APP_DIR}/scripts/install_watcher.sh" ]]; then
+            ZMM_DATA_DIR="$DATA_DIR" ZMM_APP_DIR="$APP_DIR" \
+                bash "${APP_DIR}/scripts/install_watcher.sh" || \
+                warn "Watcher install encountered issues — you can re-run it later from the Settings tab"
+        fi
+    else
+        warn "scripts/upgrade.sh not found in repo — upgrade feature will not be available"
+        warn "You can enable it later by running: bash ${APP_DIR}/scripts/install_watcher.sh"
+    fi
+else
+    ok "Upgrade watcher already installed"
 fi
 
 # =============================================================================

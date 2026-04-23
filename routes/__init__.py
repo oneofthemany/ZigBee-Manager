@@ -20,11 +20,14 @@ from routes.rotary_bindings_routes import register_rotary_binding_routes
 from routes.weather_routes import register_weather_routes
 from routes.heating_routes import register_heating_routes
 from routes.heating_controller_routes import register_heating_controller_routes
+from routes.upgrade_routes import register_upgrade_routes
+
 
 
 __all__ = [
     'register_backup_routes',
     'register_config_routes',
+    'register_upgrade_routes',
     'register_device_routes',
     'register_network_routes',
     'register_system_routes',

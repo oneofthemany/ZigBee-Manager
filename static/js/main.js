@@ -18,6 +18,9 @@ let editorInitialised = false;
 import { initSettings } from './settings.js';
 initSettings();
 
+import { initUpgrade } from './upgrade.js';
+initUpgrade();
+
 import {
     loadTabs,
     filterByTab,

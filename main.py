@@ -333,6 +333,10 @@ async def lifespan(app: FastAPI):
     # Setup wizard routes (must register before Zigbee start check)
     register_setup_routes(app, ws_manager=manager)
 
+    # upgrade registration
+    register_upgrade_routes(app)
+    logger.info("Upgrade routes registered")
+
     # Check if setup is needed BEFORE starting MQTT or Zigbee
     from modules.dongle_jedi import DongleJedi
     setup_status = DongleJedi.needs_setup()
@@ -577,6 +581,26 @@ async def lifespan(app: FastAPI):
     # Check if we're recovering from a deploy
     asyncio.create_task(check_deploy_on_startup())
 
+    # Upgrade manager background loops
+    try:
+        from modules.upgrade_manager import periodic_check_loop, status_watcher_loop
+
+        async def _broadcast_upgrade(payload):
+            try:
+                await manager.broadcast(payload)
+            except Exception as e:
+                logger.debug(f"Upgrade broadcast failed: {e}")
+
+        app.state.upgrade_check_task = asyncio.create_task(
+            periodic_check_loop(interval_hours=6, broadcast_fn=_broadcast_upgrade)
+        )
+        app.state.upgrade_status_task = asyncio.create_task(
+            status_watcher_loop(broadcast_fn=_broadcast_upgrade, poll_seconds=2.0)
+        )
+        logger.info("Upgrade manager background loops started")
+    except Exception as e:
+        logger.warning(f"Failed to start upgrade manager loops: {e}")
+
     yield  # Application runs here
 
     # Shutdown
@@ -604,6 +628,15 @@ async def lifespan(app: FastAPI):
     if matter_server:
         await matter_server.stop()
     log_listener.stop()
+    # Stop upgrade manager loops
+    for task_name in ("upgrade_check_task", "upgrade_status_task"):
+        task = getattr(app.state, task_name, None)
+        if task and not task.done():
+            task.cancel()
+            try:
+                await task
+            except (asyncio.CancelledError, Exception):
+                pass
 
 
 # ============================================================================

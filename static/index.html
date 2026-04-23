@@ -18,6 +18,7 @@
     <link rel="stylesheet" href="/static/css/setup-wizard.css">
     <link rel="stylesheet" href="/static/css/toasts.css">
     <link rel="stylesheet" href="/static/css/device-status.css">
+    <link rel="stylesheet" href="/static/css/upgrade.css">
 </head>
 <body>
 <nav class="navbar navbar-dark bg-dark mb-4">
@@ -223,6 +224,11 @@
                 <li class="nav-item">
                     <button class="nav-link" data-bs-toggle="tab" data-bs-target="#settingsThread">
                         <i class="fas fa-project-diagram me-1"></i> Thread
+                    </button>
+                </li>
+                <li class="nav-item">
+                    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#settingsUpgrade">
+                        <i class="fas fa-cloud-arrow-down me-1"></i> Upgrade
                     </button>
                 </li>
             </ul>
@@ -468,6 +474,13 @@
                             Changes take effect after a service restart.
                         </div>
                     </div>
+                </div>
+
+                <!-- ------------------------------------------------------------------ -->
+                <!-- UPGRADE TAB                                                          -->
+                <!-- ------------------------------------------------------------------ -->
+                <div class="tab-pane fade p-3" id="settingsUpgrade">
+                    <div id="upgradeCardMount"></div>
                 </div>
 
             </div>

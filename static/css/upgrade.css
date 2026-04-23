@@ -1,0 +1,91 @@
+/**
+ * upgrade.css
+ * Styles for the Settings tab Upgrade card.
+ *
+ * Loaded from index.html:
+ *   <link rel="stylesheet" href="/static/css/upgrade.css">
+ *
+ * Dark-mode aware (relies on your existing dark-mode.css variables).
+ */
+
+#upgradeCard .progress {
+    background-color: rgba(0, 0, 0, 0.08);
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+#upgradeCard .progress-bar {
+    transition: width 0.4s ease;
+}
+
+#upgradeCard code {
+    background-color: rgba(0, 0, 0, 0.05);
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 0.95em;
+}
+
+#upgradeCard details summary {
+    cursor: pointer;
+    user-select: none;
+    color: var(--bs-secondary, #6c757d);
+}
+
+#upgradeCard details summary:hover {
+    color: var(--bs-primary, #0d6efd);
+}
+
+#upgradeCard details[open] summary {
+    margin-bottom: 0.5rem;
+}
+
+/* Build log viewer */
+#upgradeLogPre {
+    font-family: "JetBrains Mono", "Fira Code", "Courier New", monospace;
+    font-size: 0.8rem;
+    line-height: 1.4;
+    tab-size: 4;
+}
+
+/* State badge icons get a gentle pulse when active */
+#upgradeCard .badge.bg-primary i,
+#upgradeCard .badge.bg-warning i {
+    animation: zmm-upgrade-pulse 1.8s ease-in-out infinite;
+}
+
+@keyframes zmm-upgrade-pulse {
+    0%, 100% { opacity: 1; }
+    50%      { opacity: 0.55; }
+}
+
+/* Dark mode adjustments */
+body.dark-mode #upgradeCard code,
+html[data-bs-theme="dark"] #upgradeCard code {
+    background-color: rgba(255, 255, 255, 0.08);
+    color: #e6e6e6;
+}
+
+body.dark-mode #upgradeCard .progress,
+html[data-bs-theme="dark"] #upgradeCard .progress {
+    background-color: rgba(255, 255, 255, 0.12);
+}
+
+body.dark-mode #upgradeCard details summary,
+html[data-bs-theme="dark"] #upgradeCard details summary {
+    color: #adb5bd;
+}
+
+body.dark-mode #upgradeSettingsCard .form-text,
+html[data-bs-theme="dark"] #upgradeSettingsCard .form-text {
+    color: #9da4ad !important;
+}
+
+/* Responsive tweaks */
+@media (max-width: 576px) {
+    #upgradeCard .fs-5 {
+        font-size: 1rem !important;
+    }
+    #upgradeCard .btn {
+        font-size: 0.85rem;
+    }
+}

@@ -12,3 +12,4 @@ python-matter-server
 python-multipart
 duckdb
 httpx
+aiohttp>=3.9
