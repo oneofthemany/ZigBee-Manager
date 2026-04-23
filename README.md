@@ -65,7 +65,7 @@ curl -fsSL https://raw.githubusercontent.com/oneofthemany/ZigBee-Matter-Manager/
 ```
 Also be aware that the compile time will take about 15mins as there is a lot going on - go have cup of something  😃
 
-### Python VENV
+### Python VENV - soon to be deprecated
 ```bash
 # Clone the repository
 git clone https://github.com/oneofthemany/ZigBee-Matter-Manager/tree/venv.git
