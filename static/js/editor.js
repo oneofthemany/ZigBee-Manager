@@ -15,6 +15,10 @@ let currentFile = null;
 let unsavedChanges = false;
 let fileTree = [];
 
+// Batch staging for multi-file test deploy
+// Map<path, {content, addedAt}> — populated by "Add to test batch"
+const testBatch = new Map();
+
 const MONACO_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min';
 
 // Critical files that cannot be deleted
@@ -105,6 +109,15 @@ function buildEditorHTML() {
                     <button class="btn btn-sm btn-outline-danger py-0 px-2" style="font-size: 11px;"
                             onclick="window.editorTestDeploy()" title="Test Deploy (with rollback)" id="editorTestBtn" disabled>
                         <i class="fas fa-flask"></i> Test
+                    </button>
+                    <button class="btn btn-sm btn-outline-warning py-0 px-2" style="font-size: 11px;"
+                            onclick="window.editorBatchAdd()" title="Add current file to test batch"
+                            id="editorBatchAddBtn" disabled>
+                        <i class="fas fa-layer-group"></i>
+                    </button>
+                    <button class="btn btn-sm btn-outline-info py-0 px-2" style="font-size: 11px;"
+                            onclick="window.editorBatchShow()" title="Show test batch" id="editorBatchShowBtn">
+                        <i class="fas fa-list"></i> <span id="editorBatchCount">0</span>
                     </button>
                     <button class="btn btn-sm btn-outline-warning py-0 px-2" style="font-size: 11px;"
                             onclick="window.editorShowBackups()" title="Backups">
@@ -437,6 +450,7 @@ window.editorOpenFile = async function(path) {
         document.getElementById('editorFileSize').textContent = formatSize(data.size);
         document.getElementById('editorSaveBtn').disabled = false;
         document.getElementById('editorTestBtn').disabled = false;
+        document.getElementById('editorBatchAddBtn').disabled = false;
 
         // Enable/disable delete button based on critical status
         const fileName = path.split('/').pop();
@@ -1147,5 +1161,147 @@ function escapeHtml(str) {
 function escapeAttr(str) {
     return str.replace(/'/g, "\\'").replace(/"/g, '&quot;');
 }
+
+// ============================================================================
+// BATCH TEST DEPLOY
+// ============================================================================
+
+function _updateBatchUI() {
+    const countEl = document.getElementById('editorBatchCount');
+    if (countEl) countEl.textContent = String(testBatch.size);
+    const btn = document.getElementById('editorBatchShowBtn');
+    if (btn) {
+        btn.classList.toggle('btn-outline-info', testBatch.size === 0);
+        btn.classList.toggle('btn-info', testBatch.size > 0);
+    }
+}
+
+window.editorBatchAdd = function () {
+    if (!currentFile || !editorInstance) {
+        alert('Open a file first.');
+        return;
+    }
+    const content = editorInstance.getValue();
+    testBatch.set(currentFile, { content, addedAt: Date.now() });
+    _updateBatchUI();
+    if (typeof window.showToast === 'function') {
+        window.showToast(`Added ${currentFile} to batch (${testBatch.size} file${testBatch.size===1?'':'s'})`, 'info');
+    }
+};
+
+window.editorBatchRemove = function (path) {
+    testBatch.delete(path);
+    _updateBatchUI();
+    window.editorBatchShow();
+};
+
+window.editorBatchClear = function () {
+    if (!testBatch.size) return;
+    if (!confirm(`Clear all ${testBatch.size} staged file(s)?`)) return;
+    testBatch.clear();
+    _updateBatchUI();
+    const modal = bootstrap.Modal.getInstance(document.getElementById('editorBatchModal'));
+    if (modal) modal.hide();
+};
+
+window.editorBatchShow = function () {
+    let modal = document.getElementById('editorBatchModal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.className = 'modal fade';
+        modal.id = 'editorBatchModal';
+        modal.tabIndex = -1;
+        modal.innerHTML = `
+            <div class="modal-dialog modal-dialog-centered modal-lg">
+                <div class="modal-content bg-dark text-light">
+                    <div class="modal-header border-secondary">
+                        <h6 class="modal-title">
+                            <i class="fas fa-layer-group me-1"></i> Test Batch
+                        </h6>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body" id="editorBatchList" style="font-size:12px;"></div>
+                    <div class="modal-footer border-secondary">
+                        <button class="btn btn-sm btn-outline-danger" onclick="window.editorBatchClear()">Clear all</button>
+                        <button class="btn btn-sm btn-warning" onclick="window.editorBatchDeploy()">
+                            <i class="fas fa-rocket me-1"></i> Test batch
+                        </button>
+                    </div>
+                </div>
+            </div>`;
+        document.body.appendChild(modal);
+    }
+    const body = modal.querySelector('#editorBatchList');
+    if (!testBatch.size) {
+        body.innerHTML = `
+            <div class="text-muted py-3 text-center">
+                No files staged.<br>
+                <span class="small">Open a file, make changes, then click
+                <i class="fas fa-layer-group"></i> to add it here.</span>
+            </div>`;
+    } else {
+        const rows = Array.from(testBatch.entries()).map(([p, v]) => `
+            <div class="d-flex align-items-center gap-2 py-1 px-2 border-bottom border-secondary">
+                <i class="fas fa-file-code text-warning"></i>
+                <span class="flex-grow-1 font-monospace">${escapeHtml(p)}</span>
+                <span class="text-muted">${v.content.length} B</span>
+                <button class="btn btn-sm btn-outline-danger py-0"
+                        onclick="window.editorBatchRemove('${escapeAttr(p)}')">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>`).join('');
+        body.innerHTML = rows + `
+            <div class="small text-muted mt-2 px-2">
+                All files are deployed and rolled back as one group. Any .py/.yaml
+                file in the batch triggers a service restart after deploy.
+            </div>`;
+    }
+    new bootstrap.Modal(modal).show();
+};
+
+window.editorBatchDeploy = async function () {
+    if (!testBatch.size) return;
+    const files = Array.from(testBatch.entries()).map(([path, v]) => ({ path, content: v.content }));
+    const hasPy = files.some(f => /\.(py|ya?ml)$/i.test(f.path));
+    if (!confirm(
+        `Test Deploy: ${files.length} file(s)\n\n` +
+        files.map(f => '  • ' + f.path).join('\n') + '\n\n' +
+        `• A backup of each existing file is created\n` +
+        `• All files written atomically\n` +
+        `• ${hasPy ? 'Service restarts' : 'Frontend reloads'}\n` +
+        `• Auto-rollback (as a group) after 120s if not confirmed\n\n` +
+        `Proceed?`
+    )) return;
+
+    try {
+        const res = await fetch('/api/editor/test-deploy', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ files })
+        });
+        const data = await res.json();
+        if (!data.success) {
+            alert('Test deploy failed: ' + (data.error || 'unknown'));
+            return;
+        }
+        testBatch.clear();
+        _updateBatchUI();
+        bootstrap.Modal.getInstance(document.getElementById('editorBatchModal'))?.hide();
+
+        if (data.action === 'restart') {
+            if (typeof state !== 'undefined') state.isRestarting = true;
+            await fetch('/api/editor/test-restart', { method: 'POST' });
+        } else {
+            if (typeof showTestRecoveryBanner === 'function') {
+                showTestRecoveryBanner('pending', data.timeout);
+            }
+            setTimeout(() => window.location.reload(), 1500);
+        }
+    } catch (e) {
+        alert('Batch deploy error: ' + e.message);
+    }
+};
+
+_updateBatchUI();
 
 window.checkPendingTest = checkPendingTest;

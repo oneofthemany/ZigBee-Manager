@@ -31,56 +31,117 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 import random
 
+# ---------------------------------------------------------------------------
+# CRASH HOOK — runs before heavy imports so import-time failures are captured.
+# Writes data/last_crash.json, consumed by the recovery server if main.py dies.
+# Launcher also has a stderr parser as a fallback for failures before this
+# hook is even installed (e.g. a SyntaxError in main.py itself).
+# ---------------------------------------------------------------------------
+import sys as _sys
+import os as _os
+import json as _json
+import traceback as _tb
+import datetime as _dt
+
+_CRASH_FILE = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "data", "last_crash.json")
+
+
+def _zmm_record_crash(exc_type, exc_value, tb):
+    try:
+        _os.makedirs(_os.path.dirname(_CRASH_FILE), exist_ok=True)
+        frames = _tb.extract_tb(tb) if tb else []
+        suspect_file = None
+        suspect_line = None
+        for fr in reversed(frames):
+            fn = fr.filename or ""
+            if ("/app/" in fn or not fn.startswith("/")) and "site-packages" not in fn:
+                suspect_file = fn
+                suspect_line = fr.lineno
+                break
+        if suspect_file is None and frames:
+            suspect_file, suspect_line = frames[-1].filename, frames[-1].lineno
+        suspect_rel = suspect_file
+        if suspect_rel and suspect_rel.startswith("/app/"):
+            suspect_rel = suspect_rel[5:]
+        with open(_CRASH_FILE, "w") as f:
+            _json.dump({
+                "timestamp": _dt.datetime.now(_dt.timezone.utc).replace(tzinfo=None).isoformat() + "Z",
+                "exc_type": exc_type.__name__ if exc_type else "Unknown",
+                "exc_value": str(exc_value) if exc_value else "",
+                "suspect_file": suspect_file,
+                "suspect_file_rel": suspect_rel,
+                "suspect_line": suspect_line,
+                "traceback": "".join(_tb.format_exception(exc_type, exc_value, tb))[-12000:],
+                "exit_code": 1,
+                "source": "main_excepthook",
+            }, f, indent=2)
+    except Exception:
+        pass
+
+
+def _zmm_excepthook(exc_type, exc_value, tb):
+    _zmm_record_crash(exc_type, exc_value, tb)
+    _sys.__excepthook__(exc_type, exc_value, tb)
+
+
+_sys.excepthook = _zmm_excepthook
+
+
 # Import services
-from core import ZigbeeService
-from mqtt import MQTTService
-from modules.boot_guard_hooks import clear_boot_failure_counter
-from modules.zigbee_debug import get_debugger
-from modules.json_helpers import prepare_for_json, safe_json_dumps
-from modules.mqtt_explorer import MQTTExplorer
-from modules.zones_api import register_zone_routes
-from modules.automation_api import register_automation_routes
-from modules.network_init import ensure_network_credentials
-from modules.spectrum_monitor import SpectrumMonitor
-from modules.ai_assistant import AIAssistant
-from modules.ai_automations import AIAutomations
-from modules.ai_api import register_ai_routes
-from modules.safe_deploy import register_deploy_routes, check_deploy_on_startup
-from modules.system_monitor import SystemMonitor
-from modules.telemetry_collector import TelemetryCollector
-from modules.telemetry_api import register_telemetry_routes
-from modules.dongle_jedi_api import register_setup_routes
-from modules.matter_definitions import get_definition_store
-from modules.rotary_bindings import get_rotary_binding_manager
-from modules.weather import WeatherService
-from modules.heating_advisor import HeatingAdvisor
-from modules.heating_controller import HeatingController
-from modules.heating_anomaly_watcher import HeatingAnomalyWatcher
+try:
+    from core import ZigbeeService
+    from mqtt import MQTTService
+    from modules.boot_guard_hooks import clear_boot_failure_counter
+    from modules.zigbee_debug import get_debugger
+    from modules.json_helpers import prepare_for_json, safe_json_dumps
+    from modules.mqtt_explorer import MQTTExplorer
+    from modules.zones_api import register_zone_routes
+    from modules.automation_api import register_automation_routes
+    from modules.network_init import ensure_network_credentials
+    from modules.spectrum_monitor import SpectrumMonitor
+    from modules.ai_assistant import AIAssistant
+    from modules.ai_automations import AIAutomations
+    from modules.ai_api import register_ai_routes
+    from modules.safe_deploy import register_deploy_routes, check_deploy_on_startup
+    from modules.system_monitor import SystemMonitor
+    from modules.telemetry_collector import TelemetryCollector
+    from modules.telemetry_api import register_telemetry_routes
+    from modules.dongle_jedi_api import register_setup_routes
+    from modules.matter_definitions import get_definition_store
+    from modules.rotary_bindings import get_rotary_binding_manager
+    from modules.weather import WeatherService
+    from modules.heating_advisor import HeatingAdvisor
+    from modules.heating_controller import HeatingController
+    from modules.heating_anomaly_watcher import HeatingAnomalyWatcher
+
+    # Import route registrations
+    from routes import (
+        register_backup_routes,
+        register_config_routes,
+        register_device_routes,
+        register_network_routes,
+        register_system_routes,
+        register_matter_routes,
+        register_rotary_binding_routes,
+        register_group_routes,
+        register_editor_routes,
+        register_ota_routes,
+        register_otbr_routes,
+        register_matter_attribute_routes,
+        register_matter_definition_routes,
+        register_test_recovery_routes,
+        register_websocket_routes,
+        register_weather_routes,
+        register_heating_routes,
+        register_heating_controller_routes,
+        manager, broadcast_event,
+    )
+
+except Exception:
+    _zmm_record_crash(*_sys.exc_info())
+    raise
 
 port = int(os.environ.get("ZMM_PORT", 8000))
-
-# Import route registrations
-from routes import (
-    register_backup_routes,
-    register_config_routes,
-    register_device_routes,
-    register_network_routes,
-    register_system_routes,
-    register_matter_routes,
-    register_rotary_binding_routes,
-    register_group_routes,
-    register_editor_routes,
-    register_ota_routes,
-    register_otbr_routes,
-    register_matter_attribute_routes,
-    register_matter_definition_routes,
-    register_test_recovery_routes,
-    register_websocket_routes,
-    register_weather_routes,
-    register_heating_routes,
-    register_heating_controller_routes,
-    manager, broadcast_event,
-)
 
 
 # ============================================================================
