@@ -63,7 +63,7 @@ curl -fsSL https://raw.githubusercontent.com/oneofthemany/ZigBee-Matter-Manager/
   *** WARNING: systemctl not found. otbr cannot start on boot.
 + . /dev/null
 ```
-Also be aware that the compile time will take about 15mins as there is a lot going on - go have cup of something  😃
+Also be aware that the compile time will take about 15-25mins dependent on the device you are installing it on, as there is a lot going on - go have cup of something  😃
 
 ### Python VENV - soon to be deprecated
 ```bash
