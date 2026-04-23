@@ -57,6 +57,13 @@ curl -fsSL https://raw.githubusercontent.com/oneofthemany/ZigBee-Matter-Manager/
 curl -fsSL https://raw.githubusercontent.com/oneofthemany/ZigBee-Matter-Manager/main/build.sh | bash -s -- --usb /dev/ttyUSB0
 ```
 
+**Note**: You may see the following during boot - DO NOT PANIC THIS IS INTENTIONAL
+```
++ echo ' *** WARNING: systemctl not found. otbr cannot start on boot.'
+  *** WARNING: systemctl not found. otbr cannot start on boot.
++ . /dev/null
+```
+
 ### Python VENV
 ```bash
 # Clone the repository
