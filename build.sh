@@ -394,6 +394,12 @@ RUN rm -rf ${SDK_DIR} /tmp/otbr /tmp/cpc-daemon
 
 WORKDIR /app
 
+# ── Application requirements (layer cache) ──
+COPY requirements.txt .
+RUN pip install --no-cache-dir --upgrade pip \
+ && pip install --no-cache-dir -r requirements.txt \
+ && pip install --no-cache-dir "python-matter-server[server]"
+
 # ── Build zmm_telemetry from source inside the container ──
 RUN apt-get update && apt-get install -y --no-install-recommends \
         python3-dev \
@@ -401,7 +407,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
  && rm -rf /var/lib/apt/lists/* \
  && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
         | sh -s -- -y --default-toolchain stable --profile minimal \
- && pip install --no-cache-dir maturin
+ && pip install --no-cache-dir maturin \
+ && pip
 
 ENV PATH="/root/.cargo/bin:${PATH}"
 
