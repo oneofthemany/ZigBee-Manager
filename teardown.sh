@@ -4,6 +4,7 @@ set -e
 podman rm -f zigbee-matter-manager 2>/dev/null || true
 
 export branch="main"
+export device="/dev/ttyUSB0"
 
 image=$(podman images | grep "localhost/zigbee-matter-manager" | awk '{print $3}')
 
@@ -19,4 +20,4 @@ rm -rf ~/zigbee-matter-manager/ ~/.zigbee-matter-manager/
 
 #systemctl --user daemon-reload
 
-curl -fsSL https://raw.githubusercontent.com/oneofthemany/ZigBee-Matter-Manager/${branch}/build.sh | bash -s -- --usb /dev/ttyUSB0
+curl -fsSL https://raw.githubusercontent.com/oneofthemany/ZigBee-Matter-Manager/${branch}/build.sh | bash -s -- --usb ${device}
