@@ -25,6 +25,7 @@
   <a href="#-automation-engine">Automations</a> · 
   <a href="#-weather-aware-heating">Heating</a> · 
   <a href="#-ota-firmware-updates">OTA Updates</a> · 
+  <a href="#-in-app-upgrades">Upgrades</a> · 
   <a href="#-device-onboarding">Device Onboarding</a> · 
   <a href="#-configuration">Configuration</a> · 
   <a href="#-documentation">Docs</a>
@@ -81,6 +82,8 @@ sudo systemctl start zigbee-matter-manager
 Open **http://YOUR_IP:8000** in your browser.
 
 On first boot, if `channel`, `pan_id`, `extended_pan_id`, or `network_key` are absent or placeholder values, the system will **auto-generate valid random credentials** and write them to `config.yaml` before starting the radio. No manual YAML editing required for initial setup.
+
+The first install also sets up the **in-app upgrade watcher** (a small host-side systemd unit) so future updates can be installed from the **Settings → Upgrade** tab without re-running `build.sh`. See [In-App Upgrades](#-in-app-upgrades) for the full flow.
 
 ### Prerequisites
 
@@ -293,6 +296,32 @@ See **[docs/heating.md](docs/heating.md)** for the full reference — physics, c
 - **Multi-Radio Support** — Auto-detection of EZSP and ZNP coordinators
 - **Orphaned Device Cleanup** — Detect and remove stale database entries for devices no longer on the network
 
+### 🔄 In-App Upgrades
+
+Upgrade the application directly from the web UI — no SSH, no `build.sh` re-run. The system pulls a tagged release from GitHub, builds a new container image in the background while the current app keeps running, then atomic-swaps when you choose. If the new container fails to start or fails health-check, it automatically rolls back. Designed for production-grade home automation where downtime is measured in seconds, not minutes.
+
+- **Blue-green deployment** — New image builds in parallel while the running app serves traffic; only the final container swap causes a brief (~15s) interruption
+- **Atomic swap with auto-rollback** — Health-check-gated swap; if the new container fails to bind ports or doesn't respond at `/api/status` within 60s, the previous container is automatically restored
+- **One-click manual rollback** — The previous container and image are retained after every successful upgrade for instant rollback from the UI
+- **GitHub tag polling** — Background check every 6 hours for new releases, with a toast notification when available; manual "Check now" button also available
+- **Configurable auto-update** — Off by default. When enabled, updates only install during a configurable quiet window (default 03:00–05:00) so the system never restarts in the middle of a heating cycle or device pairing
+- **Multi-arch aware** — Images are tagged per-architecture (`zigbee-matter-manager:1.3.2-arm64` vs `-amd64`) and the upgrade picks the right one automatically. Won't accidentally load an `amd64` image on a Rock 5B
+- **Image retention policy** — Configurable how many old images to keep (default 2). Old images are pruned automatically; manual "Clean up" button also available
+- **Stable / pre-release channel** — Choose between GitHub Releases (stable only) or all tags (including pre-releases) for early access
+- **Cross-distro watcher** — Host-side trigger uses `systemd-path` units where available (event-driven, no CPU when idle), with a polling fallback for systems without systemd. Works under rootless Podman, root Podman, and Docker identically
+- **SELinux-friendly** — Watcher scripts live under `/opt/zmm/` (FHS-standard add-on package location) so SELinux's `init_t → usr_t` policy lets systemd execute them without manual relabelling
+- **Build log streaming** — Real-time view of `git clone` and `podman build` output in the UI during an upgrade, plus captured logs from the new container if it fails to start
+
+**How it works internally.** The container is fully unprivileged and never touches the host's container runtime directly. Instead, the app writes a small JSON trigger file to a shared volume; a host-side `systemd-path` unit detects the new file and runs `/opt/zmm/upgrade.sh`, which clones the target tag, builds the new image, performs the stop/rename/run sequence, and writes status back to a file the app polls. This keeps the security model simple — no podman socket mounting, no privileged containers, no cross-runtime API differences.
+
+For an existing install that pre-dates the upgrade infrastructure, the watcher can be installed once on the host:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/oneofthemany/ZigBee-Matter-Manager/main/scripts/install_watcher.sh | bash
+```
+
+After that, all future upgrades are one click in **Settings → Upgrade**.
+
 ### Diagnostics & Debugging
 
 - **Live Debug Log** — Real-time filtered log streaming to the browser
@@ -350,10 +379,11 @@ Access at **http://YOUR_IP:8000**. All tabs update in real-time via WebSocket.
 
 ### Settings Panel
 
-The settings tab is a six-sub-tab panel:
+The settings tab is a seven-sub-tab panel:
 
 | Sub-tab               | Description                                                                                                                                                                                      |
 |:----------------------|:-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| **Upgrade**           | In-app upgrades from GitHub tags. Shows current and latest versions with release notes, build/swap progress, build log viewer, manual rollback, auto-update toggle with configurable quiet window, release channel (stable/pre-release), and image retention. See [In-App Upgrades](#-in-app-upgrades). |
 | **Configuration**     | Form-based editor for Zigbee radio, MQTT broker, web interface, and logging settings. Writes to `config.yaml` with no manual YAML editing required. Includes HTTPS/SSL toggle.                   |
 | **APIs**              | External API integrations. Currently houses the **Weather (Open-Meteo)** integration — free, no account or API key required. Supplies outdoor temperature, humidity, wind and forecast to the Heating Advisor for EPC estimation, pre-heat timing and cold-snap alerts. Configurable latitude/longitude, poll interval, and optional MQTT publish for Home Assistant sensors. |
 | **Security**          | Manage PAN ID, Extended PAN ID, and Network Key with per-field regenerate buttons. Network key is hidden by default.                                                                             |
@@ -404,6 +434,7 @@ Each device opens a tabbed modal with:
 | **Group Manager**       | modules/groups.py                            | Native Zigbee groups with input/output cluster awareness           |
 | **Device Overrides**    | modules/device_overrides.py                  | JSON-driven attribute mappings for unsupported devices              |
 | **Network Init**        | modules/network_init.py                      | Auto-generation of credentials and channel selection on first boot |
+| **Upgrade Manager**     | modules/upgrade_manager.py + /opt/zmm/        | GitHub tag polling, container build/swap orchestration via host watcher, atomic blue-green deployments with health-check rollback |
 | **Frontend**            | HTML, Bootstrap 5, D3.js                     | SPA connected via WebSocket for real-time updates                  |
 
 For the full file structure see [docs/structure.md](docs/structure.md).
@@ -481,12 +512,41 @@ sudo journalctl -u zigbee-matter-manager -f             # Follow system logs
 sudo tail -f /opt/zigbee_matter_manager/logs/zigbee.log # Follow app logs
 ```
 
+### Upgrade Issues
+
+If an in-app upgrade gets stuck or shows a stale "Failed" banner:
+
+```bash
+# Check the upgrade watcher status
+systemctl status zmm-upgrade.path zmm-upgrade.service
+
+# View the build / swap log
+tail -100 ~/.zigbee-matter-manager/data/upgrade/build.log
+tail -100 ~/.zigbee-matter-manager/logs/upgrade_watcher.log
+
+# Clear a stale lock if the UI shows "Another upgrade in progress" but nothing is running
+ps aux | grep -E "podman build|upgrade.sh" | grep -v grep   # Verify nothing is running
+rm -f ~/.zigbee-matter-manager/data/upgrade/lock            # Then clear
+
+# Reset failed systemd state after repeated build attempts
+sudo systemctl reset-failed zmm-upgrade.path zmm-upgrade.service
+
+# Manually trigger a rollback if the UI is unreachable
+sudo podman stop zigbee-matter-manager
+sudo podman rm zigbee-matter-manager
+sudo podman start zigbee-matter-manager-previous
+sudo podman rename zigbee-matter-manager-previous zigbee-matter-manager
+```
+
+The UI also exposes a **Dismiss** button on failed-state banners and a **Force-clear lock** option when a 409 is returned, so most issues can be resolved without SSH.
+
 ---
 
 ## 📚 Documentation
 
 | Document                                                                    | Description                                                        |
 |:----------------------------------------------------------------------------|:-------------------------------------------------------------------|
+| [docs/upgrades.md](docs/upgrades.md)                                       | In-app upgrades — architecture, watcher mechanics, rollback flow, troubleshooting |
 | [docs/matter.md](docs/matter.md)                                           | Matter integration — setup, supported features, architecture       |
 | [docs/multipan.md](docs/multipan.md)                                       | MultiPAN (Zigbee + Thread on the Sonoff MG24) — firmware, CPC wire format, OTBR setup |
 | [docs/heating.md](docs/heating.md)                                         | Weather-aware heating — advisor, controller, thermal profile, radiator sizing, EPC/preheat maths, config reference |

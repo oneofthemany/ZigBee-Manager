@@ -1,0 +1,805 @@
+# In-App Upgrades — Architecture & Mechanics
+
+## Overview
+
+ZigBee Matter Manager supports in-app upgrades via the **Settings → Upgrade** tab. The system pulls a tagged release from GitHub, builds a new container image **in the background while the running app keeps serving traffic**, then performs an atomic container swap with health-check-gated automatic rollback.
+
+This is a blue-green deployment model adapted for self-hosted single-host containerised applications. It is designed around three constraints that make the standard solutions a poor fit:
+
+1. **No registry image to pull.** ZMM is built locally per-host because the Containerfile compiles per-architecture Rust modules and per-version Python wheels. There's no `docker pull`-style pre-built image hosted somewhere.
+2. **No Kubernetes / Swarm / multi-node infrastructure.** A single Rock 5B (or similar) is the entire fleet.
+3. **No privileged container.** The container that serves the UI is fully unprivileged and must not be granted access to the host's container runtime, even via a mounted socket.
+
+The upgrade flow has to work under **all of**: rootless Podman + SELinux, rootless Podman + AppArmor, root Podman, Docker, with or without systemd, on any modern Linux distro. The architecture below is what falls out of those constraints.
+
+---
+
+## Architecture
+
+```
+┌──────────────────────────────────────────────────────────────────────┐
+│  CONTAINER (unprivileged, slirp4netns)                                │
+│  ┌────────────────────────────────────────────────────────────────┐  │
+│  │  modules/upgrade_manager.py                                     │  │
+│  │    - Polls GitHub releases/tags every 6h                        │  │
+│  │    - Writes JSON trigger files                                  │  │
+│  │    - Polls status.json for host-side progress                   │  │
+│  │    - Stale-lock detection (PID liveness + age)                  │  │
+│  │    - Background asyncio loops via FastAPI lifespan              │  │
+│  └────────────────────────────────────────────────────────────────┘  │
+│  ┌────────────────────────────────────────────────────────────────┐  │
+│  │  routes/upgrade_routes.py (FastAPI)                             │  │
+│  │    GET  /api/upgrade/status                                     │  │
+│  │    POST /api/upgrade/{check,build,swap,rollback,cancel,gc}      │  │
+│  │    POST /api/upgrade/{settings,reset-status,clear-lock}         │  │
+│  │    GET  /api/upgrade/log                                        │  │
+│  └────────────────────────────────────────────────────────────────┘  │
+│  ┌────────────────────────────────────────────────────────────────┐  │
+│  │  static/js/upgrade.js (Settings tab card)                       │  │
+│  │    - Bootstrap UI, state-machine-driven                         │  │
+│  │    - Progress bar, build log streaming, action buttons          │  │
+│  │    - WebSocket event hook for real-time updates                 │  │
+│  └────────────────────────────────────────────────────────────────┘  │
+└──────────────────────────────────────────────────────────────────────┘
+                                  │
+                  bind-mounted volume (file-based IPC)
+              /app/data/upgrade/  ↔  ~/.zigbee-matter-manager/data/upgrade/
+                                  │
+                                  ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│  HOST                                                                 │
+│  ┌────────────────────────────────────────────────────────────────┐  │
+│  │  systemd-path unit  OR  polling fallback                        │  │
+│  │    PathChanged=/.../upgrade/trigger                             │  │
+│  │    StartLimitIntervalSec=600 / StartLimitBurst=20               │  │
+│  │    TimeoutStartSec=infinity                                     │  │
+│  │    Fires zmm-upgrade.service oneshot on file write-close        │  │
+│  └────────────────────────────────────────────────────────────────┘  │
+│  ┌────────────────────────────────────────────────────────────────┐  │
+│  │  /opt/zmm/upgrade.sh (host orchestrator, SELinux usr_t)         │  │
+│  │    - Atomic trigger consume (read → delete → parse)             │  │
+│  │    - Stale lock detection (PID alive + age check)               │  │
+│  │    - Action dispatch: build / swap / rollback / cancel / gc     │  │
+│  │    - Signal traps for SIGTERM / SIGINT / SIGHUP                 │  │
+│  │    - Captures failed container logs into build.log              │  │
+│  └────────────────────────────────────────────────────────────────┘  │
+│  ┌────────────────────────────────────────────────────────────────┐  │
+│  │  /opt/zmm/run_container.sh (run-args helper)                    │  │
+│  │    - Replays build.sh's run_container() args with chosen tag    │  │
+│  │    - Auto-detects USB device by-id pattern matching             │  │
+│  │    - Conditional Bluetooth (/dev/hci0) inclusion                │  │
+│  └────────────────────────────────────────────────────────────────┘  │
+└──────────────────────────────────────────────────────────────────────┘
+                                  │
+                                  ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│  CONTAINER RUNTIME (podman or docker)                                 │
+│    podman build → tag image as ${name}:${version}-${arch}             │
+│    podman stop  → stop -t 45 (clean shutdown for matter-server)       │
+│    podman rename → preserve old container as -previous                │
+│    podman run   → start new container with same volumes/devices       │
+│    Health check → curl /api/status with 60s window                    │
+│    Rollback     → swap names back if health fails                     │
+└──────────────────────────────────────────────────────────────────────┘
+```
+
+### Why file-based IPC instead of socket mounting
+
+The container could in theory mount the host's podman socket at `${XDG_RUNTIME_DIR}/podman/podman.sock` and drive builds via the libpod REST API. Three reasons we don't:
+
+1. **Privilege equivalence.** A container with the podman socket mounted is effectively root on the host — it can spawn privileged containers, mount host filesystems, etc. This breaks the security model.
+2. **Runtime API divergence.** Docker and Podman expose different REST APIs. File-based triggers are runtime-agnostic.
+3. **SELinux complications.** Cross-namespace socket access requires `--security-opt label=disable` or relabelling, and the policies vary by distro.
+
+File-based IPC is boring, debuggable (`cat trigger.json`), works identically across runtimes, and requires no elevated privileges in the container.
+
+---
+
+## File system layout
+
+### Inside the container (`/app/`)
+
+```
+/app/
+├── VERSION                          # baked in at build time (single line: "1.3.2")
+├── modules/
+│   └── upgrade_manager.py           # core module
+├── routes/
+│   └── upgrade_routes.py            # FastAPI endpoints
+├── static/
+│   ├── js/upgrade.js                # frontend
+│   └── css/upgrade.css
+└── data/upgrade/                    # bind-mount; shared with host
+    ├── trigger                      # transient — written by app, deleted by upgrade.sh
+    ├── status.json                  # host writes, app polls
+    ├── build.log                    # host writes, app reads via /api/upgrade/log
+    ├── lock                         # in-flight operation marker (PID + timestamp)
+    └── .watcher_installed           # marker indicating host side is set up
+```
+
+### On the host
+
+```
+/opt/zmm/                            # SELinux usr_t — systemd can execute these
+├── upgrade.sh                       # orchestrator
+└── run_container.sh                 # run-args replayer
+
+~/.zigbee-matter-manager/            # data dir (admin_home_t — readable, not executable)
+├── data/upgrade/                    # bind-mounted into container at /app/data/upgrade/
+│   ├── trigger                      # (transient)
+│   ├── status.json
+│   ├── build.log
+│   └── lock
+├── data/state/
+│   └── version.json                 # persistent: current/previous versions, settings
+└── logs/
+    └── upgrade_watcher.log          # systemd-execed upgrade.sh writes here
+
+/etc/systemd/system/                 # OR ~/.config/systemd/user/
+├── zmm-upgrade.path                 # PathChanged=... → triggers .service
+└── zmm-upgrade.service              # Type=oneshot, ExecStart=/opt/zmm/upgrade.sh
+```
+
+### State separation rationale
+
+`config.yaml` is **user-owned configuration** (Zigbee credentials, MQTT broker, room layouts). It must be backupable and round-trippable through human review.
+
+`version.json` is **system-managed state** (current version, previous version, last GitHub check timestamp, auto-update settings). It must never appear in a config backup, and should not be hand-edited.
+
+Mixing them risks: backup-restore cycles overwriting current version state; user YAML errors breaking version tracking; merge conflicts when config schema evolves. The two are kept entirely separate.
+
+---
+
+## State machine
+
+The upgrade flow is a state machine with seven states:
+
+```
+                ┌─────────────────────────────────────────┐
+                │                                          │
+                │                 ┌──────────┐            │
+                ├────────────────▶│ checking │            │
+                │  (poll GitHub)  └────┬─────┘            │
+                │                      │                  │
+                │            new tag found                │
+                │                      │                  │
+                │                      ▼                  │
+                │                 ┌──────────┐            │
+   user click  ─┼────────────────▶│ building │            │
+   "Build"      │                 └────┬─────┘            │
+                │                      │                  │
+                │                build succeeds           │
+                │                      │                  │
+                │                      ▼                  │
+                │              ┌───────────────┐          │
+                │              │ ready_to_swap │          │
+                │              └───────┬───────┘          │
+                │                      │                  │
+                │              user click "Swap"          │
+                │                      │                  │
+                │                      ▼                  │
+   ┌─ idle ◀────┤                ┌──────────┐             │
+   │            │                │ swapping │             │
+   │            │                └────┬─────┘             │
+   │            │                     │                   │
+   │            │      ┌──────────────┼─────────────┐    │
+   │            │      │              │             │    │
+   │            │      ▼              ▼             ▼    │
+   │            │ health pass     run fails    health    │
+   │            │      │           │            fail     │
+   │            │  (success)       │             │       │
+   │            │      │           ▼             ▼       │
+   │            │      │     ┌───────────────────┐       │
+   │            │      │     │   rolling_back    │       │
+   │            │      │     └─────────┬─────────┘       │
+   │            │      │               │                 │
+   │            │      │               ▼                 │
+   │            │      │           ┌────────┐            │
+   │            └──────┴──────────▶│ failed │────────────┘
+   │                                └────┬───┘     (user
+   │                                     │      dismisses /
+   │                                     │       retries)
+   └─────────────────────────────────────┘
+```
+
+States:
+
+| State | Source of truth | Set by | Cleared by |
+|:------|:----------------|:-------|:-----------|
+| `idle` | both | swap success, reset_status | — |
+| `checking` | app (transient) | periodic_check_loop | check completes |
+| `building` | both | request_build → write_status | upgrade.sh do_build completion |
+| `ready_to_swap` | host status | upgrade.sh do_build success | request_swap |
+| `swapping` | both | request_swap → write_status | health check pass/fail |
+| `rolling_back` | host status | health failure | swap-back complete |
+| `failed` | both | any error path | reset_status (manual or auto on retry) |
+
+The container-side `upgrade_state` (in `version.json`) is kept in sync with the host-side `state` (in `status.json`) by the `status_watcher_loop` background task that polls `status.json` every 2 seconds.
+
+---
+
+## Trigger file lifecycle
+
+The single most important piece of the architecture is the trigger file at `~/.zigbee-matter-manager/data/upgrade/trigger`. Every upgrade operation flows through it. Getting the lifecycle right was the source of most of the bugs hit during initial implementation.
+
+### Write side (Python)
+
+```python
+# modules/upgrade_manager.py: write_trigger()
+trigger = {
+    "action": "build",          # build | swap | rollback | cancel | gc | install_watcher
+    "payload": {                # action-specific data
+        "target_version": "1.3.2",
+        "architecture": "amd64",
+        "repo": "oneofthemany/ZigBee-Matter-Manager",
+    },
+    "requested_at": "2026-04-25T13:09:53Z",
+    "requested_by": "zmm-app",
+}
+# Atomic write: write to .tmp, then os.replace (rename)
+with open(TRIGGER_FILE + ".tmp", "w") as f:
+    json.dump(trigger, f, indent=2)
+os.replace(TRIGGER_FILE + ".tmp", TRIGGER_FILE)
+```
+
+The atomic write pattern (`write to tmp + rename`) is critical because the host-side `systemd-path` unit watches for **file close-after-write**. If we `open()` the trigger file directly and write to it incrementally, systemd may fire the watcher mid-write and read a truncated JSON.
+
+### Detection side (systemd)
+
+```ini
+# /etc/systemd/system/zmm-upgrade.path
+[Path]
+PathChanged=/root/.zigbee-matter-manager/data/upgrade/trigger
+Unit=zmm-upgrade.service
+# Note: do NOT add MakeDirectory=true — systemd will create the trigger
+# path itself as a directory, breaking the entire flow.
+```
+
+`PathChanged=` (not `PathExists=`) is essential. `PathExists=` retriggers continuously while the file exists, causing infinite loops if the consumer fails before deleting it. `PathChanged=` only fires when the file is closed-after-write — once per write, regardless of whether the file persists.
+
+### Consume side (bash)
+
+```bash
+# /opt/zmm/upgrade.sh: consume_trigger()
+consume_trigger() {
+    [[ -f "$TRIGGER_FILE" ]] || return 1
+
+    # CRITICAL: read-then-delete in two steps. If we crash after this,
+    # the path unit won't re-fire because the file is gone.
+    local trigger_content
+    trigger_content=$(cat "$TRIGGER_FILE" 2>/dev/null)
+    rm -f "$TRIGGER_FILE"
+
+    TRIGGER_ACTION=$(echo "$trigger_content" | jq -r '.action')
+    TRIGGER_PAYLOAD=$(echo "$trigger_content" | jq -c '.payload')
+    [[ -n "$TRIGGER_ACTION" ]] || return 1
+}
+```
+
+Reading the contents into a shell variable **before** deleting the file means a script crash mid-parse cannot orphan the trigger and cause an infinite path-unit fire loop. This was a hard-won lesson — the original implementation parsed-then-deleted, and any malformed trigger or jq error left the file on disk forever.
+
+---
+
+## Locking
+
+A second piece of state — `lock` — prevents concurrent operations. The lock format is `"PID TIMESTAMP ACTION"` written by upgrade.sh on operation start, removed on completion via the EXIT trap.
+
+### Why both Python and Bash check the lock
+
+The Python side (in the container) checks the lock before writing a trigger, returning HTTP 409 if held. The Bash side (on the host) checks the lock before starting an operation, returning early if held. The two checks aren't redundant — they catch different races:
+
+- **Python check** prevents the user clicking "Build" twice in quick succession (the second click sees a held lock and 409s immediately).
+- **Bash check** handles the case where two trigger files were written before either was consumed (rare, but possible if the watcher was paused/restarted with multiple pending triggers).
+
+### Stale lock detection
+
+A lock can become stale if upgrade.sh is killed by SIGKILL (the only signal the EXIT trap can't catch). Both the Python and Bash sides implement the same staleness algorithm:
+
+1. **PID liveness check** — `kill -0 $PID` (or `os.kill(pid, 0)` in Python). If the holder PID is dead, the lock is stale.
+2. **Age check** — if the lock is older than 60 minutes (longer than any legitimate build), treat as stale.
+
+Either condition triggers automatic clearing. The user can also force-clear via `POST /api/upgrade/clear-lock` (which still refuses to clear a *live* lock — the safety guard remains).
+
+---
+
+## Build flow (`do_build`)
+
+The `build` action triggered when the user clicks "Build" in the UI:
+
+```
+1. Validate payload (target_version, architecture, repo)
+2. Reset build.log
+3. Write status: building / 5% / "Preparing"
+4. git clone --depth 1 --branch v${target_version} ${repo} ${work_dir}
+   - Falls back to non-v-prefixed tag if first attempt fails
+5. Stamp VERSION file into the clone
+6. Write status: building / 20% / "Compiling image (~15-25min)"
+7. podman build --format docker --build-arg BUILD_JOBS=${nproc} \
+     --tag ${image}:${version}-${arch} \
+     --file ${work_dir}/Containerfile ${work_dir}
+8. podman tag ${image}:${version}-${arch} ${image}:latest-${arch}
+9. Write status: ready_to_swap / 100% / "Image ready"
+10. Clean up clone directory
+```
+
+The build typically takes 15–25 minutes on ARM64 hardware. The first 9–11 layers are usually cached from the previous build (apt packages, OpenThread bootstrap, Python deps, Rust toolchain), so only `COPY . .` and onward actually run.
+
+### Build cache behaviour
+
+Critical detail: the build cache lives in `~/.local/share/containers/storage/` (rootless) or `/var/lib/containers/storage/` (root). It persists across upgrades. This is what makes incremental upgrades fast — the per-version delta is only the layers downstream of `COPY . .` (lines 19–26 of the Containerfile).
+
+If the cache becomes corrupted, `podman system prune -a` will force a full rebuild on the next upgrade (worst case: a 25-minute first build).
+
+### Why we don't use `--pull=always`
+
+Each build does NOT do `--pull=always` on the base `python:3.11-slim-bookworm` image, because that would re-download the base image every upgrade and discard the cache. A fresh base image is a separate concern handled by occasional manual `podman pull python:3.11-slim-bookworm`.
+
+---
+
+## Swap flow (`do_swap`)
+
+The most operationally-sensitive part of the system. Every step has a failure mode that triggers a rollback path.
+
+```
+1. Verify target image exists (podman image inspect)
+2. Verify current container exists (podman inspect)
+3. Capture current image tag and version (for rollback)
+4. Write status: swapping / 30% / "Stopping current container"
+5. podman stop -t 45 ${name}                    [STEP A]
+6. wait_for_ports_free 60                       [STEP B]
+7. (if still squatted) kill_port_squatters
+8. Rename old: podman rename ${name} ${name}-previous
+9. Write status: swapping / 55% / "Starting new container"
+10. RUNTIME=podman IMAGE_TAG=... bash run_container.sh   [STEP C]
+11. (if step 10 fails) capture failed container logs    [STEP D]
+12. Write status: swapping / 80% / "Health-checking"
+13. Poll http://127.0.0.1:8000/api/status until 200 OR 60s timeout   [STEP E]
+14. (if health fails) rollback: stop new, rm new, rename previous back
+15. Write status: idle / 100% / "Upgrade complete"
+16. Update version.json: current/previous version + image tags
+```
+
+### Step A — the stop timeout
+
+`podman stop -t 45` gives the container 45 seconds for clean shutdown via SIGTERM before escalating to SIGKILL. The 45s figure was chosen empirically: uvicorn + python-matter-server (subprocess) + zigpy + DuckDB writes + MQTT flush all need to drain.
+
+The original implementation used `-t 15`, which caused SIGKILL escalation. SIGKILL leaves rootlessport (the userspace network proxy in slirp4netns) holding the published ports in a half-closed state. The new container then fails to bind because the port is "in use" — even though no process is actually serving on it. This was the root cause of the first round of swap failures.
+
+### Step B — wait for ports to be free
+
+After stop, before run, we actively poll to verify ports `8000` and `5580` are unbound:
+
+```bash
+wait_for_ports_free() {
+    local timeout=60
+    local elapsed=0
+    while (( elapsed < timeout )); do
+        if ss -ltn "( sport = :8000 or sport = :5580 )" | grep -q LISTEN; then
+            sleep 2; elapsed=$((elapsed + 2)); continue
+        fi
+        return 0
+    done
+    return 1
+}
+```
+
+Tools tried in order: `ss` (preferred — fast, standard on systemd-based distros), `netstat` (fallback for older systems), bash `/dev/tcp` (last resort, works without any networking tools installed).
+
+If ports are still bound after 60 seconds, `kill_port_squatters` looks up holder PIDs via `ss -ltnp` or `fuser` and sends SIGTERM then SIGKILL. Safety guard: never kill PID 1 or the script's own PID.
+
+### Step C — run_container.sh
+
+This script holds the canonical run arguments — caps, sysctls, devices, volumes. It must stay synchronised with `build.sh`'s `run_container()` function. Currently this is a manual sync; a future improvement is to refactor `build.sh` to expose `run_container` as a sourceable function.
+
+The run args include:
+- `--network=slirp4netns` (rootless networking)
+- `--cap-add=NET_ADMIN,NET_RAW,SYS_ADMIN` (for OTBR and netfilter)
+- `--sysctl net.ipv6.conf.all.forwarding=1` (Thread border routing)
+- `--device /dev/net/tun` (OTBR tun interface)
+- `--device /dev/serial/by-id/...` (auto-detected Zigbee dongle)
+- `--device /dev/hci0` (Bluetooth, conditional on existence)
+- `--volume /run/dbus:/run/dbus` (otbr-agent D-Bus)
+- `--volume ${DATA_DIR}/{config,data,certs,logs}:/app/...` (persistent state)
+
+### Step D — failed container log capture
+
+When `podman run` fails (or runs but exits immediately), the script captures the new container's logs into `build.log` before rolling back:
+
+```bash
+"$RUNTIME" logs --tail=100 "$CONTAINER_NAME" >>"$BUILD_LOG" 2>&1
+"$RUNTIME" inspect "$CONTAINER_NAME" 2>>"$BUILD_LOG" | head -100 >>"$BUILD_LOG"
+```
+
+This means the user sees the actual Python startup error (or OOM kill, or import failure) in the **View log** modal, instead of just a generic "container failed to start" message.
+
+### Step E — health check
+
+Polls `http://127.0.0.1:8000/api/status` from the host, every 3 seconds, up to 60 seconds total. The `/api/status` endpoint is one of the first things the FastAPI app registers, so it returns 200 as soon as the app is listening — even before all services are fully initialized. This is intentional: we want to detect "the app started up" not "the app is fully ready", because full readiness can take 30+ seconds with 40+ devices and the health check would time out.
+
+If health check fails, rollback is automatic — no user action needed.
+
+---
+
+## Rollback flow
+
+Two paths trigger rollback:
+
+1. **Automatic** — the swap script catches a failure (run failed, health failed) and immediately swaps back.
+2. **Manual** — the user clicks "Rollback to v1.3.1" in the UI.
+
+Both paths use the same primitive: rename the failed/current container out of the way, rename the previous container back, start it.
+
+```bash
+# Manual rollback (do_rollback)
+podman stop -t 15 zigbee-matter-manager
+podman rename zigbee-matter-manager zigbee-matter-manager-failed-${timestamp}
+podman start zigbee-matter-manager-previous   # OR re-run from previous_image_tag
+podman rename zigbee-matter-manager-previous zigbee-matter-manager
+```
+
+The `-failed-${timestamp}` rename preserves the broken container for forensics — you can `podman logs` it to debug what went wrong, then `podman rm -f` it when done.
+
+### What's retained for rollback
+
+After every successful upgrade:
+- `zigbee-matter-manager-previous` — the stopped previous container, ready to start instantly
+- The previous version's image tag (`zigbee-matter-manager:1.3.1-amd64`)
+
+Both are cleared on the *next* successful upgrade or by a manual `podman rm` / `gc` action. The retention policy keeps only the configured number of old images (default 2); the previous container itself is always retained as a single instance.
+
+### What rollback does NOT restore
+
+Rollback restores the **container and image**. It does NOT restore:
+
+- `config.yaml` — user data is in a bind-mounted volume; both versions share it
+- The Zigbee network state — same network database, same paired devices
+- DuckDB telemetry — same files, same history
+- Logs — appended, not version-scoped
+
+This is by design. The user wants to revert to "the previous working version of the app code" — they don't want to lose three days of telemetry data because they rolled back. If a version introduces a breaking schema change to `config.yaml` or DuckDB, the rollback from that version is going to need manual intervention. The upgrade manager doesn't try to handle that case automatically; it would require schema versioning across all state files which is out of scope.
+
+---
+
+## GitHub polling
+
+Every 6 hours, `periodic_check_loop` queries:
+
+- `GET https://api.github.com/repos/${repo}/releases/latest` (channel: `stable`)
+- `GET https://api.github.com/repos/${repo}/tags` (channel: `prerelease`)
+
+Rate limit: GitHub allows 60 unauthenticated requests per hour per IP. With a 6-hour interval we use 4 requests per day, well under the limit. The check is also rate-limited internally to once per hour minimum (a force-check from the UI bypasses this).
+
+### Version comparison
+
+Tags like `v1.3.2` or `1.3.2` are parsed via the regex `^v?(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$`. Pre-release suffixes are accepted but ignored for ordering — `v1.3.2-rc1` parses to `(1, 3, 2)` and is treated as equal to `v1.3.2`. This is technically incorrect per semver but acceptable for this use case (we never mix release and pre-release tags).
+
+If a tag doesn't match the regex (e.g., `latest`, `stable`, `weekly`), it's silently skipped during channel scanning.
+
+### What gets surfaced to the user
+
+When a newer version is found, `version.json` is updated with:
+
+```json
+{
+  "latest_available": "1.3.2",
+  "latest_release_notes": "...first 500 chars of release body...",
+  "latest_release_url": "https://github.com/.../releases/tag/v1.3.2",
+  "last_check": "2026-04-25T12:00:00Z"
+}
+```
+
+A WebSocket broadcast is also sent (`type: "upgrade_available"`) so the UI surfaces a toast notification immediately, not just on next page load.
+
+---
+
+## Auto-update
+
+Off by default. When enabled in **Settings → Upgrade**:
+
+1. Periodic check finds a new version
+2. Check the configured quiet window (default 03:00–05:00 local time)
+3. If inside the window AND `upgrade_state == "idle"`, automatically call `request_build`
+4. The build runs in the background like any other build
+5. Currently the auto-flow stops at `ready_to_swap` — auto-swap is **not** automatic
+
+The deliberate choice not to auto-swap: the swap is the only step that interrupts service. We want the user to be aware of it, even if the build was unattended. A future enhancement could add an "auto-swap during quiet window" option for users who want fully unattended upgrades.
+
+The quiet window check correctly handles wrap-around midnight (e.g., 23:00–05:00 means "between 11pm and 5am" not "never").
+
+---
+
+## SELinux interaction
+
+Critical detail that bit hard during initial implementation: **SELinux blocks systemd from executing scripts under `/root/` or `~/`**.
+
+The default targeted policy:
+- `init_t` (systemd) cannot execute files labelled `admin_home_t` (`/root/`) or `user_home_t` (`~/`)
+- `init_t` CAN execute files labelled `usr_t` (`/opt/`, `/usr/local/`)
+
+If you place `upgrade.sh` under `~/.zigbee-matter-manager/scripts/` and reference it from a systemd unit, you'll see this in the audit log:
+
+```
+type=AVC: avc: denied { execute } for pid=1633047 comm="(grade.sh)"
+  name="upgrade.sh"
+  scontext=system_u:system_r:init_t:s0
+  tcontext=unconfined_u:object_r:admin_home_t:s0
+  tclass=file permissive=0
+```
+
+The fix is to put scripts under `/opt/zmm/`, which is the FHS-standard location for add-on application packages and gets `usr_t` from the default policy. State files (lock, status, build.log) can stay in `~/.zigbee-matter-manager/` — SELinux only blocks *execution*, not read/write.
+
+The `install_watcher.sh` script handles all of this:
+
+```bash
+SCRIPTS_DIR="${ZMM_SCRIPTS_DIR:-/opt/zmm}"
+
+if [[ ! -d "$SCRIPTS_DIR" ]]; then
+    if [[ "$(id -u)" -eq 0 ]]; then
+        mkdir -p "$SCRIPTS_DIR"
+    else
+        sudo mkdir -p "$SCRIPTS_DIR"
+        sudo chown "$USER:$USER" "$SCRIPTS_DIR"
+    fi
+fi
+
+# Belt-and-braces relabel
+if command -v restorecon >/dev/null 2>&1 && [[ -e /sys/fs/selinux/enforce ]]; then
+    sudo restorecon -R "$SCRIPTS_DIR" >/dev/null 2>&1
+fi
+```
+
+On non-SELinux systems (Ubuntu, Debian default), `restorecon` is a no-op and nothing changes.
+
+---
+
+## Cross-distro watcher
+
+The host-side watcher must work on:
+- Modern systemd-based distros (Fedora, RHEL, Ubuntu, Debian, Arch) — uses `systemd-path`
+- systemd as root only (containers in containers, restricted environments) — same path unit but in `/etc/systemd/system/`
+- Non-systemd distros (Alpine, some embedded) — falls back to a polling loop
+
+`install_watcher.sh` detects which mode applies:
+
+```bash
+USE_SYSTEMD_USER=false
+USE_SYSTEMD_SYSTEM=false
+USE_POLLING=false
+
+if command -v systemctl >/dev/null 2>&1; then
+    if systemctl --user status >/dev/null 2>&1; then
+        USE_SYSTEMD_USER=true
+    elif [[ "$(id -u)" -eq 0 ]]; then
+        USE_SYSTEMD_SYSTEM=true
+    else
+        USE_POLLING=true
+    fi
+else
+    USE_POLLING=true
+fi
+```
+
+The polling fallback is a simple `while true; do [[ -f trigger ]] && bash upgrade.sh; sleep 5; done` loop, daemonised via systemd-as-root if available, or via `nohup` + `@reboot` crontab as a last resort.
+
+---
+
+## Container restart semantics
+
+A subtle but important point: the running app **does not need to be aware of the upgrade**.
+
+Specifically:
+1. The Python upgrade_manager runs in the running container — version 1.3.1.
+2. It writes a trigger; the host script builds the v1.3.2 image.
+3. The host script stops the running container (1.3.1) and starts the new one (1.3.2).
+4. The new container's Python upgrade_manager reads `/app/VERSION` (now `1.3.2`) and `version.json` (which the host updated during step 3) and presents the new state.
+
+There is no "graceful handover" or "the old version finishing the upgrade" — the old version is just stopped. All upgrade state lives on disk in `version.json` and `status.json`, both bind-mounted, both read by whichever container is running. The Python module is stateless with respect to version transitions.
+
+This is why hot-reloading wouldn't work and isn't attempted: Python module imports are sticky, and the running container is on stale code by definition during an upgrade. A clean container restart is the only sane path.
+
+---
+
+## Failure modes & recovery
+
+A non-exhaustive list of failure modes, with diagnostic and recovery steps. Each was discovered the hard way during initial implementation.
+
+### `unit-start-limit-hit` on the path unit
+
+```
+× zmm-upgrade.path
+   Active: failed (Result: unit-start-limit-hit)
+```
+
+**Cause:** the systemd-path unit fired the service repeatedly because either (a) the trigger file persists due to a script crash, or (b) the path directive was wrong (`PathExists=` instead of `PathChanged=`).
+
+**Recovery:**
+```bash
+sudo systemctl reset-failed zmm-upgrade.path zmm-upgrade.service
+rm -f ~/.zigbee-matter-manager/data/upgrade/trigger
+rm -f ~/.zigbee-matter-manager/data/upgrade/lock
+sudo systemctl start zmm-upgrade.path
+```
+
+### `203/EXEC: Permission denied`
+
+```
+zmm-upgrade.service: Unable to locate executable '/opt/zmm/upgrade.sh': Permission denied
+```
+
+**Cause:** SELinux denying execute, OR the file is missing the executable bit.
+
+**Diagnose:**
+```bash
+ls -laZ /opt/zmm/upgrade.sh
+# Check 1: -rwxr-xr-x (executable bit)
+# Check 2: system_u:object_r:usr_t:s0 (NOT *_home_t)
+
+ausearch -m AVC -ts recent | grep upgrade.sh
+# If you see "scontext=...:init_t ... tcontext=...:admin_home_t ... denied { execute }"
+# → SELinux issue. Move scripts to /opt/zmm/ and run install_watcher.sh.
+```
+
+**Recovery:**
+```bash
+sudo chmod 755 /opt/zmm/*.sh
+sudo restorecon -Rv /opt/zmm/
+```
+
+### `bind: address already in use`
+
+```
+Error: rootlessport listen tcp 0.0.0.0:5580: bind: address already in use
+```
+
+**Cause:** previous container's rootlessport process still holding the port. Most often happens when the old container was SIGKILL'd rather than cleanly stopped.
+
+**Recovery on the next upgrade:** the new `upgrade.sh` includes `wait_for_ports_free` which polls for up to 60 seconds before starting the new container. If you're hitting this, you're likely on an older `upgrade.sh` — re-run `install_watcher.sh` to update.
+
+**Manual recovery:**
+```bash
+ss -ltnp '( sport = :5580 )'
+# Find the holder PID, kill it
+kill -TERM ${pid}
+# Then retry the swap from the UI
+```
+
+### Trigger directory instead of file
+
+```bash
+ls -la ~/.zigbee-matter-manager/data/upgrade/
+drwxr-xr-x  ... trigger      # ← directory, not file!
+-rw-r--r--  ... trigger.tmp  # accumulates because os.replace can't replace dir
+```
+
+**Cause:** the systemd-path unit had `MakeDirectory=true` set, which causes systemd to create the watched path **as a directory**. This breaks all subsequent file-based IPC.
+
+**Recovery:**
+```bash
+sudo rm -rf ~/.zigbee-matter-manager/data/upgrade/trigger
+sudo rm -f ~/.zigbee-matter-manager/data/upgrade/trigger.tmp
+# Then re-run install_watcher.sh — the new version omits MakeDirectory=true
+sudo bash ~/zigbee-matter-manager/scripts/install_watcher.sh
+```
+
+The current Python upgrade_manager also defensively checks for this on every trigger write:
+
+```python
+if os.path.isdir(TRIGGER_FILE):
+    shutil.rmtree(TRIGGER_FILE)  # warn-and-recover
+```
+
+### Container OOM killed (`code=-9`)
+
+```
+[launcher] main.py exited code=-9 after 9.9s
+```
+
+**Cause:** the kernel OOM killer terminated the Python process. The launcher correctly falls back to the recovery server.
+
+**Diagnose:**
+```bash
+sudo dmesg | grep -iE "out of memory|killed process" | tail -10
+free -h                                 # how tight is RAM?
+sudo podman stats --no-stream           # memory usage of running containers
+```
+
+**Mitigation:** set a memory limit on the container via `run_container.sh`:
+```bash
+--memory=1g --memory-swap=1.5g
+```
+
+This doesn't fix the OOM, but bounds it to the container instead of system-wide.
+
+### `409 Conflict — Another upgrade in progress`
+
+The UI shows this when `request_build` / `request_swap` finds the lock file held.
+
+**Diagnose:**
+```bash
+ps aux | grep -E "podman build|upgrade.sh" | grep -v grep
+```
+
+If anything is running, **wait for it**. Builds take 15–25 minutes.
+
+If nothing is running, the lock is stale. The Python side auto-detects stale locks (PID dead OR age > 60min) and clears them. If you want to force-clear immediately, the UI surfaces a "Force-clear lock" option after a 409, or:
+
+```bash
+rm -f ~/.zigbee-matter-manager/data/upgrade/lock
+```
+
+### Stale "Failed" banner
+
+The UI shows "Failed / Rolled back" indefinitely.
+
+**Cause:** `status.json` retains `state: "failed"` until something writes over it.
+
+**Recovery:** click **Dismiss** in the UI (it calls `POST /api/upgrade/reset-status`). Or manually:
+
+```bash
+echo '{"state":"idle","target_version":null,"updated_at":"'"$(date -u +%FT%TZ)"'","progress_percent":0,"current_step":"","error":null}' \
+    > ~/.zigbee-matter-manager/data/upgrade/status.json
+```
+
+The next click of Build / Swap / Rollback also auto-clears stale failed state via `reset_status(only_if_failed=True)` — the user is implicitly retrying.
+
+---
+
+## Diagnostic commands
+
+A condensed reference for live debugging:
+
+```bash
+# State of the trigger flow
+ls -la ~/.zigbee-matter-manager/data/upgrade/
+
+# Watcher activity (host-side)
+tail -100 ~/.zigbee-matter-manager/logs/upgrade_watcher.log
+
+# Build log (host-side, also surfaced in the UI)
+tail -100 ~/.zigbee-matter-manager/data/upgrade/build.log
+
+# systemd unit state
+systemctl status zmm-upgrade.path zmm-upgrade.service
+systemctl cat zmm-upgrade.service
+
+# Lock contents
+cat ~/.zigbee-matter-manager/data/upgrade/lock
+
+# Live status (what the UI is seeing)
+cat ~/.zigbee-matter-manager/data/upgrade/status.json | jq
+
+# Persistent app state
+cat ~/.zigbee-matter-manager/data/state/version.json | jq
+
+# What images exist?
+podman images | grep zigbee
+
+# What containers exist?
+podman ps -a | grep zigbee
+
+# Test that upgrade.sh runs at all from systemd's perspective
+sudo /opt/zmm/upgrade.sh
+# Should print "[timestamp] Using container runtime: podman" and exit
+```
+
+---
+
+## Roadmap
+
+Known limitations and planned improvements:
+
+1. **`run_container.sh` / `build.sh` sync.** Currently a manual sync between two files. Refactor `build.sh` to expose `run_container` as a sourceable function so there's one source of truth.
+2. **Schema migration hooks.** No mechanism for "v1.4.0 needs to migrate `config.yaml` from schema v1 to v2 before starting". Currently relies on backward-compatible config parsing in the app.
+3. **Auto-swap option.** Currently auto-update stops at `ready_to_swap`. Add an "auto-swap during quiet window" toggle for users who want fully unattended upgrades.
+4. **Multi-step rollback.** Currently retains only the immediate previous version. Could add a "rollback chain" of N versions, but disk usage on a Rock 5B is the limiting factor (each image is ~1.5–2 GB).
+5. **Health check granularity.** `/api/status` returning 200 means "the app started". Could add a `/api/status?ready=true` variant that only returns 200 when all services are fully initialized — but with 40+ devices this can take 30+ seconds, longer than the 60-second swap window allows.
+6. **Build resumability.** A failed build today must be re-run from scratch. Podman caches layers internally, so the rebuild is fast — but the framework could expose a "Resume" button instead of "Build again".
+7. **GitHub authentication.** Currently unauthenticated (60 req/hr). For users hitting the limit, add an optional `github.token` to `config.yaml` for 5000 req/hr.
+
+---
+
+## Related Documentation
+
+- [README — In-App Upgrades](../README.md#-in-app-upgrades) — feature overview and quick start
+- [docs/structure.md](structure.md) — full project file layout
+- [docs/multipan.md](multipan.md) — MultiPAN container internals (relevant for understanding the swap timing on Sonoff MG24 systems)
