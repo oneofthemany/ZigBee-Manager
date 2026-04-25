@@ -736,14 +736,17 @@ fi
 # Step 10: Install upgrade watcher (first-time only)
 if [[ ! -f "${DATA_DIR}/data/upgrade/.watcher_installed" ]]; then
     info "Installing in-app upgrade watcher ..."
-    mkdir -p "${DATA_DIR}/scripts"
+    mkdir -p "${DATA_DIR}/scripts" "${DATA_DIR}/data/upgrade"
     # Copy the scripts from the cloned repo
     if [[ -f "${APP_DIR}/scripts/upgrade.sh" ]]; then
         cp "${APP_DIR}/scripts/upgrade.sh" "${DATA_DIR}/scripts/"
         cp "${APP_DIR}/scripts/run_container.sh" "${DATA_DIR}/scripts/"
+        # CRITICAL: chmod after cp — without this, systemd will fail with
+        # status=203/EXEC "Permission denied"
         chmod +x "${DATA_DIR}/scripts/"*.sh
         # Run the installer
         if [[ -f "${APP_DIR}/scripts/install_watcher.sh" ]]; then
+            chmod +x "${APP_DIR}/scripts/install_watcher.sh"
             ZMM_DATA_DIR="$DATA_DIR" ZMM_APP_DIR="$APP_DIR" \
                 bash "${APP_DIR}/scripts/install_watcher.sh" || \
                 warn "Watcher install encountered issues — you can re-run it later from the Settings tab"

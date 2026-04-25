@@ -58,13 +58,14 @@ export function initWS() {
             }
 
             // Forward upgrade events to any listening modules
-            if (data.type === 'upgrade_available' || data.type === 'upgrade_status') {
-                window.dispatchEvent(new CustomEvent('zmm-ws-message', { detail: data }));
+            if (msg.type === 'upgrade_available' || msg.type === 'upgrade_status') {
+                window.dispatchEvent(new CustomEvent('zmm-ws-message', { detail: msg }));
                 // Also surface the "available" notification as a toast
-                if (data.type === 'upgrade_available' && window.showToast) {
+                if (msg.type === 'upgrade_available' && window.showToast) {
+                    const cv = msg.payload?.current_version || '?';
+                    const lv = msg.payload?.latest_version || '?';
                     window.showToast('info',
-                        `Update available: v${data.current_version} → v${data.latest_version}. ` +
-                        `Open Settings → Upgrade to install.`
+                        `Update available: v${cv} → v${lv}. Open Settings → Upgrade to install.`
                     );
                 }
                 return;  // don't pass to other handlers

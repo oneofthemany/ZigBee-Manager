@@ -729,10 +729,12 @@ async def periodic_check_loop(
                 try:
                     await broadcast_fn({
                         "type": "upgrade_available",
-                        "current_version": result.get("current_version"),
-                        "latest_version": result.get("latest_version"),
-                        "notes": (result.get("notes") or "")[:500],
-                        "url": result.get("url"),
+                        "payload": {
+                            "current_version": result.get("current_version"),
+                            "latest_version": result.get("latest_version"),
+                            "notes": (result.get("notes") or "")[:500],
+                            "url": result.get("url"),
+                        },
                     })
                 except Exception as e:
                     logger.debug(f"broadcast_fn failed: {e}")
@@ -778,7 +780,9 @@ async def status_watcher_loop(broadcast_fn=None, poll_seconds: float = 2.0):
                 try:
                     await broadcast_fn({
                         "type": "upgrade_status",
-                        "status": status,
+                        "payload": {
+                            "status": status,
+                        },
                     })
                 except Exception as e:
                     logger.debug(f"broadcast_fn failed: {e}")
