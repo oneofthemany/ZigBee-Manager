@@ -1,48 +1,54 @@
 """
-Zones - RSSI-based presence detection for ZigBee-Manager.
-Robust version with topology integration matching core.py logic.
-Includes dedicated motion.log.
+Zones - Per-device RSSI-to-coordinator presence detection.
+
+Re-engineered design (supersedes pair-link RSSI model):
+  * Each zone holds a set of device IEEEs.
+  * For every frame received at the coordinator from a zone device, a single
+    (rssi, lqi) sample is recorded against that device.
+  * Calibration is explicit: the user triggers it ONCE the room is empty.
+    Baseline (trimmed mean + σ) is computed per-device from that window.
+  * Evaluation compares smoothed current RSSI to baseline in σ units.
+  * Aggressiveness (per-device σ threshold multiplier) is only exposed for
+    mains-fed (Router role) devices. End devices contribute weak "evidence"
+    weight at the default threshold because their sample cadence is dictated
+    by their own wake cycle.
+  * A zone is OCCUPIED when the weighted sum of triggered devices crosses
+    `min_devices_triggered`. Clears after `clear_delay` of stability.
 """
 
 import asyncio
 import logging
 import time
-import statistics
 import json
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Set, Any, Callable, Tuple
+from typing import Dict, List, Optional, Any, Callable
 from collections import deque
 from enum import Enum, auto
 from statistics import mean, stdev
 
 logger = logging.getLogger(__name__)
 
+
 def setup_motion_logging():
     """Configure a separate file handler for zone/motion events."""
     import os
     from logging.handlers import RotatingFileHandler
 
-    # Try local logs dir first, then system path
     log_dir = "./logs"
+    if not os.path.exists(log_dir):
+        return
+    log_file = os.path.join(log_dir, "motion.log")
+    try:
+        handler = RotatingFileHandler(log_file, maxBytes=5 * 1024 * 1024, backupCount=3)
+        handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+        handler.setLevel(logging.INFO)
+        logger.addHandler(handler)
+        logger.propagate = False
+        logger.info(f"Motion logging initialized to {log_file}")
+    except Exception as e:
+        print(f"Failed to create log handler: {e}")
 
-    if os.path.exists(log_dir):
-        log_file = os.path.join(log_dir, "motion.log")
 
-        # Create handler
-        try:
-            handler = RotatingFileHandler(log_file, maxBytes=5*1024*1024, backupCount=3)
-            formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-            handler.setFormatter(formatter)
-            handler.setLevel(logging.INFO)
-
-            # Add to logger
-            logger.addHandler(handler)
-            logger.propagate = False # Logs appear ONLY in motion.log, not main system log
-            logger.info(f"Motion logging initialized to {log_file}")
-        except Exception as e:
-            print(f"Failed to create log handler: {e}")
-
-# Initialize immediately
 try:
     setup_motion_logging()
 except Exception as e:
@@ -50,152 +56,154 @@ except Exception as e:
 
 
 def normalize_ieee(ieee: Any) -> str:
-    """Normalize IEEE to lowercase string with consistent formatting."""
+    """Normalize IEEE to lowercase colon-separated string."""
     if ieee is None:
         return ""
-    # Convert to string and lowercase
     s = str(ieee).lower().strip()
-    # Ensure standard format (add colons if missing and length is 16 hex chars)
     if len(s) == 16 and ":" not in s:
-        s = ":".join(s[i:i+2] for i in range(0, 16, 2))
+        s = ":".join(s[i:i + 2] for i in range(0, 16, 2))
     return s
 
 
 class ZoneState(Enum):
-    """Zone occupancy state."""
+    UNCALIBRATED = auto()
+    CALIBRATING = auto()
     VACANT = auto()
     OCCUPIED = auto()
-    CALIBRATING = auto()
+
 
 @dataclass
-class ZoneConfig:
-    """Configuration for a single zone."""
-    name: str
-    device_ieees: List[str]
-    deviation_threshold: float = 2.5
-    variance_threshold: float = 15.0
-    min_links_triggered: int = 2
-    calibration_time: int = 120
-    clear_delay: int = 15
-    mqtt_topic_override: Optional[str] = None
-
-    # Optional room properties
-    room_volume_m3: Optional[float] = None  # For adaptive thresholds
-    zone_center: Optional[Tuple[float, float, float]] = None  # (x, y, z) coordinates
-    
-@dataclass
-class RSSISample:
-    """Single RSSI measurement between two nodes."""
-    source_ieee: str
-    target_ieee: str
+class RssiSample:
     rssi: int
     lqi: int
     timestamp: float = field(default_factory=time.time)
 
 
 @dataclass
-class LinkStats:
-    """Statistics for a single mesh link."""
-    source_ieee: str
-    target_ieee: str
-    samples: deque = field(default_factory=lambda: deque(maxlen=100))
+class DeviceStats:
+    """
+    Per-device RSSI statistics measured at the coordinator.
+    Holds rolling samples, calibration baseline, and a short smoothing window
+    used for evaluation.
+    """
+    ieee: str
+    is_router: bool = False                   # mains-fed (derived from node_desc)
+    aggressiveness: float = 1.0               # σ multiplier; 1.0 = zone default; only used for routers
+    samples: deque = field(default_factory=lambda: deque(maxlen=400))
+    baseline_samples: List[RssiSample] = field(default_factory=list)  # collected during CALIBRATING only
 
     baseline_mean: Optional[float] = None
     baseline_std: Optional[float] = None
 
     last_rssi: Optional[int] = None
     last_lqi: Optional[int] = None
+    last_seen: Optional[float] = None
 
-    # Moving average state
     _smoothed_rssi: Optional[float] = field(default=None, init=False, repr=False)
 
-    def add_sample(self, rssi: int, lqi: int) -> None:
-        self.samples.append(RSSISample(
-            source_ieee=self.source_ieee,
-            target_ieee=self.target_ieee,
-            rssi=rssi,
-            lqi=lqi
-        ))
+    # ------------------------------------------------------------------ #
+    def add_sample(self, rssi: int, lqi: int, calibrating: bool) -> None:
+        sample = RssiSample(rssi=rssi, lqi=lqi)
+        self.samples.append(sample)
         self.last_rssi = rssi
         self.last_lqi = lqi
-        self._update_smoothed_rssi()
+        self.last_seen = sample.timestamp
+        self._update_smoothed(window=5)
+        if calibrating:
+            self.baseline_samples.append(sample)
 
-    def _update_smoothed_rssi(self, window: int = 2) -> None:
-        """Calculate moving average of recent RSSI samples."""
-        if len(self.samples) < window:
-            self._smoothed_rssi = self.last_rssi if self.last_rssi is not None else None
+    def _update_smoothed(self, window: int = 5) -> None:
+        if not self.samples:
+            self._smoothed_rssi = None
             return
-
         recent = list(self.samples)[-window:]
         self._smoothed_rssi = sum(s.rssi for s in recent) / len(recent)
 
-    def compute_baseline(self) -> bool:
-        """Compute baseline statistics from calibration samples."""
-        if len(self.samples) < 30:
+    # ------------------------------------------------------------------ #
+    def compute_baseline(self, min_samples: int = 20) -> bool:
+        """
+        Compute baseline from collected calibration samples.
+        Uses trimmed mean (middle 80%) to reduce outlier impact.
+        Returns True if baseline was successfully computed.
+        """
+        if len(self.baseline_samples) < min_samples:
             return False
 
-        # Use MIDDLE 80% of samples to reduce outlier impact
-        rssi_values = sorted([s.rssi for s in self.samples])
-        trim = int(len(rssi_values) * 0.1)  # Remove top/bottom 10%
+        values = sorted(s.rssi for s in self.baseline_samples)
+        trim = int(len(values) * 0.1)
         if trim > 0:
-            rssi_values = rssi_values[trim:-trim]
+            values = values[trim:-trim]
 
-        self.baseline_mean = mean(rssi_values)
-        self.baseline_std = stdev(rssi_values) if len(rssi_values) > 1 else 1.0
-
-        # Ensure reasonable std dev
+        self.baseline_mean = mean(values)
+        self.baseline_std = stdev(values) if len(values) > 1 else 1.0
         if self.baseline_std < 1.0:
-            self.baseline_std = 1.0
+            self.baseline_std = 1.0   # floor — prevents divide-by-tiny-noise
 
         logger.info(
-            f"Baseline computed: μ={self.baseline_mean:.1f}, σ={self.baseline_std:.1f} "
-            f"from {len(self.samples)} samples (trimmed to {len(rssi_values)})"
+            f"[baseline] {self.ieee[-8:]} μ={self.baseline_mean:.1f}dBm "
+            f"σ={self.baseline_std:.2f} from {len(self.baseline_samples)} samples "
+            f"(trimmed to {len(values)})"
         )
-
         return True
 
+    def clear_baseline(self) -> None:
+        self.baseline_mean = None
+        self.baseline_std = None
+        self.baseline_samples.clear()
+
+    # ------------------------------------------------------------------ #
     def get_deviation(self) -> Optional[float]:
-        """Get deviation using SMOOTHED RSSI for stability."""
+        """σ-units deviation of smoothed RSSI from calibrated baseline."""
         if self.baseline_mean is None or self.baseline_std is None:
             return None
         if self._smoothed_rssi is None:
             return None
-        if self.baseline_std == 0:
-            return 0.0
+        return abs(self._smoothed_rssi - self.baseline_mean) / self.baseline_std
 
-        deviation = abs(self._smoothed_rssi - self.baseline_mean) / self.baseline_std
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            'ieee': self.ieee,
+            'is_router': self.is_router,
+            'aggressiveness': self.aggressiveness,
+            'last_rssi': self.last_rssi,
+            'last_lqi': self.last_lqi,
+            'smoothed_rssi': self._smoothed_rssi,
+            'baseline_mean': self.baseline_mean,
+            'baseline_std': self.baseline_std,
+            'deviation': self.get_deviation(),
+            'sample_count': len(self.samples),
+            'baseline_sample_count': len(self.baseline_samples),
+            'last_seen': self.last_seen,
+        }
 
-        # Log suspicious deviations
-        if deviation < 0.5 and abs(self.last_rssi - self.baseline_mean) > 5:
-            logger.warning(
-                f"Link {self.source_ieee[-8:]}->{self.target_ieee[-8:]}: "
-                f"Low deviation ({deviation:.2f}σ) despite RSSI change. "
-                f"Last={self.last_rssi}, Smoothed={self._smoothed_rssi:.1f}, "
-                f"Baseline={self.baseline_mean:.1f}±{self.baseline_std:.1f}"
-            )
 
-        return deviation
+@dataclass
+class ZoneConfig:
+    name: str
+    device_ieees: List[str]
 
-    def get_recent_variance(self, window: int = 10) -> Optional[float]:
-        """Calculate variance of recent samples."""
-        if len(self.samples) < window:
-            return None
+    # Detection tuning
+    deviation_threshold: float = 2.5          # σ threshold (default for routers)
+    min_devices_triggered: float = 1.5        # weighted sum required to trigger
+    clear_delay: int = 15                     # seconds of stability before VACANT
+    calibration_time: int = 120               # seconds — duration of CALIBRATING window
 
-        recent = list(self.samples)[-window:]
-        values = [s.rssi for s in recent]
+    # Evidence weighting
+    end_device_weight: float = 0.5            # end devices count as partial evidence only
 
-        if len(values) < 2:
-            return None
+    # Integration
+    mqtt_topic_override: Optional[str] = None
 
-        return stdev(values)
+    # Per-device aggressiveness (σ multiplier). ONLY mains-fed devices are allowed
+    # to have an entry here. Accepted range: 0.5 (very sensitive) .. 2.0 (very relaxed).
+    per_device_aggressiveness: Dict[str, float] = field(default_factory=dict)
 
 
 @dataclass
 class Zone:
-    """A presence detection zone."""
     config: ZoneConfig
-    state: ZoneState = ZoneState.CALIBRATING
-    links: Dict[str, LinkStats] = field(default_factory=dict)
+    state: ZoneState = ZoneState.UNCALIBRATED
+    devices: Dict[str, DeviceStats] = field(default_factory=dict)
 
     calibration_start: Optional[float] = None
     last_trigger_time: Optional[float] = None
@@ -205,14 +213,11 @@ class Zone:
     on_occupied: Optional[Callable[['Zone'], None]] = None
     on_vacant: Optional[Callable[['Zone'], None]] = None
 
-    # Calibration progress tracking
     _calibration_callback: Optional[Callable] = field(default=None, init=False, repr=False)
     _last_progress: int = field(default=0, init=False, repr=False)
-
-    # Device info cache and app controller reference
-    _device_cache: Dict[str, Any] = field(default_factory=dict, init=False, repr=False)
     _app_controller: Any = field(default=None, init=False, repr=False)
 
+    # ------------------------------------------------------------------ #
     @property
     def name(self) -> str:
         return self.config.name
@@ -221,302 +226,244 @@ class Zone:
     def device_ieees(self) -> List[str]:
         return self.config.device_ieees
 
-    def get_link_key(self, source: str, target: str) -> str:
-        """Get normalized link key."""
-        s = normalize_ieee(source)
-        t = normalize_ieee(target)
-        return f"{min(s, t)}:{max(s, t)}"
-
-    def get_or_create_link(self, source: str, target: str) -> LinkStats:
-        """Get or create link statistics."""
-        key = self.get_link_key(source, target)
-        if key not in self.links:
-            self.links[key] = LinkStats(source_ieee=source, target_ieee=target)
-        return self.links[key]
-
-    def record_rssi(self, source_ieee: str, target_ieee: str, rssi: int, lqi: int) -> None:
-        """Record RSSI/LQI measurement for a link."""
-        s_norm = normalize_ieee(source_ieee)
-        t_norm = normalize_ieee(target_ieee)
-
-        # CRITICAL: Only track INTRA-ZONE links (both devices in zone)
-        source_in_zone = s_norm in self.device_ieees
-        target_in_zone = t_norm in self.device_ieees
-
-        if not (source_in_zone and target_in_zone):  # must be in zone
-            return
-
-        link = self.get_or_create_link(s_norm, t_norm)
-        link.add_sample(rssi, lqi)
-
-        if self.state == ZoneState.CALIBRATING:
-            logger.info(
-                f"CALIB [{self.name}]: {s_norm[-8:]}->{t_norm[-8:]} | "
-                f"RSSI: {rssi} (LQI:{lqi}) | Samples: {len(link.samples)}"
-            )
+    def _ensure_device(self, ieee: str) -> DeviceStats:
+        if ieee not in self.devices:
+            stats = DeviceStats(ieee=ieee)
+            stats.aggressiveness = self.config.per_device_aggressiveness.get(ieee, 1.0)
+            stats.is_router = self._is_router(ieee)
+            self.devices[ieee] = stats
+        return self.devices[ieee]
 
     def _is_router(self, ieee: str) -> bool:
-        """Check if device is a router (mains-powered relay)."""
-        # Check cache first
-        if ieee in self._device_cache:
-            return self._device_cache[ieee].get('is_router', False)
-
-        # Check if we have app_controller reference
         if not self._app_controller or not hasattr(self._app_controller, 'devices'):
             return False
-
-        # Get device from core.py devices dict
-        device = self._app_controller.devices.get(ieee)
-        if not device:
+        dev = self._app_controller.devices.get(ieee)
+        if not dev:
+            return False
+        try:
+            return dev.get_role() in ("Router", "Coordinator")
+        except Exception:
             return False
 
-        # Check role
-        role = device.get_role()
-        is_router = (role == "Router" or role == "Coordinator")
+    def refresh_device_roles(self) -> None:
+        """Re-read is_router from the device registry (called after zone load)."""
+        for ieee, stats in self.devices.items():
+            stats.is_router = self._is_router(ieee)
 
-        # Cache result
-        self._device_cache[ieee] = {'is_router': is_router}
-        return is_router
+    # ------------------------------------------------------------------ #
+    def record_rssi(self, ieee: str, rssi: int, lqi: int) -> None:
+        """
+        Record a single RSSI/LQI sample for a zone device.
+        Called by ZoneManager; already filtered to in-zone devices.
+        """
+        norm = normalize_ieee(ieee)
+        if norm not in self.device_ieees:
+            return
+        stats = self._ensure_device(norm)
+        stats.add_sample(rssi, lqi, calibrating=(self.state == ZoneState.CALIBRATING))
+        if self.state == ZoneState.CALIBRATING:
+            logger.debug(
+                f"CALIB [{self.name}] {norm[-8:]} "
+                f"rssi={rssi} lqi={lqi} n={len(stats.baseline_samples)}"
+            )
 
-    def _get_adaptive_threshold(self) -> float:
-        """Calculate adaptive deviation threshold based on zone properties."""
-        base = self.config.deviation_threshold
+    # ------------------------------------------------------------------ #
+    def start_calibration(self) -> None:
+        """Enter the CALIBRATING state and clear previous baselines."""
+        self.state = ZoneState.CALIBRATING
+        self.calibration_start = time.time()
+        self._last_progress = 0
+        for stats in self.devices.values():
+            stats.clear_baseline()
+        # Ensure every configured device has a DeviceStats so the UI can show it
+        for ieee in self.device_ieees:
+            self._ensure_device(ieee)
+        logger.info(f"Zone '{self.name}' calibration started ({self.config.calibration_time}s)")
+        self._emit_calibration_update()
 
-        # Scale by room volume if available
-        if self.config.room_volume_m3:
-            # Larger rooms = higher threshold (person has less RF impact)
-            # Reference: 20m³ room uses base threshold
-            scaling_factor = self.config.room_volume_m3 / 20.0
-            return base * scaling_factor
-
-        return base
-
-    def check_calibration(self) -> bool:
-        """Check if calibration is complete."""
+    def cancel_calibration(self) -> None:
+        """Abort without computing baselines."""
         if self.state != ZoneState.CALIBRATING:
-            return True
+            return
+        self.state = ZoneState.UNCALIBRATED
+        self.calibration_start = None
+        for stats in self.devices.values():
+            stats.baseline_samples.clear()
+        logger.info(f"Zone '{self.name}' calibration cancelled")
 
-        # Check actual sample counts in links
-        valid_links = [l for l in self.links.values() if len(l.samples) > 0]
+    def finalize_calibration(self, min_samples_per_device: int = 20) -> int:
+        """Compute baselines from collected samples. Returns ready device count."""
+        ready = 0
+        for stats in self.devices.values():
+            if stats.compute_baseline(min_samples=min_samples_per_device):
+                ready += 1
 
-        if self.calibration_start is None:
-            if len(valid_links) > 0:
-                self.calibration_start = time.time()
-                logger.info(f"Zone '{self.name}' started calibration timer (active links: {len(valid_links)})")
-                self._emit_calibration_update()
-            return False
+        if ready == 0:
+            logger.warning(
+                f"Zone '{self.name}' calibration produced 0 baselines — "
+                f"insufficient samples. Staying UNCALIBRATED."
+            )
+            self.state = ZoneState.UNCALIBRATED
+            return 0
 
+        self.state = ZoneState.VACANT
+        logger.info(f"Zone '{self.name}' calibrated: {ready}/{len(self.devices)} devices have baselines")
+        self._emit_calibration_update()
+        return ready
+
+    def check_calibration(self) -> None:
+        """Advance calibration progress and finalize if window elapsed."""
+        if self.state != ZoneState.CALIBRATING or self.calibration_start is None:
+            return
         elapsed = time.time() - self.calibration_start
         progress = min(100, int((elapsed / self.config.calibration_time) * 100))
-
-        # Emit progress updates every 5%
         if progress - self._last_progress >= 5:
             self._last_progress = progress
             self._emit_calibration_update()
+        if elapsed >= self.config.calibration_time:
+            self.finalize_calibration()
 
-        if elapsed < self.config.calibration_time:
-            return False
-
-        # Calibration complete - compute baselines
-        ready_links = 0
-        for link in self.links.values():
-            if link.compute_baseline():
-                ready_links += 1
-
-        if ready_links > 0:
-            self.state = ZoneState.VACANT
-            logger.info(f"Zone '{self.name}' calibrated with {ready_links} links")
-            self._emit_calibration_update()
-            return True
-
-        return False
-
-    def _emit_calibration_update(self):
-        """Emit calibration progress with live link stats."""
+    def _emit_calibration_update(self) -> None:
         if not self._calibration_callback:
             return
-
-        elapsed = time.time() - self.calibration_start if self.calibration_start else 0
-        progress = min(100, int((elapsed / self.config.calibration_time) * 100))
-
-        # Only emit if progress changed by 5% or more
-        if abs(progress - self._last_progress) < 5 and progress < 100:
-            return
-
-        self._last_progress = progress
-        ready_links = len([l for l in self.links.values() if l.baseline_mean is not None])
-
-        # BUILD LIVE LINK STATS FOR FRONTEND
-        link_stats = {}
-        for key, link in self.links.items():
-            if len(link.samples) > 0:  # Only include active links
-                link_stats[key] = {
-                    'last_rssi': link.last_rssi,
-                    'last_lqi': link.last_lqi,
-                    'smoothed_rssi': link._smoothed_rssi,
-                    'sample_count': len(link.samples),
-                    'baseline_mean': link.baseline_mean,
-                    'baseline_std': link.baseline_std,
-                    'deviation': link.get_deviation(),
-                }
-
+        elapsed = (time.time() - self.calibration_start) if self.calibration_start else 0
+        progress = min(100, int((elapsed / self.config.calibration_time) * 100)) if self.calibration_start else 0
         payload = {
             'zone_name': self.name,
             'state': self.state.name.lower(),
             'progress': progress,
             'elapsed': int(elapsed),
             'total': self.config.calibration_time,
-            'link_count': len([l for l in self.links.values() if len(l.samples) > 0]),
-            'ready_links': ready_links,
-            'links': link_stats  # ✅ THIS WAS MISSING
+            'devices': {ieee: stats.to_dict() for ieee, stats in self.devices.items()},
         }
+        try:
+            self._calibration_callback(payload)
+        except Exception as e:
+            logger.debug(f"Calibration callback error: {e}")
 
-        logger.info(
-            f"[{self.name}] Calibration progress: {progress}% "
-            f"({ready_links}/{len(link_stats)} links ready)"
-        )
-
-        self._calibration_callback(payload)
-
+    # ------------------------------------------------------------------ #
     def evaluate(self) -> ZoneState:
-        """Evaluate zone state based on link quality deviations."""
+        """Run one evaluation tick."""
         if self.state == ZoneState.CALIBRATING:
             self.check_calibration()
             return self.state
+        if self.state == ZoneState.UNCALIBRATED:
+            return self.state
 
-        triggered_links = 0.0  # Float for weighted scoring
-        high_variance_links = 0
+        # Stale-sample safety: if a device hasn't transmitted recently, its RSSI
+        # isn't fresh enough to contribute. We only use samples seen in the last
+        # 60s (mains routers) or 180s (end devices, which are inherently slower).
+        now = time.time()
+        weighted_triggered = 0.0
+        active = 0
 
-        # Get adaptive threshold
-        adaptive_threshold = self._get_adaptive_threshold()
+        for stats in self.devices.values():
+            dev = stats.to_dict()
+            dev_ieee_short = stats.ieee[-8:]
 
-        for link in self.links.values():
-            deviation = link.get_deviation()
-            variance = link.get_recent_variance()
+            if stats.last_seen is None:
+                continue
+            max_age = 60 if stats.is_router else 180
+            if (now - stats.last_seen) > max_age:
+                continue
 
-            # Weighted link evaluation
-            if deviation is not None and deviation > adaptive_threshold:
-                # Check device types for weighting
-                src_is_router = self._is_router(link.source_ieee)
-                dst_is_router = self._is_router(link.target_ieee)
+            deviation = stats.get_deviation()
+            if deviation is None:
+                continue
+            active += 1
 
-                weight = 1.0
-                if src_is_router and dst_is_router:
-                    weight = 2.0  # Router-router: most stable
-                elif src_is_router or dst_is_router:
-                    weight = 1.5  # Router-end device: medium confidence
-                # else: end device-end device: weight = 1.0 (lowest confidence)
+            # Per-device σ threshold
+            threshold = self.config.deviation_threshold * stats.aggressiveness
 
-                triggered_links += weight
-
-                # Debug logging for triggered links
+            if deviation > threshold:
+                weight = 1.0 if stats.is_router else self.config.end_device_weight
+                weighted_triggered += weight
                 logger.debug(
-                    f"Zone '{self.name}': Link {link.source_ieee[-8:]}->{link.target_ieee[-8:]} "
-                    f"triggered (dev={deviation:.2f}, weight={weight:.1f})"
+                    f"[{self.name}] {dev_ieee_short} deviation={deviation:.2f}σ "
+                    f"threshold={threshold:.2f}σ weight={weight}"
                 )
 
-            if variance is not None and variance > self.config.variance_threshold:
-                high_variance_links += 1
+        is_present = weighted_triggered >= self.config.min_devices_triggered
 
-        total_triggers = triggered_links
-
-        # Check if enough weighted triggers to indicate presence
-        is_fluctuating = (total_triggers >= self.config.min_links_triggered)
-
-        now = time.time()
-        if is_fluctuating:
+        if is_present:
             self.last_trigger_time = now
             if self.state != ZoneState.OCCUPIED:
                 self.state = ZoneState.OCCUPIED
                 self.occupied_since = now
                 logger.info(
                     f"Zone '{self.name}' -> OCCUPIED "
-                    f"(weighted triggers: {total_triggers:.1f}, threshold: {self.config.min_links_triggered})"
+                    f"(weighted={weighted_triggered:.2f}, active={active})"
                 )
                 if self.on_occupied:
                     self.on_occupied(self)
         else:
             if self.state == ZoneState.OCCUPIED:
-                if self.last_trigger_time:
-                    stable_duration = now - self.last_trigger_time
-                    if stable_duration >= self.config.clear_delay:
-                        self.state = ZoneState.VACANT
-                        self.last_clear_time = now
-                        duration = now - self.occupied_since if self.occupied_since else 0
-                        logger.info(f"Zone '{self.name}' -> VACANT (was occupied {duration:.0f}s)")
-                        self.occupied_since = None
-                        if self.on_vacant:
-                            self.on_vacant(self)
+                if self.last_trigger_time and (now - self.last_trigger_time) >= self.config.clear_delay:
+                    self.state = ZoneState.VACANT
+                    self.last_clear_time = now
+                    duration = (now - self.occupied_since) if self.occupied_since else 0
+                    logger.info(f"Zone '{self.name}' -> VACANT (was occupied {duration:.0f}s)")
+                    self.occupied_since = None
+                    if self.on_vacant:
+                        self.on_vacant(self)
 
         return self.state
 
+    # ------------------------------------------------------------------ #
+    def set_device_aggressiveness(self, ieee: str, value: float) -> bool:
+        """
+        Set per-device σ multiplier. Rejects non-router devices.
+        Returns True on success, False if device is not a router.
+        """
+        ieee = normalize_ieee(ieee)
+        if ieee not in self.device_ieees:
+            return False
+        stats = self._ensure_device(ieee)
+        if not stats.is_router:
+            logger.warning(f"Refusing aggressiveness change on non-router {ieee}")
+            return False
+        value = max(0.5, min(2.0, float(value)))
+        stats.aggressiveness = value
+        self.config.per_device_aggressiveness[ieee] = value
+        logger.info(f"Zone '{self.name}' device {ieee[-8:]} aggressiveness={value:.2f}σ")
+        return True
+
+    def recalibrate(self) -> None:
+        """Drop baselines and enter UNCALIBRATED. User must start calibration."""
+        self.state = ZoneState.UNCALIBRATED
+        self.calibration_start = None
+        self._last_progress = 0
+        for stats in self.devices.values():
+            stats.clear_baseline()
+            stats.samples.clear()
+            stats._smoothed_rssi = None
+        logger.info(f"Zone '{self.name}' reset to UNCALIBRATED")
+
+    # ------------------------------------------------------------------ #
     def to_dict(self) -> Dict[str, Any]:
-        """Convert zone to dictionary for API."""
         return {
             'name': self.name,
             'state': self.state.name.lower(),
             'device_ieees': self.device_ieees,
             'device_count': len(self.device_ieees),
-            'link_count': len(self.links),
             'occupied_since': self.occupied_since,
+            'calibration_start': self.calibration_start,
             'config': {
                 'deviation_threshold': self.config.deviation_threshold,
-                'variance_threshold': self.config.variance_threshold,
+                'min_devices_triggered': self.config.min_devices_triggered,
                 'clear_delay': self.config.clear_delay,
-                'room_volume_m3': self.config.room_volume_m3,
+                'calibration_time': self.config.calibration_time,
+                'end_device_weight': self.config.end_device_weight,
             },
-            'links': {
-                key: {
-                    'last_rssi': link.last_rssi,
-                    'last_lqi': link.last_lqi,
-                    'baseline_mean': link.baseline_mean,
-                    'baseline_std': link.baseline_std,
-                    'deviation': link.get_deviation(),
-                    'variance': link.get_recent_variance(),
-                    'sample_count': len(link.samples),
-                    'min_rssi': min([s.rssi for s in link.samples]) if link.samples else None,
-                    'max_rssi': max([s.rssi for s in link.samples]) if link.samples else None,
-                    'smoothed_rssi': link._smoothed_rssi,
-                }
-                for key, link in self.links.items()
-            }
+            'devices': {ieee: stats.to_dict() for ieee, stats in self.devices.items()},
         }
 
-    def recalibrate(self) -> None:
-        """Reset and restart calibration."""
-        self.state = ZoneState.CALIBRATING
-        self.calibration_start = None
-        self._last_progress = 0
-        for link in self.links.values():
-            link.samples.clear()
-            link.baseline_mean = None
-            link.baseline_std = None
-            link._smoothed_rssi = None
-        logger.info(f"Zone '{self.name}' recalibration started")
 
-
-    def _calculate_link_weight_with_fresnel(
-            self,
-            link: LinkStats,
-            base_weight: float
-    ) -> float:
-        """
-        Apply Fresnel zone weighting if position data available.
-        Links crossing zone center are more sensitive to presence.
-        """
-        if not self.config.zone_center:
-            return base_weight
-
-        # Would need device position data - stub for now
-        # In practice, you'd need to maintain a device_positions dict
-        # device_positions[ieee] = (x, y, z)
-
-        # For now, just return base weight
-        # Full implementation requires position tracking
-        return base_weight
-
+# =============================================================================
+#   ZoneManager
+# =============================================================================
 class ZoneManager:
-    """Manages multiple presence detection zones."""
+    """Manages multiple presence-detection zones."""
 
     def __init__(self, app_controller=None, mqtt_handler=None, event_emitter=None):
         self.zones: Dict[str, Zone] = {}
@@ -525,419 +472,160 @@ class ZoneManager:
         self._event_emitter = event_emitter
         self._running = False
         self._device_to_zones: Dict[str, List[str]] = {}
-        self._collection_task: Optional[asyncio.Task] = None
         self._evaluation_task: Optional[asyncio.Task] = None
-        self._topology_logged = False
-        self._force_collect = False
         self._zigbee_service = None
-        self._neighbor_scan_task = None
 
+    # ------------------------------------------------------------------ #
     def create_zone(self, config: ZoneConfig) -> Zone:
-        """Create a new zone."""
-        # Normalize all device IEEEs
         config.device_ieees = [normalize_ieee(i) for i in config.device_ieees]
-
+        config.per_device_aggressiveness = {
+            normalize_ieee(k): float(v) for k, v in (config.per_device_aggressiveness or {}).items()
+        }
         zone = Zone(
             config=config,
             on_occupied=self._on_zone_occupied,
             on_vacant=self._on_zone_vacant,
         )
-
-        # Wire calibration callback
         zone._calibration_callback = self._emit_calibration_progress
-
-        # Pass app_controller reference for device type checking
         zone._app_controller = self.app_controller
 
         self.zones[config.name] = zone
-
-        # Register zone with devices
         for ieee in config.device_ieees:
-            if ieee not in self._device_to_zones:
-                self._device_to_zones[ieee] = []
-            self._device_to_zones[ieee].append(config.name)
+            self._device_to_zones.setdefault(ieee, []).append(config.name)
+            zone._ensure_device(ieee)
 
         logger.info(f"Created zone '{config.name}' with {len(config.device_ieees)} devices")
         return zone
 
-
-    async def configure_zone_devices(self, zigbee_service):
-        """
-        Configure all zone devices for LQI reporting.
-        Called from core.py after zones are loaded.
-        """
-        from modules.zone_device_config import configure_zone_device_reporting
-
-        self._zigbee_service = zigbee_service
-
-        # Collect all unique device IEEEs from all zones
-        all_device_ieees = set()
-        for zone in self.zones.values():
-            all_device_ieees.update(zone.device_ieees)
-
-        if all_device_ieees:
-            logger.info(f"Configuring {len(all_device_ieees)} zone devices for LQI reporting")
-            await configure_zone_device_reporting(zigbee_service, list(all_device_ieees))
-
-
-    async def start_zone(self):
-        """Start zone manager background tasks."""
-        self._running = True
-
-        # Use _evaluation_loop (Handles both presence and calibration)
-        self._evaluation_task = asyncio.create_task(self._evaluation_loop())
-
-        # Use _collection_loop (Handles data gathering)
-        self._collection_task = asyncio.create_task(self._collection_loop())
-
-        # Add periodic neighbor scan for fresh LQI data - REMOVED AS INTERFERES WITH PACKET CAPTURE
-        #self._neighbor_scan_task = asyncio.create_task(self._periodic_neighbor_scan())
-
-        logger.info("Zone manager started")
-
-
-    async def _periodic_neighbor_scan(self):
-        """
-        Periodically scan neighbor tables for fresh LQI data.
-        Supplements attribute reporting with active scanning.
-        """
-        while self._running:
-            try:
-                await asyncio.sleep(30)  # Every 30 seconds
-
-                if not self._zigbee_service:
-                    continue
-
-                app = self._zigbee_service.app
-                coord_ieee = str(app.ieee)
-
-                # Get coordinator's neighbor table
-                if hasattr(app, 'topology') and hasattr(app.topology, 'neighbors'):
-                    neighbors = app.topology.neighbors.get(app.ieee, [])
-
-                    for neighbor in neighbors:
-                        target_ieee = str(neighbor.ieee)
-                        lqi = getattr(neighbor, 'lqi', None)
-
-                        if lqi is not None:
-                            rssi = int(-100 + (lqi / 255) * 70)
-                            self.record_link_quality(
-                                source_ieee=coord_ieee,
-                                target_ieee=target_ieee,
-                                rssi=rssi,
-                                lqi=lqi
-                            )
-
-                # Also scan routers that are in zones
-                zone_routers = set()
-                for zone in self.zones.values():
-                    for ieee in zone.device_ieees:
-                        if ieee in self._zigbee_service.devices:
-                            dev = self._zigbee_service.devices[ieee]
-                            if dev.get_role() == "Router":
-                                zone_routers.add(ieee)
-
-                # Request neighbor updates from routers
-                for router_ieee in zone_routers:
-                    try:
-                        dev = self._zigbee_service.devices[router_ieee]
-                        # Mgmt_Lqi_req returns neighbor table with LQI
-                        result = await asyncio.wait_for(
-                            dev.zigpy_dev.zdo.Mgmt_Lqi_req(start_index=0),
-                            timeout=5.0
-                        )
-
-                        if result and len(result) > 1:
-                            neighbors = result[1]
-                            for n in neighbors:
-                                if hasattr(n, 'lqi') and n.lqi:
-                                    target = str(n.ieee) if hasattr(n, 'ieee') else None
-                                    if target:
-                                        rssi = int(-100 + (n.lqi / 255) * 70)
-                                        self.record_link_quality(
-                                            source_ieee=router_ieee,
-                                            target_ieee=target,
-                                            rssi=rssi,
-                                            lqi=n.lqi
-                                        )
-                    except Exception as e:
-                        logger.debug(f"Router {router_ieee} LQI scan failed: {e}")
-                        continue
-
-            except asyncio.CancelledError:
-                break
-            except Exception as e:
-                logger.error(f"Neighbor scan error: {e}")
-                await asyncio.sleep(10)
-
-
-    async def stop_zone(self):
-        """Stop zone manager."""
-        self._running = False
-
-        # Cancel all tasks (matching the ones created in start_zone)
-        for task in [
-            getattr(self, '_evaluation_task', None),
-            getattr(self, '_collection_task', None),
-            getattr(self, '_neighbor_scan_task', None),
-        ]:
-            if task:
-                task.cancel()
-                try:
-                    await task
-                except asyncio.CancelledError:
-                    pass
-
-        logger.info("Zone manager stopped")
-
-    def _emit_calibration_progress(self, data: dict):
-        """Broadcast calibration updates via core event callback."""
-        if self._event_emitter:
-            try:
-                # Create task to emit asynchronously
-                asyncio.create_task(self._event_emitter('zone_calibration', data))
-            except Exception as e:
-                logger.debug(f"Failed to emit calibration progress: {e}")
-
     def remove_zone(self, zone_name: str) -> bool:
-        """Remove a zone."""
         if zone_name not in self.zones:
             return False
-
         zone = self.zones[zone_name]
-
-        # Unregister devices
         for ieee in zone.device_ieees:
             if ieee in self._device_to_zones:
-                self._device_to_zones[ieee].remove(zone_name)
+                try:
+                    self._device_to_zones[ieee].remove(zone_name)
+                except ValueError:
+                    pass
                 if not self._device_to_zones[ieee]:
                     del self._device_to_zones[ieee]
-
         del self.zones[zone_name]
         logger.info(f"Removed zone '{zone_name}'")
         return True
 
     def get_zone(self, zone_name: str) -> Optional[Zone]:
-        """Get zone by name."""
         return self.zones.get(zone_name)
 
-    def record_link_quality(self, source_ieee: str, target_ieee: str, rssi: int, lqi: int) -> None:
-        """Record link quality measurement."""
-        s_norm = normalize_ieee(source_ieee)
-        t_norm = normalize_ieee(target_ieee)
+    def list_zones(self) -> List[Dict[str, Any]]:
+        return [zone.to_dict() for zone in self.zones.values()]
 
-        # Find zones that include either device
-        zones_to_update = set()
-        if s_norm in self._device_to_zones:
-            zones_to_update.update(self._device_to_zones[s_norm])
-        if t_norm in self._device_to_zones:
-            zones_to_update.update(self._device_to_zones[t_norm])
+    # ------------------------------------------------------------------ #
+    def record_device_rssi(self, ieee: str, rssi: int, lqi: int) -> None:
+        """
+        PUBLIC ENTRY POINT from zones_handler.
+        Routes a single device's sample into every zone that contains it.
+        """
+        norm = normalize_ieee(ieee)
+        zones = self._device_to_zones.get(norm, [])
+        if not zones:
+            return
+        for zone_name in zones:
+            zone = self.zones.get(zone_name)
+            if zone:
+                zone.record_rssi(norm, rssi, lqi)
 
-        # Diagnostic log (verbose)
-        if self._force_collect and zones_to_update:
-            logger.info(f"Diagnostic: Found INTRA-ZONE link for {zones_to_update}: {s_norm}<->{t_norm} (LQI:{lqi})")
-
-        # Record measurement in relevant zones
-        for zone_name in zones_to_update:
-            if zone_name in self.zones:
-                self.zones[zone_name].record_rssi(s_norm, t_norm, rssi, lqi)
-
-    async def start(self) -> None:
-        """Start background tasks."""
-        logger.info("Starting zone manager...")
-        self._collection_task = asyncio.create_task(self._collection_loop())
-        self._evaluation_task = asyncio.create_task(self._evaluation_loop())
-
-    async def stop(self) -> None:
-        """Stop background tasks."""
-        logger.info("Stopping zone manager...")
-        if self._collection_task:
-            self._collection_task.cancel()
+    # Back-compat shim: handlers that still pass (src, dst, rssi, lqi) work.
+    # The coordinator side is discarded — we only care about the zone device.
+    def record_link_quality(self, source_ieee: str, target_ieee: str,
+                            rssi: int, lqi: int) -> None:
+        coord_ieee = None
+        if self.app_controller is not None:
             try:
-                await self._collection_task
-            except asyncio.CancelledError:
-                pass
+                coord_ieee = normalize_ieee(self.app_controller.ieee)
+            except Exception:
+                coord_ieee = None
+        s = normalize_ieee(source_ieee)
+        t = normalize_ieee(target_ieee)
+        # Pick the non-coordinator side as the "device"
+        device_ieee = t if s == coord_ieee else s
+        if device_ieee:
+            self.record_device_rssi(device_ieee, rssi, lqi)
+
+    # ------------------------------------------------------------------ #
+    async def start_zone(self) -> None:
+        self._running = True
+        self._evaluation_task = asyncio.create_task(self._evaluation_loop())
+        # Ensure every zone's device roles are populated now that app is ready
+        for zone in self.zones.values():
+            zone.refresh_device_roles()
+        logger.info("Zone manager started")
+
+    async def stop_zone(self) -> None:
+        self._running = False
         if self._evaluation_task:
             self._evaluation_task.cancel()
             try:
                 await self._evaluation_task
             except asyncio.CancelledError:
                 pass
+        logger.info("Zone manager stopped")
 
-    async def _collection_loop(self) -> None:
-        """Background task to collect neighbor data."""
-        while True:
-            try:
-                await asyncio.sleep(2)
-                await self._collect_neighbor_data()
-            except asyncio.CancelledError:
-                break
-            except Exception as e:
-                logger.error(f"Collection loop error: {e}")
-                await asyncio.sleep(5)
-
+    # ------------------------------------------------------------------ #
     async def _evaluation_loop(self) -> None:
-        """Background task to evaluate zone states."""
-        import time
-        last_broadcast = 0
-
-        while True:
+        last_broadcast = 0.0
+        while self._running:
             try:
                 await asyncio.sleep(2)
                 now = time.time()
-
-                # Check if we should broadcast live stats (every 5 seconds)
                 should_broadcast = (now - last_broadcast) >= 5.0
-
                 for zone in self.zones.values():
-                    # 1. Run the logic to detect presence
                     zone.evaluate()
-
-                    # 2. Force a UI update even if state hasn't changed
                     if should_broadcast:
-                        # This sends the 'zone_update' packet with fresh link stats
                         asyncio.create_task(self._publish_zone_state(zone))
-
                 if should_broadcast:
                     last_broadcast = now
-
             except asyncio.CancelledError:
                 break
             except Exception as e:
                 logger.error(f"Evaluation loop error: {e}")
                 await asyncio.sleep(2)
 
-
-    async def _collect_neighbor_data(self) -> None:
-        """Collect RSSI/LQI data from topology."""
-        if not self.app_controller:
-            return
-
-        links_found = 0
-
-        # Read from topology cache first
-        if hasattr(self.app_controller, 'topology') and self.app_controller.topology.neighbors:
-            for src_ieee, neighbors in self.app_controller.topology.neighbors.items():
-                src_str = normalize_ieee(src_ieee)
-                for neighbor in neighbors:
-                    dst_str = normalize_ieee(neighbor.ieee)
-                    if src_str in self._device_to_zones or dst_str in self._device_to_zones:
-                        links_found += 1
-                        lqi = getattr(neighbor, 'lqi', 0) or 0
-                        rssi = self._lqi_to_rssi(lqi)
-                        self.record_link_quality(src_str, dst_str, rssi, lqi)
-
-        # Query neighbor tables directly from routers to get fresh data
-        for device_ieee in self._device_to_zones.keys():
-            try:
-                device = self.app_controller.devices.get(device_ieee)
-                if not device:
-                    continue
-
-                # Query neighbor table - FIX: Use zigpy_dev
-                status, count, start, neighbor_list = await asyncio.wait_for(
-                    device.zigpy_dev.zdo.Mgmt_Lqi_req(0),  # ✅ FIXED
-                    timeout=2.0
-                )
-
-                if status == 0:
-                    for n in neighbor_list:
-                        neighbor_ieee = normalize_ieee(n.ieee)
-                        if neighbor_ieee in self._device_to_zones or device_ieee in self._device_to_zones:
-                            self.record_link_quality(
-                                device_ieee,
-                                neighbor_ieee,
-                                self._lqi_to_rssi(n.lqi),
-                                n.lqi
-                            )
-                            links_found += 1
-            except asyncio.TimeoutError:
-                continue
-            except Exception as e:
-                logger.debug(f"Failed to query {device_ieee}: {e}")
-
-        if self._force_collect:
-            logger.info(f"Collection complete: {links_found} links found")
-            self._force_collect = False
-
-    async def _get_neighbors(self, ieee: Any) -> List[Dict[str, Any]]:
-        device = None
-        if hasattr(self.app_controller, 'devices'):
-            device = self.app_controller.devices.get(ieee)
-            if not device:
-                s_ieee = normalize_ieee(ieee)
-                for k, v in self.app_controller.devices.items():
-                    if normalize_ieee(k) == s_ieee:
-                        device = v
-                        break
-
-        if not device:
-            return []
-
-        neighbors = []
-        start_index = 0
-
-        for _ in range(3):
-            try:
-                # FIX: Use zigpy_dev
-                status, count, start, neighbor_list = await device.zigpy_dev.zdo.Mgmt_Lqi_req(start_index)  # ✅ FIXED
-                if status != 0: break
-
-                for n in neighbor_list:
-                    neighbors.append({
-                        'ieee': str(n.ieee),
-                        'lqi': n.lqi,
-                        'rssi': self._lqi_to_rssi(n.lqi)
-                    })
-
-                if start + len(neighbor_list) >= count: break
-                start_index = start + len(neighbor_list)
-            except Exception:
-                break
-
-        return neighbors
-
-    def _lqi_to_rssi(self, lqi: int) -> int:
-        """Convert LQI to approximate RSSI."""
-        return int(-100 + (lqi / 255) * 70)
-
+    # ------------------------------------------------------------------ #
     def _on_zone_occupied(self, zone: Zone) -> None:
-        """Handle zone occupied event."""
         if self.mqtt_handler:
             asyncio.create_task(self._publish_zone_state(zone))
-
         if self._event_emitter:
             asyncio.create_task(self._event_emitter('zone_state', {
-                'zone_name': zone.name,
-                'state': 'occupied'
+                'zone_name': zone.name, 'state': 'occupied'
             }))
 
     def _on_zone_vacant(self, zone: Zone) -> None:
-        """Handle zone vacant event."""
         if self.mqtt_handler:
             asyncio.create_task(self._publish_zone_state(zone))
-
         if self._event_emitter:
             asyncio.create_task(self._event_emitter('zone_state', {
-                'zone_name': zone.name,
-                'state': 'vacant'
+                'zone_name': zone.name, 'state': 'vacant'
             }))
 
-    async def _publish_zone_state(self, zone: Zone) -> None:
-        """Publish zone state to MQTT and WebSocket."""
-        # 1. WebSocket Broadcast (Frontend Live Updates)
+    def _emit_calibration_progress(self, data: dict) -> None:
         if self._event_emitter:
-            # FIX: Use to_dict() so the WebSocket payload matches the full API payload
-            # This ensures sample_count, min/max_rssi, etc. are included in updates.
-            ws_payload = {
-                'zone': zone.to_dict()
-            }
-            await self._event_emitter('zone_update', ws_payload)
+            try:
+                asyncio.create_task(self._event_emitter('zone_calibration', data))
+            except Exception as e:
+                logger.debug(f"Failed to emit calibration progress: {e}")
 
-        # 2. MQTT Publish (Home Assistant)
+    async def _publish_zone_state(self, zone: Zone) -> None:
+        # WebSocket
+        if self._event_emitter:
+            await self._event_emitter('zone_update', {'zone': zone.to_dict()})
+        # MQTT
         if self.mqtt_handler:
-            topic = zone.config.mqtt_topic_override or f"zigbee/zone/{zone.name.lower().replace(' ', '_')}"
-            payload = {'occupancy': zone.state == ZoneState.OCCUPIED, 'state': zone.state.name.lower()}
+            topic = (zone.config.mqtt_topic_override
+                     or f"zigbee/zone/{zone.name.lower().replace(' ', '_')}")
+            payload = {
+                'occupancy': zone.state == ZoneState.OCCUPIED,
+                'state': zone.state.name.lower(),
+            }
             try:
                 await self.mqtt_handler.publish(f"{topic}/state", json.dumps(payload))
             except Exception as e:
@@ -947,14 +635,14 @@ class ZoneManager:
         """Publish MQTT discovery for a zone."""
         if not self.mqtt_handler:
             return
-
-        node_id = normalize_ieee(zone.name).replace(":", "")
+        node_id = normalize_ieee(zone.name).replace(":", "_").replace(" ", "_")
         topic = f"homeassistant/binary_sensor/{node_id}/occupancy/config"
-
         config = {
             "name": f"{zone.name} Occupancy",
             "unique_id": f"zone_{node_id}_occupancy",
-            "state_topic": f"zigbee/zones/{zone.name}/state",
+            "state_topic": (zone.config.mqtt_topic_override
+                            or f"zigbee/zone/{zone.name.lower().replace(' ', '_')}") + "/state",
+            "value_template": "{{ 'ON' if value_json.occupancy else 'OFF' }}",
             "payload_on": "ON",
             "payload_off": "OFF",
             "device_class": "occupancy",
@@ -962,56 +650,70 @@ class ZoneManager:
                 "identifiers": [f"zone_{node_id}"],
                 "name": f"Zone: {zone.name}",
                 "model": "Presence Detection Zone",
-                "manufacturer": "ZigBee Manager"
-            }
+                "manufacturer": "ZigBee Manager",
+            },
         }
-
         try:
-            import json
             await self.mqtt_handler.publish(topic, json.dumps(config), retain=True, qos=1)
             logger.info(f"Published discovery for zone '{zone.name}'")
         except Exception as e:
             logger.error(f"Failed to publish discovery: {e}")
 
-    def list_zones(self) -> List[Dict[str, Any]]:
-        return [zone.to_dict() for zone in self.zones.values()]
-
+    # ------------------------------------------------------------------ #
     def load_config(self, configs: List[Dict[str, Any]]) -> None:
         for cfg in configs:
             try:
-                zone_config = ZoneConfig(
+                zc = ZoneConfig(
                     name=cfg['name'],
-                    device_ieees=cfg['device_ieees'],
+                    device_ieees=cfg.get('device_ieees', []),
                     deviation_threshold=cfg.get('deviation_threshold', 2.5),
-                    variance_threshold=cfg.get('variance_threshold', 15.0),
-                    min_links_triggered=cfg.get('min_links_triggered', 2),
-                    calibration_time=cfg.get('calibration_time', 120),
+                    min_devices_triggered=cfg.get('min_devices_triggered',
+                                                  cfg.get('min_links_triggered', 1.5)),
                     clear_delay=cfg.get('clear_delay', 15),
-                    room_volume_m3=cfg.get('room_volume_m3'),
+                    calibration_time=cfg.get('calibration_time', 120),
+                    end_device_weight=cfg.get('end_device_weight', 0.5),
                     mqtt_topic_override=cfg.get('mqtt_topic_override'),
+                    per_device_aggressiveness=cfg.get('per_device_aggressiveness', {}),
                 )
-                self.create_zone(zone_config)
+                self.create_zone(zc)
             except Exception as e:
                 logger.error(f"Failed to load zone config: {e}")
 
     def save_config(self) -> List[Dict[str, Any]]:
-        configs = []
+        out = []
         for zone in self.zones.values():
-            configs.append({
+            out.append({
                 'name': zone.config.name,
                 'device_ieees': zone.config.device_ieees,
                 'deviation_threshold': zone.config.deviation_threshold,
-                'variance_threshold': zone.config.variance_threshold,
-                'min_links_triggered': zone.config.min_links_triggered,
-                'calibration_time': zone.config.calibration_time,
+                'min_devices_triggered': zone.config.min_devices_triggered,
                 'clear_delay': zone.config.clear_delay,
-                'room_volume_m3': zone.config.room_volume_m3,
+                'calibration_time': zone.config.calibration_time,
+                'end_device_weight': zone.config.end_device_weight,
                 'mqtt_topic_override': zone.config.mqtt_topic_override,
+                'per_device_aggressiveness': zone.config.per_device_aggressiveness,
             })
-        return configs
+        return out
 
-    def force_recalibrate_all(self):
-        """Force recalibration and collection immediately."""
-        self._force_collect = True
+    # ------------------------------------------------------------------ #
+    async def configure_zone_devices(self, zigbee_service):
+        """
+        Configure aggressive LQI reporting ONLY on routers that have a
+        per-device aggressiveness entry set (i.e. user-enabled).
+        End devices are always skipped; routers without an explicit
+        aggressiveness entry keep baseline reporting.
+        """
+        from modules.zone_device_config import configure_zone_device_reporting
+        self._zigbee_service = zigbee_service
+
+        opted_in = set()
         for zone in self.zones.values():
-            zone.recalibrate()
+            for ieee in zone.config.per_device_aggressiveness.keys():
+                opted_in.add(ieee)
+
+        if not opted_in:
+            logger.info("No routers opted into aggressive RSSI reporting")
+            return
+
+        logger.info(f"Configuring {len(opted_in)} routers for aggressive LQI reporting")
+        await configure_zone_device_reporting(zigbee_service, list(opted_in))
