@@ -155,7 +155,7 @@ PATHUNIT
 install_systemd_system() {
     local unit_dir="/etc/systemd/system"
 
-    cat | sudo tee "$unit_dir/zmm-upgrade.service" >/dev/null <<SERVICE
+    sudo tee "$unit_dir/zmm-upgrade.service" >/dev/null <<SERVICE
 [Unit]
 Description=ZMM Upgrade Worker (oneshot)
 After=network-online.target
@@ -172,7 +172,7 @@ Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 WantedBy=multi-user.target
 SERVICE
 
-    cat | sudo tee "$unit_dir/zmm-upgrade.path" >/dev/null <<PATHUNIT
+    sudo tee "$unit_dir/zmm-upgrade.path" >/dev/null <<PATHUNIT
 [Unit]
 Description=Watch for ZMM upgrade triggers
 
