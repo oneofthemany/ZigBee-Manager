@@ -112,6 +112,9 @@ install_systemd_user() {
 [Unit]
 Description=ZMM Upgrade Worker (oneshot)
 After=default.target
+# If we burn through the start limit, recover automatically after 10 minutes
+StartLimitIntervalSec=600
+StartLimitBurst=20
 
 [Service]
 Type=oneshot
@@ -120,6 +123,9 @@ Environment=ZMM_DATA_DIR=${DATA_DIR}
 Environment=ZMM_APP_DIR=${APP_DIR}
 # Ensure the user's PATH includes common runtime locations
 Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+# A trigger that produces a non-zero exit (e.g. malformed) should not be
+# treated as a failure that prevents the next run. Treat any exit as success.
+SuccessExitStatus=0 1 2 3
 
 [Install]
 WantedBy=default.target
@@ -130,8 +136,11 @@ SERVICE
 Description=Watch for ZMM upgrade triggers
 
 [Path]
-PathExists=${UPGRADE_DIR}/trigger
+# PathChanged fires once when the trigger file is closed after writing.
+# (Unlike PathExists, this does NOT retrigger while the file remains.)
+PathChanged=${UPGRADE_DIR}/trigger
 Unit=zmm-upgrade.service
+MakeDirectory=true
 
 [Install]
 WantedBy=default.target
@@ -159,6 +168,8 @@ install_systemd_system() {
 [Unit]
 Description=ZMM Upgrade Worker (oneshot)
 After=network-online.target
+StartLimitIntervalSec=600
+StartLimitBurst=20
 
 [Service]
 Type=oneshot
@@ -167,6 +178,7 @@ ExecStart=${SCRIPTS_DIR}/upgrade.sh
 Environment=ZMM_DATA_DIR=${DATA_DIR}
 Environment=ZMM_APP_DIR=${APP_DIR}
 Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+SuccessExitStatus=0 1 2 3
 
 [Install]
 WantedBy=multi-user.target
@@ -177,8 +189,10 @@ SERVICE
 Description=Watch for ZMM upgrade triggers
 
 [Path]
-PathExists=${UPGRADE_DIR}/trigger
+# PathChanged fires once when the trigger file is closed after writing.
+PathChanged=${UPGRADE_DIR}/trigger
 Unit=zmm-upgrade.service
+MakeDirectory=true
 
 [Install]
 WantedBy=multi-user.target

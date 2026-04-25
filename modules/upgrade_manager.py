@@ -258,25 +258,96 @@ def read_status() -> Dict[str, Any]:
         return default
 
 
+def _is_lock_stale(lock_info: str) -> bool:
+    """
+    A lock is stale if:
+      - The PID it claims is no longer running, OR
+      - The lock is older than 60 minutes (a build can run that long, but if
+        we exceed 60 min with no host activity, something has gone wrong).
+
+    Lock file format: "PID TIMESTAMP ACTION" (written by upgrade.sh)
+    """
+    if not lock_info.strip():
+        return True
+    parts = lock_info.split(maxsplit=2)
+
+    # Check PID liveness
+    if parts and parts[0].isdigit():
+        pid = int(parts[0])
+        try:
+            # Sending signal 0 checks process existence without signalling.
+            os.kill(pid, 0)
+            # Process exists — lock is live
+        except ProcessLookupError:
+            logger.info(f"Lock holder PID {pid} is not running — lock is stale")
+            return True
+        except PermissionError:
+            # PID exists but is owned by another user — treat as live to be safe
+            pass
+        except Exception:
+            # Any other error: be conservative, treat as live
+            pass
+
+    # Check age (best-effort fallback)
+    if len(parts) >= 2:
+        try:
+            ts = parts[1].rstrip("Z")
+            held_at = datetime.fromisoformat(ts)
+            age = (datetime.utcnow() - held_at).total_seconds()
+            if age > 3600:  # 60 min
+                logger.info(f"Lock is older than 60min (age={age:.0f}s) — treating as stale")
+                return True
+        except Exception:
+            pass
+
+    return False
+
+
+def clear_stale_lock() -> bool:
+    """
+    Detect and remove a stale lock file. Returns True if a stale lock was
+    cleared, False if the lock is live or no lock exists.
+    """
+    if not os.path.exists(LOCK_FILE):
+        return False
+    try:
+        with open(LOCK_FILE, "r") as f:
+            lock_info = f.read().strip()
+    except Exception:
+        lock_info = ""
+    if _is_lock_stale(lock_info):
+        try:
+            os.remove(LOCK_FILE)
+            logger.warning(f"Removed stale lock: {lock_info!r}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to remove stale lock: {e}")
+    return False
+
+
 def write_trigger(action: str, payload: Optional[Dict[str, Any]] = None) -> bool:
     """
     Write a trigger file for the host watcher.
 
-    Returns False if a lock is held (another op is in progress).
+    Returns False if a live lock is held (another op is genuinely in progress).
+    Stale locks are auto-cleared.
     """
     _ensure_dirs()
     if action not in VALID_ACTIONS:
         raise ValueError(f"Invalid action: {action}")
 
     if os.path.exists(LOCK_FILE):
-        # Read lock to include info in error
-        try:
-            with open(LOCK_FILE, "r") as f:
-                lock_info = f.read().strip()
-        except Exception:
-            lock_info = "unknown"
-        logger.warning(f"Upgrade lock held ({lock_info}); cannot write trigger")
-        return False
+        # Auto-clear stale locks; only refuse if the lock is actually live
+        if clear_stale_lock():
+            pass  # cleared, fall through to write trigger
+        else:
+            try:
+                with open(LOCK_FILE, "r") as f:
+                    lock_info = f.read().strip()
+            except Exception:
+                lock_info = "unknown"
+            logger.warning(f"Upgrade lock held ({lock_info}); cannot write trigger")
+            return False
 
     trigger = {
         "action": action,

@@ -404,8 +404,35 @@ async function startBuild(version) {
         body: JSON.stringify({ version })
     });
     const data = await res.json();
-    if (data.success) toast('success', data.message || 'Build started');
-    else toast('danger', data.error || data.message || 'Build failed to start');
+    if (data.success) {
+        toast('success', data.message || 'Build started');
+    } else if (res.status === 409 && (data.error || data.message || '').toLowerCase().includes('progress')) {
+        // Stuck lock — offer to force-clear
+        if (confirm(
+            'The system says another upgrade is in progress, but if you believe nothing is actually running ' +
+            '(e.g. the watcher service crashed), you can force-clear the stale lock.\n\n' +
+            'Clear the lock now?'
+        )) {
+            await clearLock();
+        }
+    } else {
+        toast('danger', data.error || data.message || 'Build failed to start');
+    }
+    refreshUpgradeStatus();
+}
+
+async function clearLock() {
+    try {
+        const res = await fetch('/api/upgrade/clear-lock', { method: 'POST' });
+        const data = await res.json();
+        if (data.success) {
+            toast('success', data.message || 'Lock cleared — try Build again');
+        } else {
+            toast('danger', data.error || 'Could not clear lock');
+        }
+    } catch (e) {
+        toast('danger', 'Clear-lock request failed: ' + e.message);
+    }
     refreshUpgradeStatus();
 }
 

@@ -116,12 +116,24 @@ JSON
 }
 
 # ── LOCKING ──────────────────────────────────────────────────────────────────
+# A stale lock from a killed/crashed previous run will block ALL future runs
+# unless we detect-and-clear it. Lock file format: "PID TIMESTAMP ACTION"
 acquire_lock() {
     if [[ -f "$LOCK_FILE" ]]; then
+        local held_pid
+        held_pid=$(awk '{print $1}' "$LOCK_FILE" 2>/dev/null || echo "")
         local held
         held=$(cat "$LOCK_FILE" 2>/dev/null || echo "unknown")
-        log "Lock already held: $held"
-        return 1
+
+        # Is the holder still alive?
+        if [[ -n "$held_pid" ]] && kill -0 "$held_pid" 2>/dev/null; then
+            log "Lock held by live PID $held_pid: $held"
+            return 1
+        fi
+
+        # Stale lock — clear it
+        log "Removing stale lock (PID $held_pid not running): $held"
+        rm -f "$LOCK_FILE"
     fi
     echo "$$ $(date -u +"%Y-%m-%dT%H:%M:%SZ") $1" > "$LOCK_FILE"
     return 0
@@ -132,27 +144,39 @@ release_lock() {
 }
 
 # ── TRIGGER CONSUMPTION ──────────────────────────────────────────────────────
+# CRITICAL: we MUST delete the trigger file before doing anything else.
+# Otherwise the systemd-path unit re-fires us in a tight loop.
 consume_trigger() {
     if [[ ! -f "$TRIGGER_FILE" ]]; then
         return 1
     fi
 
+    # Read contents into memory FIRST, then delete the file.
+    # If we crash after this, the path unit won't re-fire because the file is gone.
+    local trigger_content
+    trigger_content=$(cat "$TRIGGER_FILE" 2>/dev/null || echo "")
+    rm -f "$TRIGGER_FILE"
+
+    if [[ -z "$trigger_content" ]]; then
+        log "Empty trigger file; ignoring"
+        return 1
+    fi
+
     if ! command -v jq &>/dev/null; then
         log "ERROR: jq is required for the upgrade watcher"
-        rm -f "$TRIGGER_FILE"
+        write_status "failed" "" 0 "" "jq not installed on host"
         return 1
     fi
 
-    TRIGGER_ACTION=$(jq -r '.action // empty' "$TRIGGER_FILE" 2>/dev/null)
-    TRIGGER_PAYLOAD=$(jq -c '.payload // {}' "$TRIGGER_FILE" 2>/dev/null)
+    TRIGGER_ACTION=$(echo "$trigger_content" | jq -r '.action // empty' 2>/dev/null || echo "")
+    TRIGGER_PAYLOAD=$(echo "$trigger_content" | jq -c '.payload // {}' 2>/dev/null || echo "{}")
 
     if [[ -z "$TRIGGER_ACTION" ]]; then
-        log "Malformed trigger (no action); removing"
-        rm -f "$TRIGGER_FILE"
+        log "Malformed trigger (no action)"
+        write_status "failed" "" 0 "" "Malformed trigger file"
         return 1
     fi
 
-    rm -f "$TRIGGER_FILE"
     log "Consumed trigger: action=$TRIGGER_ACTION payload=$TRIGGER_PAYLOAD"
     return 0
 }
