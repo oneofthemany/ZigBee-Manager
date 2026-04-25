@@ -43,7 +43,7 @@ The upgrade flow has to work under **all of**: rootless Podman + SELinux, rootle
 └──────────────────────────────────────────────────────────────────────┘
                                   │
                   bind-mounted volume (file-based IPC)
-              /app/data/upgrade/  ↔  ~/.zigbee-matter-manager/data/upgrade/
+              /app/data/upgrade/  ↔  /opt/.zigbee-matter-manager/data/upgrade/
                                   │
                                   ▼
 ┌──────────────────────────────────────────────────────────────────────┐
@@ -220,7 +220,7 @@ The container-side `upgrade_state` (in `version.json`) is kept in sync with the 
 
 ## Trigger file lifecycle
 
-The single most important piece of the architecture is the trigger file at `~/.zigbee-matter-manager/data/upgrade/trigger`. Every upgrade operation flows through it. Getting the lifecycle right was the source of most of the bugs hit during initial implementation.
+The single most important piece of the architecture is the trigger file at `/opt/.zigbee-matter-manager/data/upgrade/trigger`. Every upgrade operation flows through it. Getting the lifecycle right was the source of most of the bugs hit during initial implementation.
 
 ### Write side (Python)
 
@@ -249,7 +249,7 @@ The atomic write pattern (`write to tmp + rename`) is critical because the host-
 ```ini
 # /etc/systemd/system/zmm-upgrade.path
 [Path]
-PathChanged=/root/.zigbee-matter-manager/data/upgrade/trigger
+PathChanged=/opt/.zigbee-matter-manager/data/upgrade/trigger
 Unit=zmm-upgrade.service
 # Note: do NOT add MakeDirectory=true — systemd will create the trigger
 # path itself as a directory, breaking the entire flow.
@@ -516,7 +516,7 @@ The default targeted policy:
 - `init_t` (systemd) cannot execute files labelled `admin_home_t` (`/root/`) or `user_home_t` (`~/`)
 - `init_t` CAN execute files labelled `usr_t` (`/opt/`, `/usr/local/`)
 
-If you place `upgrade.sh` under `~/.zigbee-matter-manager/scripts/` and reference it from a systemd unit, you'll see this in the audit log:
+If you place `upgrade.sh` under `/opt/.zigbee-matter-manager/scripts/` and reference it from a systemd unit, you'll see this in the audit log:
 
 ```
 type=AVC: avc: denied { execute } for pid=1633047 comm="(grade.sh)"
@@ -750,26 +750,26 @@ A condensed reference for live debugging:
 
 ```bash
 # State of the trigger flow
-ls -la ~/.zigbee-matter-manager/data/upgrade/
+ls -la /opt/.zigbee-matter-manager/data/upgrade/
 
 # Watcher activity (host-side)
-tail -100 ~/.zigbee-matter-manager/logs/upgrade_watcher.log
+tail -100 /opt/.zigbee-matter-manager/logs/upgrade_watcher.log
 
 # Build log (host-side, also surfaced in the UI)
-tail -100 ~/.zigbee-matter-manager/data/upgrade/build.log
+tail -100 /opt/.zigbee-matter-manager/data/upgrade/build.log
 
 # systemd unit state
 systemctl status zmm-upgrade.path zmm-upgrade.service
 systemctl cat zmm-upgrade.service
 
 # Lock contents
-cat ~/.zigbee-matter-manager/data/upgrade/lock
+cat /opt/.zigbee-matter-manager/data/upgrade/lock
 
 # Live status (what the UI is seeing)
-cat ~/.zigbee-matter-manager/data/upgrade/status.json | jq
+cat /opt/.zigbee-matter-manager/data/upgrade/status.json | jq
 
 # Persistent app state
-cat ~/.zigbee-matter-manager/data/state/version.json | jq
+cat /opt/.zigbee-matter-manager/data/state/version.json | jq
 
 # What images exist?
 podman images | grep zigbee
