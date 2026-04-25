@@ -566,6 +566,10 @@ def request_build(target_version: str) -> Tuple[bool, str]:
     if compare_versions(tv, current) <= 0:
         return False, f"Target version {tv} is not newer than current {current}"
 
+    # Clear any lingering "failed" state from a previous attempt — the user
+    # is explicitly retrying, so the old failure is no longer relevant.
+    reset_status(only_if_failed=True)
+
     payload = {
         "target_version": tv,
         "architecture": state.get("architecture") or detect_architecture(),
@@ -583,10 +587,29 @@ def request_build(target_version: str) -> Tuple[bool, str]:
 def request_swap() -> Tuple[bool, str]:
     """Request an atomic container swap to the pre-built new image."""
     status = read_status()
-    if status.get("state") != "ready_to_swap":
-        return False, f"Not ready to swap (status: {status.get('state')})"
+    cur_state = status.get("state")
 
-    ok = write_trigger("swap", {"target_version": status.get("target_version")})
+    # If the host status shows "failed" but we have a freshly-built image
+    # ready (which happens when a previous swap failed and rolled back —
+    # the image is still there, only the container start failed), allow
+    # retrying. The user is explicitly asking to swap again.
+    if cur_state == "failed" and status.get("target_version"):
+        # Check the failed-but-image-exists case implicitly by clearing
+        # status and letting upgrade.sh verify image existence
+        logger.info("Retrying swap after previous failure — clearing failed state")
+        reset_status(only_if_failed=True)
+        # Re-read after reset
+        status = read_status()
+        cur_state = "ready_to_swap"  # we'll let the host script verify
+        target_version = load_state().get("latest_available") or status.get("target_version")
+        if not target_version:
+            return False, "Cannot retry — no target version known. Click Build again."
+    elif cur_state != "ready_to_swap":
+        return False, f"Not ready to swap (status: {cur_state})"
+
+    target_version = status.get("target_version") or load_state().get("latest_available")
+
+    ok = write_trigger("swap", {"target_version": target_version})
     if not ok:
         return False, "Another upgrade operation is in progress"
 
@@ -601,6 +624,9 @@ def request_rollback() -> Tuple[bool, str]:
     prev_tag = state.get("previous_image_tag")
     if not prev or not prev_tag:
         return False, "No previous version available for rollback"
+
+    # Clear stale failed state on retry
+    reset_status(only_if_failed=True)
 
     ok = write_trigger("rollback", {
         "previous_version": prev,
@@ -619,6 +645,54 @@ def request_cancel() -> Tuple[bool, str]:
     if not ok:
         return False, "Could not write cancel trigger (lock held; try again)"
     return True, "Cancel requested"
+
+
+def reset_status(only_if_failed: bool = True) -> Dict[str, Any]:
+    """
+    Reset the host status file and the in-app upgrade_state to idle.
+
+    Used to dismiss a stale "Failed" banner after the user has acknowledged
+    the failure. By default only resets if the current state is "failed",
+    so we never accidentally clobber an active operation.
+
+    Returns the new state dict.
+    """
+    _ensure_dirs()
+
+    if only_if_failed:
+        host_status = read_status()
+        host_state = host_status.get("state") or "idle"
+        app_state = load_state()
+        app_upgrade_state = app_state.get("upgrade_state") or "idle"
+
+        # Only clear if BOTH are failed/idle — never wipe an active operation
+        if host_state not in ("failed", "idle") or app_upgrade_state not in ("failed", "idle"):
+            logger.warning(
+                f"Refusing to reset status while operation is active "
+                f"(host={host_state}, app={app_upgrade_state})"
+            )
+            return load_state()
+
+    # Reset the host-side status file to a clean idle
+    idle_status = {
+        "state": "idle",
+        "target_version": None,
+        "started_at": None,
+        "updated_at": _now_iso(),
+        "progress_percent": 0,
+        "current_step": "",
+        "error": None,
+    }
+    try:
+        tmp = STATUS_FILE + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump(idle_status, f, indent=2)
+        os.replace(tmp, STATUS_FILE)
+    except Exception as e:
+        logger.error(f"Failed to reset status.json: {e}")
+
+    # Reset the app-side state too
+    return update_state(upgrade_state="idle", upgrade_error=None)
 
 
 def request_gc() -> Tuple[bool, str]:

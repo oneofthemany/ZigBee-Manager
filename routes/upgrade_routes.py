@@ -206,6 +206,25 @@ def register_upgrade_routes(app: FastAPI):
             logger.error(f"Install watcher failed: {e}")
             return JSONResponse({"success": False, "error": str(e)}, status_code=500)
 
+    @app.post("/api/upgrade/reset-status")
+    async def reset_status_endpoint(data: Dict[str, Any] = Body(default={})):
+        """
+        Dismiss a stale 'failed' status banner. By default only resets if
+        the current state is 'failed' (or 'idle'); pass {"force": true}
+        to override (use with extreme caution — never wipe an active build).
+        """
+        try:
+            force = bool(data.get("force", False))
+            new_state = um.reset_status(only_if_failed=not force)
+            return {
+                "success": True,
+                "upgrade_state": new_state.get("upgrade_state"),
+                "message": "Status cleared",
+            }
+        except Exception as e:
+            logger.error(f"Reset status failed: {e}")
+            return JSONResponse({"success": False, "error": str(e)}, status_code=500)
+
     @app.post("/api/upgrade/clear-lock")
     async def clear_lock():
         """

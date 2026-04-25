@@ -183,6 +183,7 @@ function renderBody(data) {
     let progressHtml = '';
     if (upgrade_state && upgrade_state !== 'idle') {
         const pct = Number(progress_percent || 0);
+        const isFailed = upgrade_state === 'failed';
         progressHtml = `
           <div class="mb-3">
             <div class="d-flex justify-content-between small mb-1">
@@ -190,18 +191,22 @@ function renderBody(data) {
               <span>${pct}%</span>
             </div>
             <div class="progress" style="height:6px;">
-              <div class="progress-bar ${upgrade_state === 'failed' ? 'bg-danger' : ''}"
+              <div class="progress-bar ${isFailed ? 'bg-danger' : ''}"
                    role="progressbar" style="width:${pct}%"
                    aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100"></div>
             </div>
             ${error ? `<div class="text-danger small mt-2"><i class="fas fa-circle-exclamation me-1"></i> ${escapeHtml(error)}</div>` : ''}
-            <div class="mt-2">
+            <div class="mt-2 d-flex flex-wrap gap-1">
               <button class="btn btn-outline-secondary btn-sm" onclick="window.showUpgradeLog()">
                 <i class="fas fa-terminal me-1"></i> View log
               </button>
               ${upgrade_state === 'building' ? `
-                <button class="btn btn-outline-danger btn-sm ms-1" onclick="window.cancelUpgrade()">
+                <button class="btn btn-outline-danger btn-sm" onclick="window.cancelUpgrade()">
                   <i class="fas fa-ban me-1"></i> Cancel
+                </button>` : ''}
+              ${isFailed ? `
+                <button class="btn btn-outline-secondary btn-sm" onclick="window.dismissFailedUpgrade()">
+                  <i class="fas fa-xmark me-1"></i> Dismiss
                 </button>` : ''}
             </div>
           </div>
@@ -436,6 +441,25 @@ async function clearLock() {
     refreshUpgradeStatus();
 }
 
+async function dismissFailedUpgrade() {
+    try {
+        const res = await fetch('/api/upgrade/reset-status', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({}),
+        });
+        const data = await res.json();
+        if (!data.success) {
+            toast('warning', data.error || 'Could not dismiss');
+        }
+    } catch (e) {
+        toast('danger', 'Dismiss failed: ' + e.message);
+    }
+    // Reset the local state-tracking so the next transition is detected fresh
+    _lastState = null;
+    refreshUpgradeStatus();
+}
+
 async function startSwap() {
     if (!confirm('Swap to the new container?\n\nYou will be briefly disconnected (~15s). The page will reload automatically.')) return;
     const res = await fetch('/api/upgrade/swap', { method: 'POST' });
@@ -565,6 +589,7 @@ if (typeof window !== 'undefined') {
     window.saveUpgradeSettings = saveUpgradeSettings;
     window.runUpgradeGC = runGC;
     window.showUpgradeLog = showLog;
+    window.dismissFailedUpgrade = dismissFailedUpgrade;
 }
 
 // ============================================================================

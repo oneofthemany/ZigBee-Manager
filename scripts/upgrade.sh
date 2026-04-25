@@ -210,6 +210,87 @@ find_run_helper() {
     return 1
 }
 
+# ── PORT FREE WAITER ────────────────────────────────────────────────────────
+# After podman stop, the host TCP sockets can stay in TIME_WAIT for up to ~60s,
+# AND rogue child processes (or rootlessport itself) may still be holding the
+# port. We poll until the ports are actually bindable, with a timeout.
+#
+# Returns 0 if all ports become free within $timeout seconds, 1 otherwise.
+wait_for_ports_free() {
+    local timeout="${1:-90}"
+    local elapsed=0
+    local sleep_interval=2
+    local ports=("8000" "5580")
+
+    while (( elapsed < timeout )); do
+        local all_free=1
+        for port in "${ports[@]}"; do
+            # Use ss (preferred) or netstat as fallback. Match LISTEN state on
+            # both IPv4 and IPv6.
+            if command -v ss >/dev/null 2>&1; then
+                if ss -ltn "( sport = :$port )" 2>/dev/null | grep -q LISTEN; then
+                    all_free=0
+                    break
+                fi
+            elif command -v netstat >/dev/null 2>&1; then
+                if netstat -ltn 2>/dev/null | awk '{print $4}' | grep -qE "[:.]${port}\$"; then
+                    all_free=0
+                    break
+                fi
+            else
+                # No tools — best effort: try a quick bind via bash /dev/tcp
+                if (echo > /dev/tcp/127.0.0.1/"$port") 2>/dev/null; then
+                    # Something accepted connection — port still in use
+                    all_free=0
+                    break
+                fi
+            fi
+        done
+
+        if (( all_free == 1 )); then
+            log "Ports ${ports[*]} are free (waited ${elapsed}s)"
+            return 0
+        fi
+
+        sleep "$sleep_interval"
+        elapsed=$((elapsed + sleep_interval))
+    done
+
+    log "WARN: Ports still in use after ${timeout}s — proceeding anyway"
+    return 1
+}
+
+# Best-effort kill of any host processes holding the ports we need.
+# Used as a last resort if wait_for_ports_free times out.
+kill_port_squatters() {
+    local ports=("$@")
+    if [[ ${#ports[@]} -eq 0 ]]; then
+        ports=("8000" "5580")
+    fi
+    for port in "${ports[@]}"; do
+        local pids
+        if command -v ss >/dev/null 2>&1; then
+            pids=$(ss -ltnp "( sport = :$port )" 2>/dev/null | \
+                   grep -oE 'pid=[0-9]+' | cut -d= -f2 | sort -u)
+        elif command -v fuser >/dev/null 2>&1; then
+            pids=$(fuser -n tcp "$port" 2>/dev/null | tr -d ' ')
+        else
+            pids=""
+        fi
+
+        for pid in $pids; do
+            # Sanity: never kill PID 1 or systemd
+            if [[ "$pid" == "1" ]] || [[ "$pid" == "$$" ]]; then
+                continue
+            fi
+            log "Killing port-squatter PID $pid on port $port"
+            kill -TERM "$pid" 2>/dev/null || true
+            sleep 1
+            kill -KILL "$pid" 2>/dev/null || true
+        done
+    done
+}
+
 # ── BUILD: clone target tag, build image, tag with version ──────────────────
 do_build() {
     local target_version
@@ -389,10 +470,26 @@ do_swap() {
     "$RUNTIME" inspect "$CONTAINER_NAME" > "$spec_file" 2>/dev/null || true
 
     write_status "swapping" "$target_version" 30 "Stopping current container"
-    log "Swap: stopping $CONTAINER_NAME"
+    log "Swap: stopping $CONTAINER_NAME (timeout 45s for clean shutdown)"
 
-    if ! "$RUNTIME" stop -t 15 "$CONTAINER_NAME" >>"$WATCHER_LOG" 2>&1; then
+    # 45s gives uvicorn + matter-server + zigpy enough time to flush state
+    # and release sockets cleanly. Previously 15s caused SIGKILL escalation
+    # which left rootlessport holding ports in TIME_WAIT.
+    if ! "$RUNTIME" stop -t 45 "$CONTAINER_NAME" >>"$WATCHER_LOG" 2>&1; then
         log "Swap: stop returned non-zero (continuing anyway)"
+    fi
+
+    write_status "swapping" "$target_version" 35 "Waiting for ports to free"
+    log "Swap: waiting for ports 8000+5580 to become free"
+
+    # The killer fix: don't start the new container until the OS has actually
+    # released the ports. Otherwise we get "address already in use".
+    if ! wait_for_ports_free 60; then
+        log "Swap: ports still squatted after 60s — attempting to kill squatters"
+        kill_port_squatters 8000 5580
+        sleep 3
+        # One more chance after killing
+        wait_for_ports_free 15 || log "Swap: ports STILL not free — proceeding (run will likely fail)"
     fi
 
     write_status "swapping" "$target_version" 40 "Renaming old container"
@@ -433,11 +530,22 @@ do_swap() {
          bash "$run_helper" >>"$WATCHER_LOG" 2>&1
     then
         log "Swap: new container failed to start — rolling back"
+
+        # Capture whatever logs the failed container produced before rolling back
+        log_to_build ""
+        log_to_build "=== NEW CONTAINER FAILED TO START — capturing logs ==="
+        "$RUNTIME" logs --tail=100 "$CONTAINER_NAME" >>"$BUILD_LOG" 2>&1 || \
+            log_to_build "(no logs available — container did not exist or runtime returned error)"
+        # Also capture inspect for the failed container in case it was created but not started
+        log_to_build ""
+        log_to_build "=== Failed container inspect ==="
+        "$RUNTIME" inspect "$CONTAINER_NAME" 2>>"$BUILD_LOG" | head -100 >>"$BUILD_LOG" || true
+
         write_status "rolling_back" "$target_version" 70 "New container failed — rolling back"
         "$RUNTIME" rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
         "$RUNTIME" rename "$previous_name" "$CONTAINER_NAME" >/dev/null 2>&1 || true
         "$RUNTIME" start "$CONTAINER_NAME" >/dev/null 2>&1 || true
-        write_status "failed" "$target_version" 100 "Rolled back" "New container failed to start; old container restored"
+        write_status "failed" "$target_version" 100 "Rolled back" "New container failed to start; old container restored. See build.log for details."
         return 1
     fi
 
