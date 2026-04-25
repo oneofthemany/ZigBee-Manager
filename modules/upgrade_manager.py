@@ -325,6 +325,31 @@ def clear_stale_lock() -> bool:
     return False
 
 
+def _ensure_trigger_path_is_file_compatible():
+    """
+    Defensive: if `trigger` exists as a directory (e.g. created by systemd
+    MakeDirectory=true), remove it so we can write a file in its place.
+    Also clean up any leftover .tmp from a previous failed write.
+    """
+    if os.path.isdir(TRIGGER_FILE):
+        logger.warning(
+            f"Found {TRIGGER_FILE} as a directory — removing. "
+            "This is usually caused by systemd path unit with MakeDirectory=true."
+        )
+        try:
+            import shutil
+            shutil.rmtree(TRIGGER_FILE)
+        except Exception as e:
+            logger.error(f"Could not remove {TRIGGER_FILE} directory: {e}")
+    # Clean up stale .tmp from a previous os.replace that failed
+    tmp = TRIGGER_FILE + ".tmp"
+    if os.path.exists(tmp):
+        try:
+            os.remove(tmp)
+        except Exception:
+            pass
+
+
 def write_trigger(action: str, payload: Optional[Dict[str, Any]] = None) -> bool:
     """
     Write a trigger file for the host watcher.
@@ -333,6 +358,7 @@ def write_trigger(action: str, payload: Optional[Dict[str, Any]] = None) -> bool
     Stale locks are auto-cleared.
     """
     _ensure_dirs()
+    _ensure_trigger_path_is_file_compatible()
     if action not in VALID_ACTIONS:
         raise ValueError(f"Invalid action: {action}")
 

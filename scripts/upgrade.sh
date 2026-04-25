@@ -605,6 +605,18 @@ update_version_state() {
 }
 
 # ── MAIN DISPATCH ────────────────────────────────────────────────────────────
+# Cleanup handler — runs on EXIT (any reason), and explicitly on SIGTERM.
+# Without explicit signal traps, a SIGKILL'd process won't run cleanup, but
+# SIGTERM (the polite signal systemd sends first) will.
+cleanup_on_exit() {
+    local exit_code=$?
+    release_lock
+    if (( exit_code != 0 )); then
+        log "upgrade.sh exiting with code $exit_code"
+    fi
+    exit $exit_code
+}
+
 main() {
     detect_runtime || exit 1
 
@@ -618,7 +630,11 @@ main() {
         exit 2
     fi
 
-    trap release_lock EXIT
+    # Install traps AFTER acquiring the lock — we want cleanup even on signal
+    trap cleanup_on_exit EXIT
+    trap 'log "Received SIGTERM — cleaning up"; exit 130' TERM
+    trap 'log "Received SIGINT — cleaning up";  exit 130' INT
+    trap 'log "Received SIGHUP — cleaning up";  exit 130' HUP
 
     case "$TRIGGER_ACTION" in
         build)              do_build ;;

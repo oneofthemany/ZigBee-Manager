@@ -126,6 +126,9 @@ Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 # A trigger that produces a non-zero exit (e.g. malformed) should not be
 # treated as a failure that prevents the next run. Treat any exit as success.
 SuccessExitStatus=0 1 2 3
+# A full image build takes 15-25 min on ARM. Default oneshot timeout would
+# kill the build mid-flight and leave the lock dangling. Disable it.
+TimeoutStartSec=infinity
 
 [Install]
 WantedBy=default.target
@@ -138,9 +141,10 @@ Description=Watch for ZMM upgrade triggers
 [Path]
 # PathChanged fires once when the trigger file is closed after writing.
 # (Unlike PathExists, this does NOT retrigger while the file remains.)
+# Note: do NOT add MakeDirectory=true here — that would cause systemd to
+# create the trigger path as a directory, breaking everything.
 PathChanged=${UPGRADE_DIR}/trigger
 Unit=zmm-upgrade.service
-MakeDirectory=true
 
 [Install]
 WantedBy=default.target
@@ -179,6 +183,9 @@ Environment=ZMM_DATA_DIR=${DATA_DIR}
 Environment=ZMM_APP_DIR=${APP_DIR}
 Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 SuccessExitStatus=0 1 2 3
+# A full image build takes 15-25 min on ARM. Disable the oneshot timeout
+# so systemd doesn't SIGKILL us mid-build and leave a stale lock.
+TimeoutStartSec=infinity
 
 [Install]
 WantedBy=multi-user.target
@@ -190,9 +197,10 @@ Description=Watch for ZMM upgrade triggers
 
 [Path]
 # PathChanged fires once when the trigger file is closed after writing.
+# Note: do NOT add MakeDirectory=true here — that would cause systemd to
+# create the trigger path as a directory, breaking everything.
 PathChanged=${UPGRADE_DIR}/trigger
 Unit=zmm-upgrade.service
-MakeDirectory=true
 
 [Install]
 WantedBy=multi-user.target
