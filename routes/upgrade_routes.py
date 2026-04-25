@@ -205,3 +205,29 @@ def register_upgrade_routes(app: FastAPI):
         except Exception as e:
             logger.error(f"Install watcher failed: {e}")
             return JSONResponse({"success": False, "error": str(e)}, status_code=500)
+
+    @app.post("/api/upgrade/clear-lock")
+    async def clear_lock():
+        """
+        Force-clear the lock file. Use when the UI shows 'Another upgrade
+        operation is in progress' but you know nothing is actually running
+        (e.g. after a host crash, killed process, or watcher misconfiguration).
+
+        Auto-detects stale locks; only clears if the holder PID is dead OR
+        the lock is older than 60 minutes. Won't clear a live lock.
+        """
+        try:
+            cleared = um.clear_stale_lock()
+            if cleared:
+                return {"success": True, "message": "Stale lock cleared"}
+            # Did nothing happen because there was no lock, or because it's live?
+            import os as _os
+            if _os.path.exists(um.LOCK_FILE):
+                return JSONResponse(
+                    {"success": False, "error": "Lock is held by a live process — refusing to force-clear"},
+                    status_code=409,
+                )
+            return {"success": True, "message": "No lock present"}
+        except Exception as e:
+            logger.error(f"Clear lock failed: {e}")
+            return JSONResponse({"success": False, "error": str(e)}, status_code=500)
