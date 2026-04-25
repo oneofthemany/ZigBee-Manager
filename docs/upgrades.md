@@ -18,27 +18,27 @@ The upgrade flow has to work under **all of**: rootless Podman + SELinux, rootle
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
-│  CONTAINER (unprivileged, slirp4netns)                                │
+│  CONTAINER (unprivileged, slirp4netns)                               │
 │  ┌────────────────────────────────────────────────────────────────┐  │
-│  │  modules/upgrade_manager.py                                     │  │
-│  │    - Polls GitHub releases/tags every 6h                        │  │
-│  │    - Writes JSON trigger files                                  │  │
-│  │    - Polls status.json for host-side progress                   │  │
-│  │    - Stale-lock detection (PID liveness + age)                  │  │
-│  │    - Background asyncio loops via FastAPI lifespan              │  │
+│  │  modules/upgrade_manager.py                                    │  │
+│  │    - Polls GitHub releases/tags every 6h                       │  │
+│  │    - Writes JSON trigger files                                 │  │
+│  │    - Polls status.json for host-side progress                  │  │
+│  │    - Stale-lock detection (PID liveness + age)                 │  │
+│  │    - Background asyncio loops via FastAPI lifespan             │  │
 │  └────────────────────────────────────────────────────────────────┘  │
 │  ┌────────────────────────────────────────────────────────────────┐  │
-│  │  routes/upgrade_routes.py (FastAPI)                             │  │
-│  │    GET  /api/upgrade/status                                     │  │
-│  │    POST /api/upgrade/{check,build,swap,rollback,cancel,gc}      │  │
-│  │    POST /api/upgrade/{settings,reset-status,clear-lock}         │  │
-│  │    GET  /api/upgrade/log                                        │  │
+│  │  routes/upgrade_routes.py (FastAPI)                            │  │
+│  │    GET  /api/upgrade/status                                    │  │
+│  │    POST /api/upgrade/{check,build,swap,rollback,cancel,gc}     │  │
+│  │    POST /api/upgrade/{settings,reset-status,clear-lock}        │  │
+│  │    GET  /api/upgrade/log                                       │  │
 │  └────────────────────────────────────────────────────────────────┘  │
 │  ┌────────────────────────────────────────────────────────────────┐  │
-│  │  static/js/upgrade.js (Settings tab card)                       │  │
-│  │    - Bootstrap UI, state-machine-driven                         │  │
-│  │    - Progress bar, build log streaming, action buttons          │  │
-│  │    - WebSocket event hook for real-time updates                 │  │
+│  │  static/js/upgrade.js (Settings tab card)                      │  │
+│  │    - Bootstrap UI, state-machine-driven                        │  │
+│  │    - Progress bar, build log streaming, action buttons         │  │
+│  │    - WebSocket event hook for real-time updates                │  │
 │  └────────────────────────────────────────────────────────────────┘  │
 └──────────────────────────────────────────────────────────────────────┘
                                   │
@@ -47,39 +47,39 @@ The upgrade flow has to work under **all of**: rootless Podman + SELinux, rootle
                                   │
                                   ▼
 ┌──────────────────────────────────────────────────────────────────────┐
-│  HOST                                                                 │
+│  HOST                                                                │
 │  ┌────────────────────────────────────────────────────────────────┐  │
-│  │  systemd-path unit  OR  polling fallback                        │  │
-│  │    PathChanged=/.../upgrade/trigger                             │  │
-│  │    StartLimitIntervalSec=600 / StartLimitBurst=20               │  │
-│  │    TimeoutStartSec=infinity                                     │  │
-│  │    Fires zmm-upgrade.service oneshot on file write-close        │  │
+│  │  systemd-path unit  OR  polling fallback                       │  │
+│  │    PathChanged=/.../upgrade/trigger                            │  │
+│  │    StartLimitIntervalSec=600 / StartLimitBurst=20              │  │
+│  │    TimeoutStartSec=infinity                                    │  │
+│  │    Fires zmm-upgrade.service oneshot on file write-close       │  │
 │  └────────────────────────────────────────────────────────────────┘  │
 │  ┌────────────────────────────────────────────────────────────────┐  │
-│  │  /opt/zmm/upgrade.sh (host orchestrator, SELinux usr_t)         │  │
-│  │    - Atomic trigger consume (read → delete → parse)             │  │
-│  │    - Stale lock detection (PID alive + age check)               │  │
-│  │    - Action dispatch: build / swap / rollback / cancel / gc     │  │
-│  │    - Signal traps for SIGTERM / SIGINT / SIGHUP                 │  │
-│  │    - Captures failed container logs into build.log              │  │
+│  │  /opt/zmm/upgrade.sh (host orchestrator, SELinux usr_t)        │  │
+│  │    - Atomic trigger consume (read → delete → parse)            │  │
+│  │    - Stale lock detection (PID alive + age check)              │  │
+│  │    - Action dispatch: build / swap / rollback / cancel / gc    │  │
+│  │    - Signal traps for SIGTERM / SIGINT / SIGHUP                │  │
+│  │    - Captures failed container logs into build.log             │  │
 │  └────────────────────────────────────────────────────────────────┘  │
 │  ┌────────────────────────────────────────────────────────────────┐  │
-│  │  /opt/zmm/run_container.sh (run-args helper)                    │  │
-│  │    - Replays build.sh's run_container() args with chosen tag    │  │
-│  │    - Auto-detects USB device by-id pattern matching             │  │
-│  │    - Conditional Bluetooth (/dev/hci0) inclusion                │  │
+│  │  /opt/zmm/run_container.sh (run-args helper)                   │  │
+│  │    - Replays build.sh's run_container() args with chosen tag   │  │
+│  │    - Auto-detects USB device by-id pattern matching            │  │
+│  │    - Conditional Bluetooth (/dev/hci0) inclusion               │  │
 │  └────────────────────────────────────────────────────────────────┘  │
 └──────────────────────────────────────────────────────────────────────┘
                                   │
                                   ▼
 ┌──────────────────────────────────────────────────────────────────────┐
-│  CONTAINER RUNTIME (podman or docker)                                 │
-│    podman build → tag image as ${name}:${version}-${arch}             │
-│    podman stop  → stop -t 45 (clean shutdown for matter-server)       │
-│    podman rename → preserve old container as -previous                │
-│    podman run   → start new container with same volumes/devices       │
-│    Health check → curl /api/status with 60s window                    │
-│    Rollback     → swap names back if health fails                     │
+│  CONTAINER RUNTIME (podman or docker)                                │
+│    podman build → tag image as ${name}:${version}-${arch}            │
+│    podman stop  → stop -t 45 (clean shutdown for matter-server)      │
+│    podman rename → preserve old container as -previous               │
+│    podman run   → start new container with same volumes/devices      │
+│    Health check → curl /api/status with 60s window                   │
+│    Rollback     → swap names back if health fails                    │
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -155,33 +155,33 @@ Mixing them risks: backup-restore cycles overwriting current version state; user
 The upgrade flow is a state machine with seven states:
 
 ```
-                ┌─────────────────────────────────────────┐
-                │                                          │
-                │                 ┌──────────┐            │
-                ├────────────────▶│ checking │            │
-                │  (poll GitHub)  └────┬─────┘            │
-                │                      │                  │
-                │            new tag found                │
-                │                      │                  │
-                │                      ▼                  │
-                │                 ┌──────────┐            │
-   user click  ─┼────────────────▶│ building │            │
-   "Build"      │                 └────┬─────┘            │
-                │                      │                  │
-                │                build succeeds           │
-                │                      │                  │
-                │                      ▼                  │
-                │              ┌───────────────┐          │
-                │              │ ready_to_swap │          │
-                │              └───────┬───────┘          │
-                │                      │                  │
-                │              user click "Swap"          │
-                │                      │                  │
-                │                      ▼                  │
-   ┌─ idle ◀────┤                ┌──────────┐             │
-   │            │                │ swapping │             │
-   │            │                └────┬─────┘             │
-   │            │                     │                   │
+                ┌────────────────────────────────────────┐
+                │                                        │
+                │                 ┌──────────┐           │
+                ├────────────────▶│ checking │           │
+                │  (poll GitHub)  └────┬─────┘           │
+                │                      │                 │
+                │            new tag found               │
+                │                      │                 │
+                │                      ▼                 │
+                │                 ┌──────────┐           │
+   user click  ─┼────────────────▶│ building │           │
+   "Build"      │                 └────┬─────┘           │
+                │                      │                 │
+                │                build succeeds          │
+                │                      │                 │
+                │                      ▼                 │
+                │              ┌───────────────┐         │
+                │              │ ready_to_swap │         │
+                │              └───────┬───────┘         │
+                │                      │                 │
+                │              user click "Swap"         │
+                │                      │                 │
+                │                      ▼                 │
+   ┌─ idle ◀────┤                ┌──────────┐            │
+   │            │                │ swapping │            │
+   │            │                └────┬─────┘            │
+   │            │                     │                  │
    │            │      ┌──────────────┼─────────────┐    │
    │            │      │              │             │    │
    │            │      ▼              ▼             ▼    │
@@ -196,10 +196,10 @@ The upgrade flow is a state machine with seven states:
    │            │      │               ▼                 │
    │            │      │           ┌────────┐            │
    │            └──────┴──────────▶│ failed │────────────┘
-   │                                └────┬───┘     (user
-   │                                     │      dismisses /
-   │                                     │       retries)
-   └─────────────────────────────────────┘
+   │                               └────┬───┘     (user
+   │                                    │      dismisses /
+   │                                    │       retries)
+   └────────────────────────────────────┘
 ```
 
 States:
