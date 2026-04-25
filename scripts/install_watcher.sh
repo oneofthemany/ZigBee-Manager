@@ -23,12 +23,40 @@ err()   { echo -e "${RED}${BOLD}[ERR ]${NC} $*" >&2; }
 
 DATA_DIR="${ZMM_DATA_DIR:-$HOME/.zigbee-matter-manager}"
 APP_DIR="${ZMM_APP_DIR:-$HOME/zigbee-matter-manager}"
-SCRIPTS_DIR="${DATA_DIR}/scripts"
+
+# IMPORTANT: scripts must live in a location systemd's init_t domain can
+# execute under SELinux. /root/ and ~/ are labelled admin_home_t/user_home_t
+# which init_t is denied execute access to. /opt/ is labelled usr_t which
+# init_t can execute, and is the FHS-standard location for add-on packages.
+SCRIPTS_DIR="${ZMM_SCRIPTS_DIR:-/opt/zmm}"
+
 UPGRADE_DIR="${DATA_DIR}/data/upgrade"
 STATE_DIR="${DATA_DIR}/data/state"
 LOG_DIR="${DATA_DIR}/logs"
 
-mkdir -p "$SCRIPTS_DIR" "$UPGRADE_DIR" "$STATE_DIR" "$LOG_DIR"
+# /opt/zmm needs root to create — sudo if we're not already root
+if [[ ! -d "$SCRIPTS_DIR" ]]; then
+    if [[ "$(id -u)" -eq 0 ]]; then
+        mkdir -p "$SCRIPTS_DIR"
+    else
+        sudo mkdir -p "$SCRIPTS_DIR"
+        sudo chown "$USER:$USER" "$SCRIPTS_DIR"
+    fi
+fi
+
+mkdir -p "$UPGRADE_DIR" "$STATE_DIR" "$LOG_DIR"
+
+# Best-effort SELinux relabel of the scripts dir to ensure correct context.
+# /opt/ defaults to usr_t which is fine, but if the user has customised
+# things or the dir was created by tools that miss labelling, restorecon
+# will reset to whatever the policy says it should be.
+if command -v restorecon >/dev/null 2>&1 && [[ -e /sys/fs/selinux/enforce ]]; then
+    if [[ "$(id -u)" -eq 0 ]]; then
+        restorecon -R "$SCRIPTS_DIR" >/dev/null 2>&1 || true
+    else
+        sudo restorecon -R "$SCRIPTS_DIR" >/dev/null 2>&1 || true
+    fi
+fi
 
 # ── Prerequisites ────────────────────────────────────────────────────────────
 info "Checking prerequisites..."

@@ -193,6 +193,23 @@ detect_arch() {
     esac
 }
 
+# ── HELPER LOCATION ─────────────────────────────────────────────────────────
+# Locate run_container.sh — searches SELinux-friendly paths first, then legacy
+# /root/.zigbee-matter-manager/scripts/ as a fallback for older installs.
+find_run_helper() {
+    for candidate in \
+        "/opt/zmm/run_container.sh" \
+        "${ZMM_SCRIPTS_DIR:-}/run_container.sh" \
+        "${DATA_DIR}/scripts/run_container.sh" \
+        "${APP_DIR}/scripts/run_container.sh"; do
+        if [[ -n "$candidate" && -f "$candidate" ]]; then
+            echo "$candidate"
+            return 0
+        fi
+    done
+    return 1
+}
+
 # ── BUILD: clone target tag, build image, tag with version ──────────────────
 do_build() {
     local target_version
@@ -397,13 +414,8 @@ do_swap() {
     # The cleanest path: have build.sh expose a `--run-only` mode. For now, we
     # use a dedicated helper script installed alongside this one.
     local run_helper
-    run_helper="${DATA_DIR}/scripts/run_container.sh"
-    if [[ ! -f "$run_helper" ]]; then
-        run_helper="${APP_DIR}/scripts/run_container.sh"
-    fi
-
-    if [[ ! -f "$run_helper" ]]; then
-        log "Swap: run_container.sh not found at $run_helper — cannot start new container"
+    if ! run_helper=$(find_run_helper); then
+        log "Swap: run_container.sh not found in any known location"
         write_status "failed" "$target_version" 50 "Swap failed" "run_container.sh helper not installed"
         # Attempt to bring the old container back
         "$RUNTIME" rename "$previous_name" "$CONTAINER_NAME" >/dev/null 2>&1 || true
@@ -505,10 +517,8 @@ do_rollback() {
     "$RUNTIME" rename "$CONTAINER_NAME" "$failed_name" >/dev/null 2>&1 || \
         "$RUNTIME" rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
 
-    local run_helper="${DATA_DIR}/scripts/run_container.sh"
-    [[ -f "$run_helper" ]] || run_helper="${APP_DIR}/scripts/run_container.sh"
-
-    if [[ ! -f "$run_helper" ]]; then
+    local run_helper
+    if ! run_helper=$(find_run_helper); then
         write_status "failed" "$previous_version" 50 "Rollback failed" "run_container.sh missing"
         return 1
     fi

@@ -46,12 +46,12 @@ info "Detected ${BUILD_JOBS} build jobs for parallel compile"
 # ── Defaults ─────────────────────────────────────────────────────────────────
 REPO_URL="https://github.com/oneofthemany/ZigBee-Matter-Manager.git"
 REPO_BRANCH="main"
-APP_DIR="${ZMM_APP_DIR:-$HOME/zigbee-matter-manager}"
+APP_DIR="${ZMM_APP_DIR:-/opt/zigbee-matter-manager}"
 IMAGE_NAME="zigbee-matter-manager"
 CONTAINER_NAME="zigbee-matter-manager"
 INTERNAL_PORT=8000
 MATTER_INTERNAL_PORT=5580
-DATA_DIR="${ZMM_DATA_DIR:-$HOME/.zigbee-matter-manager}"
+DATA_DIR="${ZMM_DATA_DIR:-/opt/.zigbee-matter-manager}"
 
 # =============================================================================
 # PRE-FLIGHT: dialout group membership
