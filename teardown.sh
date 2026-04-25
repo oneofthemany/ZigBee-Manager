@@ -14,7 +14,7 @@ else
     echo "No existing image found, skipping rmi."
 fi
 
-rm -rf ~/zigbee-matter-manager/ ~/.zigbee-matter-manager/
+rm -rf /opt/zigbee-matter-manager/ /opt/.zigbee-matter-manager/
 
 #rm -f ~/.config/systemd/user/container-zigbee-matter-manager.service
 
