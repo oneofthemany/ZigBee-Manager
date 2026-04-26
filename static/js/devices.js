@@ -198,6 +198,15 @@ export function renderDeviceTable() {
         }
         tbody.appendChild(tr);
     });
+
+    // Re-apply interview status badges after a full re-render
+    try {
+        if (typeof window.applyAllBadges === 'function') {
+            window.applyAllBadges();
+        }
+    } catch (e) {
+        // Non-fatal
+    }
 }
 
 /**

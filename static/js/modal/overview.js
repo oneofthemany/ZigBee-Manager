@@ -234,30 +234,9 @@ export function renderOverviewTab(device) {
             <i class="fas fa-user-plus"></i> Pair
          </button>` : '';
 
-    // Zigbee-only maintenance actions
+    // Zigbee-only quick actions on the overview
+    // Maintenance (Poll, Reconfigure, Re-Interview, etc.) lives in the Settings tab.
     const zigbeeActions = isZigbee ? `
-        <button type="button" class="btn btn-outline-secondary" onclick="window.doAction('poll', '${device.ieee}')">
-            <i class="fas fa-sync"></i> Poll
-        </button>
-        <div class="btn-group btn-group-sm" role="group">
-            <button type="button" class="btn btn-outline-info" onclick="window.doAction('reconfigure', '${device.ieee}')" title="Standard Bindings & Reporting">
-                <i class="fas fa-wrench"></i> Reconfigure
-            </button>
-            <button type="button" class="btn btn-outline-info dropdown-toggle dropdown-toggle-split" data-bs-toggle="dropdown" aria-expanded="false">
-                <span class="visually-hidden">Toggle Dropdown</span>
-            </button>
-            <ul class="dropdown-menu dropdown-menu-end">
-                <li><a class="dropdown-item" href="#" onclick="window.doAction('reconfigure_aggressive', '${device.ieee}'); return false;">
-                    <i class="fas fa-bolt text-warning"></i> Apply Aggressive LQI
-                </a></li>
-                <li><a class="dropdown-item" href="#" onclick="window.doAction('reconfigure_baseline', '${device.ieee}'); return false;">
-                    <i class="fas fa-undo text-secondary"></i> Restore Baseline
-                </a></li>
-            </ul>
-        </div>
-        <button type="button" class="btn btn-outline-primary" onclick="window.doAction('interview', '${device.ieee}')">
-            <i class="fas fa-fingerprint"></i> Re-Interview
-        </button>
         <button type="button" class="btn btn-outline-success" onclick="window.exportDeviceConfig('${device.ieee}')" title="Download full device configuration as JSON">
             <i class="fas fa-file-download"></i> Export Config
         </button>

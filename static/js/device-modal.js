@@ -17,9 +17,16 @@ import { renderHistoryTab, initHistoryTab } from './modal/history.js';
 import { renderMatterClustersTab, initMatterClustersTab } from './modal/matter-clusters.js';
 import { renderMatterEventsTab } from './modal/matter-events.js';
 import { renderMatterEndpointsTab, initMatterEndpointsTab } from './modal/matter-endpoints.js';
+import {
+    renderSettingsTab,
+    initSettingsTab,
+    applyInterviewStatusUpdate,
+    startRetryInterview,
+    deleteAndRepair,
+} from './modal/settings.js';
 
 // Re-export these functions so main.js (and others) can still import them from here
-export { renderOverviewTab, renderControlTab, renderBindingTab, renderCapsTab, renderAutomationTab, renderMappingsTab, saveConfig, handleOTAProgress };
+export { renderOverviewTab, renderControlTab, renderBindingTab, renderCapsTab, renderAutomationTab, renderMappingsTab, saveConfig, handleOTAProgress, renderSettingsTab, applyInterviewStatusUpdate };
 export async function openDeviceModal(d) {
     // Refresh heating-controller managed set so the Control tab can disable
     // direct heating controls for managed devices. Non-blocking failure.
@@ -60,6 +67,7 @@ export async function openDeviceModal(d) {
             ${!isZigbee ? '<li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-endpoints">Endpoints</button></li>' : ''}
             <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-automation">Automation</button></li>
             ${isZigbee ? '<li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-mappings">Mappings</button></li>' : ''}
+            ${isZigbee ? '<li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-settings">Settings</button></li>' : ''}
         </ul>
 
         <div class="tab-content">
@@ -97,6 +105,11 @@ export async function openDeviceModal(d) {
                 ${renderMappingsTab(cachedDev)}
             </div>
             ` : ''}
+            ${isZigbee ? `
+            <div class="tab-pane fade" id="tab-settings">
+                ${renderSettingsTab(cachedDev)}
+            </div>
+            ` : ''}
         </div>
     `;
 
@@ -130,6 +143,14 @@ export async function openDeviceModal(d) {
     if (autoTab) {
         autoTab.addEventListener('shown.bs.tab', () => {
             initAutomationTab(cachedDev.ieee);
+        });
+    }
+
+    // Hydrate settings tab when clicked, and on first show
+    const settingsTab = modalBody.querySelector('[data-bs-target="#tab-settings"]');
+    if (settingsTab && cachedDev.ieee) {
+        settingsTab.addEventListener('shown.bs.tab', () => {
+            initSettingsTab(cachedDev.ieee);
         });
     }
 

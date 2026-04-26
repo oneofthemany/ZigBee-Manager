@@ -8,7 +8,8 @@ from fastapi import FastAPI
 from models import (
     DeviceRequest, RenameRequest, ConfigureRequest, CommandRequest,
     AttributeReadRequest, BindRequest, PermitJoinRequest,
-    BanRequest, UnbanRequest, TouchlinkRequest, DiscoverAttributesRequest
+    BanRequest, UnbanRequest, TouchlinkRequest, DiscoverAttributesRequest,
+    RetryInterviewRequest,
 )
 from modules.zone_device_config import configure_zone_device_reporting, remove_aggressive_reporting
 
@@ -132,6 +133,46 @@ def register_device_routes(app: FastAPI, get_zigbee_service, get_matter_bridge):
     async def interview_device(request: DeviceRequest):
         """Re-interview a device."""
         return await get_zigbee_service().interview_device(request.ieee)
+
+    @app.post("/api/device/retry_interview")
+    async def retry_interview_device(request: RetryInterviewRequest):
+        """
+        Re-interview a device with progress streaming.
+
+        Requires confirm_awake=true. Emits interview_status_update events
+        through the WebSocket for each ZDO step.
+        """
+        if not request.confirm_awake:
+            return {
+                "success": False,
+                "error": (
+                    "You must confirm the device is being kept awake before "
+                    "retrying the interview. Press the device's button or open "
+                    "the valve, then try again."
+                ),
+            }
+        return await get_zigbee_service().retry_interview_device(request.ieee)
+
+    @app.get("/api/device/{ieee}/interview_status")
+    async def get_interview_status(ieee: str):
+        """Snapshot of one device's interview status."""
+        svc = get_zigbee_service()
+        tracker = getattr(svc, "interview_status", None)
+        if tracker is None:
+            return {"success": False, "error": "Tracker not initialised"}
+        snap = tracker.get_status(ieee)
+        if snap is None:
+            return {"success": False, "error": "Device not found"}
+        return {"success": True, "status": snap.to_dict()}
+
+    @app.get("/api/devices/interview_status_pending")
+    async def get_interview_status_pending():
+        """All devices not yet fully interviewed (for the device list badge)."""
+        svc = get_zigbee_service()
+        tracker = getattr(svc, "interview_status", None)
+        if tracker is None:
+            return {"success": False, "pending": []}
+        return {"success": True, "pending": tracker.get_all_pending()}
 
     @app.post("/api/device/poll")
     async def poll_device(request: DeviceRequest):

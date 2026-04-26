@@ -89,3 +89,9 @@ class DiscoverAttributesRequest(BaseModel):
     ieee: str
     endpoint_id: int
     cluster_id: int
+
+
+
+class RetryInterviewRequest(BaseModel):
+    ieee: str
+    confirm_awake: bool = False

@@ -96,6 +96,15 @@ import {
 } from './mesh.js';
 
 import { renderOTATab, handleOTAProgress } from './modal/ota.js';
+import {
+    loadInterviewStatusPending,
+    updateInterviewBadge,
+    applyAllBadges,
+} from './interview-status-badge.js';
+import {
+    startRetryInterview,
+    deleteAndRepair,
+} from './modal/settings.js';
 
 // ============================================================================
 // EXPOSE FUNCTIONS GLOBALLY
@@ -107,6 +116,12 @@ window.renamePrompt = renamePrompt;
 window.fetchAllDevices = fetchAllDevices;
 window.getDeviceStateHtml = getDeviceStateHtml;
 window.cleanupOrphans = cleanupOrphans;
+
+// Interview status (badge + modal actions)
+window.startRetryInterview = startRetryInterview;
+window.deleteAndRepair = deleteAndRepair;
+window.applyAllBadges = applyAllBadges;
+window.updateInterviewBadge = updateInterviewBadge;
 
 // Device actions
 window.sendCommand = sendCommand;
@@ -356,3 +371,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     console.log("Zigbee Matter Manager Frontend Initialised");
 });
+
+// Initial fetch of devices needing interview attention
+loadInterviewStatusPending();

@@ -10,6 +10,8 @@ import { updatePairingUI, checkPairingStatus } from './actions.js';
 import { handleMQTTMessage } from './mqtt-explorer.js';
 import { handleOTAProgress } from './modal/ota.js';
 import { hideTestRecoveryBanner } from './editor.js'
+import { applyInterviewStatusUpdate } from './device-modal.js';
+import { updateInterviewBadge } from './interview-status-badge.js';
 
 /**
  * Initialize WebSocket connection
@@ -95,6 +97,10 @@ export function initWS() {
                 case "device_joined":
                 case "device_initialized":
                     fetchAllDevices();
+                    break;
+
+                case "interview_status_update":
+                    handleInterviewStatusUpdate(msg.payload || msg.data);
                     break;
 
                 case "device_left":
@@ -316,4 +322,23 @@ function _escToast(s) {
     const d = document.createElement('div');
     d.textContent = s;
     return d.innerHTML;
+}
+
+
+/**
+ * Forward interview-status updates to the modal Settings tab (if open)
+ * and the device list badge.
+ */
+function handleInterviewStatusUpdate(payload) {
+    if (!payload || !payload.ieee) return;
+    try {
+        applyInterviewStatusUpdate(payload);
+    } catch (e) {
+        console.debug('applyInterviewStatusUpdate failed', e);
+    }
+    try {
+        updateInterviewBadge(payload);
+    } catch (e) {
+        console.debug('updateInterviewBadge failed', e);
+    }
 }

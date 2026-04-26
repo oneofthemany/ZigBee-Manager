@@ -185,6 +185,10 @@ class ZigbeeService(
 
         os.makedirs("logs", exist_ok=True)
 
+        # Interview status tracker — observes interview state for the UI
+        from modules.interview_status import InterviewStatusTracker
+        self.interview_status = InterviewStatusTracker(self)
+
     # =========================================================================
     # UTILITY METHODS
     # =========================================================================
@@ -631,6 +635,12 @@ class ZigbeeService(
         self._emit_sync("log", {"level": "INFO", "message": f"[{ieee}] ({name}) Device Joined",
                                 "ieee": ieee, "device_name": name, "category": "connection"})
         self._emit_sync("device_joined", {"ieee": ieee})
+
+        # Track join time for interview status
+        try:
+            self.interview_status.on_device_joined(ieee)
+        except Exception as _e:
+            logger.debug(f"[{ieee}] interview_status.on_device_joined failed: {_e}")
         asyncio.create_task(self._delayed_handler_init(ieee))
 
     async def _delayed_handler_init(self, ieee: str):
@@ -746,6 +756,12 @@ class ZigbeeService(
         self._rebuild_name_maps()
         self._emit_sync("device_initialized", {"ieee": ieee})
 
+        # Refresh interview status — transitions to "interviewed"
+        try:
+            self.interview_status.emit_for(ieee)
+        except Exception as _e:
+            logger.debug(f"[{ieee}] interview_status.emit_for failed: {_e}")
+
     async def _async_device_initialized(self, ieee: str):
         """Configure device after initialization."""
         if ieee not in self.devices:
@@ -789,6 +805,11 @@ class ZigbeeService(
         if ieee in self.devices:
             self.devices[ieee].cleanup()
             del self.devices[ieee]
+
+        try:
+            self.interview_status.on_device_removed(ieee)
+        except Exception:
+            pass
 
         if ieee in self.state_cache:
             del self.state_cache[ieee]
@@ -1387,6 +1408,89 @@ class ZigbeeService(
                 return {"success": False, "error": str(e)}
         return {"success": False, "error": "Device not found"}
 
+
+    async def retry_interview_device(self, ieee: str) -> dict:
+        """
+        Run a re-interview with progress streaming via interview_status.
+
+        Each ZDO step start/end emits an interview_status_update through
+        the WebSocket. Step failures are caught per-step rather than
+        aborting — Active_EP can still succeed if Node_Desc fails on a
+        particular wake.
+        """
+        if ieee not in self.devices:
+            return {"success": False, "error": "Device not found"}
+
+        wrapper = self.devices[ieee]
+        zdev = wrapper.zigpy_dev
+        tracker = self.interview_status
+
+        STEP_TIMEOUT = 10.0
+        steps_succeeded = 0
+        steps_failed = 0
+
+        # Step 1: Node Descriptor
+        tracker.record_step(ieee, "node_descriptor")
+        try:
+            await asyncio.wait_for(zdev.zdo.Node_Desc_req(), timeout=STEP_TIMEOUT)
+            steps_succeeded += 1
+            logger.info(f"[{ieee}] retry_interview: Node Descriptor ok")
+        except asyncio.TimeoutError:
+            steps_failed += 1
+            logger.warning(f"[{ieee}] retry_interview: Node Descriptor timed out")
+        except Exception as e:
+            steps_failed += 1
+            logger.warning(f"[{ieee}] retry_interview: Node Descriptor failed: {e}")
+        tracker.emit_for(ieee)
+
+        # Step 2: Active Endpoints
+        tracker.record_step(ieee, "active_endpoints")
+        try:
+            await asyncio.wait_for(zdev.zdo.Active_EP_req(), timeout=STEP_TIMEOUT)
+            steps_succeeded += 1
+            logger.info(f"[{ieee}] retry_interview: Active Endpoints ok")
+        except asyncio.TimeoutError:
+            steps_failed += 1
+            logger.warning(f"[{ieee}] retry_interview: Active Endpoints timed out")
+        except Exception as e:
+            steps_failed += 1
+            logger.warning(f"[{ieee}] retry_interview: Active Endpoints failed: {e}")
+        tracker.emit_for(ieee)
+
+        # Step 3: Simple Descriptor for each non-ZDO endpoint
+        for ep_id in list(zdev.endpoints.keys()):
+            if ep_id == 0:
+                continue
+            tracker.record_step(ieee, f"simple_descriptor_ep_{ep_id}")
+            try:
+                await asyncio.wait_for(zdev.zdo.Simple_Desc_req(ep_id), timeout=STEP_TIMEOUT)
+                steps_succeeded += 1
+                logger.info(f"[{ieee}] retry_interview: Simple Desc EP{ep_id} ok")
+            except asyncio.TimeoutError:
+                steps_failed += 1
+                logger.warning(f"[{ieee}] retry_interview: Simple Desc EP{ep_id} timed out")
+            except Exception as e:
+                steps_failed += 1
+                logger.warning(f"[{ieee}] retry_interview: Simple Desc EP{ep_id} failed: {e}")
+            tracker.emit_for(ieee)
+
+        # Build handlers based on whatever we did get
+        try:
+            wrapper._identify_handlers()
+        except Exception as e:
+            logger.warning(f"[{ieee}] retry_interview: handler build failed: {e}")
+
+        # Final state
+        tracker.record_step(ieee, None)
+        tracker.emit_for(ieee)
+
+        return {
+            "success": steps_failed == 0,
+            "steps_succeeded": steps_succeeded,
+            "steps_failed": steps_failed,
+            "is_initialized": zdev.is_initialized,
+        }
+
     async def interview_device(self, ieee):
         if ieee in self.devices:
             try:
@@ -1470,6 +1574,11 @@ class ZigbeeService(
             # 5. Cleanup local state (In-Memory)
             if ieee in self.devices:
                 del self.devices[ieee]
+
+            try:
+                self.interview_status.on_device_removed(ieee)
+            except Exception:
+                pass
 
             # 6. Cleanup persistent JSON files
             if ieee in self.friendly_names:
