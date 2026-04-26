@@ -246,10 +246,18 @@ detect_health_urls() {
     fi
 
     # Output candidate URLs, one per line, in priority order
+    # Try multiple paths to be resilient across versions:
+    #   /api/status         — canonical, present in 1.3.3+
+    #   /api/system/health  — older fallback (always present)
+    local paths=("/api/status" "/api/system/health")
     if [[ "$ssl_enabled" == "true" ]]; then
-        echo "https://127.0.0.1:${port}/api/status"
+        for p in "${paths[@]}"; do
+            echo "https://127.0.0.1:${port}${p}"
+        done
     fi
-    echo "http://127.0.0.1:${port}/api/status"
+    for p in "${paths[@]}"; do
+        echo "http://127.0.0.1:${port}${p}"
+    done
 }
 
 # Try each candidate URL once. Returns 0 if any succeeds, prints the URL that

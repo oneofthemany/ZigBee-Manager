@@ -92,16 +92,23 @@ def _detect_ssl_config():
         if not in_ssl:
             continue
 
-        # Parse keys inside ssl: (4-space indent)
+        # Parse keys inside ssl: (4-space indent).
+        # Accept BOTH naming conventions because real-world configs use:
+        #   cert_file / key_file  (underscored — matches python-style)
+        #   certfile  / keyfile   (compact — matches uvicorn arg names)
+        # For `enabled`, treat any truthy-ish value as enabled — this includes
+        # the literal string "enabled" which appears in older configs.
         stripped = line.strip()
         if stripped.startswith("enabled:"):
             val = stripped.split(":", 1)[1].strip().strip('"').strip("'").lower()
-            result["enabled"] = val in ("true", "yes", "1")
-        elif stripped.startswith("certfile:"):
+            # Treat as enabled if value is anything truthy except false/no/0/off/disabled
+            falsy = {"false", "no", "0", "off", "disabled", "", "none", "null"}
+            result["enabled"] = val not in falsy
+        elif stripped.startswith(("certfile:", "cert_file:")):
             val = stripped.split(":", 1)[1].strip().strip('"').strip("'")
             if val:
                 result["certfile"] = val
-        elif stripped.startswith("keyfile:"):
+        elif stripped.startswith(("keyfile:", "key_file:")):
             val = stripped.split(":", 1)[1].strip().strip('"').strip("'")
             if val:
                 result["keyfile"] = val
@@ -110,6 +117,19 @@ def _detect_ssl_config():
     for k in ("certfile", "keyfile"):
         if result[k] and not os.path.isabs(result[k]):
             result[k] = os.path.normpath(os.path.join(APP_DIR, result[k]))
+
+    # If SSL is enabled but cert paths weren't extracted, fall back to the
+    # SAME defaults main.py uses. This handles the common case where
+    # config.yaml has `web.ssl.enabled: true` but no explicit cert paths.
+    if result["enabled"]:
+        if not result["certfile"]:
+            result["certfile"] = os.path.normpath(
+                os.path.join(APP_DIR, "data/certs/cert.pem")
+            )
+        if not result["keyfile"]:
+            result["keyfile"] = os.path.normpath(
+                os.path.join(APP_DIR, "data/certs/key.pem")
+            )
 
     return result
 
@@ -886,6 +906,7 @@ def main():
     if ssl_cfg["enabled"]:
         certfile = ssl_cfg["certfile"]
         keyfile = ssl_cfg["keyfile"]
+        log.warning(f"SSL config: enabled=True certfile={certfile} keyfile={keyfile}")
         if certfile and keyfile and os.path.isfile(certfile) and os.path.isfile(keyfile):
             try:
                 import ssl as _ssl
@@ -902,8 +923,10 @@ def main():
                 )
         else:
             log.warning(
-                f"SSL enabled in config.yaml but cert/key not found "
-                f"(certfile={certfile}, keyfile={keyfile}); falling back to HTTP."
+                f"SSL enabled in config.yaml but cert/key not found at "
+                f"certfile={certfile}, keyfile={keyfile}; falling back to HTTP. "
+                f"The browser may show ERR_ADDRESS_UNREACHABLE if HSTS is "
+                f"cached. Generate certs with: python3 modules/ensure_certs.py"
             )
 
     log.warning(f"DISASTER RECOVERY SERVER starting on {scheme}://0.0.0.0:{PORT}")

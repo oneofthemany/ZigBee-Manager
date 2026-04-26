@@ -184,6 +184,17 @@ def register_system_routes(app: FastAPI, get_zigbee_service, get_mqtt_service, g
     async def health_check():
         return {"status": "ok"}
 
+    @app.get("/api/status")
+    async def status_check():
+        """
+        Lightweight health endpoint at the canonical path.
+        Used by the Containerfile HEALTHCHECK and by the in-app upgrade
+        health probe. Must remain cheap and synchronous-friendly — no
+        DB queries, no I/O, no waiting on subsystems. If it returns 200,
+        the FastAPI process is up and serving; that's all callers need.
+        """
+        return {"status": "ok"}
+
     # ---- MQTT Explorer ----
 
     @app.post("/api/mqtt_explorer/start")
