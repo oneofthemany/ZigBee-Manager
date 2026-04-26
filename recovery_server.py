@@ -41,6 +41,79 @@ RECOVERY_MARKER = os.path.join(DATA_DIR, ".recovery_active")
 
 PORT = int(os.environ.get("ZMM_PORT", 8000))
 
+
+# ----------------------------------------------------------------------------
+# SSL DETECTION (stdlib-only — survives if PyYAML / config_enhanced is broken)
+# ----------------------------------------------------------------------------
+def _detect_ssl_config():
+    """
+    Best-effort detection of SSL settings from config.yaml without depending
+    on PyYAML (which may itself be broken if the venv is unhealthy).
+
+    Looks for the structure:
+        web:
+          ssl:
+            enabled: true
+            certfile: ./data/certs/cert.pem
+            keyfile:  ./data/certs/key.pem
+
+    Returns: dict with keys {enabled, certfile, keyfile}. enabled defaults
+    to False if the file is missing, malformed, or lacks the section.
+    """
+    result = {"enabled": False, "certfile": None, "keyfile": None}
+    config_path = os.path.join(APP_DIR, "config", "config.yaml")
+    if not os.path.isfile(config_path):
+        return result
+
+    try:
+        with open(config_path, "r", encoding="utf-8", errors="replace") as f:
+            lines = f.readlines()
+    except Exception:
+        return result
+
+    in_web = False
+    in_ssl = False
+    for raw in lines:
+        line = raw.rstrip("\n")
+        # Top-level key (no indent)
+        if line and not line.startswith(" ") and not line.startswith("#"):
+            in_web = line.startswith("web:")
+            in_ssl = False
+            continue
+        if not in_web:
+            continue
+        # Inside web: — look for ssl: stanza (2-space indent)
+        if line.startswith("  ssl:"):
+            in_ssl = True
+            continue
+        # Detect leaving ssl: stanza (next 2-space-indent sibling key)
+        if in_ssl and line.startswith("  ") and not line.startswith("    ") and ":" in line:
+            in_ssl = False
+        if not in_ssl:
+            continue
+
+        # Parse keys inside ssl: (4-space indent)
+        stripped = line.strip()
+        if stripped.startswith("enabled:"):
+            val = stripped.split(":", 1)[1].strip().strip('"').strip("'").lower()
+            result["enabled"] = val in ("true", "yes", "1")
+        elif stripped.startswith("certfile:"):
+            val = stripped.split(":", 1)[1].strip().strip('"').strip("'")
+            if val:
+                result["certfile"] = val
+        elif stripped.startswith("keyfile:"):
+            val = stripped.split(":", 1)[1].strip().strip('"').strip("'")
+            if val:
+                result["keyfile"] = val
+
+    # Resolve relative paths against APP_DIR (matches main.py behaviour)
+    for k in ("certfile", "keyfile"):
+        if result[k] and not os.path.isabs(result[k]):
+            result[k] = os.path.normpath(os.path.join(APP_DIR, result[k]))
+
+    return result
+
+
 # Directories the recovery UI is allowed to write into (mirrors editor_routes)
 ALLOWED_WRITE_DIRS = [
     "",
@@ -793,18 +866,51 @@ def _remove_marker():
 def main():
     _write_marker()
     log.warning("=" * 60)
-    log.warning(f"DISASTER RECOVERY SERVER starting on :{PORT}")
-    log.warning(f"APP_DIR={APP_DIR}")
+
+    # Detect SSL — if the main app is configured for HTTPS, the recovery
+    # server MUST also serve HTTPS, otherwise browsers with HSTS cached for
+    # this host will refuse to connect (the user sees ERR_ADDRESS_UNREACHABLE
+    # or a TLS error and never reaches the recovery UI).
+    ssl_cfg = _detect_ssl_config()
+
     crash = _read_crash()
     if crash:
         log.warning(
             f"Last crash: {crash.get('exc_type')}: {crash.get('exc_value')} "
             f"@ {crash.get('suspect_file_rel')}:{crash.get('suspect_line')}"
         )
-    log.warning("Open the main port in a browser to recover.")
-    log.warning("=" * 60)
 
     server = ReusableTCPServer(("0.0.0.0", PORT), RecoveryHandler)
+
+    scheme = "http"
+    if ssl_cfg["enabled"]:
+        certfile = ssl_cfg["certfile"]
+        keyfile = ssl_cfg["keyfile"]
+        if certfile and keyfile and os.path.isfile(certfile) and os.path.isfile(keyfile):
+            try:
+                import ssl as _ssl
+                ctx = _ssl.SSLContext(_ssl.PROTOCOL_TLS_SERVER)
+                ctx.load_cert_chain(certfile=certfile, keyfile=keyfile)
+                server.socket = ctx.wrap_socket(server.socket, server_side=True)
+                scheme = "https"
+                log.warning(f"SSL ENABLED — using {certfile}")
+            except Exception as e:
+                log.warning(
+                    f"SSL config detected but cert load failed ({e!r}); "
+                    f"falling back to plain HTTP. The browser may show a "
+                    f"connection error if HSTS is cached for this host."
+                )
+        else:
+            log.warning(
+                f"SSL enabled in config.yaml but cert/key not found "
+                f"(certfile={certfile}, keyfile={keyfile}); falling back to HTTP."
+            )
+
+    log.warning(f"DISASTER RECOVERY SERVER starting on {scheme}://0.0.0.0:{PORT}")
+    log.warning(f"APP_DIR={APP_DIR}")
+    log.warning(f"Open {scheme}://<host>:{PORT}/ in a browser to recover.")
+    log.warning("=" * 60)
+
     try:
         server.serve_forever()
     except KeyboardInterrupt:

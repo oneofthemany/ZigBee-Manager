@@ -23,8 +23,11 @@ APP_DIR="${ZMM_APP_DIR:-$HOME/zigbee-matter-manager}"
 IMAGE_NAME="${ZMM_IMAGE_NAME:-zigbee-matter-manager}"
 CONTAINER_NAME="${ZMM_CONTAINER_NAME:-zigbee-matter-manager}"
 REPO_URL="${ZMM_REPO_URL:-https://github.com/oneofthemany/ZigBee-Matter-Manager.git}"
-HEALTH_URL="${ZMM_HEALTH_URL:-http://127.0.0.1:8000/api/status}"
 HEALTH_TIMEOUT="${ZMM_HEALTH_TIMEOUT:-60}"  # seconds to wait for new container to become healthy
+
+# Health check URL is auto-detected from config.yaml at health-check time —
+# see detect_health_url(). Override with $ZMM_HEALTH_URL if needed.
+HEALTH_URL="${ZMM_HEALTH_URL:-}"
 # The port published by the previous container — discovered from inspect if possible.
 
 # ── IPC paths (shared with container via volume mount) ───────────────────────
@@ -191,6 +194,78 @@ detect_arch() {
         armv7l|armv7)           echo "armv7" ;;
         *)                       echo "$m" ;;
     esac
+}
+
+# ── HEALTH CHECK URL DETECTION ──────────────────────────────────────────────
+# The new container may be running plain HTTP, or HTTPS (with a self-signed
+# cert). config.yaml tells us which — but we read it defensively because
+# config.yaml shape can vary across versions.
+#
+# We build a list of candidate URLs to try, in priority order:
+#   1. $ZMM_HEALTH_URL (if set explicitly — overrides everything)
+#   2. https://127.0.0.1:${port}/api/status   (if web.ssl.enabled is true)
+#   3. http://127.0.0.1:${port}/api/status    (always — fallback)
+#
+# is_app_healthy() returns 0 if ANY of the candidates returns 200.
+detect_health_urls() {
+    local config="${DATA_DIR}/config/config.yaml"
+    local port="8000"
+    local ssl_enabled="false"
+
+    # If user has set ZMM_HEALTH_URL, use only that
+    if [[ -n "${HEALTH_URL:-}" ]]; then
+        echo "$HEALTH_URL"
+        return 0
+    fi
+
+    # Best-effort YAML parsing without yq dependency. Look for:
+    #   web:
+    #     port: 8000
+    #     ssl:
+    #       enabled: true
+    if [[ -f "$config" ]]; then
+        # Extract port (anywhere under "web:" stanza). Keep simple — first hit wins.
+        local p
+        p=$(awk '
+            /^web:/         { in_web=1; next }
+            /^[a-zA-Z]/     { in_web=0 }
+            in_web && /^  port:/ { gsub(/[^0-9]/,"",$2); print $2; exit }
+        ' "$config" 2>/dev/null)
+        [[ -n "$p" && "$p" =~ ^[0-9]+$ ]] && port="$p"
+
+        # Extract ssl.enabled. Look for the nested key.
+        local s
+        s=$(awk '
+            /^web:/         { in_web=1; next }
+            /^[a-zA-Z]/     { in_web=0; in_ssl=0 }
+            in_web && /^  ssl:/ { in_ssl=1; next }
+            in_web && /^  [a-zA-Z]/ { in_ssl=0 }
+            in_web && in_ssl && /^    enabled:/ { print $2; exit }
+        ' "$config" 2>/dev/null | tr -d '"' | tr -d "'" | tr '[:upper:]' '[:lower:]')
+        [[ "$s" == "true" || "$s" == "yes" ]] && ssl_enabled="true"
+    fi
+
+    # Output candidate URLs, one per line, in priority order
+    if [[ "$ssl_enabled" == "true" ]]; then
+        echo "https://127.0.0.1:${port}/api/status"
+    fi
+    echo "http://127.0.0.1:${port}/api/status"
+}
+
+# Try each candidate URL once. Returns 0 if any succeeds, prints the URL that
+# worked to stdout (so caller can log it).
+is_app_healthy() {
+    local urls=("$@")
+    for url in "${urls[@]}"; do
+        # -k: accept self-signed certs. Most home setups use them.
+        # --max-time 3: don't wait more than 3s per URL per attempt.
+        # -fsS: silent, fail-on-non-2xx, but show error if curl itself fails.
+        if curl -fsS -k --max-time 3 "$url" >/dev/null 2>&1; then
+            echo "$url"
+            return 0
+        fi
+    done
+    return 1
 }
 
 # ── HELPER LOCATION ─────────────────────────────────────────────────────────
@@ -551,13 +626,23 @@ do_swap() {
 
     # Health check
     write_status "swapping" "$target_version" 80 "Health-checking new container"
+
+    # Build the list of candidate URLs (HTTPS-first if SSL is enabled)
+    local health_candidates=()
+    while IFS= read -r url; do
+        [[ -n "$url" ]] && health_candidates+=("$url")
+    done < <(detect_health_urls)
+
+    log "Swap: health-check candidates: ${health_candidates[*]}"
     log "Swap: waiting up to ${HEALTH_TIMEOUT}s for new container to become healthy"
 
     local healthy=0
     local elapsed=0
+    local working_url=""
     while (( elapsed < HEALTH_TIMEOUT )); do
-        if curl -fsS --max-time 3 "$HEALTH_URL" >/dev/null 2>&1; then
+        if working_url=$(is_app_healthy "${health_candidates[@]}"); then
             healthy=1
+            log "Swap: health check passed via $working_url"
             break
         fi
         sleep 3
@@ -567,11 +652,20 @@ do_swap() {
     if (( healthy == 0 )); then
         log "Swap: health check failed — rolling back"
         write_status "rolling_back" "$target_version" 90 "Health check failed — rolling back"
+
+        # Capture the failed container's logs so the user can see WHY it failed
+        log_to_build ""
+        log_to_build "=== HEALTH CHECK FAILED — capturing failed container logs ==="
+        log_to_build "Tried URLs: ${health_candidates[*]}"
+        "$RUNTIME" logs --tail=100 "$CONTAINER_NAME" >>"$BUILD_LOG" 2>&1 || \
+            log_to_build "(no container logs available)"
+
         "$RUNTIME" stop -t 10 "$CONTAINER_NAME" >/dev/null 2>&1 || true
         "$RUNTIME" rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
         "$RUNTIME" rename "$previous_name" "$CONTAINER_NAME" >/dev/null 2>&1 || true
         "$RUNTIME" start "$CONTAINER_NAME" >/dev/null 2>&1 || true
-        write_status "failed" "$target_version" 100 "Rolled back after health failure" "New container did not respond at $HEALTH_URL within ${HEALTH_TIMEOUT}s"
+        local tried="${health_candidates[*]}"
+        write_status "failed" "$target_version" 100 "Rolled back after health failure" "New container did not respond at any of: ${tried} within ${HEALTH_TIMEOUT}s. See build.log for the new container's startup log."
         return 1
     fi
 
