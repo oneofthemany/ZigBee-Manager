@@ -14,6 +14,7 @@ Routes are split into:
   modules/automation_api.py - Automation CRUD (already existed)
 """
 import uvicorn
+import warnings
 import subprocess
 import json
 import yaml
@@ -45,7 +46,17 @@ import datetime as _dt
 
 _CRASH_FILE = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "data", "last_crash.json")
 
-
+# zha-quirks (zha-device-handlers) still passes deprecated kwargs to
+# zigpy 1.1's ZCLCommandDef and uses the deprecated enum_factory helper.
+# Until upstream catches up, mute the noise so real warnings stay visible.
+warnings.filterwarnings(
+    "ignore",
+    message=r"Command .* has an incorrect direction.*",
+)
+warnings.filterwarnings(
+    "ignore",
+    message=r"enum_factory is internal to zigpy and deprecated.*",
+)
 def _zmm_record_crash(exc_type, exc_value, tb):
     try:
         _os.makedirs(_os.path.dirname(_CRASH_FILE), exist_ok=True)

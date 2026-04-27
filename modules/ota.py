@@ -33,6 +33,11 @@ class OTAManager:
         self._update_tasks: Dict[str, asyncio.Task] = {}
         self._update_progress: Dict[str, Dict[str, Any]] = {}
 
+        # Background OTA scan state — must exist from construction so stop()
+        # is safe even if start_background_checks() / start_update() never ran.
+        self._background_task: Optional[asyncio.Task] = None
+        self._check_interval = 6 * 3600  # 6 hours
+
         # Ensure local OTA directory exists
         os.makedirs(OTA_DIR, exist_ok=True)
 
@@ -176,9 +181,6 @@ class OTAManager:
             "started_at": time.time(),
         }
 
-        self._background_task: Optional[asyncio.Task] = None
-        self._check_interval = 6 * 3600  # Check every 6 hours
-
         # Launch update in background task
         self._update_tasks[ieee] = asyncio.create_task(
             self._run_update(ieee, zigpy_dev, image_meta, force)
@@ -257,11 +259,13 @@ class OTAManager:
         self._background_task = asyncio.create_task(self._background_check_loop())
         logger.info(f"OTA background checks started (interval: {self._check_interval}s)")
 
+
     def stop_background_checks(self):
         """Stop periodic background OTA checks."""
-        if self._background_task:
-            self._background_task.cancel()
-            self._background_task = None
+        task = getattr(self, "_background_task", None)
+        if task and not task.done():
+            task.cancel()
+        self._background_task = None
 
     async def _background_check_loop(self):
         """Periodically check all devices for firmware updates."""
