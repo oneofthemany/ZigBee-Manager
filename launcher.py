@@ -237,6 +237,20 @@ def main():
             _log("Clean shutdown — launcher exiting")
             return 0
 
+        # Negative exit codes mean main.py was killed by a signal.
+        # SIGTERM (-15) and SIGINT (-2) are POLITE shutdown requests:
+        #   - `podman stop` sends SIGTERM (this is what an upgrade swap does)
+        #   - Ctrl+C sends SIGINT
+        # Either way, main.py didn't crash — someone asked it to leave.
+        # Don't trigger recovery; just exit cleanly so the container stops.
+        # SIGKILL (-9) is intentionally NOT caught here — that IS recovery-worthy
+        # because it usually means OOM or a forced kill we should investigate.
+        if code in (-15, -2):
+            sig_name = "SIGTERM" if code == -15 else "SIGINT"
+            _log(f"main.py terminated by {sig_name} after {elapsed:.1f}s "
+                 f"(graceful shutdown request) — launcher exiting")
+            return 0
+
         if elapsed >= HEALTHY_SECONDS:
             # Ran healthy then died — just restart, keep it simple
             _log(f"Runtime crash (lived {elapsed:.1f}s) — restart in {RESTART_BACKOFF}s")
