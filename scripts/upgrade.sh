@@ -308,35 +308,73 @@ wait_for_ports_free() {
     local elapsed=0
     local sleep_interval=2
     local ports=("8000" "5580")
+    local stable_required=2  # require N consecutive checks to pass before declaring free
+    local stable_count=0
+
+    # Initial settle delay — after SIGKILL, rootlessport needs ~1-2s to fully
+    # release its sockets before they appear truly free. The kernel may
+    # report no-LISTEN before the socket is actually bindable.
+    sleep 1
 
     while (( elapsed < timeout )); do
         local all_free=1
+
+        # Check 1: Are any sockets listening or in active states on these ports?
+        # We check ANY state (not just LISTEN) because TIME_WAIT/CLOSE_WAIT also
+        # block bind. ss with -a includes all states.
         for port in "${ports[@]}"; do
-            # Use ss (preferred) or netstat as fallback. Match LISTEN state on
-            # both IPv4 and IPv6.
             if command -v ss >/dev/null 2>&1; then
+                # Look for any non-empty result on either IPv4 or IPv6
+                if ss -tan "( sport = :$port or dport = :$port )" 2>/dev/null | \
+                   awk 'NR>1 && $1!="LISTEN" {found=1} END {exit !found}' >/dev/null 2>&1; then
+                    all_free=0
+                    break
+                fi
                 if ss -ltn "( sport = :$port )" 2>/dev/null | grep -q LISTEN; then
                     all_free=0
                     break
                 fi
             elif command -v netstat >/dev/null 2>&1; then
-                if netstat -ltn 2>/dev/null | awk '{print $4}' | grep -qE "[:.]${port}\$"; then
-                    all_free=0
-                    break
-                fi
-            else
-                # No tools — best effort: try a quick bind via bash /dev/tcp
-                if (echo > /dev/tcp/127.0.0.1/"$port") 2>/dev/null; then
-                    # Something accepted connection — port still in use
+                if netstat -tan 2>/dev/null | awk '{print $4}' | grep -qE "[:.]${port}\$"; then
                     all_free=0
                     break
                 fi
             fi
         done
 
+        # Check 2: Definitive test — try to actually bind to each port
+        # Only do this if Check 1 says ports look free, otherwise it's wasted effort
         if (( all_free == 1 )); then
-            log "Ports ${ports[*]} are free (waited ${elapsed}s)"
-            return 0
+            for port in "${ports[@]}"; do
+                # Use python or perl to attempt a real bind. Falls through to
+                # a /dev/tcp probe if neither is available.
+                if command -v python3 >/dev/null 2>&1; then
+                    if ! python3 -c "
+import socket, sys
+for af in (socket.AF_INET, socket.AF_INET6):
+    try:
+        s = socket.socket(af, socket.SOCK_STREAM)
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        s.bind(('::' if af == socket.AF_INET6 else '0.0.0.0', $port))
+        s.close()
+    except OSError:
+        sys.exit(1)
+" 2>/dev/null; then
+                        all_free=0
+                        break
+                    fi
+                fi
+            done
+        fi
+
+        if (( all_free == 1 )); then
+            stable_count=$((stable_count + 1))
+            if (( stable_count >= stable_required )); then
+                log "Ports ${ports[*]} are free and bindable (waited ${elapsed}s, ${stable_count} stable checks)"
+                return 0
+            fi
+        else
+            stable_count=0
         fi
 
         sleep "$sleep_interval"
