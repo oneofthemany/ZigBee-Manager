@@ -478,7 +478,7 @@ function waitForHealth() {
     const iv = setInterval(async () => {
         attempts++;
         try {
-            const r = await fetch('/api/status', { cache: 'no-store' });
+            const r = await fetch('/api/system/health', { cache: 'no-store' });
             if (r.ok) {
                 clearInterval(iv);
                 setTimeout(() => location.reload(), 1500);

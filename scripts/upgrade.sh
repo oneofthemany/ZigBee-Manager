@@ -18,8 +18,8 @@ set -u  # NOTE: not -e; we want to catch errors and report them cleanly.
 set -o pipefail
 
 # ── CONFIG ───────────────────────────────────────────────────────────────────
-DATA_DIR="${ZMM_DATA_DIR:-$HOME/.zigbee-matter-manager}"
-APP_DIR="${ZMM_APP_DIR:-$HOME/zigbee-matter-manager}"
+DATA_DIR="${ZMM_DATA_DIR:-/opt/.zigbee-matter-manager}"
+APP_DIR="${ZMM_APP_DIR:-/opt/zigbee-matter-manager}"
 IMAGE_NAME="${ZMM_IMAGE_NAME:-zigbee-matter-manager}"
 CONTAINER_NAME="${ZMM_CONTAINER_NAME:-zigbee-matter-manager}"
 REPO_URL="${ZMM_REPO_URL:-https://github.com/oneofthemany/ZigBee-Matter-Manager.git}"
@@ -203,8 +203,8 @@ detect_arch() {
 #
 # We build a list of candidate URLs to try, in priority order:
 #   1. $ZMM_HEALTH_URL (if set explicitly — overrides everything)
-#   2. https://127.0.0.1:${port}/api/status   (if web.ssl.enabled is true)
-#   3. http://127.0.0.1:${port}/api/status    (always — fallback)
+#   2. https://127.0.0.1:${port}/api/system/health   (if web.ssl.enabled is true)
+#   3. http://127.0.0.1:${port}/api/system/health    (fallback for non-SSL setups)
 #
 # is_app_healthy() returns 0 if ANY of the candidates returns 200.
 detect_health_urls() {
@@ -222,7 +222,12 @@ detect_health_urls() {
     #   web:
     #     port: 8000
     #     ssl:
-    #       enabled: true
+    #       enabled: true            (or "enabled", "yes", etc.)
+    #       certfile: ./...          (or cert_file: with underscore)
+    #       keyfile: ./...           (or key_file: with underscore)
+    #
+    # Accept both naming conventions because real configs use either.
+    # Treat "enabled" as truthy unless the value is explicitly falsy.
     if [[ -f "$config" ]]; then
         # Extract port (anywhere under "web:" stanza). Keep simple — first hit wins.
         local p
@@ -242,22 +247,23 @@ detect_health_urls() {
             in_web && /^  [a-zA-Z]/ { in_ssl=0 }
             in_web && in_ssl && /^    enabled:/ { print $2; exit }
         ' "$config" 2>/dev/null | tr -d '"' | tr -d "'" | tr '[:upper:]' '[:lower:]')
-        [[ "$s" == "true" || "$s" == "yes" ]] && ssl_enabled="true"
+        # Truthy unless explicitly falsy. "enabled" itself is truthy.
+        case "$s" in
+            ""|false|no|0|off|disabled|none|null)
+                ssl_enabled="false"
+                ;;
+            *)
+                ssl_enabled="true"
+                ;;
+        esac
     fi
 
-    # Output candidate URLs, one per line, in priority order
-    # Try multiple paths to be resilient across versions:
-    #   /api/status         — canonical, present in 1.3.3+
-    #   /api/system/health  — older fallback (always present)
-    local paths=("/api/status" "/api/system/health")
+    # Output candidate URLs, one per line, in priority order.
+    # We only check /api/system/health — the canonical health endpoint.
     if [[ "$ssl_enabled" == "true" ]]; then
-        for p in "${paths[@]}"; do
-            echo "https://127.0.0.1:${port}${p}"
-        done
+        echo "https://127.0.0.1:${port}/api/system/health"
     fi
-    for p in "${paths[@]}"; do
-        echo "http://127.0.0.1:${port}${p}"
-    done
+    echo "http://127.0.0.1:${port}/api/system/health"
 }
 
 # Try each candidate URL once. Returns 0 if any succeeds, prints the URL that
@@ -281,8 +287,6 @@ is_app_healthy() {
 # /root/.zigbee-matter-manager/scripts/ as a fallback for older installs.
 find_run_helper() {
     for candidate in \
-        "/opt/zmm/run_container.sh" \
-        "${ZMM_SCRIPTS_DIR:-}/run_container.sh" \
         "${DATA_DIR}/scripts/run_container.sh" \
         "${APP_DIR}/scripts/run_container.sh"; do
         if [[ -n "$candidate" && -f "$candidate" ]]; then
@@ -606,12 +610,22 @@ do_swap() {
     write_status "swapping" "$target_version" 55 "Starting new container"
     log "Swap: starting new container from $new_tag via $run_helper"
 
+    log_to_build ""
+    log_to_build "=== Starting new container ==="
+    log_to_build "Image: $new_tag"
+    log_to_build "Helper: $run_helper"
+    log_to_build ""
+
+    # Capture run_container.sh output to BOTH watcher log AND build log so the
+    # user sees errors (USB device missing, port binding, etc.) in the UI.
     if ! RUNTIME="$RUNTIME" \
          IMAGE_TAG="$new_tag" \
          CONTAINER_NAME="$CONTAINER_NAME" \
          DATA_DIR="$DATA_DIR" \
-         bash "$run_helper" >>"$WATCHER_LOG" 2>&1
+         bash "$run_helper" 2>&1 | tee -a "$BUILD_LOG" >>"$WATCHER_LOG"
     then
+        # Note: pipefail must be set for the above to work correctly.
+        # `set -o pipefail` is at the top of this script.
         log "Swap: new container failed to start — rolling back"
 
         # Capture whatever logs the failed container produced before rolling back

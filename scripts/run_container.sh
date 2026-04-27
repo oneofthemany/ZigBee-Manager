@@ -92,6 +92,7 @@ fi
 # Build the run arg array — MUST match build.sh run_container
 run_args=(
     --detach
+    --format docker
     --name "$CONTAINER_NAME"
     --network=slirp4netns
     --security-opt label=disable
