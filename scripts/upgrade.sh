@@ -468,10 +468,10 @@ do_build() {
 
     log_to_build ""
     log_to_build "Building image with $build_jobs parallel jobs..."
-    log_to_build "This typically takes 15-25 minutes on ARM devices."
+    log_to_build "This typically takes 1-25 minutes on ARM devices."
     log_to_build ""
 
-    write_status "building" "$target_version" 20 "Compiling image (~15-25min)" "" "$started_at"
+    write_status "building" "$target_version" 20 "Compiling image (~1-25min - heavily dependent on the host device)" "" "$started_at"
 
     # Run the build
     if ! "$RUNTIME" build \
