@@ -278,7 +278,7 @@ def register_system_routes(app: FastAPI, get_zigbee_service, get_mqtt_service, g
 
     @app.post("/api/ssl/toggle")
     async def toggle_ssl(data: dict):
-        """Enable or disable HTTPS. Generates cert if needed."""
+        """Enable or disable HTTPS. Generates cert if missing."""
         import subprocess
         enable = data.get('enabled', False)
         try:
@@ -288,21 +288,32 @@ def register_system_routes(app: FastAPI, get_zigbee_service, get_mqtt_service, g
             cfg.setdefault('web', {}).setdefault('ssl', {})
             cfg['web']['ssl']['enabled'] = enable
 
-            cert = cfg['web']['ssl'].get('cert_file', 'certs/cert.pem')
-            key = cfg['web']['ssl'].get('key_file', 'certs/key.pem')
+            # Match main.py's defaults exactly — both use cert_file/key_file
+            # with underscores and ./data/certs/ as the base path.
+            cert = cfg['web']['ssl'].get('cert_file', './data/certs/cert.pem')
+            key  = cfg['web']['ssl'].get('key_file',  './data/certs/key.pem')
 
             if enable:
-                os.makedirs('certs', exist_ok=True)
+                cert_dir = os.path.dirname(cert)
+                os.makedirs(cert_dir, exist_ok=True)
+
                 if not (os.path.exists(cert) and os.path.exists(key)):
+                    logger.warning(
+                        f"SSL enabled but certs missing — generating new self-signed pair at {cert}"
+                    )
                     result = subprocess.run([
                         'openssl', 'req', '-x509', '-newkey', 'rsa:2048',
                         '-keyout', key, '-out', cert,
                         '-days', '3650', '-nodes',
-                        '-subj', '/CN=zigbee-manager'
+                        '-subj', '/CN=zigbee-manager',
+                        # Add SAN so browsers don't complain about IP mismatch
+                        '-addext', 'subjectAltName=DNS:localhost,DNS:zigbee-manager,IP:127.0.0.1',
                     ], capture_output=True, text=True)
                     if result.returncode != 0:
                         return {"success": False, "error": result.stderr}
-                    logger.info("Self-signed certificate generated")
+                    logger.info(f"Self-signed certificate generated at {cert}")
+                else:
+                    logger.info(f"SSL enabled — using existing certs at {cert}")
 
             with open('./config/config.yaml', 'w') as f:
                 yaml.dump(cfg, f, default_flow_style=False)
