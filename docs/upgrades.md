@@ -56,7 +56,7 @@ The upgrade flow has to work under **all of**: rootless Podman + SELinux, rootle
 │  │    Fires zmm-upgrade.service oneshot on file write-close       │  │
 │  └────────────────────────────────────────────────────────────────┘  │
 │  ┌────────────────────────────────────────────────────────────────┐  │
-│  │  /opt/zmm/upgrade.sh (host orchestrator, SELinux usr_t)        │  │
+│  │  /opt/zmm/scripts/upgrade.sh (host orchestrator                │  │
 │  │    - Atomic trigger consume (read → delete → parse)            │  │
 │  │    - Stale lock detection (PID alive + age check)              │  │
 │  │    - Action dispatch: build / swap / rollback / cancel / gc    │  │
@@ -64,7 +64,7 @@ The upgrade flow has to work under **all of**: rootless Podman + SELinux, rootle
 │  │    - Captures failed container logs into build.log             │  │
 │  └────────────────────────────────────────────────────────────────┘  │
 │  ┌────────────────────────────────────────────────────────────────┐  │
-│  │  /opt/zmm/run_container.sh (run-args helper)                   │  │
+│  │  /opt/zmm/scripts/run_container.sh (run-args helper)           │  │
 │  │    - Replays build.sh's run_container() args with chosen tag   │  │
 │  │    - Auto-detects USB device by-id pattern matching            │  │
 │  │    - Conditional Bluetooth (/dev/hci0) inclusion               │  │
@@ -82,6 +82,7 @@ The upgrade flow has to work under **all of**: rootless Podman + SELinux, rootle
 │    Rollback     → swap names back if health fails                    │
 └──────────────────────────────────────────────────────────────────────┘
 ```
+**Note:** /opt/zmm/scripts = /opt/zigbee-matter-manager/scripts/
 
 ### Why file-based IPC instead of socket mounting
 
@@ -120,7 +121,7 @@ File-based IPC is boring, debuggable (`cat trigger.json`), works identically acr
 ### On the host
 
 ```
-/opt/zmm/                            # SELinux usr_t — systemd can execute these
+opt/zigbee-matter-manager/scripts/   # SELinux usr_t — systemd can execute these
 ├── upgrade.sh                       # orchestrator
 └── run_container.sh                 # run-args replayer
 
@@ -137,7 +138,7 @@ File-based IPC is boring, debuggable (`cat trigger.json`), works identically acr
 
 /etc/systemd/system/                 # OR ~/.config/systemd/user/
 ├── zmm-upgrade.path                 # PathChanged=... → triggers .service
-└── zmm-upgrade.service              # Type=oneshot, ExecStart=/opt/zmm/upgrade.sh
+└── zmm-upgrade.service              # Type=oneshot, ExecStart=/opt/zigbee-matter-manager/scripts/upgrade.sh
 ```
 
 ### State separation rationale
@@ -260,7 +261,7 @@ Unit=zmm-upgrade.service
 ### Consume side (bash)
 
 ```bash
-# /opt/zmm/upgrade.sh: consume_trigger()
+# /opt/zigbee-matter-manager/scripts/upgrade.sh: consume_trigger()
 consume_trigger() {
     [[ -f "$TRIGGER_FILE" ]] || return 1
 
@@ -526,12 +527,12 @@ type=AVC: avc: denied { execute } for pid=1633047 comm="(grade.sh)"
   tclass=file permissive=0
 ```
 
-The fix is to put scripts under `/opt/zmm/`, which is the FHS-standard location for add-on application packages and gets `usr_t` from the default policy. State files (lock, status, build.log) can stay in `~/.zigbee-matter-manager/` — SELinux only blocks *execution*, not read/write.
+The fix is to put scripts under `/opt/zigbee-matter-manager/scripts/`, which is the FHS-standard location for add-on application packages and gets `usr_t` from the default policy. State files (lock, status, build.log) can stay in `~/.zigbee-matter-manager/` — SELinux only blocks *execution*, not read/write.
 
 The `install_watcher.sh` script handles all of this:
 
 ```bash
-SCRIPTS_DIR="${ZMM_SCRIPTS_DIR:-/opt/zmm}"
+SCRIPTS_DIR="${ZMM_SCRIPTS_DIR:-/opt/zigbee-matter-manager/scripts/}"
 
 if [[ ! -d "$SCRIPTS_DIR" ]]; then
     if [[ "$(id -u)" -eq 0 ]]; then
@@ -623,26 +624,26 @@ sudo systemctl start zmm-upgrade.path
 ### `203/EXEC: Permission denied`
 
 ```
-zmm-upgrade.service: Unable to locate executable '/opt/zmm/upgrade.sh': Permission denied
+zmm-upgrade.service: Unable to locate executable '/opt/zigbee-matter-manager/scripts/upgrade.sh': Permission denied
 ```
 
 **Cause:** SELinux denying execute, OR the file is missing the executable bit.
 
 **Diagnose:**
 ```bash
-ls -laZ /opt/zmm/upgrade.sh
+ls -laZ /opt/zigbee-matter-manager/scripts/upgrade.sh
 # Check 1: -rwxr-xr-x (executable bit)
 # Check 2: system_u:object_r:usr_t:s0 (NOT *_home_t)
 
 ausearch -m AVC -ts recent | grep upgrade.sh
 # If you see "scontext=...:init_t ... tcontext=...:admin_home_t ... denied { execute }"
-# → SELinux issue. Move scripts to /opt/zmm/ and run install_watcher.sh.
+# → SELinux issue. Move scripts to /opt/zigbee-matter-manager/scripts/ and run install_watcher.sh.
 ```
 
 **Recovery:**
 ```bash
-sudo chmod 755 /opt/zmm/*.sh
-sudo restorecon -Rv /opt/zmm/
+sudo chmod 755 /opt/zigbee-matter-manager/scripts/*.sh
+sudo restorecon -Rv /opt/zigbee-matter-manager/scripts/
 ```
 
 ### `bind: address already in use`
@@ -778,7 +779,7 @@ podman images | grep zigbee
 podman ps -a | grep zigbee
 
 # Test that upgrade.sh runs at all from systemd's perspective
-sudo /opt/zmm/upgrade.sh
+sudo /opt/zigbee-matter-manager/scripts/upgrade.sh
 # Should print "[timestamp] Using container runtime: podman" and exit
 ```
 
