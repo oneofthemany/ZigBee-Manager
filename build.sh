@@ -437,8 +437,9 @@ ENV ZMM_APP_DIR=/app
 
 EXPOSE 8000 5580
 
-HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
-    CMD curl -f http://localhost:${ZMM_PORT:-8000}/api/status || exit 1
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+    CMD curl -fsk https://localhost:${ZMM_PORT:-8000}/api/system/health || \
+        curl -fs  http://localhost:${ZMM_PORT:-8000}/api/system/health  || exit 1
 
 CMD ["python", "launcher.py"]
 DOCKERFILE
