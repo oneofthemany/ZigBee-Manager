@@ -12,7 +12,8 @@
  */
 
 import { state } from '../state.js';
-import { addLogEntry, getTimestamp } from '../logging.js';
+import { addLogEntry } from '../logging.js';
+import { getTimestamp } from '../utils.js';
 
 // ---------------------------------------------------------------------------
 // Static rendering — initial HTML before live data arrives
