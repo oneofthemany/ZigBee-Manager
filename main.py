@@ -48,7 +48,10 @@ _CRASH_FILE = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "data"
 
 # zha-quirks (zha-device-handlers) still passes deprecated kwargs to
 # zigpy 1.1's ZCLCommandDef and uses the deprecated enum_factory helper.
-# Until upstream catches up, mute the noise so real warnings stay visible.
+# These come through TWO channels: warnings.warn() AND a plain logger call,
+# so we have to silence both to actually clean up the boot log.
+
+# Channel 1: DeprecationWarning via warnings.warn — silenced for completeness.
 warnings.filterwarnings(
     "ignore",
     message=r"Command .* has an incorrect direction.*",
@@ -57,6 +60,28 @@ warnings.filterwarnings(
     "ignore",
     message=r"enum_factory is internal to zigpy and deprecated.*",
 )
+
+# Channel 2: direct logger calls (zigpy.zcl LOGGER.warning + zigpy.types LOGGER.error).
+# This is the one that actually shows up in your boot log.
+class _ZigpyDeprecationFilter(logging.Filter):
+    """Drop the upstream-quirks deprecation chatter that we cannot fix."""
+    _NEEDLES = (
+        "has an incorrect direction, please remove the `direction` kwarg",
+        "enum_factory is internal to zigpy and deprecated",
+    )
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        msg = record.getMessage()
+        return not any(needle in msg for needle in self._NEEDLES)
+
+_zigpy_dep_filter = _ZigpyDeprecationFilter()
+# Attach to the specific loggers that emit these messages.
+logging.getLogger("zigpy.zcl").addFilter(_zigpy_dep_filter)
+logging.getLogger("zigpy.types").addFilter(_zigpy_dep_filter)
+# Also attach to the root logger so the messages get dropped before reaching
+# any handler that uvicorn or your own setup configures later.
+logging.getLogger().addFilter(_zigpy_dep_filter)
+
 def _zmm_record_crash(exc_type, exc_value, tb):
     try:
         _os.makedirs(_os.path.dirname(_CRASH_FILE), exist_ok=True)
