@@ -278,47 +278,99 @@ def register_system_routes(app: FastAPI, get_zigbee_service, get_mqtt_service, g
 
     @app.post("/api/ssl/toggle")
     async def toggle_ssl(data: dict):
-        """Enable or disable HTTPS. Generates cert if missing."""
+        """
+        Enable or disable HTTPS in config.yaml.
+
+        Cert handling:
+        - If SSL is being ENABLED and certs already exist → use them as-is.
+          NEVER regenerate. Regenerating breaks every browser that already
+          trusts the existing cert and is the leading cause of "this site
+          is unsafe" warnings after a config tweak.
+        - If SSL is being ENABLED and certs DO NOT exist → generate a fresh
+          self-signed pair with sensible SAN entries (localhost, 127.0.0.1,
+          configured hostname).
+        - If SSL is being DISABLED → never touch the cert files. They stay
+          on disk for reuse if SSL is re-enabled later.
+
+        Note: changes only take effect after a container/server restart;
+        uvicorn does not support hot cert reload.
+        """
         import subprocess
+        import socket as _socket
+
         enable = data.get('enabled', False)
         try:
             with open('./config/config.yaml', 'r') as f:
-                cfg = yaml.safe_load(f)
+                cfg = yaml.safe_load(f) or {}
 
             cfg.setdefault('web', {}).setdefault('ssl', {})
             cfg['web']['ssl']['enabled'] = enable
 
-            # Match main.py's defaults exactly — both use cert_file/key_file
-            # with underscores and ./data/certs/ as the base path.
+            # Use the SAME defaults main.py uses so paths agree across the
+            # codebase. Both files MUST resolve cert_file/key_file to the
+            # same location or trust between them breaks.
             cert = cfg['web']['ssl'].get('cert_file', './data/certs/cert.pem')
             key  = cfg['web']['ssl'].get('key_file',  './data/certs/key.pem')
 
+            cert_action = "unchanged"  # for response payload + logs
+
             if enable:
-                cert_dir = os.path.dirname(cert)
+                # Make sure the directory containing the cert exists.
+                # Use os.path.dirname so we honour whatever path the user
+                # configured — never hard-code 'certs/'.
+                cert_dir = os.path.dirname(cert) or '.'
                 os.makedirs(cert_dir, exist_ok=True)
 
-                if not (os.path.exists(cert) and os.path.exists(key)):
+                certs_present = os.path.isfile(cert) and os.path.isfile(key)
+                if certs_present:
+                    # Existing certs — preserve them. The user may have
+                    # already set up browser trust against this cert, or
+                    # imported a CA-signed cert manually.
+                    logger.info(f"SSL enabled — preserving existing certs at {cert}")
+                    cert_action = "preserved"
+                else:
+                    # No certs found — generate a self-signed pair with
+                    # sensible SAN entries so browsers don't immediately
+                    # complain about IP/name mismatches.
+                    hostname = _socket.gethostname() or 'zigbee-manager'
+                    san = f"subjectAltName=DNS:localhost,DNS:{hostname},IP:127.0.0.1"
+
                     logger.warning(
-                        f"SSL enabled but certs missing — generating new self-signed pair at {cert}"
+                        f"SSL enabled but certs missing — generating self-signed "
+                        f"cert at {cert} (CN={hostname}, SAN={san})"
                     )
                     result = subprocess.run([
                         'openssl', 'req', '-x509', '-newkey', 'rsa:2048',
                         '-keyout', key, '-out', cert,
                         '-days', '3650', '-nodes',
-                        '-subj', '/CN=zigbee-manager',
-                        # Add SAN so browsers don't complain about IP mismatch
-                        '-addext', 'subjectAltName=DNS:localhost,DNS:zigbee-manager,IP:127.0.0.1',
+                        '-subj', f'/CN={hostname}',
+                        '-addext', san,
                     ], capture_output=True, text=True)
                     if result.returncode != 0:
+                        logger.error(f"openssl failed: {result.stderr}")
                         return {"success": False, "error": result.stderr}
-                    logger.info(f"Self-signed certificate generated at {cert}")
-                else:
-                    logger.info(f"SSL enabled — using existing certs at {cert}")
+                    cert_action = "generated"
+
+                    # Lock down the private key — openssl writes 0644 by default
+                    try:
+                        os.chmod(key, 0o600)
+                    except Exception as e:
+                        logger.warning(f"Could not chmod key file: {e}")
 
             with open('./config/config.yaml', 'w') as f:
                 yaml.dump(cfg, f, default_flow_style=False)
 
-            return {"success": True, "enabled": enable}
+            return {
+                "success": True,
+                "enabled": enable,
+                "cert_action": cert_action,
+                "cert_path": cert if enable else None,
+                "restart_required": True,
+                "message": (
+                    "SSL config saved. Restart the application for changes to "
+                    "take effect."
+                ),
+            }
         except Exception as e:
             logger.error(f"SSL toggle failed: {e}")
             return {"success": False, "error": str(e)}

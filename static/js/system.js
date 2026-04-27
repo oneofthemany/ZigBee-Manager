@@ -64,11 +64,33 @@ export async function toggleSSL(enabled) {
         body: JSON.stringify({ enabled })
     });
     const d = await r.json();
+
     if (!d.success) {
         alert('SSL toggle failed: ' + d.error);
         // Revert toggle
         document.getElementById('sslToggle').checked = !enabled;
+        return;
+    }
+
+    // Tell the user what happened, with extra detail when a cert was generated.
+    if (enabled) {
+        if (d.cert_action === 'generated') {
+            alert(
+                `HTTPS enabled. A new self-signed certificate was generated at ` +
+                `${d.cert_path}.\n\n` +
+                `You will need to re-trust it in your browser the next time you ` +
+                `connect.\n\n` +
+                `${d.message || 'Restart the service to apply.'}`
+            );
+        } else if (d.cert_action === 'preserved') {
+            alert(
+                `HTTPS enabled using existing certificate at ${d.cert_path}.\n\n` +
+                `${d.message || 'Restart the service to apply.'}`
+            );
+        } else {
+            alert(d.message || 'HTTPS enabled. Restart the service to apply.');
+        }
     } else {
-        alert(`HTTPS ${enabled ? 'enabled' : 'disabled'}. Restart the service to apply.`);
+        alert(d.message || 'HTTPS disabled. Restart the service to apply.');
     }
 }
