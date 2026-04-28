@@ -153,21 +153,58 @@ class TelemetryCollector:
         # Store current as the baseline for next delta
         self._last_packet_snapshot = current
 
+    # Per-device dedup state. Keyed by (ieee, attribute), value is
+    # (last_numeric_or_str_value, last_ts_epoch). Trimmed lazily.
+    _DEDUP_WINDOW_SECONDS = 1.0  # collapse writes for same (ieee,attr,value)
+    # arriving within this many seconds
+
     def record_state_change(self, ieee: str, changed_attrs: Dict[str, Any]):
         """
-        Called from core.py when a device state changes.
-        Records individual attribute changes to DuckDB.
+        Persist attribute changes to DuckDB.
 
-        Only records attributes that are interesting for history —
-        skips metadata fields.
+        Includes a short-window dedup: if the same (ieee, attribute, value)
+        has already been written within _DEDUP_WINDOW_SECONDS, the new write
+        is dropped. This collapses the duplicate writes that arise when a
+        poll's read_attributes() triggers both the zigpy attribute_updated
+        callback path and the handler-return path within microseconds.
+        Out-of-window changes (real new values, or repeats > 1s apart) are
+        always written.
         """
-        skip = {"last_seen", "available", "manufacturer", "model", "power_source"}
+        if not changed_attrs:
+            return
+
+        # Lazy state init
+        if not hasattr(self, '_dedup_state'):
+            self._dedup_state: Dict[tuple, tuple] = {}
+
+        skip = {"manufacturer", "model", "power_source", "last_seen", "available"}
+        now = time.time()
 
         try:
             from modules.telemetry_db import write_device_state
             for attr, value in changed_attrs.items():
-                if attr in skip or attr.endswith("_raw") or attr.startswith("attr_"):
+                if attr in skip:
                     continue
+                if attr.endswith('_raw') or attr.startswith('attr_'):
+                    continue
+
+                key = (ieee, attr)
+                prev = self._dedup_state.get(key)
+                if prev is not None:
+                    prev_value, prev_ts = prev
+                    if prev_value == value and (now - prev_ts) < self._DEDUP_WINDOW_SECONDS:
+                        # Same value, same device, same attr, within window -> skip
+                        continue
+
                 write_device_state(ieee, attr, value)
+                self._dedup_state[key] = (value, now)
+
+            # Periodically prune cold entries to bound memory growth
+            if len(self._dedup_state) > 5000:
+                cutoff = now - 3600  # entries idle > 1h evicted
+                self._dedup_state = {
+                    k: v for k, v in self._dedup_state.items() if v[1] >= cutoff
+                }
+
         except Exception as e:
-            logger.debug(f"Device state recording error: {e}")
+            logger.debug(f"[{ieee}] record_state_change error: {e}")
