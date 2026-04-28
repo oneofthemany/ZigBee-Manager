@@ -879,40 +879,43 @@ class ZigManDevice:
             raise
 
     async def poll(self) -> Dict[str, Any]:
-        """Poll all handlers."""
+        """
+        Poll all handlers and route the results through update_state so the
+        in-memory state, the websocket broadcast, the state cache and the
+        telemetry DB are all kept in sync
+        """
         logger.info(f"[{self.ieee}] Polling device...")
         results = {}
         polled = set()
         success = True
 
         for h in self.handlers.values():
-            if h in polled: continue
+            if h in polled:
+                continue
             polled.add(h)
             try:
                 res = await self._cmd_wrapper.execute(h.poll)
-                if res: results.update(res)
-            except:
+                if res:
+                    results.update(res)
+            except Exception as e:
                 success = False
+                logger.debug(f"[{self.ieee}] Handler poll failed: {e}")
 
         if results:
-            try:
-                tc = getattr(self.service, 'telemetry_collector', None)
-                if tc:
-                    # Filter the same way as before, then hand to telemetry collector
-                    # which applies the per-(ieee, attr, value) dedup window.
-                    poll_data = {}
-                    for attr, value in results.items():
-                        if attr.endswith('_raw') or attr.startswith('attr_'):
-                            continue
-                        if attr in ('manufacturer', 'model', 'power_source',
-                                    'last_seen', 'available'):
-                            continue
-                        poll_data[attr] = value
-                    if poll_data:
-                        tc.record_state_change(self.ieee, poll_data)
-                        logger.info(f"[{self.ieee}] Poll telemetry: {len(poll_data)} attrs queued for DuckDB")
-            except Exception as e:
-                logger.debug(f"[{self.ieee}] Poll telemetry write failed: {e}")
+            poll_data = {
+                k: v for k, v in results.items()
+                if not (k.endswith('_raw') or k.startswith('attr_'))
+            }
+            if poll_data:
+                try:
+                    self.update_state(poll_data)
+                    logger.info(
+                        f"[{self.ieee}] Poll applied: {len(poll_data)} attrs"
+                    )
+                except Exception as e:
+                    logger.warning(f"[{self.ieee}] Poll state update failed: {e}")
+
+        return results if success else {}
 
     def get_control_commands(self) -> List[Dict[str, Any]]:
         """Get available control commands."""
