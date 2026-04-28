@@ -104,7 +104,7 @@ import {
 import {
     startRetryInterview,
     deleteAndRepair,
-} from './modal/settings.js';
+} from './modal/device-settings.js';
 
 // ============================================================================
 // EXPOSE FUNCTIONS GLOBALLY

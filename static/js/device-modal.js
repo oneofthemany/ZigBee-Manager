@@ -23,7 +23,7 @@ import {
     applyInterviewStatusUpdate,
     startRetryInterview,
     deleteAndRepair,
-} from './modal/settings.js';
+} from './modal/device-settings.js';
 
 // Re-export these functions so main.js (and others) can still import them from here
 export { renderOverviewTab, renderControlTab, renderBindingTab, renderCapsTab, renderAutomationTab, renderMappingsTab, saveConfig, handleOTAProgress, renderSettingsTab, applyInterviewStatusUpdate };
