@@ -98,6 +98,12 @@ class ZigManDevice:
         # Command wrapper for resilient operations
         self._cmd_wrapper = None  # Will be initialized after device is ready
 
+        # Poll-context suppression: while True, attribute_updated callbacks
+        # from zigpy (triggered as side effects of read_attributes during
+        # poll) skip update_state, so the authoritative handler-returned
+        # dict in poll() is the only source of state for that cycle.
+        self._poll_in_progress = False
+
         # Check if quirk is applied
         if hasattr(zigpy_dev, 'quirk_class'):
             self.quirk_name = zigpy_dev.quirk_class.__name__
@@ -438,8 +444,24 @@ class ZigManDevice:
             self._available = True
             self.service.handle_device_update(self, {})
 
-    def update_state(self, data: Dict[str, Any], qos: Optional[int] = None, endpoint_id: Optional[int] = None):
-        """Update device state and notify the service."""
+    def update_state(self, data: Dict[str, Any], qos: Optional[int] = None,
+                     endpoint_id: Optional[int] = None,
+                     _from_poll_return: bool = False):
+        """Update device state and notify the service.
+
+        _from_poll_return: set True when called from poll()'s authoritative
+        results dict. This bypasses the poll-suppression flag so the merged
+        snapshot always lands. Per-attribute callbacks from zigpy that fire
+        as side-effects of read_attributes() during a poll are silenced via
+        self._poll_in_progress so the same value isn't written twice.
+        """
+        # === POLL SUPPRESSION ===
+        # If a poll is currently running and this update came from a zigpy
+        # cluster-level attribute_updated callback (not from poll() itself),
+        # drop it. The poll's merged results dict will arrive imminently
+        # and is the canonical source for this cycle.
+        if self._poll_in_progress and not _from_poll_return:
+            return
 
         # === CAPABILITY-BASED FILTERING ===
         if hasattr(self, 'capabilities') and hasattr(self.capabilities, 'filter_state_update'):
@@ -884,36 +906,28 @@ class ZigManDevice:
         polled = set()
         success = True
 
-        for h in self.handlers.values():
-            if h in polled: continue
-            polled.add(h)
-            try:
-                res = await self._cmd_wrapper.execute(h.poll)
-                if res: results.update(res)
-            except:
-                success = False
+        # Suppress zigpy attribute_updated callbacks for the duration of this
+        # poll. read_attributes() triggers them as a side effect; we want only
+        # the merged results dict (returned by handlers below) to reach
+        # update_state — that gives one coherent state update per poll
+        # instead of one per attribute, and removes duplicate DuckDB rows.
+        self._poll_in_progress = True
+        try:
+            for h in self.handlers.values():
+                if h in polled:
+                    continue
+                polled.add(h)
+                try:
+                    res = await self._cmd_wrapper.execute(h.poll)
+                    if res:
+                        results.update(res)
+                except Exception:
+                    success = False
+        finally:
+            self._poll_in_progress = False
 
-        # >>> Direct telemetry write — bypass the report/debounce path <
-        # Polling is an authoritative read: every value the device returned
-        # gets a DuckDB row, regardless of whether it matches the cached
-        # state or whether handle_device_update later debounces this update.
         if results:
-            try:
-                from modules.telemetry_db import write_device_state
-                written = 0
-                for attr, value in results.items():
-                    if attr.endswith('_raw') or attr.startswith('attr_'):
-                        continue
-                    if attr in ('manufacturer', 'model', 'power_source',
-                                'last_seen', 'available'):
-                        continue
-                    write_device_state(self.ieee, attr, value)
-                    written += 1
-                logger.info(f"[{self.ieee}] Poll telemetry: {written} attrs written to DuckDB")
-            except Exception as e:
-                logger.debug(f"[{self.ieee}] Poll telemetry write failed: {e}")
-
-        if results: self.update_state(results)
+            self.update_state(results, _from_poll_return=True)
         results['__poll_success'] = success
         return results
 
