@@ -87,11 +87,28 @@ try:
 except Exception:
     _write_heating_tick = None
 
+# Per-attribute freshness query — used by the health check to detect a
+# device that's still in the snapshot but hasn't reported its temperature
+# in a while (the "frozen attribute" failure mode that last_seen can't
+# distinguish from a healthy device that's just reporting battery).
+try:
+    from modules.telemetry_db import query_device_state_history as _query_state_history
+except Exception:
+    _query_state_history = None
+
 logger = logging.getLogger("modules.heating_controller")
 
 # Hysteresis bands (°C) — prevents oscillation
 COLD_BAND = 0.5     # room is COLD if temp < target - 0.5
 HOT_BAND = 0.3      # room is HOT  if temp > target + 0.3
+
+# Per-room data freshness — if the configured external sensor hasn't reported
+# its temperature attribute in this many seconds, the room is flagged
+# critical and the user is alerted. Per-room override via room config
+# 'freshness_threshold_minutes'. 15 min default is forgiving enough for
+# Hue motion sensors (which only report on movement + periodic heartbeat)
+# but tight enough to catch an unpaired/dead sensor within one tick.
+DEFAULT_FRESHNESS_THRESHOLD_SEC = 15 * 60
 
 # Force-close offset — when shutting a TRV, set it to (current - this) so the
 # TRV's own thermostat keeps the valve closed
@@ -179,6 +196,158 @@ def _pick_temperature(state: Dict[str, Any]) -> Optional[float]:
     return None
 
 
+# ── Per-attribute freshness ────────────────────────────────────────
+# Per-tick cache of "when did this IEEE last report a temperature?" so a
+# tick that evaluates 4 rooms doesn't fire 4 separate DuckDB queries when
+# rooms share sensors, and so subsequent ticks within a short window can
+# skip the query if we just checked.
+_freshness_cache: Dict[str, Tuple[float, Optional[float]]] = {}
+_FRESHNESS_CACHE_TTL_SEC = 30.0  # well under tick interval; just a cheap dedupe
+
+
+def _last_temperature_ts(ieee: str) -> Optional[float]:
+    """
+    Return the unix timestamp of the most recent temperature report for this
+    IEEE in DuckDB, or None if no row exists or the query layer isn't loaded.
+
+    Looks at the three temperature attribute names devices commonly use,
+    matching the keys _pick_temperature considers. Returns the *most recent*
+    across all three so e.g. a thermostat reporting both `local_temperature`
+    and `temperature` is treated as fresh as long as either is recent.
+    """
+    if _query_state_history is None:
+        return None
+    cached = _freshness_cache.get(ieee)
+    now = time.time()
+    if cached and (now - cached[0]) < _FRESHNESS_CACHE_TTL_SEC:
+        return cached[1]
+
+    most_recent: Optional[float] = None
+    # Look back well beyond the threshold so a sensor reporting every 20 min
+    # isn't falsely flagged just because nothing landed in the last 15.
+    LOOKBACK_HOURS = 6
+    for attr in ("local_temperature", "current_temperature", "temperature"):
+        try:
+            rows = _query_state_history(ieee, attr, LOOKBACK_HOURS) or []
+        except Exception as e:
+            logger.debug(f"freshness query failed for {ieee} attr={attr}: {e}")
+            continue
+        if not rows:
+            continue
+        # query_device_state_history orders ASC, so the last row is newest.
+        last = rows[-1]
+        ts_raw = last.get("ts")
+        if ts_raw is None:
+            continue
+        # ts may be a datetime or float depending on backend
+        try:
+            ts_val = ts_raw.timestamp() if hasattr(ts_raw, "timestamp") else float(ts_raw)
+        except (TypeError, ValueError, AttributeError):
+            continue
+        if most_recent is None or ts_val > most_recent:
+            most_recent = ts_val
+
+    _freshness_cache[ieee] = (now, most_recent)
+    return most_recent
+
+
+def _check_room_health(room: dict, devices: Dict[str, Any],
+                       decision: "RoomDecision",
+                       sensor_present_in_devices: bool,
+                       sensor_raw: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Decide whether the data feeding this room's classification is trustworthy.
+
+    Severity:
+        ok       — every configured device is in the snapshot and reporting fresh
+        critical — any failure: device missing, no temp keys, or stale per DuckDB
+
+    Per requirements all failures are critical (no warning tier). Returns
+    {"level": str, "reasons": [str], "stale_devices": [{ieee, age_sec}]}
+    so the frontend can both badge and explain.
+    """
+    reasons: List[str] = []
+    stale: List[Dict[str, Any]] = []
+    threshold_min = _as_float(room.get("freshness_threshold_minutes"))
+    threshold_sec = float(threshold_min * 60) if threshold_min and threshold_min > 0 \
+        else float(DEFAULT_FRESHNESS_THRESHOLD_SEC)
+    now = time.time()
+
+    sensor_ieee = room.get("temperature_sensor_ieee")
+    ext_mode = room.get("external_temp_mode", "off")
+
+    # ── External sensor (if configured) ─────────────────────────────
+    if sensor_ieee and ext_mode != "off":
+        if not sensor_present_in_devices:
+            reasons.append(
+                f"Sensor {sensor_ieee} not on the network "
+                f"— check pairing"
+            )
+        elif not sensor_raw:
+            reasons.append(
+                f"Sensor {sensor_ieee} reports no temperature attributes"
+            )
+        else:
+            last_ts = _last_temperature_ts(sensor_ieee)
+            if last_ts is None:
+                reasons.append(
+                    f"Sensor {sensor_ieee} has never recorded a temperature"
+                )
+            else:
+                age = now - last_ts
+                if age > threshold_sec:
+                    age_min = int(age / 60)
+                    reasons.append(
+                        f"Sensor {sensor_ieee} last reported "
+                        f"{age_min} min ago (threshold {int(threshold_sec/60)} min)"
+                    )
+                    stale.append({"ieee": sensor_ieee, "age_sec": int(age),
+                                  "kind": "sensor"})
+
+    # ── TRVs ────────────────────────────────────────────────────────
+    for t in (room.get("trvs") or []):
+        ieee = t.get("ieee") if isinstance(t, dict) else None
+        if not ieee:
+            continue
+        dev = devices.get(ieee)
+        if dev is None:
+            reasons.append(f"TRV {ieee} not on the network")
+            continue
+        # State already extracted by caller into decision.trvs — find it
+        trv_dec = next((x for x in decision.trvs if x.get("ieee") == ieee), None)
+        if not trv_dec or not trv_dec.get("online"):
+            reasons.append(f"TRV {ieee} offline")
+            continue
+        if trv_dec.get("current_temp") is None:
+            reasons.append(f"TRV {ieee} reports no temperature")
+            continue
+        # Freshness check
+        last_ts = _last_temperature_ts(ieee)
+        if last_ts is None:
+            # No DuckDB history yet — don't flag as critical on its own;
+            # the in-memory state shows a value, and a fresh install hasn't
+            # had time to accumulate rows. Silent pass.
+            continue
+        age = now - last_ts
+        if age > threshold_sec:
+            age_min = int(age / 60)
+            reasons.append(
+                f"TRV {ieee} last reported temperature {age_min} min ago"
+            )
+            stale.append({"ieee": ieee, "age_sec": int(age), "kind": "trv"})
+
+    # ── No data source at all ───────────────────────────────────────
+    if decision.temp_source == "none":
+        reasons.append("No temperature data available — room cannot be controlled")
+
+    return {
+        "level": "critical" if reasons else "ok",
+        "reasons": reasons,
+        "stale_devices": stale,
+        "threshold_minutes": int(threshold_sec / 60),
+    }
+
+
 # ── Room state ─────────────────────────────────────────────────────
 class RoomDecision:
     """Per-tick analysis of a single room."""
@@ -186,6 +355,7 @@ class RoomDecision:
     __slots__ = (
         "room_id", "name", "target_temp", "current_temp", "temp_source",
         "status", "calling_for_heat", "trvs", "sensor_ieee", "sensor_online",
+        "health",
     )
 
     def __init__(self, room_id: str, name: str):
@@ -199,6 +369,8 @@ class RoomDecision:
         self.status: str = "unknown"     # cold | ontarget | hot | unknown
         self.calling_for_heat: bool = False
         self.trvs: List[Dict] = []
+        self.health: Dict[str, Any] = {"level": "ok", "reasons": [],
+                                       "stale_devices": [], "threshold_minutes": 15}
 
     def to_dict(self) -> Dict:
         return {
@@ -212,6 +384,7 @@ class RoomDecision:
             "status": self.status,
             "calling_for_heat": self.calling_for_heat,
             "trvs": self.trvs,
+            "health": self.health,
         }
 
 
@@ -738,6 +911,25 @@ class HeatingController:
             decision.status = "ontarget"
             decision.calling_for_heat = False
 
+        # Health check — runs after classification so it can use temp_source.
+        # Failures are logged as WARNING so they're visible in journalctl
+        # without needing the panel open.
+        try:
+            decision.health = _check_room_health(
+                room, devices, decision,
+                sensor_present_in_devices=sensor_present_in_devices,
+                sensor_raw=sensor_raw,
+            )
+            if decision.health["level"] != "ok":
+                logger.warning(
+                    f"Room '{decision.name}' health={decision.health['level']}: "
+                    + "; ".join(decision.health["reasons"])
+                )
+        except Exception as e:
+            logger.error(f"Health check failed for room {decision.name}: {e}")
+            decision.health = {"level": "ok", "reasons": [],
+                               "stale_devices": [], "threshold_minutes": 15}
+
         # ── Diagnostic log line ───────────────────────────────────────
         # Surfaces every input that fed the classification, so a surprising
         # call-for-heat can be traced to the exact value that caused it.
@@ -765,7 +957,8 @@ class HeatingController:
                 f"current={decision.current_temp} "
                 f"source={decision.temp_source} "
                 f"status={decision.status} "
-                f"calling={decision.calling_for_heat} | "
+                f"calling={decision.calling_for_heat} "
+                f"health={decision.health['level']} | "
                 f"{sensor_dbg} | trvs=[{', '.join(trv_dbg) or 'none'}]"
             )
         except Exception as e:  # never let diagnostics break a tick

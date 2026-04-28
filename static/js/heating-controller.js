@@ -24,6 +24,11 @@ let controllerSensors = [];
 let workingCircuits = [];
 let controllerStatusTimer = null;
 
+// Tracks last known health level per "circuit_id:room_id" across polls,
+// so we can fire toasts only on transitions (not every 30s while a
+// problem persists). Populated on first successful state load.
+const lastRoomHealth = new Map();
+
 const STATUS_REFRESH_MS = 30_000;
 
 // ============================================================================
@@ -50,9 +55,9 @@ export async function loadControllerStatus(targetSelector = '#heatingControllerP
             return;
         }
         controllerState = json.state;
-        container.innerHTML = renderControllerPanel(controllerState);
-        bindControllerPanel();
-        controllerState = json.state;
+        // Detect health transitions BEFORE re-rendering, so toasts fire
+        // on the actual change rather than on every poll while degraded.
+        detectHealthTransitions(controllerState);
         container.innerHTML = renderControllerPanel(controllerState);
         bindControllerPanel();
         // Phase 5: populate per-room pre-heat hints asynchronously so the
@@ -62,6 +67,81 @@ export async function loadControllerStatus(targetSelector = '#heatingControllerP
         console.warn('Controller status fetch failed:', err);
         container.innerHTML = `<div class="alert alert-warning small">Controller status unavailable</div>`;
     }
+}
+
+
+// ============================================================================
+// HEALTH: transition detection + toasts
+// ============================================================================
+//
+// Toasts fire on state CHANGE only:
+//   • ok       → critical : red toast with reasons
+//   • critical → ok       : green "recovered" toast
+//
+// Held-state ticks (critical → critical) are silent — the warning chip in
+// the panel keeps the user informed, but we don't spam every 30s. This
+// matches how the PWA notification system works for device offline/online.
+function detectHealthTransitions(state) {
+    if (!state || !Array.isArray(state.circuits)) return;
+    const seen = new Set();
+
+    for (const circuit of state.circuits) {
+        for (const room of (circuit.rooms || [])) {
+            const key = `${circuit.id}:${room.room_id}`;
+            seen.add(key);
+            const newLevel = (room.health && room.health.level) || 'ok';
+            const prevLevel = lastRoomHealth.get(key);
+
+            // First sighting of a room: seed the map so we don't fire a
+            // toast for a state that was already true when the page loaded.
+            if (prevLevel === undefined) {
+                lastRoomHealth.set(key, newLevel);
+                continue;
+            }
+
+            if (prevLevel === newLevel) continue;
+
+            // Transition into critical → red toast with up to 2 reasons
+            if (newLevel === 'critical') {
+                const reasons = (room.health && room.health.reasons) || [];
+                const summary = reasons.length === 0
+                    ? 'A device feeding this room is unhealthy.'
+                    : reasons.slice(0, 2).join(' • ')
+                      + (reasons.length > 2 ? ` (+${reasons.length - 2} more)` : '');
+                fireToast('error',
+                    `Heating: ${circuit.name} → ${room.name}`,
+                    summary, 8000);
+            } else if (prevLevel === 'critical' && newLevel === 'ok') {
+                fireToast('success',
+                    `Heating recovered: ${circuit.name} → ${room.name}`,
+                    'Sensor and TRV data are fresh again.', 4000);
+            }
+            lastRoomHealth.set(key, newLevel);
+        }
+    }
+
+    // Garbage-collect rooms that no longer exist (config changed)
+    for (const key of [...lastRoomHealth.keys()]) {
+        if (!seen.has(key)) lastRoomHealth.delete(key);
+    }
+}
+
+// Wrapper around whichever toast system is available. The repo has two:
+// window.toast.{error,success,warning,info} (toasts.js — preferred) and
+// window.showToast (legacy). We prefer the new one because it has a title
+// slot and longer auto-dismiss.
+function fireToast(type, title, message, duration) {
+    if (window.toast && typeof window.toast[type] === 'function') {
+        window.toast[type](message, { title, duration });
+        return;
+    }
+    if (typeof window.showToast === 'function') {
+        const legacyType = type === 'error' ? 'danger' : type;
+        window.showToast(`${title}: ${message}`, legacyType);
+        return;
+    }
+    // Fallback: at least surface in the console
+    console[type === 'error' ? 'error' : 'log'](`[heating] ${title} — ${message}`);
 }
 
 
@@ -181,10 +261,27 @@ function renderCircuitStatusCard(c) {
             </div>`;
         }).join('');
 
+        // Health chip — only renders when room is in trouble. Uses a Bootstrap
+        // badge plus a tooltip-style reason list shown below the room.
+        const health = r.health || {};
+        const healthChip = (health.level && health.level !== 'ok')
+            ? ` <span class="badge bg-danger ms-1" title="${escapeAttr((health.reasons || []).join(' • '))}">
+                   <i class="fas fa-exclamation-triangle me-1"></i>Unhealthy
+               </span>`
+            : '';
+        const healthDetail = (health.level && health.level !== 'ok' && (health.reasons || []).length)
+            ? `<div class="small text-danger mt-1">
+                   <i class="fas fa-exclamation-triangle me-1"></i>
+                   ${(health.reasons || []).map(reason => escapeHtml(reason)).join('<br>')}
+               </div>`
+            : '';
+
         return `
             <div class="border-start border-3 ps-2 mb-2" style="border-color:${statusMeta.c} !important;">
                 <div class="d-flex justify-content-between align-items-baseline">
-                    <strong>${escapeHtml(r.name)}</strong>
+                    <div>
+                        <strong>${escapeHtml(r.name)}</strong>${healthChip}
+                    </div>
                     <span style="color:${statusMeta.c}; font-size:0.85rem;">
                         <i class="fas fa-${statusMeta.icon} me-1"></i>${r.current_temp != null ? r.current_temp.toFixed(1) : '—'}° / ${r.target_temp != null ? r.target_temp.toFixed(1) : '—'}°
                     </span>
@@ -192,6 +289,7 @@ function renderCircuitStatusCard(c) {
                 ${trvLines || `<div class="small text-muted fst-italic">
                     <i class="fas fa-broadcast-tower me-1"></i>Sensor-only room — radiator runs on circuit flow
                 </div>`}
+                ${healthDetail}
                 ${preheatSlot}
             </div>`;
     }).join('');

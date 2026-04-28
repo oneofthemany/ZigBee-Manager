@@ -315,6 +315,15 @@ def _clean_room(r: dict, existing_ids: Optional[set] = None) -> Optional[dict]:
     push_interval_raw = _as_float(r.get("external_temp_push_interval_sec"), 300.0)
     push_interval = int(push_interval_raw) if push_interval_raw else 300
 
+    # Per-room data freshness threshold (minutes). Clamped to a sensible
+    # range so a typo can't disable the health check or cause a constant
+    # alert flood. Stored only when the user has set it, so the controller
+    # falls back to its module default for unset rooms.
+    freshness_raw = _as_float(r.get("freshness_threshold_minutes"))
+    freshness_min: Optional[int] = None
+    if freshness_raw is not None and freshness_raw > 0:
+        freshness_min = max(3, min(120, int(freshness_raw)))
+
     dimensions = _clean_dimensions(r.get("dimensions"))
 
     # Radiator info
@@ -371,6 +380,8 @@ def _clean_room(r: dict, existing_ids: Optional[set] = None) -> Optional[dict]:
         "trvs": trvs,
         "schedule": clean_sched,
     }
+    if freshness_min is not None:
+        out["freshness_threshold_minutes"] = freshness_min
     if dimensions is not None:
         out["dimensions"] = dimensions
 
