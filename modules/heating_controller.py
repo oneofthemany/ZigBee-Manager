@@ -697,10 +697,19 @@ class HeatingController:
         decision.sensor_ieee = sensor_ieee
 
         ext_temp: Optional[float] = None
+        sensor_raw: Dict[str, Any] = {}  # diagnostic: raw temp keys from sensor state
+        sensor_present_in_devices = False
         if sensor_ieee and ext_mode != "off":
             sensor_dev = devices.get(sensor_ieee)
             if sensor_dev is not None:
-                ext_temp = _pick_temperature(_device_state(sensor_dev))
+                sensor_present_in_devices = True
+                sensor_state = _device_state(sensor_dev)
+                sensor_raw = {
+                    k: sensor_state.get(k)
+                    for k in ("local_temperature", "current_temperature", "temperature")
+                    if k in sensor_state
+                }
+                ext_temp = _pick_temperature(sensor_state)
                 decision.sensor_online = ext_temp is not None
             else:
                 decision.sensor_online = False
@@ -728,6 +737,39 @@ class HeatingController:
         else:
             decision.status = "ontarget"
             decision.calling_for_heat = False
+
+        # ── Diagnostic log line ───────────────────────────────────────
+        # Surfaces every input that fed the classification, so a surprising
+        # call-for-heat can be traced to the exact value that caused it.
+        try:
+            trv_dbg = [
+                f"{t['ieee'][-8:]}={t['current_temp']}"
+                for t in decision.trvs
+            ]
+            if sensor_ieee:
+                if not sensor_present_in_devices:
+                    sensor_dbg = f"sensor={sensor_ieee[-8:]}:NOT_IN_SNAPSHOT"
+                elif not sensor_raw:
+                    sensor_dbg = f"sensor={sensor_ieee[-8:]}:no_temp_keys"
+                else:
+                    sensor_dbg = (
+                            f"sensor={sensor_ieee[-8:]}:"
+                            + ",".join(f"{k}={v}" for k, v in sensor_raw.items())
+                            + f" picked={ext_temp}"
+                    )
+            else:
+                sensor_dbg = "sensor=none"
+            logger.info(
+                f"Room '{decision.name}' eval: "
+                f"target={decision.target_temp} "
+                f"current={decision.current_temp} "
+                f"source={decision.temp_source} "
+                f"status={decision.status} "
+                f"calling={decision.calling_for_heat} | "
+                f"{sensor_dbg} | trvs=[{', '.join(trv_dbg) or 'none'}]"
+            )
+        except Exception as e:  # never let diagnostics break a tick
+            logger.debug(f"Diagnostic log failed for room {decision.name}: {e}")
 
         return decision
 
@@ -814,7 +856,7 @@ class HeatingController:
                     )
             # 2) Then push mode / on-off
             await self._throttled_send(ieee, target_command, target_value,
-                                     endpoint_id=circuit.get("receiver_endpoint"))
+                                       endpoint_id=circuit.get("receiver_endpoint"))
             self._last_command[ieee] = (target_command, target_value, time.time())
             logger.info(f"Receiver '{circuit['name']}' ({ieee}) → {display}")
             return {
