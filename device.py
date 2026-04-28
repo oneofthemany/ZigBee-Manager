@@ -98,12 +98,6 @@ class ZigManDevice:
         # Command wrapper for resilient operations
         self._cmd_wrapper = None  # Will be initialized after device is ready
 
-        # Poll-context suppression: while True, attribute_updated callbacks
-        # from zigpy (triggered as side effects of read_attributes during
-        # poll) skip update_state, so the authoritative handler-returned
-        # dict in poll() is the only source of state for that cycle.
-        self._poll_in_progress = False
-
         # Check if quirk is applied
         if hasattr(zigpy_dev, 'quirk_class'):
             self.quirk_name = zigpy_dev.quirk_class.__name__
@@ -335,7 +329,8 @@ class ZigManDevice:
         # === END QUIRK ===
 
         for ep_id, ep in self.zigpy_dev.endpoints.items():
-            if ep_id == 0: continue
+            if ep_id == 0:
+                continue
 
             def attach_handler(cluster, is_server=True):
                 cid = cluster.cluster_id
@@ -362,17 +357,17 @@ class ZigManDevice:
                 except Exception as e:
                     logger.error(f"[{self.ieee}] Failed to attach handler for EP{ep_id} 0x{cid:04x}: {e}")
 
-        in_clusters = getattr(ep, 'in_clusters', None) or {}
-        out_clusters = getattr(ep, 'out_clusters', None) or {}
+            in_clusters = getattr(ep, 'in_clusters', None) or {}
+            out_clusters = getattr(ep, 'out_clusters', None) or {}
 
-        for cluster in in_clusters.values():
-            attach_handler(cluster, is_server=True)
+            for cluster in in_clusters.values():
+                attach_handler(cluster, is_server=True)
 
-        for cluster in out_clusters.values():
-            # Skip if a server-side handler already owns this (ep, cid)
-            if (ep_id, cluster.cluster_id) in self.handlers:
-                continue
-            attach_handler(cluster, is_server=False)
+            for cluster in out_clusters.values():
+                # Skip if a server-side handler already owns this (ep, cid)
+                if (ep_id, cluster.cluster_id) in self.handlers:
+                    continue
+                attach_handler(cluster, is_server=False)
 
         # FORCE POWER SOURCE UPDATE
         self._is_battery_powered()
@@ -444,24 +439,8 @@ class ZigManDevice:
             self._available = True
             self.service.handle_device_update(self, {})
 
-    def update_state(self, data: Dict[str, Any], qos: Optional[int] = None,
-                     endpoint_id: Optional[int] = None,
-                     _from_poll_return: bool = False):
-        """Update device state and notify the service.
-
-        _from_poll_return: set True when called from poll()'s authoritative
-        results dict. This bypasses the poll-suppression flag so the merged
-        snapshot always lands. Per-attribute callbacks from zigpy that fire
-        as side-effects of read_attributes() during a poll are silenced via
-        self._poll_in_progress so the same value isn't written twice.
-        """
-        # === POLL SUPPRESSION ===
-        # If a poll is currently running and this update came from a zigpy
-        # cluster-level attribute_updated callback (not from poll() itself),
-        # drop it. The poll's merged results dict will arrive imminently
-        # and is the canonical source for this cycle.
-        if self._poll_in_progress and not _from_poll_return:
-            return
+    def update_state(self, data: Dict[str, Any], qos: Optional[int] = None, endpoint_id: Optional[int] = None):
+        """Update device state and notify the service."""
 
         # === CAPABILITY-BASED FILTERING ===
         if hasattr(self, 'capabilities') and hasattr(self.capabilities, 'filter_state_update'):
@@ -906,30 +885,34 @@ class ZigManDevice:
         polled = set()
         success = True
 
-        # Suppress zigpy attribute_updated callbacks for the duration of this
-        # poll. read_attributes() triggers them as a side effect; we want only
-        # the merged results dict (returned by handlers below) to reach
-        # update_state — that gives one coherent state update per poll
-        # instead of one per attribute, and removes duplicate DuckDB rows.
-        self._poll_in_progress = True
-        try:
-            for h in self.handlers.values():
-                if h in polled:
-                    continue
-                polled.add(h)
-                try:
-                    res = await self._cmd_wrapper.execute(h.poll)
-                    if res:
-                        results.update(res)
-                except Exception:
-                    success = False
-        finally:
-            self._poll_in_progress = False
+        for h in self.handlers.values():
+            if h in polled: continue
+            polled.add(h)
+            try:
+                res = await self._cmd_wrapper.execute(h.poll)
+                if res: results.update(res)
+            except:
+                success = False
 
         if results:
-            self.update_state(results, _from_poll_return=True)
-        results['__poll_success'] = success
-        return results
+            try:
+                tc = getattr(self.service, 'telemetry_collector', None)
+                if tc:
+                    # Filter the same way as before, then hand to telemetry collector
+                    # which applies the per-(ieee, attr, value) dedup window.
+                    poll_data = {}
+                    for attr, value in results.items():
+                        if attr.endswith('_raw') or attr.startswith('attr_'):
+                            continue
+                        if attr in ('manufacturer', 'model', 'power_source',
+                                    'last_seen', 'available'):
+                            continue
+                        poll_data[attr] = value
+                    if poll_data:
+                        tc.record_state_change(self.ieee, poll_data)
+                        logger.info(f"[{self.ieee}] Poll telemetry: {len(poll_data)} attrs queued for DuckDB")
+            except Exception as e:
+                logger.debug(f"[{self.ieee}] Poll telemetry write failed: {e}")
 
     def get_control_commands(self) -> List[Dict[str, Any]]:
         """Get available control commands."""

@@ -1509,7 +1509,7 @@ class ZigbeeService(
         if ieee in self.devices:
             try:
                 device = self.devices[ieee]
-                results = await device.poll()
+                results = await device.poll() or {}
                 poll_success = results.pop('__poll_success', True)
                 friendly_name = self.friendly_names.get(ieee, ieee)
 
@@ -1529,7 +1529,7 @@ class ZigbeeService(
                     await self.resilience.handle_ncp_failure(e)
                 return {"success": False, "error": f"NCP Failure: {e}"}
             except Exception as e:
-                logger.error(f"[{ieee}] Manual poll failed: {e}")
+                logger.error(f"[{ieee}] Manual poll failed: {e}", exc_info=True)
                 return {"success": False, "error": str(e)}
         return {"success": False, "error": "Device not found"}
 
