@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ZMM API Documentation</title>
+    <link rel="stylesheet" href="/static/css/api/api-docs.css">
+</head>
+<body>
+<div class="container">
+    <header>
+        <h1>🛰️ ZigBee &amp; Matter Manager — API</h1>
+        <p>Interactive API Explorer — pick an endpoint and try it out</p>
+        <p style="margin-top:8px;font-size:0.9em;">
+            <a href="/" style="color:var(--text-secondary);">← Back to dashboard</a>
+        </p>
+    </header>
+
+    <div class="main-content">
+        <aside class="sidebar">
+            <div class="search-box">
+                <input type="text" id="searchInput" placeholder="Search endpoints...">
+                <div style="display:flex;gap:6px;margin-top:8px;">
+                    <button type="button" id="expandAllBtn"
+                            class="btn btn-secondary"
+                            style="flex:1;padding:6px;font-size:12px;margin:0;">
+                        ▼ Expand all
+                    </button>
+                    <button type="button" id="collapseAllBtn"
+                            class="btn btn-secondary"
+                            style="flex:1;padding:6px;font-size:12px;margin:0;">
+                        ▶ Collapse all
+                    </button>
+                </div>
+            </div>
+            <div id="routesList">
+                <div style="padding:16px;color:var(--text-secondary);">Loading routes…</div>
+            </div>
+        </aside>
+
+        <main class="content">
+            <div class="placeholder" style="text-align:center;padding:60px 20px;color:var(--text-secondary);">
+                <div class="placeholder-icon" style="font-size:48px;margin-bottom:16px;">📡</div>
+                <h2 style="color:var(--text-primary);margin-bottom:8px;">Select an endpoint to get started</h2>
+                <p>Choose an API endpoint from the sidebar to view details and test it.</p>
+            </div>
+        </main>
+    </div>
+</div>
+
+<script src="/static/js/api-docs.js"></script>
+</body>
+</html>

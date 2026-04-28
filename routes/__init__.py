@@ -21,6 +21,7 @@ from routes.weather_routes import register_weather_routes
 from routes.heating_routes import register_heating_routes
 from routes.heating_controller_routes import register_heating_controller_routes
 from routes.upgrade_routes import register_upgrade_routes
+from routes.api_docs_routes import register_api_docs_routes
 
 
 
@@ -44,6 +45,7 @@ __all__ = [
     'register_weather_routes',
     'register_heating_routes',
     'register_heating_controller_routes',
+    'register_api_docs_routes',
     'manager',
     'broadcast_event',
 ]
