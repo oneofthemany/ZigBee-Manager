@@ -344,12 +344,9 @@ export function updateControlValues(device) {
     // Update thermostat current temp display
     const currentTempEl = document.querySelector('[data-thermostat-current]');
     if (currentTempEl) {
-        const tempKeys = ['internal_temperature', 'temperature', 'local_temperature'];
-        for (const key of tempKeys) {
-            if (s[key] !== undefined && s[key] !== null && Number(s[key]) !== 0) {
-                currentTempEl.textContent = `${Number(s[key]).toFixed(1)}°C`;
-                break;
-            }
+        const v = s.temperature;
+        if (v !== undefined && v !== null && Number(v) !== 0) {
+            currentTempEl.textContent = `${Number(v).toFixed(2)}°C`;
         }
     }
      // Update thermostat target setpoint display
@@ -357,7 +354,7 @@ export function updateControlValues(device) {
     if (setpointEl) {
         const rawTarget = s.occupied_heating_setpoint || s.heating_setpoint || s.temperature_setpoint;
         if (rawTarget !== undefined) {
-            setpointEl.textContent = `${Number(rawTarget).toFixed(1)}°C`;
+            setpointEl.textContent = `${Number(rawTarget).toFixed(2)}°C`;
         }
     }
 
@@ -444,26 +441,9 @@ export function renderControlTab(device) {
     const hasThermostat = hasCluster(device, 0x0201);
     if (hasThermostat) {
         controlsFound = true;
-        const tempKeys = ['internal_temperature', 'temperature', 'local_temperature'];
-        let validTemp = null;
-
-        for (const key of tempKeys) {
-            const val = s[key];
-            if (val !== undefined && val !== null && Number(val) !== 0) {
-                validTemp = val;
-                break;
-            }
-        }
-        if (validTemp === null) {
-             for (const key of tempKeys) {
-                if (s[key] !== undefined && s[key] !== null) {
-                    validTemp = s[key];
-                    break;
-                }
-            }
-        }
-
-        const currentTemp = (validTemp !== null && Number(validTemp) !== 0) ? Number(validTemp).toFixed(1) : "--";
+        const validTemp = s.temperature;
+        const currentTemp = (validTemp !== undefined && validTemp !== null && Number(validTemp) !== 0)
+            ? Number(validTemp).toFixed(2) : "--";
         const rawTarget = s.occupied_heating_setpoint || s.heating_setpoint || 20;
         const targetTemp = Number(rawTarget).toFixed(1);
         const systemMode = s.system_mode || 'off';

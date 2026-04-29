@@ -72,16 +72,8 @@
 
     function renderTempMini(device) {
         var s = device.state || {};
-        var tempKeys = ['internal_temperature', 'temperature', 'local_temperature'];
-        var temp = null;
-
-        for (var i = 0; i < tempKeys.length; i++) {
-            var v = s[tempKeys[i]];
-            if (v !== undefined && v !== null && Number(v) !== 0) {
-                temp = Number(v);
-                break;
-            }
-        }
+        var v = s.temperature;
+        var temp = (v !== undefined && v !== null && Number(v) !== 0) ? Number(v) : null;
 
         if (temp === null) return '';
 
@@ -90,8 +82,8 @@
         else if (temp >= 20) className = 'warm';
         else if (temp < 15) className = 'cold';
 
-        return '<span class="zbm-temp-mini ' + className + '" title="Temperature: ' + temp.toFixed(1) + '°C">' +
-               '<i class="fas fa-thermometer-half"></i> ' + temp.toFixed(1) + '°</span>';
+        return '<span class="zbm-temp-mini ' + className + '" title="Temperature: ' + temp.toFixed(2) + '°C">' +
+               '<i class="fas fa-thermometer-half"></i> ' + temp.toFixed(2) + '°</span>';
     }
 
     // ----------------------------------------------------------
