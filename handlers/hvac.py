@@ -196,14 +196,14 @@ class ThermostatHandler(ClusterHandler):
         else:
             init_attrs.append(self.ATTR_LOCAL_TEMP)
 
-        logger.info(f"[{self.device.ieee}] Reading ZHA initialization attributes...")
+        logger.info(f"[{self.device.ieee}] Reading initialisation attributes...")
         try:
             # Read attributes
             async with asyncio.timeout(10.0):
                 success, failure = await self.cluster.read_attributes(init_attrs)
 
             if success:
-                logger.info(f"[{self.device.ieee}] Initialization attributes read successfully")
+                logger.info(f"[{self.device.ieee}] Initialisation attributes read successfully")
 
                 # Update limits if present
                 if self.ATTR_MIN_HEAT_SETPOINT_LIMIT in success:
@@ -353,17 +353,20 @@ class ThermostatHandler(ClusterHandler):
         if self.is_receiver:
             logger.info(
                 f"[{self.device.ieee}] Hive atomic write: "
-                f"system_mode=heat, hold=1, setpoint={temperature}°C ({value_cd} cd)"
+                f"system_mode=heat, hold=1, hold_duration=infinite, setpoint={temperature}°C ({value_cd} cd)"
             )
+            # 0xFFFF = "hold indefinitely".
             ok = await self._write_atomic(
                 attrs_by_name={
                     "system_mode": 0x04,
                     "temp_setpoint_hold": 1,
+                    "temp_setpoint_hold_duration": 0xFFFF,
                     "occupied_heating_setpoint": value_cd,
                 },
                 attrs_by_id={
                     self.ATTR_SYSTEM_MODE: 0x04,
                     self.ATTR_TEMP_SETPOINT_HOLD: 1,
+                    self.ATTR_TEMP_SETPOINT_HOLD_DURATION: 0xFFFF,
                     self.ATTR_OCCUPIED_HEATING_SETPOINT: value_cd,
                 },
             )
@@ -374,6 +377,7 @@ class ThermostatHandler(ClusterHandler):
                 "system_mode": "heat",
                 "system_mode_raw": 0x04,
                 "temperature_setpoint_hold": True,
+                "temperature_setpoint_hold_duration": 0xFFFF,
                 "heating_setpoint": temperature,
                 "occupied_heating_setpoint": temperature,
                 "target_temp": temperature,
