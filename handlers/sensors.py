@@ -464,7 +464,7 @@ class TemperatureMeasurementHandler(ClusterHandler, SensorReportingMixin):
     """
     CLUSTER_ID = 0x0402
     REPORT_CONFIG = [
-        ("measured_value", 10, 300, 20),  # Report every 10s-5min or 0.2°C change
+        ("measured_value", 10, 300, 50),  # Report every 10s-5min or 0.5°C change
     ]
 
     ATTR_MEASURED_VALUE = 0x0000
