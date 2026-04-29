@@ -449,6 +449,15 @@ class ZigManDevice:
         if not data:
             return
 
+        # Canonicalise temperature aliases — any variant fills `temperature`
+        TEMP_ALIASES = ('local_temperature', 'internal_temperature', 'current_temperature')
+        if 'temperature' not in data:
+            for alias in TEMP_ALIASES:
+                v = data.get(alias)
+                if v is not None and v != 0 and v != 0x8000:
+                    data['temperature'] = v
+                    break
+
         changed = {}
         duplicates_detected = []
 
