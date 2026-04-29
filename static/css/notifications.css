@@ -1,0 +1,52 @@
+/* ==========================================================================
+   notifications.css
+   Settings → Notifications sub-tab styling.
+   Drop-in: only adds rules, doesn't override anything global.
+   ========================================================================== */
+
+.notif-rule-card {
+    border: 1px solid var(--border-color, #dee2e6);
+    transition: background-color .15s ease, transform .12s ease;
+}
+
+.notif-rule-card:hover {
+    background-color: var(--bg-card-header, #f8f9fa);
+}
+
+.notif-rule-card .min-w-0 {
+    min-width: 0;
+}
+
+.notif-device-list .list-group-item {
+    cursor: pointer;
+    user-select: none;
+}
+
+/* `hidden` attribute must beat Bootstrap's `.d-flex { display: flex !important }`
+   on filtered-out device rows in the rule editor. */
+.notif-device-list .list-group-item[hidden] {
+    display: none !important;
+}
+
+/* ----- Dark mode ----- */
+[data-theme="dark"] .notif-rule-card {
+    background-color: var(--bg-card, #1e1e2a);
+    border-color: var(--border-color, #2d2d3d);
+    color: var(--text-primary, #e6e6f0);
+}
+
+[data-theme="dark"] .notif-rule-card:hover {
+    background-color: var(--bg-card-header, #25253a);
+}
+
+[data-theme="dark"] .notif-rule-card .badge.bg-light {
+    background-color: var(--bg-input, #2a2a3d) !important;
+    color: var(--text-secondary, #b0b0c0) !important;
+    border-color: var(--border-color, #3a3a4d) !important;
+}
+
+[data-theme="dark"] .notif-device-list .list-group-item {
+    background-color: var(--bg-input, #2a2a3d);
+    color: var(--text-primary, #e6e6f0);
+    border-color: var(--border-color, #3a3a4d);
+}

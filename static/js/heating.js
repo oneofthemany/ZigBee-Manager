@@ -1238,7 +1238,6 @@ function renderSettingsForm(cfg, schema) {
             <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#heat-set-property">Property</button></li>
             <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#heat-set-tariff">Tariff & Boiler</button></li>
             <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#heat-set-comfort">Comfort</button></li>
-            <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#heat-set-zones">Zones <span class="badge bg-secondary ms-1" id="zoneCountBadge">${workingZones.length}</span></button></li>
         </ul>
 
         <div class="form-check form-switch mb-3">
@@ -1250,7 +1249,6 @@ function renderSettingsForm(cfg, schema) {
             <div class="tab-pane fade show active" id="heat-set-property">${renderPropertyForm(cfg.property, schema)}</div>
             <div class="tab-pane fade" id="heat-set-tariff">${renderTariffBoilerForm(cfg.tariff, cfg.boiler, schema)}</div>
             <div class="tab-pane fade" id="heat-set-comfort">${renderComfortForm(cfg.comfort)}</div>
-            <div class="tab-pane fade" id="heat-set-zones">${renderZonesSection()}</div>
         </div>`;
 }
 

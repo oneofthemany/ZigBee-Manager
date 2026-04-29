@@ -20,6 +20,7 @@
     <link rel="stylesheet" href="/static/css/device-status.css">
     <link rel="stylesheet" href="/static/css/upgrade.css">
     <link rel="stylesheet" href="/static/css/api/api-docs.css">
+    <link rel="stylesheet" href="/static/css/notifications.css">
 </head>
 <body>
 <nav class="navbar navbar-dark bg-dark mb-4">
@@ -208,6 +209,11 @@
                     </button>
                 </li>
                 <li class="nav-item">
+                    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#settingsNotifications">
+                        <i class="fas fa-bell me-1"></i> Notifications
+                    </button>
+                </li>
+                <li class="nav-item">
                     <button class="nav-link" data-bs-toggle="tab" data-bs-target="#settingsApis">
                         <i class="fas fa-plug me-1"></i> APIs
                     </button>
@@ -283,6 +289,12 @@
                 </div>
 
 
+                <!-- ------------------------------------------------------------------ -->
+                <!-- NOTIFICATIONS TAB                                                    -->
+                <!-- ------------------------------------------------------------------ -->
+                <div class="tab-pane fade p-3" id="settingsNotifications">
+                    <!-- populated by notifications.js on first show -->
+                </div>
 
                 <!-- ------------------------------------------------------------------ -->
                 <!-- SECURITY TAB                                                         -->

@@ -297,6 +297,7 @@ if (window.location.protocol !== 'https:' && !isLocalhost) {
 
     // Expose for the WebSocket handler to call
     window.zbmCheckDeviceState = checkDeviceState;
+    window.zbmSendNotification = sendNotification;
 
     // ----------------------------------------------------------
     // 5. HOOK INTO WEBSOCKET UPDATES

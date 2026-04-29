@@ -18,6 +18,9 @@ let editorInitialised = false;
 import { initSettings } from './settings.js';
 initSettings();
 
+import { initNotifications } from './notifications.js';
+initNotifications();
+
 import { initUpgrade } from './upgrade.js';
 initUpgrade();
 
