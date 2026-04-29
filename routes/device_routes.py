@@ -177,7 +177,7 @@ def register_device_routes(app: FastAPI, get_zigbee_service, get_matter_bridge):
     @app.post("/api/device/poll")
     async def poll_device(request: DeviceRequest):
         """Poll device for current attribute values."""
-        return await get_zigbee_service().poll_device(request.ieee)
+        return await get_zigbee_service().poll_device(request.ieee, seq=request.seq)
 
     # ---- Commands & Attributes ----
 

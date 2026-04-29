@@ -1512,7 +1512,7 @@ class ZigbeeService(
                 return {"success": False, "error": str(e)}
         return {"success": False, "error": "Device not found"}
 
-    async def poll_device(self, ieee):
+    async def poll_device(self, ieee, seq=None):
         if ieee in self.devices:
             try:
                 device = self.devices[ieee]
@@ -1522,12 +1522,12 @@ class ZigbeeService(
 
                 if poll_success:
                     message = f"Manual poll for {friendly_name} successful."
-                    self._emit_sync("poll_result", {"ieee": ieee, "success": True, "message": message, "attributes": results})
+                    self._emit_sync("poll_result", {"ieee": ieee, "success": True, "message": message, "attributes": results, "seq": seq})
                     return {"success": True, "message": "Poll successful"}
                 else:
                     message = f"Manual poll for {friendly_name} completed with partial failures."
                     self._emit_sync("poll_result", {"ieee": ieee, "success": False,
-                                                    "message": message, "error_type": "PartialFailure", "attributes": results})
+                                                    "message": message, "error_type": "PartialFailure", "attributes": results, "seq": seq})
                     return {"success": True, "message": "Poll completed with partial failures."}
 
             except NcpFailure as e:

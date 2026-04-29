@@ -18,6 +18,7 @@ class DeviceRequest(BaseModel):
     force: Optional[bool] = False
     ban: bool = False
     aggressive: Optional[bool] = None  # Only used by reconfigure
+    seq: Optional[int] = None          # Poll sequence number — echoed back in poll_result
 
 
 class RenameRequest(BaseModel):

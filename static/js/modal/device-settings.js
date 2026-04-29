@@ -82,6 +82,11 @@ function _actionError(label, error) {
 }
 
 // ---------------------------------------------------------------------------
+// Sequence counter per ieee — incremented on each Poll click.
+// applyPollResult only renders if the sequence matches, discarding
+// responses from previous polls that arrive late.
+const _pollSeq = new Map();
+
 // Poll result — called from websocket.js on poll_result events
 // ---------------------------------------------------------------------------
 
@@ -91,24 +96,26 @@ function _actionError(label, error) {
  */
 export function applyPollResult(payload) {
     if (!payload || !payload.ieee) return;
-    const { ieee, success, message, attributes } = payload;
+    const { ieee, success, message, attributes, seq } = payload;
+
+    // Discard if a newer poll has already been fired for this device
+    if (seq !== undefined && _pollSeq.get(ieee) !== seq) return;
 
     const root = document.querySelector(`[data-settings-ieee="${cssEscape(ieee)}"]`);
     if (!root) return;
 
     if (success) {
         let detail = '';
-        const data = attributes && Object.keys(attributes).length > 0
-            ? attributes
-            : (state.deviceCache?.[ieee]?.state ?? null);  // fallback to cache if no attrs
-
-        if (data) {
+        // Use only the fresh attributes from the backend — never fall back to
+        // the cache, which may still hold pre-poll values at this point.
+        if (attributes && Object.keys(attributes).length > 0) {
             const SKIP = new Set(['last_seen', 'last_seen_ts', 'lqi', 'rssi', 'ieee', 'node_id']);
-            const entries = Object.entries(data)
+            const entries = Object.entries(attributes)
                 .filter(([k]) => !SKIP.has(k) && !k.startsWith('_'))
                 .sort(([a], [b]) => a.localeCompare(b));
 
             if (entries.length > 0) {
+                const ts = new Date().toLocaleTimeString();
                 const rows = entries.map(([k, v]) => `
                     <tr>
                         <th class="small text-muted text-nowrap" style="width:40%">${_humaniseKey(k)}</th>
@@ -117,7 +124,7 @@ export function applyPollResult(payload) {
                 `).join('');
                 detail = `
                     <details class="mt-2" open>
-                        <summary class="small text-muted">Polled values</summary>
+                        <summary class="small text-muted">Polled values <span class="fw-normal text-muted" style="font-size:0.75em">(as of ${ts})</span></summary>
                         <table class="table table-sm table-borderless mb-0 mt-1">
                             <tbody>${rows}</tbody>
                         </table>
@@ -562,13 +569,17 @@ function _bindActions(root, snap) {
 // ---------------------------------------------------------------------------
 
 window._settingsPoll = async function(ieee) {
+    // Increment sequence so any in-flight response from a previous poll is ignored
+    const seq = (_pollSeq.get(ieee) ?? 0) + 1;
+    _pollSeq.set(ieee, seq);
+
     _setActionResult(ieee, _actionSpinner('Polling device…'));
     addLogEntry({ timestamp: getTimestamp(), level: 'INFO', message: 'Poll sent.' });
     try {
         const res = await fetch('/api/device/poll', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ ieee }),
+            body: JSON.stringify({ ieee, seq }),
         });
         const data = await res.json();
         if (!data.success) {
