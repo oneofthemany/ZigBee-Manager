@@ -11,7 +11,9 @@ import { handleMQTTMessage } from './mqtt-explorer.js';
 import { handleOTAProgress } from './modal/ota.js';
 import { hideTestRecoveryBanner } from './editor.js'
 import { applyInterviewStatusUpdate } from './device-modal.js';
+import { applyPollResult } from './modal/device-settings.js';
 import { updateInterviewBadge } from './interview-status-badge.js';
+import { onDeviceJoined, onInterviewStatusUpdate, onJoinProgress } from './join-progress.js';
 
 /**
  * Initialize WebSocket connection
@@ -97,10 +99,26 @@ export function initWS() {
                 case "device_joined":
                 case "device_initialized":
                     fetchAllDevices();
+                    if (msg.type === 'device_joined') {
+                        try { onDeviceJoined(msg.payload || msg.data || {}); } catch(e) {}
+                    }
                     break;
 
                 case "interview_status_update":
                     handleInterviewStatusUpdate(msg.payload || msg.data);
+                    try { onInterviewStatusUpdate(msg.payload || msg.data); } catch(e) {}
+                    break;
+
+                case "join_progress":
+                    try { onJoinProgress(msg.payload || msg.data); } catch(e) {}
+                    break;
+
+                case "poll_result":
+                    try {
+                        applyPollResult(msg.payload || msg.data);
+                    } catch (e) {
+                        console.debug('applyPollResult failed', e);
+                    }
                     break;
 
                 case "device_left":

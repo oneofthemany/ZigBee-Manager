@@ -768,9 +768,15 @@ class ZigbeeService(
             return
         try:
             zdev = self.devices[ieee]
+
+            self._emit_sync("join_progress", {"ieee": ieee, "stage": "configuring"})
             await zdev.configure()
             logger.info(f"[{ieee}] Device configured successfully")
+            self._emit_sync("join_progress", {"ieee": ieee, "stage": "polling"})
+
             await zdev.poll()
+            self._emit_sync("join_progress", {"ieee": ieee, "stage": "ready"})
+
             if self.mqtt:
                 await self.announce_device(ieee)
 
@@ -784,6 +790,7 @@ class ZigbeeService(
 
         except Exception as e:
             logger.warning(f"[{ieee}] Device configuration failed: {e}")
+            self._emit_sync("join_progress", {"ieee": ieee, "stage": "error", "error": str(e)})
 
     def device_left(self, device: zigpy.device.Device):
         ieee = str(device.ieee)
@@ -1515,12 +1522,12 @@ class ZigbeeService(
 
                 if poll_success:
                     message = f"Manual poll for {friendly_name} successful."
-                    self._emit_sync("poll_result", {"ieee": ieee, "success": True, "message": message})
+                    self._emit_sync("poll_result", {"ieee": ieee, "success": True, "message": message, "attributes": results})
                     return {"success": True, "message": "Poll successful"}
                 else:
                     message = f"Manual poll for {friendly_name} completed with partial failures."
                     self._emit_sync("poll_result", {"ieee": ieee, "success": False,
-                                                    "message": message, "error_type": "PartialFailure"})
+                                                    "message": message, "error_type": "PartialFailure", "attributes": results})
                     return {"success": True, "message": "Poll completed with partial failures."}
 
             except NcpFailure as e:

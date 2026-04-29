@@ -32,6 +32,107 @@ import { addLogEntry } from '../logging.js';
 import { getTimestamp } from '../utils.js';
 
 // ---------------------------------------------------------------------------
+// Action result panel — updated by Poll / Reconfigure / Re-Interview
+// ---------------------------------------------------------------------------
+
+/**
+ * Show or update the action result panel for a device.
+ * Finds the [data-settings-section="action-result"] node inside the
+ * [data-settings-ieee] root and writes html into it.
+ */
+function _setActionResult(ieee, html) {
+    const root = document.querySelector(`[data-settings-ieee="${cssEscape(ieee)}"]`);
+    if (!root) return;
+    let panel = root.querySelector('[data-settings-section="action-result"]');
+    if (!panel) return;
+    panel.innerHTML = html;
+}
+
+function _actionSpinner(label) {
+    return `
+        <div class="d-flex align-items-center gap-2 text-muted small py-1">
+            <div class="spinner-border spinner-border-sm" role="status"></div>
+            ${_escape(label)}
+        </div>
+    `;
+}
+
+function _actionSuccess(label, detail) {
+    return `
+        <div class="alert alert-success py-2 mb-0 small d-flex align-items-start gap-2">
+            <i class="fas fa-check-circle mt-1"></i>
+            <div>
+                <strong>${_escape(label)}</strong>
+                ${detail ? `<div class="text-muted">${detail}</div>` : ''}
+            </div>
+        </div>
+    `;
+}
+
+function _actionError(label, error) {
+    return `
+        <div class="alert alert-danger py-2 mb-0 small d-flex align-items-start gap-2">
+            <i class="fas fa-times-circle mt-1"></i>
+            <div>
+                <strong>${_escape(label)} failed</strong>
+                <div class="text-muted">${_escape(error || 'Unknown error')}</div>
+            </div>
+        </div>
+    `;
+}
+
+// ---------------------------------------------------------------------------
+// Poll result — called from websocket.js on poll_result events
+// ---------------------------------------------------------------------------
+
+/**
+ * Called by websocket.js when a poll_result event arrives.
+ * Updates the action-result panel of the currently open Settings tab (if any).
+ */
+export function applyPollResult(payload) {
+    if (!payload || !payload.ieee) return;
+    const { ieee, success, message, attributes } = payload;
+
+    const root = document.querySelector(`[data-settings-ieee="${cssEscape(ieee)}"]`);
+    if (!root) return;
+
+    if (success) {
+        let detail = '';
+        const data = attributes && Object.keys(attributes).length > 0
+            ? attributes
+            : (state.deviceCache?.[ieee]?.state ?? null);  // fallback to cache if no attrs
+
+        if (data) {
+            const SKIP = new Set(['last_seen', 'last_seen_ts', 'lqi', 'rssi', 'ieee', 'node_id']);
+            const entries = Object.entries(data)
+                .filter(([k]) => !SKIP.has(k) && !k.startsWith('_'))
+                .sort(([a], [b]) => a.localeCompare(b));
+
+            if (entries.length > 0) {
+                const rows = entries.map(([k, v]) => `
+                    <tr>
+                        <th class="small text-muted text-nowrap" style="width:40%">${_humaniseKey(k)}</th>
+                        <td class="small font-monospace">${_escape(JSON.stringify(v))}</td>
+                    </tr>
+                `).join('');
+                detail = `
+                    <details class="mt-2" open>
+                        <summary class="small text-muted">Polled values</summary>
+                        <table class="table table-sm table-borderless mb-0 mt-1">
+                            <tbody>${rows}</tbody>
+                        </table>
+                    </details>
+                `;
+            }
+        }
+
+        _setActionResult(ieee, _actionSuccess('Poll complete', message) + detail);
+    } else {
+        _setActionResult(ieee, _actionError('Poll', message));
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Initial render — gives the modal something to show while we fetch real data
 // ---------------------------------------------------------------------------
 
@@ -47,6 +148,7 @@ export function renderSettingsTab(device) {
     }
     return `
         <div data-settings-ieee="${device.ieee}">
+            <div data-settings-section="action-result"></div>
             <div data-settings-section="main">
                 <div class="text-center text-muted py-4">
                     <div class="spinner-border spinner-border-sm me-2" role="status"></div>
@@ -321,20 +423,20 @@ function _buttonRow(snap) {
     return `
         <div class="btn-group btn-group-sm flex-wrap mb-3" role="group">
             <button type="button" class="btn btn-outline-secondary"
-                    onclick="window.doAction('poll', '${ieee}')">
+                    onclick="window._settingsPoll('${ieee}')">
                 <i class="fas fa-sync"></i> Poll
             </button>
             <button type="button" class="btn btn-outline-info"
-                    onclick="window.doAction('reconfigure', '${ieee}')"
-                    title="Standard Bindings & Reporting">
+                    onclick="window._settingsReconfigure('${ieee}', undefined)"
+                    title="Standard Bindings &amp; Reporting">
                 <i class="fas fa-wrench"></i> Reconfigure
             </button>
             <button type="button" class="btn btn-outline-warning"
-                    onclick="window.doAction('reconfigure_aggressive', '${ieee}')">
+                    onclick="window._settingsReconfigure('${ieee}', true)">
                 <i class="fas fa-bolt"></i> Aggressive LQI
             </button>
             <button type="button" class="btn btn-outline-secondary"
-                    onclick="window.doAction('reconfigure_baseline', '${ieee}')">
+                    onclick="window._settingsReconfigure('${ieee}', false)">
                 <i class="fas fa-undo"></i> Restore Baseline
             </button>
             <button type="button" class="btn btn-outline-primary"
@@ -454,6 +556,53 @@ function _bindActions(root, snap) {
         btn.addEventListener('click', () => deleteAndRepair(snap.ieee));
     });
 }
+
+// ---------------------------------------------------------------------------
+// Window-scoped handlers for poll / reconfigure — called from onclick attrs
+// ---------------------------------------------------------------------------
+
+window._settingsPoll = async function(ieee) {
+    _setActionResult(ieee, _actionSpinner('Polling device…'));
+    addLogEntry({ timestamp: getTimestamp(), level: 'INFO', message: 'Poll sent.' });
+    try {
+        const res = await fetch('/api/device/poll', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ieee }),
+        });
+        const data = await res.json();
+        if (!data.success) {
+            _setActionResult(ieee, _actionError('Poll', data.error));
+        }
+        // On success: leave spinner — applyPollResult() from WS event replaces it
+    } catch (e) {
+        _setActionResult(ieee, _actionError('Poll', e.message));
+    }
+};
+
+window._settingsReconfigure = async function(ieee, aggressive) {
+    const labels = { undefined: 'Reconfigure', true: 'Aggressive LQI', false: 'Restore Baseline' };
+    const label = labels[String(aggressive)] ?? 'Reconfigure';
+    _setActionResult(ieee, _actionSpinner(`${label}…`));
+    addLogEntry({ timestamp: getTimestamp(), level: 'INFO', message: `${label} sent.` });
+    try {
+        const body = { ieee };
+        if (aggressive !== undefined) body.aggressive = aggressive;
+        const res = await fetch('/api/device/reconfigure', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+        });
+        const data = await res.json();
+        if (data.success) {
+            _setActionResult(ieee, _actionSuccess(label, data.message));
+        } else {
+            _setActionResult(ieee, _actionError(label, data.error));
+        }
+    } catch (e) {
+        _setActionResult(ieee, _actionError(label, e.message));
+    }
+};
 
 // ---------------------------------------------------------------------------
 // Re-Interview flow — confirmation + invocation
