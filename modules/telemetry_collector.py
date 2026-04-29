@@ -155,7 +155,7 @@ class TelemetryCollector:
 
     # Per-device dedup state. Keyed by (ieee, attribute), value is
     # (last_numeric_or_str_value, last_ts_epoch). Trimmed lazily.
-    _DEDUP_WINDOW_SECONDS = 1.0  # collapse writes for same (ieee,attr,value)
+    _DEDUP_WINDOW_SECONDS = 0.25  # collapse writes for same (ieee,attr,value)
     # arriving within this many seconds
 
     def record_state_change(self, ieee: str, changed_attrs: Dict[str, Any]):
