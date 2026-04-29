@@ -533,7 +533,7 @@ def _find_thermostats(devices: Dict[str, Any]) -> List[Dict[str, Any]]:
             continue
 
         if any(k in state for k in (
-                "local_temperature", "current_temperature",
+                "local_temperature", "current_temperature", "temperature",
                 "occupied_heating_setpoint", "system_mode",
                 "heating_demand", "hvac_action"
         )):
@@ -542,7 +542,14 @@ def _find_thermostats(devices: Dict[str, Any]) -> List[Dict[str, Any]]:
                 "name": friendly or str(ieee),
                 "manufacturer": manufacturer,
                 "model": model,
-                "temperature": state.get("local_temperature") or state.get("current_temperature"),
+                # Fall back through three keys in priority order:
+                #   local_temperature   — most thermostats / receivers (cluster 0x0201)
+                #   current_temperature — older zigpy convention
+                #   temperature         — bare temperature sensors and SLT6-style
+                #                         remote thermostats that report on cluster 0x0402
+                "temperature": (state.get("local_temperature")
+                                or state.get("current_temperature")
+                                or state.get("temperature")),
                 "setpoint": state.get("occupied_heating_setpoint"),
                 "mode": state.get("system_mode"),
                 "action": state.get("hvac_action"),

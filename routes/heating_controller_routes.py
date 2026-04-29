@@ -560,13 +560,44 @@ def register_heating_controller_routes(app: FastAPI, get_controller, get_zigbee_
     @app.post("/api/heating/controller/config")
     async def save_controller_config(data: dict):
         """
-        Save circuits + controller flags. Accepts:
+        Save circuits + controller flags and hot-reload the live controller.
+        Accepts:
           { "config": { "enabled": bool, "dry_run": bool, "circuits": [...] } }
+
+        The save is two-stage: persist to disk first (so a crash mid-reload
+        doesn't leave us with an applied-but-unpersisted state), then ask
+        the live controller to apply_config(). The response includes the
+        diff so the frontend can show a meaningful toast.
         """
         try:
             cfg = _load_config()
             heating = cfg.setdefault("heating", {})
             incoming = data.get("config", data) if isinstance(data, dict) else {}
+
+            # ── Diagnostic: what did the client send? ───────────────
+            try:
+                incoming_circuits = incoming.get("circuits") or []
+                logger.debug(
+                    f"[save_config] entry: top_keys={list(incoming.keys())} "
+                    f"enabled={incoming.get('enabled')} "
+                    f"dry_run={incoming.get('dry_run')} "
+                    f"circuit_count={len(incoming_circuits)}"
+                )
+                for ci, c in enumerate(incoming_circuits):
+                    if not isinstance(c, dict):
+                        continue
+                    for ri, r in enumerate(c.get("rooms") or []):
+                        if not isinstance(r, dict):
+                            continue
+                        logger.debug(
+                            f"[save_config] client room "
+                            f"circuit[{ci}].id={c.get('id')} "
+                            f"room[{ri}].id={r.get('id')} "
+                            f"name={r.get('name')!r} "
+                            f"target_temp={r.get('target_temp')!r}"
+                        )
+            except Exception as diag_err:
+                logger.warning(f"[save_config] entry-diag failed: {diag_err}")
 
             controller_block = heating.setdefault("controller", {})
             if "enabled" in incoming:
@@ -579,13 +610,177 @@ def register_heating_controller_routes(app: FastAPI, get_controller, get_zigbee_
 
             _save_config(cfg)
             logger.info("Heating controller config saved via API")
-            return {
+
+            # ── Diagnostic: what's about to be passed to apply_config? ─
+            try:
+                heating_circuits = heating.get("circuits") or []
+                logger.debug(
+                    f"[save_config] pre-apply heating dict: "
+                    f"keys={list(heating.keys())} "
+                    f"top_enabled={heating.get('enabled')} "
+                    f"controller.enabled={(heating.get('controller') or {}).get('enabled')} "
+                    f"circuit_count={len(heating_circuits)}"
+                )
+                for ci, c in enumerate(heating_circuits):
+                    for ri, r in enumerate(c.get("rooms") or []):
+                        logger.debug(
+                            f"[save_config] pre-apply room "
+                            f"circuit[{ci}].id={c.get('id')} "
+                            f"room[{ri}].id={r.get('id')} "
+                            f"target_temp={r.get('target_temp')!r}"
+                        )
+            except Exception as diag_err:
+                logger.warning(f"[save_config] pre-apply-diag failed: {diag_err}")
+
+            # Hot-reload the live controller. We pass it the freshly-saved
+            # heating block — same shape its constructor reads.
+            ctrl = _resolve()
+            apply_result: Dict[str, Any] = {"applied": False}
+            logger.debug(
+                f"[save_config] resolved controller: "
+                f"present={ctrl is not None} "
+                f"has_apply_config={hasattr(ctrl, 'apply_config') if ctrl else False}"
+            )
+            if ctrl is not None and hasattr(ctrl, "apply_config"):
+                try:
+                    apply_result = await ctrl.apply_config(
+                        heating, reason="api-config-save"
+                    )
+                except Exception as e:
+                    # Persisted to disk but live reload failed — surface
+                    # this clearly so the user knows a restart is needed
+                    # to pick up the saved changes.
+                    logger.error(f"apply_config raised: {e}", exc_info=True)
+                    return {
+                        "success": True,
+                        "persisted": True,
+                        "applied": False,
+                        "error": f"Saved to disk but live reload failed: {e}",
+                        "restart_required": True,
+                    }
+            else:
+                # Older controller without apply_config — fall back to the
+                # original behaviour. Shouldn't happen in this build but
+                # it's a graceful degradation path.
+                return {
+                    "success": True,
+                    "persisted": True,
+                    "applied": False,
+                    "message": "Saved. Restart to apply (controller does not support hot-reload).",
+                    "restart_required": True,
+                }
+
+            response = {
                 "success": True,
-                "message": "Saved. Restart the service to apply changes to the controller.",
-                "restart_required": True,
+                "persisted": True,
+                "applied": apply_result.get("applied", False),
+                "diff": apply_result.get("diff", {}),
+                "tick_triggered": apply_result.get("tick_triggered", False),
+                "restart_required": False,
             }
+            logger.debug(
+                f"[save_config] returning to client: "
+                f"applied={response['applied']} "
+                f"tick_triggered={response['tick_triggered']} "
+                f"diff.any_changes={(response.get('diff') or {}).get('any_changes')}"
+            )
+            return response
         except Exception as e:
             logger.error(f"Failed to save controller config: {e}", exc_info=True)
+            return {"success": False, "error": str(e)}
+
+    @app.post("/api/heating/controller/room/target")
+    async def set_room_target(data: dict):
+        """
+        Fast-path endpoint for the most common edit: change one room's
+        target temperature. Avoids round-tripping the entire config.
+
+        Body:
+            {"circuit_id": "circuit_1", "room_id": "room_1", "target_temp": 21.5}
+
+        Behaviour:
+          - Loads config, updates the named room's target_temp, persists.
+          - Calls controller.apply_config() to hot-reload — also schedules
+            an immediate tick so the UI sees the effect within a second.
+          - Returns 404 (success=False) if the circuit/room isn't found,
+            without touching disk or live state.
+        """
+        try:
+            circuit_id = data.get("circuit_id")
+            room_id = data.get("room_id")
+            target_temp = data.get("target_temp")
+            if not circuit_id or not room_id:
+                return {"success": False, "error": "circuit_id and room_id required"}
+            try:
+                target_temp = float(target_temp)
+            except (TypeError, ValueError):
+                return {"success": False, "error": "target_temp must be numeric"}
+            # Soft sanity range — matches the controller's own clamps
+            # elsewhere. 5–32 °C is roughly the union of consumer Zigbee
+            # thermostat limits.
+            if target_temp < 5.0 or target_temp > 32.0:
+                return {"success": False, "error": "target_temp must be between 5 and 32 °C"}
+
+            cfg = _load_config()
+            heating = cfg.setdefault("heating", {})
+            circuits = heating.get("circuits") or []
+            target_circuit = next(
+                (c for c in circuits if c.get("id") == circuit_id), None
+            )
+            if target_circuit is None:
+                return {"success": False, "error": f"circuit '{circuit_id}' not found"}
+            target_room = next(
+                (r for r in (target_circuit.get("rooms") or [])
+                 if r.get("id") == room_id),
+                None,
+            )
+            if target_room is None:
+                return {
+                    "success": False,
+                    "error": f"room '{room_id}' not found in circuit '{circuit_id}'",
+                }
+
+            old_value = target_room.get("target_temp")
+            target_room["target_temp"] = target_temp
+
+            # Re-clean before persisting to apply the standard sanitiser
+            # (clamps, type coercion, schedule normalisation).
+            heating["circuits"] = _clean_circuits(circuits)
+            _save_config(cfg)
+
+            ctrl = _resolve()
+            apply_result: Dict[str, Any] = {"applied": False}
+            if ctrl is not None and hasattr(ctrl, "apply_config"):
+                try:
+                    apply_result = await ctrl.apply_config(
+                        heating, reason=f"room-target ({room_id})"
+                    )
+                except Exception as e:
+                    logger.error(f"apply_config raised: {e}", exc_info=True)
+                    return {
+                        "success": True,
+                        "persisted": True,
+                        "applied": False,
+                        "error": f"Saved but live reload failed: {e}",
+                        "restart_required": True,
+                    }
+
+            logger.info(
+                f"Room target updated: circuit={circuit_id} room={room_id} "
+                f"{old_value} → {target_temp}°C"
+            )
+            return {
+                "success": True,
+                "persisted": True,
+                "applied": apply_result.get("applied", False),
+                "tick_triggered": apply_result.get("tick_triggered", False),
+                "circuit_id": circuit_id,
+                "room_id": room_id,
+                "target_temp": target_temp,
+                "previous": old_value,
+            }
+        except Exception as e:
+            logger.error(f"Failed to set room target: {e}", exc_info=True)
             return {"success": False, "error": str(e)}
 
     @app.get("/api/heating/controller/devices")

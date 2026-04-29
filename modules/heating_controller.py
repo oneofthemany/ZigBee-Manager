@@ -441,6 +441,15 @@ class HeatingController:
         self._last_radio_write_ts = 0.0
         self._min_write_gap = 0.5  # seconds between writes
 
+        # Config lock — held while a tick reads self.circuits, also held by
+        # apply_config() while it mutates them. Ensures a tick that starts
+        # before a hot-reload finishes on the old config (read-snapshot at
+        # tick entry) and the next tick uses the new config. Without this,
+        # a config swap mid-iteration could splice old and new circuit
+        # lists in a single tick's output, which is a hard-to-debug class
+        # of bug we don't want.
+        self._config_lock = asyncio.Lock()
+
         if self.enabled:
             mode = "DRY-RUN" if self.dry_run else "LIVE"
             n_rooms = sum(len(c["rooms"]) for c in self.circuits)
@@ -460,6 +469,343 @@ class HeatingController:
             )
         elif config.get("circuits"):
             logger.info("Heating Controller defined but not enabled (set heating.controller.enabled: true)")
+
+    # ── Hot-reload ─────────────────────────────────────────────────
+    async def apply_config(self, new_config: dict,
+                           reason: str = "user-edit") -> Dict[str, Any]:
+        """
+        Re-derive enabled / dry_run / circuits from new_config in place,
+        without restarting the controller. Operational state is preserved:
+        - _last_command (idempotent gate stays warm)
+        - _last_ext_push (TRV external-temp push throttle)
+        - _trv_config_applied (don't re-push window/child-lock/valve config
+          to TRVs that were already configured in this session)
+        - _last_decision (panel keeps showing the last tick until a new one
+          fires; replaced by the immediate post-reload tick below)
+
+        Returns a dict describing what changed:
+            {
+                "applied": True,
+                "diff": {
+                    "rooms_added":   [{"circuit_id", "room_id", "name"}],
+                    "rooms_removed": [{"circuit_id", "room_id", "name"}],
+                    "rooms_changed": [{"circuit_id", "room_id", "name",
+                                       "fields": ["target_temp", ...],
+                                       "before": {...}, "after": {...}}],
+                    "circuits_added":   [{"id", "name"}],
+                    "circuits_removed": [{"id", "name"}],
+                    "controller_changes": ["enabled", "dry_run"],
+                },
+                "restart_required_fields": [],   # reserved for future use
+                "tick_triggered": bool,
+            }
+
+        The diff is the audit trail — both the user-facing toast and the
+        log line are built from it, so they're guaranteed to match.
+        """
+        async with self._config_lock:
+            new_config = new_config or {}
+
+            # ── Diagnostic: what did we receive? ────────────────────
+            # Log the raw incoming structure (one line per room) so we
+            # can verify the route handler passed the right data.
+            try:
+                incoming_circuits = new_config.get("circuits") or []
+                logger.debug(
+                    f"[apply_config] entry: reason={reason} "
+                    f"top_keys={list(new_config.keys())} "
+                    f"enabled_top={new_config.get('enabled')} "
+                    f"enabled_ctrl={(new_config.get('controller') or {}).get('enabled')} "
+                    f"circuit_count={len(incoming_circuits)}"
+                )
+                for ci, c in enumerate(incoming_circuits):
+                    if not isinstance(c, dict):
+                        continue
+                    for ri, r in enumerate(c.get("rooms") or []):
+                        if not isinstance(r, dict):
+                            continue
+                        logger.debug(
+                            f"[apply_config] incoming room "
+                            f"circuit[{ci}].id={c.get('id')} "
+                            f"room[{ri}].id={r.get('id')} "
+                            f"name={r.get('name')!r} "
+                            f"target_temp={r.get('target_temp')!r}"
+                        )
+            except Exception as diag_err:
+                logger.warning(f"[apply_config] entry-diag failed: {diag_err}")
+
+            controller_cfg = new_config.get("controller") or {}
+            new_enabled = bool(new_config.get("enabled", False)) and \
+                          bool(controller_cfg.get("enabled", False))
+            new_dry_run = bool(controller_cfg.get("dry_run", False))
+            new_circuits = self._clean_circuits(new_config.get("circuits") or [])
+
+            # ── Diagnostic: what came out of _clean_circuits? ───────
+            try:
+                logger.debug(
+                    f"[apply_config] post-parse: new_enabled={new_enabled} "
+                    f"(was {self.enabled}) new_dry_run={new_dry_run} "
+                    f"clean_circuit_count={len(new_circuits)}"
+                )
+                for ci, c in enumerate(new_circuits):
+                    for ri, r in enumerate(c.get("rooms") or []):
+                        logger.debug(
+                            f"[apply_config] cleaned room "
+                            f"circuit[{ci}].id={c.get('id')} "
+                            f"room[{ri}].id={r.get('id')} "
+                            f"target_temp={r.get('target_temp')!r}"
+                        )
+            except Exception as diag_err:
+                logger.warning(f"[apply_config] post-parse-diag failed: {diag_err}")
+
+            diff = self._diff_config(
+                old_circuits=self.circuits,
+                new_circuits=new_circuits,
+                old_enabled=self.enabled,
+                new_enabled=new_enabled,
+                old_dry_run=self.dry_run,
+                new_dry_run=new_dry_run,
+            )
+
+            # Atomic swap. self.circuits is read by tick code; we only get
+            # here while the config lock is held, so no tick is mid-flight.
+            self.circuits = new_circuits
+            self.enabled = new_enabled
+            self.dry_run = new_dry_run
+
+            # ── Diagnostic: confirm the swap landed ─────────────────
+            try:
+                logger.debug(
+                    f"[apply_config] post-swap: self.enabled={self.enabled} "
+                    f"self.circuits.id={id(self.circuits)} "
+                    f"len={len(self.circuits)}"
+                )
+                for ci, c in enumerate(self.circuits):
+                    for ri, r in enumerate(c.get("rooms") or []):
+                        logger.debug(
+                            f"[apply_config] live-state room "
+                            f"circuit[{ci}].id={c.get('id')} "
+                            f"room[{ri}].id={r.get('id')} "
+                            f"target_temp={r.get('target_temp')!r}"
+                        )
+            except Exception as diag_err:
+                logger.warning(f"[apply_config] post-swap-diag failed: {diag_err}")
+
+            # Forget _last_command entries for receivers/TRVs that no
+            # longer exist in the config — otherwise the idempotent gate
+            # could suppress a future legitimate command if the same IEEE
+            # is later re-added with a different desired state.
+            valid_ieees = set()
+            for c in new_circuits:
+                if c.get("receiver_ieee"):
+                    valid_ieees.add(c["receiver_ieee"])
+                    valid_ieees.add(f"{c['receiver_ieee']}:setpoint")
+                for r in c.get("rooms") or []:
+                    for t in r.get("trvs") or []:
+                        if isinstance(t, dict) and t.get("ieee"):
+                            valid_ieees.add(t["ieee"])
+            stale = [k for k in self._last_command if k not in valid_ieees]
+            for k in stale:
+                del self._last_command[k]
+
+            # _trv_config_applied: keep entries for TRVs still in config,
+            # drop entries for removed TRVs (so if they're re-added later
+            # we re-apply persistent settings).
+            current_trvs = {
+                t["ieee"]
+                for c in new_circuits
+                for r in c.get("rooms") or []
+                for t in (r.get("trvs") or [])
+                if isinstance(t, dict) and t.get("ieee")
+            }
+            self._trv_config_applied &= current_trvs
+
+        # Audit-trail log — shows exactly what changed and why.
+        if diff.get("any_changes"):
+            logger.info(
+                f"Heating Controller config reloaded ({reason}): "
+                f"{diff['summary']}"
+            )
+        else:
+            logger.info(
+                f"Heating Controller config reloaded ({reason}): no changes"
+            )
+
+        # Trigger an immediate tick so the UI reflects the new config
+        # within seconds, not at the end of the next scheduled interval.
+        # Done outside the config lock so the tick can take it.
+        tick_triggered = False
+        if self.enabled and diff.get("any_changes"):
+            try:
+                asyncio.create_task(self._tick())
+                tick_triggered = True
+            except Exception as e:
+                logger.warning(f"post-reload tick scheduling failed: {e}")
+
+        return {
+            "applied": True,
+            "diff": diff,
+            "restart_required_fields": [],
+            "tick_triggered": tick_triggered,
+        }
+
+    def _diff_config(self, old_circuits: List[Dict], new_circuits: List[Dict],
+                     old_enabled: bool, new_enabled: bool,
+                     old_dry_run: bool, new_dry_run: bool) -> Dict[str, Any]:
+        """
+        Compute a structured diff between old and new config. Used both for
+        the audit-trail log line and the response payload that the
+        frontend turns into a toast.
+        """
+        # Index circuits and rooms by id for fast lookup
+        old_circ_by_id = {c["id"]: c for c in old_circuits}
+        new_circ_by_id = {c["id"]: c for c in new_circuits}
+
+        # Track per-room comparable fields. If you add a new room field
+        # that the user can edit, list it here so the diff picks it up.
+        ROOM_FIELDS = (
+            "name", "target_temp", "night_setback", "min_temp",
+            "temperature_sensor_ieee", "external_temp_mode",
+            "external_temp_push_interval_sec",
+            "freshness_threshold_minutes",
+        )
+
+        circuits_added = [
+            {"id": c["id"], "name": c["name"]}
+            for c in new_circuits if c["id"] not in old_circ_by_id
+        ]
+        circuits_removed = [
+            {"id": c["id"], "name": c["name"]}
+            for c in old_circuits if c["id"] not in new_circ_by_id
+        ]
+
+        rooms_added: List[Dict] = []
+        rooms_removed: List[Dict] = []
+        rooms_changed: List[Dict] = []
+
+        # Walk new circuits — pick up adds and changes
+        for nc in new_circuits:
+            oc = old_circ_by_id.get(nc["id"])
+            new_rooms_by_id = {r["id"]: r for r in nc.get("rooms") or []}
+            old_rooms_by_id = {r["id"]: r for r in (oc.get("rooms") if oc else [])}
+
+            for rid, nr in new_rooms_by_id.items():
+                or_ = old_rooms_by_id.get(rid)
+                if or_ is None:
+                    rooms_added.append({
+                        "circuit_id": nc["id"], "room_id": rid,
+                        "name": nr.get("name", rid),
+                    })
+                    continue
+                changed_fields = [
+                    f for f in ROOM_FIELDS
+                    if or_.get(f) != nr.get(f)
+                ]
+                # TRV list — compare as set of (ieee + sorted feature flags)
+                or_trvs = sorted(
+                    [self._trv_signature(t) for t in (or_.get("trvs") or [])]
+                )
+                nr_trvs = sorted(
+                    [self._trv_signature(t) for t in (nr.get("trvs") or [])]
+                )
+                if or_trvs != nr_trvs:
+                    changed_fields.append("trvs")
+                # Schedule — compare full structure
+                if (or_.get("schedule") or []) != (nr.get("schedule") or []):
+                    changed_fields.append("schedule")
+                if changed_fields:
+                    rooms_changed.append({
+                        "circuit_id": nc["id"],
+                        "room_id": rid,
+                        "name": nr.get("name", rid),
+                        "fields": changed_fields,
+                        "before": {f: or_.get(f) for f in changed_fields if f in ROOM_FIELDS},
+                        "after": {f: nr.get(f) for f in changed_fields if f in ROOM_FIELDS},
+                    })
+
+            # Removed rooms in this circuit
+            for rid, or_ in old_rooms_by_id.items():
+                if rid not in new_rooms_by_id:
+                    rooms_removed.append({
+                        "circuit_id": nc["id"], "room_id": rid,
+                        "name": or_.get("name", rid),
+                    })
+
+        # Rooms in fully-removed circuits
+        for oc in old_circuits:
+            if oc["id"] not in new_circ_by_id:
+                for r in oc.get("rooms") or []:
+                    rooms_removed.append({
+                        "circuit_id": oc["id"], "room_id": r["id"],
+                        "name": r.get("name", r["id"]),
+                    })
+
+        controller_changes = []
+        if old_enabled != new_enabled:
+            controller_changes.append(
+                f"enabled: {old_enabled} → {new_enabled}"
+            )
+        if old_dry_run != new_dry_run:
+            controller_changes.append(
+                f"dry_run: {old_dry_run} → {new_dry_run}"
+            )
+
+        any_changes = bool(
+            circuits_added or circuits_removed
+            or rooms_added or rooms_removed or rooms_changed
+            or controller_changes
+        )
+
+        # Human-readable one-line summary for the log
+        parts: List[str] = []
+        if controller_changes:
+            parts.append("controller " + ", ".join(controller_changes))
+        if circuits_added:
+            parts.append(f"circuits added: {len(circuits_added)}")
+        if circuits_removed:
+            parts.append(f"circuits removed: {len(circuits_removed)}")
+        if rooms_added:
+            parts.append(f"rooms added: {len(rooms_added)}")
+        if rooms_removed:
+            parts.append(f"rooms removed: {len(rooms_removed)}")
+        if rooms_changed:
+            # Inline the most-common change (target_temp) for readability
+            target_changes = [
+                f"{r['name']} {r['before'].get('target_temp')} → "
+                f"{r['after'].get('target_temp')}°C"
+                for r in rooms_changed
+                if "target_temp" in r["fields"]
+            ]
+            if target_changes:
+                parts.append("targets: " + "; ".join(target_changes))
+            other_count = sum(
+                1 for r in rooms_changed if "target_temp" not in r["fields"]
+            )
+            if other_count:
+                parts.append(f"{other_count} other room change(s)")
+
+        return {
+            "any_changes": any_changes,
+            "summary": "; ".join(parts) if parts else "no changes",
+            "circuits_added": circuits_added,
+            "circuits_removed": circuits_removed,
+            "rooms_added": rooms_added,
+            "rooms_removed": rooms_removed,
+            "rooms_changed": rooms_changed,
+            "controller_changes": controller_changes,
+        }
+
+    @staticmethod
+    def _trv_signature(t: Any) -> str:
+        """Stable string for TRV equality comparison in the diff."""
+        if not isinstance(t, dict):
+            return str(t)
+        ieee = t.get("ieee", "")
+        flags = sorted(
+            f"{k}={v}" for k, v in t.items()
+            if k != "ieee" and v is not None
+        )
+        return f"{ieee}|{'|'.join(flags)}"
 
     # ── Config normalisation ───────────────────────────────────────
     def _clean_circuits(self, circuits: list) -> List[Dict]:
@@ -736,6 +1082,35 @@ class HeatingController:
         except Exception:
             pass  # if we can't check, proceed — fail-open
 
+        # Hold the config lock for the duration of the tick body. This
+        # blocks apply_config() until we're done. Acquiring lock should be
+        # near-instant in practice (apply_config is a CPU-bound dict swap).
+        async with self._config_lock:
+            await self._tick_body()
+
+    async def _tick_body(self):
+        # ── Diagnostic: confirm what the tick is reading ───────────
+        # If apply_config swapped self.circuits but a stale snapshot is
+        # being held somewhere, this will reveal it. We log id() of the
+        # circuits list because two distinct list objects with the same
+        # contents will have different ids — useful for catching
+        # "I held a reference to the old list" bugs.
+        try:
+            logger.debug(
+                f"[tick] reading self.circuits id={id(self.circuits)} "
+                f"len={len(self.circuits)}"
+            )
+            for ci, c in enumerate(self.circuits):
+                for ri, r in enumerate(c.get("rooms") or []):
+                    logger.debug(
+                        f"[tick] using room "
+                        f"circuit[{ci}].id={c.get('id')} "
+                        f"room[{ri}].id={r.get('id')} "
+                        f"target_temp={r.get('target_temp')!r}"
+                    )
+        except Exception as diag_err:
+            logger.warning(f"[tick] entry-diag failed: {diag_err}")
+
         devices = self._snapshot_devices()
         now = datetime.now()
         circuits_out = []
@@ -999,12 +1374,40 @@ class HeatingController:
           - "switch"     : sends on/off via OnOff cluster (relay-type receivers)
 
         Idempotent — only sends if command differs from last sent.
+
+        Hive receiver special case
+        --------------------------
+        For SLR1c/SLR1b ("Hive receivers"), the HVAC handler's
+        set_target_temperature(temp) issues an atomic 4-attribute write:
+            system_mode = heat
+            temp_setpoint_hold = 1
+            temp_setpoint_hold_duration = 0xFFFF
+            occupied_heating_setpoint = temp
         """
         ieee = circuit.get("receiver_ieee")
         if not ieee:
             return {"sent": False, "reason": "no receiver configured"}
 
         mode = str(circuit.get("receiver_command", "thermostat")).lower()
+        # Detect Hive-style receivers from the device model. The HVAC
+        # handler uses the same "SLR" / "RECEIVER" check internally; we
+        # mirror it here so the controller and the handler stay aligned
+        # on which write protocol is in play.
+        is_hive_receiver = False
+        try:
+            devs = self._snapshot_devices()
+            dev = devs.get(ieee)
+            if dev is not None:
+                # device may be a wrapper or a dict, depending on caller
+                model_str = (
+                        getattr(dev, "model", None)
+                        or (dev.get("model") if isinstance(dev, dict) else None)
+                        or ""
+                )
+                model_upper = str(model_str).upper()
+                is_hive_receiver = "SLR" in model_upper or "RECEIVER" in model_upper
+        except Exception as e:
+            logger.debug(f"hive-receiver detection failed for {ieee}: {e}")
 
         if mode == "thermostat":
             target_command = "system_mode"
@@ -1031,6 +1434,13 @@ class HeatingController:
             self._last_command[ieee] = (target_command, target_value, time.time())
             return {"sent": True, "command": display, "dry_run": True}
 
+        # For a Hive receiver calling for heat
+        skip_mode_send = (
+                mode == "thermostat"
+                and should_call
+                and is_hive_receiver
+        )
+
         try:
             # 1) Push setpoint first (only in thermostat mode)
             if mode == "thermostat":
@@ -1046,8 +1456,24 @@ class HeatingController:
                     self._last_command[f"{ieee}:setpoint"] = (target_setpoint, time.time())
                     logger.info(
                         f"Receiver '{circuit['name']}' setpoint → {target_setpoint}°C"
+                        + (" (atomic mode+hold included)" if skip_mode_send else "")
                     )
-            # 2) Then push mode / on-off
+            # 2) Then push mode / on-off — unless the atomic setpoint write
+            # already handled it (Hive call-for-heat case).
+            if skip_mode_send:
+                # Mark the mode as if we'd sent it, so the idempotent gate
+                # at the top of the next tick reflects reality.
+                self._last_command[ieee] = (target_command, target_value, time.time())
+                logger.info(
+                    f"Receiver '{circuit['name']}' ({ieee}) → "
+                    f"{display} (sent atomically with setpoint)"
+                )
+                return {
+                    "sent": True,
+                    "command": display,
+                    "setpoint": target_setpoint,
+                    "atomic": True,
+                }
             await self._throttled_send(ieee, target_command, target_value,
                                        endpoint_id=circuit.get("receiver_endpoint"))
             self._last_command[ieee] = (target_command, target_value, time.time())

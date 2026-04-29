@@ -1933,10 +1933,31 @@ async function saveControllerSettings() {
         const json = await res.json();
         if (!json.success) throw new Error(json.error || 'Save failed');
 
-        status.innerHTML = `<span class="text-success"><i class="fas fa-check me-1"></i>Saved. ${escapeHtml(json.message || '')}</span>`;
-        if (typeof window.showToast === 'function') {
-            window.showToast('Controller settings saved — restart to apply', 'success');
+        // Three-state response handling:
+        //   applied=true              → hot-reloaded, show diff summary
+        //   applied=false + restart=true → persisted but live reload failed
+        //   applied=false + restart=false → didn't apply (unexpected — log + warn)
+        const summary = buildDiffSummary(json.diff);
+        if (json.applied) {
+            const msg = summary || 'Controller settings updated';
+            status.innerHTML = `<span class="text-success"><i class="fas fa-check me-1"></i>${escapeHtml(msg)}</span>`;
+            fireToast('success', 'Heating updated', msg, 4000);
+        } else if (json.restart_required) {
+            const msg = json.error || 'Saved to disk but live reload failed — restart to apply.';
+            status.innerHTML = `<span class="text-warning"><i class="fas fa-exclamation-triangle me-1"></i>${escapeHtml(msg)}</span>`;
+            fireToast('warning', 'Restart required', msg, 7000);
+        } else {
+            // Saved to disk but the controller didn't report applied=true
+            // and didn't ask for a restart either. This should never happen
+            // with the current backend; if it does, the user needs to know
+            // something's off so they can check the logs. Don't show a
+            // green success toast — that would hide the issue.
+            console.warn('[heating] save returned applied=false without restart_required', json);
+            const msg = 'Saved to disk, but live reload didn\'t confirm. Check journalctl for [save_config] / [apply_config] entries.';
+            status.innerHTML = `<span class="text-warning"><i class="fas fa-exclamation-triangle me-1"></i>${escapeHtml(msg)}</span>`;
+            fireToast('warning', 'Hot-reload didn\'t apply', msg, 8000);
         }
+
         setTimeout(() => {
             const modalEl = document.getElementById('controllerSettingsModal');
             bootstrap.Modal.getInstance(modalEl)?.hide();
@@ -1944,10 +1965,50 @@ async function saveControllerSettings() {
         }, 900);
     } catch (e) {
         status.innerHTML = `<span class="text-danger">${escapeHtml(e.message)}</span>`;
+        fireToast('error', 'Save failed', e.message, 6000);
     } finally {
         btn.disabled = false;
         btn.innerHTML = `<i class="fas fa-save me-1"></i> Save`;
     }
+}
+
+// Convert the structured diff returned by /controller/config into a short
+// human-readable summary for the toast. Prefers concrete details (target
+// temperatures, names) over generic counts when there's room.
+function buildDiffSummary(diff) {
+    if (!diff || !diff.any_changes) return '';
+    const parts = [];
+    // Surface target temperature changes by name — this is by far the most
+    // common edit and the most useful confirmation to show the user.
+    const targetChanges = (diff.rooms_changed || []).filter(
+        r => (r.fields || []).includes('target_temp')
+    );
+    for (const r of targetChanges) {
+        const before = r.before?.target_temp ?? '?';
+        const after = r.after?.target_temp ?? '?';
+        parts.push(`${r.name}: ${before} → ${after}°C`);
+    }
+    // Other-room changes get a count rather than per-field detail
+    const otherChanged = (diff.rooms_changed || []).length - targetChanges.length;
+    if (otherChanged > 0) {
+        parts.push(`${otherChanged} other room${otherChanged === 1 ? '' : 's'} updated`);
+    }
+    if ((diff.rooms_added || []).length) {
+        parts.push(`${diff.rooms_added.length} room(s) added`);
+    }
+    if ((diff.rooms_removed || []).length) {
+        parts.push(`${diff.rooms_removed.length} room(s) removed`);
+    }
+    if ((diff.circuits_added || []).length) {
+        parts.push(`${diff.circuits_added.length} circuit(s) added`);
+    }
+    if ((diff.circuits_removed || []).length) {
+        parts.push(`${diff.circuits_removed.length} circuit(s) removed`);
+    }
+    if ((diff.controller_changes || []).length) {
+        parts.push(diff.controller_changes.join(', '));
+    }
+    return parts.join(' • ');
 }
 
 // ============================================================================
