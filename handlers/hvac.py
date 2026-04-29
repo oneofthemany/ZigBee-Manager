@@ -54,29 +54,6 @@ class ThermostatHandler(ClusterHandler):
     """
     CLUSTER_ID = 0x0201
 
-    # Minimal always-supported report config
-    REPORT_CONFIG = [
-        ("local_temperature", 60, 300, 25),
-        ("occupied_heating_setpoint", 0, 300, 10),
-        ("pi_heating_demand", 60, 300, 10),
-        ("system_mode", 10, 300, 1),
-        ("running_state", 10, 300, 1),
-        ("running_mode", 10, 300, 1),
-    ]
-
-    async def configure(self):
-        # Extend with cooling attrs only for mains-powered multi-mode devices
-        model = str(self.device.zigpy_dev.model or "").upper()
-        is_heat_only = any(m in model for m in ("AGL001", "SRTS", "TRV"))
-        if not is_heat_only:
-            self.REPORT_CONFIG = self.REPORT_CONFIG + [
-                ("occupied_cooling_setpoint", 0, 300, 10),
-                ("unoccupied_heating_setpoint", 0, 300, 10),
-                ("pi_cooling_demand", 60, 300, 10),
-                ("occupancy", 10, 300, 1),
-            ]
-        return await super().configure()
-
     # Attribute IDs
     ATTR_LOCAL_TEMP = 0x0000
     ATTR_OUTDOOR_TEMP = 0x0001
@@ -175,9 +152,48 @@ class ThermostatHandler(ClusterHandler):
     # ============================================================
     # CONFIGURE
     # ============================================================
+    # Base report config — attributes both thermostats and receivers support
+    REPORT_CONFIG = [
+        ("occupied_heating_setpoint", 0, 300, 10),
+        ("system_mode", 10, 300, 1),
+    ]
+
+    # ============================================================
+    # CONFIGURE
+    # ============================================================
     async def configure(self):
+        # Build report config based on device role.
+        # Receivers carry the active heating state; thermostats are remote
+        # controls in the Hive model and don't populate local_temperature,
+        # pi_heating_demand, running_state, or running_mode.
+        report_config = list(self.REPORT_CONFIG)
+
+        if self.is_receiver:
+            report_config += [
+                ("local_temperature", 60, 300, 20),
+                ("pi_heating_demand", 60, 300, 10),
+                ("running_state", 10, 300, 1),
+                ("running_mode", 10, 300, 1),
+            ]
+
+            # Cooling extras for mains-powered multi-mode receivers
+            model = str(self.device.zigpy_dev.model or "").upper()
+            is_heat_only = any(m in model for m in ("AGL001", "SRTS", "TRV"))
+            if not is_heat_only:
+                report_config += [
+                    ("occupied_cooling_setpoint", 0, 300, 10),
+                    ("unoccupied_heating_setpoint", 0, 300, 10),
+                    ("pi_cooling_demand", 60, 300, 10),
+                    ("occupancy", 10, 300, 1),
+                ]
+
+        # Per-instance override so super().configure() picks it up without
+        # mutating the class attribute (which is shared across devices).
+        self.REPORT_CONFIG = report_config
+
         await super().configure()
 
+        # ── Init attribute read (was the second configure's body) ──
         init_attrs = [
             self.ATTR_ABS_MIN_HEAT_SETPOINT_LIMIT,
             self.ATTR_ABS_MAX_HEAT_SETPOINT_LIMIT,
@@ -546,7 +562,7 @@ class ThermostatHandler(ClusterHandler):
                       self.ATTR_MAX_HEAT_SETPOINT_LIMIT]:
             if isinstance(value, (int, float)) and value != 0x8000:
                 # Zigbee standard is ALWAYS centidegrees (0.01 C)
-                return round(float(value) / 100, 1)
+                return round(float(value) / 100, 2)
 
         # 2. System Mode Parsing (Enum -> String)
         if attrid == self.ATTR_SYSTEM_MODE:
