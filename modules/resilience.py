@@ -253,13 +253,19 @@ class ResilienceManager:
             try:
                 logger.info("Reconnecting NCP...")
                 await self.app.connect()
-                logger.info("NCP reconnected successfully")
+                logger.info("NCP reconnected, restarting network...")
+                # connect() brings EZSP up but does not re-join the network.
+                # zigpy's start_network() issues networkInit and waits for
+                # the NCP to report JOINED_NETWORK.
+                await self.app.start_network()
+                logger.info("Network restarted successfully")
+                self.feed_watchdog()
             except Exception as e:
-                logger.error(f"NCP reconnect failed: {e}")
+                logger.error(f"NCP reconnect failed: {e}", exc_info=True)
                 self.recovery_in_progress = False
                 return False
 
-            # Give the stack a moment to stabilise
+                # Give the stack a moment to stabilise
             await asyncio.sleep(3)
 
             if await self._verify_connection():
@@ -272,6 +278,7 @@ class ResilienceManager:
                 return True
             else:
                 logger.warning("Reconnect succeeded but verification failed")
+                self.last_watchdog_feed = time.time()
                 self.recovery_in_progress = False
                 return False
 
@@ -281,26 +288,36 @@ class ResilienceManager:
             return False
 
     async def _verify_connection(self) -> bool:
-        """
-        Verify that the coordinator connection is healthy.
+        """Verify that the coordinator connection is healthy.
 
-        Returns:
-            True if connection is healthy, False otherwise
+        After start_network() the NCP should report JOINED_NETWORK almost
+        immediately, but we poll briefly to absorb any race.
         """
         try:
-            # Try a simple EZSP command to verify connection
-            if hasattr(self.app, '_ezsp') and self.app._ezsp:
-                # Try to get network info
-                status = await asyncio.wait_for(
-                    self.app._ezsp.networkState(),
-                    timeout=5.0
-                )
-                return status[0] == t.EmberNetworkStatus.JOINED_NETWORK
-        except Exception as e:
-            logger.debug(f"Connection verification failed: {e}")
+            ezsp = getattr(self.app, '_ezsp', None)
+            if not ezsp:
+                logger.warning("Verification: app._ezsp is None")
+                return False
+
+            deadline = time.monotonic() + 10.0
+            last_status = None
+
+            while time.monotonic() < deadline:
+                result = await asyncio.wait_for(ezsp.networkState(), timeout=3.0)
+                status = result[0] if isinstance(result, (tuple, list)) else result
+                last_status = status
+
+                if status == t.EmberNetworkStatus.JOINED_NETWORK:
+                    return True
+
+                await asyncio.sleep(0.5)
+
+            logger.warning(f"Verification: networkState() never reached JOINED_NETWORK (last={last_status!r})")
             return False
 
-        return False
+        except Exception as e:
+            logger.warning(f"Verification exception: {type(e).__name__}: {e}")
+            return False
 
     def reset_recovery_state(self):
         """Reset recovery state after successful operation."""
@@ -371,6 +388,12 @@ class WatchdogMonitor:
 
                 # Don't check watchdog until we've been connected at least once
                 if self.resilience.state == ConnectionState.DISCONNECTED:
+                    continue
+
+                # Once we're in FAILED, stop pretending recovery is possible.
+                # Operator intervention is required to reset and restart.
+                if self.resilience.state == ConnectionState.FAILED:
+                    _stale_count = 0
                     continue
 
                 age = time.time() - self.resilience.last_watchdog_feed
