@@ -123,6 +123,12 @@ function renderUpgradeCard() {
 async function refreshUpgradeStatus() {
     try {
         const res = await fetch('/api/upgrade/status');
+
+        if (res.status === 401) {
+            stopPolling();
+            return;
+        }
+
         const data = await res.json();
         if (!data || !data.success) return;
         renderBody(data);

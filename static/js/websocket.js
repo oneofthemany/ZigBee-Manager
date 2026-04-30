@@ -38,11 +38,13 @@ export function initWS() {
     state.socket.onclose = () => {
         document.getElementById('connection-status').innerHTML =
             '<i class="fas fa-circle text-danger"></i> Disconnected';
-
-        // Update HA status to unknown on disconnect
         updateHAStatus("unknown");
+        state.socket = null;  // ← clear so the auth-gated reconnect can fire
 
-        setTimeout(initWS, 3000);
+        // Only reconnect if still authenticated
+        if (window.zmmAuth && window.zmmAuth.whoami()) {
+            setTimeout(initWS, 3000);
+        }
     };
 
     state.socket.onmessage = (event) => {
@@ -87,6 +89,10 @@ export function initWS() {
 
                 case 'ota_progress':
                     handleOTAProgress(msg.data);
+                    break;
+
+                case 'presence_user_updated':
+                    if (window.handlePresenceUpdate) window.handlePresenceUpdate(payload);
                     break;
 
                 case "device_list": // New handler for full list updates

@@ -30,6 +30,7 @@ import time
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
+from starlette.middleware.base import BaseHTTPMiddleware
 import random
 
 # ---------------------------------------------------------------------------
@@ -149,11 +150,19 @@ try:
     from modules.heating_advisor import HeatingAdvisor
     from modules.heating_controller import HeatingController
     from modules.heating_anomaly_watcher import HeatingAnomalyWatcher
+    from modules.auth import AuthManager, set_auth_manager
+    from modules.auth_middleware import AuthMiddleware
+    from modules.presence_users import PresenceUserManager, set_presence_manager, get_presence_manager
+    from modules.auth import AuthManager, set_auth_manager
+    from modules.auth_middleware import AuthMiddleware
+    from modules.auth_secure import SecureAuthManager, set_secure_auth_manager
+    from modules.auth_network import NetworkResolver, set_network_resolver
 
     # Import route registrations
     from routes import (
         register_backup_routes,
         register_config_routes,
+        register_auth_routes,
         register_upgrade_routes,
         register_device_routes,
         register_network_routes,
@@ -171,6 +180,7 @@ try:
         register_weather_routes,
         register_heating_routes,
         register_heating_controller_routes,
+        register_presence_routes,
         register_api_docs_routes,
         manager, broadcast_event,
     )
@@ -563,7 +573,6 @@ async def lifespan(app: FastAPI):
         zigbee_service.automation._get_names = merged_names
         logger.info("Wired Matter devices into automation engine")
 
-
     # Rotary binding manager
     if matter_bridge:
         from modules.matter_definitions import get_definition_store
@@ -574,6 +583,36 @@ async def lifespan(app: FastAPI):
         )
         rbm.load_from_definitions(get_definition_store())
         logger.info(f"Rotary binding manager: {len(rbm._all_bindings)} binding(s)")
+
+    # ── Presence Users ──
+    presence_manager = PresenceUserManager(
+        mqtt_handler=mqtt_service,
+        event_emitter=broadcast_event,                    # same one used by zones
+        automation_evaluator=zigbee_service.automation.evaluate,
+    )
+    await presence_manager.start()
+    set_presence_manager(presence_manager)
+
+    # Wire presence virtual devices into the automation engine, the same
+    # way Matter devices are wired in above.
+    _orig_dev_getter = zigbee_service.automation._get_devices
+    _orig_name_getter = zigbee_service.automation._get_names
+
+    def _devs_with_presence():
+        merged = dict(_orig_dev_getter())
+        merged.update(presence_manager.devices)
+        return merged
+
+    def _names_with_presence():
+        names = dict(_orig_name_getter())
+        for ieee, dev in presence_manager.devices.items():
+            names[ieee] = dev.friendly_name
+        return names
+
+    zigbee_service.automation._get_devices = _devs_with_presence
+    zigbee_service.automation._get_names = _names_with_presence
+    logger.info("Wired presence users into automation engine")
+
 
     # ──  Recovery ──
     from modules.test_recovery import get_test_recovery_manager
@@ -653,6 +692,7 @@ async def lifespan(app: FastAPI):
     heating_anomaly_watcher.stop()
     from modules.telemetry_db import close as close_telemetry_db
     close_telemetry_db()
+    await presence_manager.stop()
 
     # 2. services
     if zigbee_service.multipan and zigbee_service.multipan.is_running:
@@ -682,11 +722,44 @@ async def lifespan(app: FastAPI):
 # ============================================================================
 
 app = FastAPI(
-    title="Zigbee Gateway",
-    description="ZHA-style Zigbee device management",
+    title="Zigbee Matter Manager",
+    description="Zigbee device management",
     version="1.0.0",
     lifespan=lifespan
 )
+
+# ── Authentication (with MFA + lockout + LAN-aware) ──
+auth_manager = AuthManager()
+auth_manager.load()
+set_auth_manager(auth_manager)
+
+secure_auth = SecureAuthManager(auth_manager)
+set_secure_auth_manager(secure_auth)
+
+# Network resolver — read trusted-proxy/LAN config from config.yaml
+sec_cfg = (CONFIG.get("security") or {}).get("network", {}) or {}
+network_resolver = NetworkResolver(
+    trusted_proxies=sec_cfg.get("trusted_proxies"),
+    lan_ranges=sec_cfg.get("lan_ranges"),
+    cloudflare_tunnel_enabled=bool(
+        sec_cfg.get("cloudflare_tunnel_enabled", False)
+    ),
+    cloudflare_ranges=sec_cfg.get("cloudflare_ranges"),
+)
+set_network_resolver(network_resolver)
+logger.info(f"Network policy: {network_resolver.describe()}")
+
+auth_mw = AuthMiddleware(app, auth_manager, enforce=True)
+app.add_middleware(BaseHTTPMiddleware, dispatch=auth_mw.dispatch)
+
+register_auth_routes(
+    app,
+    auth_manager_getter=lambda: auth_manager,
+    secure_manager_getter=lambda: secure_auth,
+    network_resolver_getter=lambda: network_resolver,
+    secret_getter=auth_mw._secret,
+)
+logger.info("Auth subsystem initialised (MFA + lockout + LAN-aware)")
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
@@ -751,6 +824,7 @@ register_weather_routes(app, lambda: weather_service)
 register_heating_routes(app, lambda: heating_advisor, get_zigbee_service, lambda: heating_anomaly_watcher)
 register_heating_controller_routes(app, lambda: heating_controller, get_zigbee_service)
 register_api_docs_routes(app)
+register_presence_routes(app, get_presence_manager)
 
 # ============================================================================
 # POST-SETUP ZIGBEE HOT-START SERVICES

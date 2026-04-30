@@ -7,6 +7,10 @@ import logging
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from modules.json_helpers import prepare_for_json
 
+# Add the imports required for auth here
+from modules.auth import get_auth_manager
+from modules.auth_middleware import _verify_session, _derive_session_secret
+
 logger = logging.getLogger("websocket")
 
 
@@ -59,11 +63,37 @@ async def broadcast_event(event_type: str, data: dict):
 
 
 def register_websocket_routes(app: FastAPI):
-    """Register WebSocket endpoint."""
-
     @app.websocket("/ws")
     async def websocket_endpoint(ws: WebSocket):
-        """WebSocket endpoint for real-time updates."""
+        # Auth check: require a valid session cookie OR a bearer token
+        # passed as a query param (?token=...)
+        auth_mgr = get_auth_manager()
+        authenticated = False
+
+        if auth_mgr:
+            # Try cookie first
+            cookie = ws.cookies.get("zmm_session")
+            if cookie:
+                secret = _derive_session_secret(str(auth_mgr.config_path))
+                username = _verify_session(cookie, secret)
+                if username and username in auth_mgr.users:
+                    user = auth_mgr.users[username]
+                    if not user.disabled:
+                        authenticated = True
+
+            # Fallback: ?token=... for programmatic clients
+            if not authenticated:
+                token = ws.query_params.get("token")
+                if token:
+                    verified = auth_mgr.verify_token(token)
+                    if verified:
+                        authenticated = True
+
+        if not authenticated:
+            await ws.close(code=1008)  # Policy Violation
+            logger.warning("WebSocket connection rejected (no auth)")
+            return
+
         await manager.connect(ws)
         try:
             while True:

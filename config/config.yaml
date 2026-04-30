@@ -52,6 +52,25 @@ web:
     cert_file: ./data/certs/cert.pem
     key_file: ./data/certs/key.pem
 
+security:
+  network:
+    # IPs whose forwarded-for headers we trust. Default: 127.0.0.0/8 only.
+    # Add your reverse-proxy host(s) here if not on localhost.
+    trusted_proxies:
+      - "127.0.0.0/8"
+      - "10.0.0.0/8"        # if you reverse-proxy from your home server
+
+    # Set to true if running behind Cloudflare Tunnel — the resolver
+    # will then trust CF-Connecting-IP when it arrives via cloudflared.
+    cloudflare_tunnel_enabled: false
+
+    # Override LAN classification. Defaults cover RFC1918, loopback,
+    # link-local, CGNAT (Tailscale), and IPv6 ULA/link-local.
+    # Only set this if you have a non-standard internal network.
+    # lan_ranges:
+    #   - "192.168.0.0/16"
+    #   - "10.0.0.0/8"
+
 # Matter integration (optional — requires python-matter-server)
 matter:
   enabled: true                    # Start embedded server

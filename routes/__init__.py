@@ -22,12 +22,15 @@ from routes.heating_routes import register_heating_routes
 from routes.heating_controller_routes import register_heating_controller_routes
 from routes.upgrade_routes import register_upgrade_routes
 from routes.api_docs_routes import register_api_docs_routes
+from routes.auth_routes import register_auth_routes
+from routes.presence_routes import register_presence_routes
 
 
 
 __all__ = [
     'register_backup_routes',
     'register_config_routes',
+    'register_auth_routes',
     'register_upgrade_routes',
     'register_device_routes',
     'register_network_routes',
@@ -45,6 +48,7 @@ __all__ = [
     'register_weather_routes',
     'register_heating_routes',
     'register_heating_controller_routes',
+    'register_presence_routes',
     'register_api_docs_routes',
     'manager',
     'broadcast_event',

@@ -17,7 +17,9 @@ var APP_SHELL = [
     '/static/css/dark-mode.css',
     '/static/css/toasts.css',
     '/static/css/device-status.css',
-    '/static/images/zigbee-manager-logo.png'
+    '/static/images/zigbee-manager-logo.png',
+    '/static/js/presence.js',
+    '/static/js/presence-settings.js'
 ];
 
 // Install: cache app shell

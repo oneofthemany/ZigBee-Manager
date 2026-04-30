@@ -38,6 +38,7 @@ BACKUP_MANIFEST = [
     "data/banned_devices.json",
     "data/device_overrides.json",
     "data/zones.yaml",
+    "data/auth.yaml",
 
     # Groups
     "groups/groups.json",

@@ -241,7 +241,16 @@ window.toggleDeviceInTab = toggleDeviceInTab;
 
 document.addEventListener('DOMContentLoaded', () => {
     // Initialise WebSocket connection
-    initWS();
+    if (window.zmmAuth) {
+        window.zmmAuth.onChange(function (principal) {
+            if (principal && !state.socket) {
+                initWS();
+            }
+        });
+    } else {
+        // Fallback if auth.js failed to load — old behaviour
+        initWS();
+    }
 
     // Start update interval for "last seen" times
     setInterval(updateLastSeenTimes, 1000);
@@ -288,6 +297,10 @@ document.addEventListener('DOMContentLoaded', () => {
         settingsTab.addEventListener('click', () => {
             loadConfigYaml();
             loadSSLStatus();
+
+            if (window.initMyAccount) window.initMyAccount();
+            if (window.initAuthSettings) window.initAuthSettings();
+            if (window.initPresenceSettings) window.initPresenceSettings();
         });
     }
 
