@@ -256,7 +256,7 @@ function renderBody(data) {
               <i class="fas fa-check-circle me-1"></i> Image for v${escapeHtml(data.host_status?.target_version || latest_available || '')} is ready
             </div>
             <p class="mb-2 small">
-              Swapping takes about 15 seconds. You'll be disconnected briefly,
+              Swapping takes about 2-3 mins. You'll be disconnected briefly,
               then the page will reload automatically.
             </p>
             <button class="btn btn-success btn-sm" onclick="window.startUpgradeSwap()">
