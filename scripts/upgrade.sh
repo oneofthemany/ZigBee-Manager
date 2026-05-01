@@ -354,7 +354,7 @@ import socket, sys
 for af in (socket.AF_INET, socket.AF_INET6):
     try:
         s = socket.socket(af, socket.SOCK_STREAM)
-        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+-       s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         s.bind(('::' if af == socket.AF_INET6 else '0.0.0.0', $port))
         s.close()
     except OSError:
@@ -647,6 +647,18 @@ do_swap() {
 
     write_status "swapping" "$target_version" 55 "Starting new container"
     log "Swap: starting new container from $new_tag via $run_helper"
+
+    # Final pre-run verification. Rename + helper invocation can take 1-3s
+    # during which a leftover rootlessport child can re-bind, or a TIME_WAIT
+    # socket can re-emerge. Re-check and reap.
+    pkill -f "rootlessport.*${CONTAINER_NAME}" 2>/dev/null || true
+    pkill -f "rootlessport.*${previous_name}"  2>/dev/null || true
+    if ! wait_for_ports_free 30; then
+        log "Swap: pre-run port check failed — killing squatters"
+        kill_port_squatters 8000 5580
+        sleep 2
+        wait_for_ports_free 30 || log "Swap: ports still busy — proceeding (run will likely fail)"
+    fi
 
     log_to_build ""
     log_to_build "=== Starting new container ==="

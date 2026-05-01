@@ -119,12 +119,11 @@ USE_SYSTEMD_SYSTEM=false
 USE_POLLING=false
 
 if command -v systemctl >/dev/null 2>&1; then
-    if systemctl --user status >/dev/null 2>&1; then
-        USE_SYSTEMD_USER=true
-    elif [[ "$(id -u)" -eq 0 ]]; then
+    if [[ "$(id -u)" -eq 0 ]]; then
         USE_SYSTEMD_SYSTEM=true
+    elif systemctl --user status >/dev/null 2>&1; then
+      USE_SYSTEMD_USER=true
     else
-        # User systemd not available, and we're not root — polling it is.
         USE_POLLING=true
     fi
 else
