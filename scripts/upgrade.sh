@@ -584,24 +584,24 @@ container_unit_mask_and_stop() {
         log "Supervisor: no unit detected (continuing without mask)"
         return 0
     }
-    log "Supervisor: masking $unit_desc to block auto-restart"
-    # shellcheck disable=SC2086
-    systemctl $unit_desc mask >>"$WATCHER_LOG" 2>&1 || \
+    local scope unit
+    read -r scope unit <<< "$unit_desc"
+    log "Supervisor: masking $scope $unit to block auto-restart"
+    systemctl "$scope" mask "$unit" >>"$WATCHER_LOG" 2>&1 || \
         log "Supervisor: warn — mask failed (continuing)"
     UNIT_WAS_MASKED=1
-    # shellcheck disable=SC2086
-    systemctl $unit_desc stop >>"$WATCHER_LOG" 2>&1 || true
+    systemctl "$scope" stop "$unit" >>"$WATCHER_LOG" 2>&1 || true
 }
 
 # Unmask the supervisor if we masked it. Idempotent.
 unmask_unit_if_needed() {
     if [[ "${UNIT_WAS_MASKED:-0}" == "1" ]]; then
         local unit_desc; unit_desc=$(detect_container_unit) || { UNIT_WAS_MASKED=0; return 0; }
-        log "Supervisor: unmasking $unit_desc"
-        # shellcheck disable=SC2086
-        systemctl $unit_desc unmask >>"$WATCHER_LOG" 2>&1 || true
-        # shellcheck disable=SC2086
-        systemctl $unit_desc reset-failed >/dev/null 2>&1 || true
+        local scope unit
+        read -r scope unit <<< "$unit_desc"
+        log "Supervisor: unmasking $scope $unit"
+        systemctl "$scope" unmask "$unit" >>"$WATCHER_LOG" 2>&1 || true
+        systemctl "$scope" reset-failed "$unit" >/dev/null 2>&1 || true
         UNIT_WAS_MASKED=0
     fi
 }
@@ -609,10 +609,11 @@ unmask_unit_if_needed() {
 # Start the supervisor unit. Call only after unmask_unit_if_needed.
 container_unit_start() {
     local unit_desc; unit_desc=$(detect_container_unit) || return 0
-    log "Supervisor: starting $unit_desc"
-    # shellcheck disable=SC2086
-    systemctl $unit_desc start >>"$WATCHER_LOG" 2>&1 || \
-        log "Supervisor: warn — start failed for $unit_desc"
+    local scope unit
+    read -r scope unit <<< "$unit_desc"
+    log "Supervisor: starting $scope $unit"
+    systemctl "$scope" start "$unit" >>"$WATCHER_LOG" 2>&1 || \
+        log "Supervisor: warn — start failed for $scope $unit"
 }
 
 # ── SWAP: stop old container, rename, run new ────────────────────────────────
