@@ -45,6 +45,11 @@ VERSION_STATE_FILE="${STATE_DIR}/version.json"
 # Log for the watcher itself (separate from build.log)
 WATCHER_LOG="${DATA_DIR}/logs/upgrade_watcher.log"
 
+# Systemd unit that supervises the container (auto-detected if unset).
+# When set, do_swap will stop this unit before swapping and start it after,
+# preventing the unit from restarting the old container mid-swap.
+ZMM_CONTAINER_UNIT="${ZMM_CONTAINER_UNIT:-}"
+
 mkdir -p "$UPGRADE_DIR" "$STATE_DIR" "$(dirname "$WATCHER_LOG")"
 
 # ── LOGGING ──────────────────────────────────────────────────────────────────
@@ -539,6 +544,48 @@ do_build() {
     return 0
 }
 
+# ── CONTAINER SUPERVISOR DETECTION ───────────────────────────────────────────
+# Find the systemd unit that auto-restarts our container, so we can pause it
+# during the swap. Without this, the unit re-launches the old container in
+# the gap between stop and the new run, squatting our ports.
+detect_container_unit() {
+    if [[ -n "$ZMM_CONTAINER_UNIT" ]]; then
+        echo "$ZMM_CONTAINER_UNIT"
+        return 0
+    fi
+    local candidates=(
+        "container-${CONTAINER_NAME}.service"
+        "${CONTAINER_NAME}.service"
+    )
+    for scope in "--system" "--user"; do
+        for unit in "${candidates[@]}"; do
+            if systemctl $scope cat "$unit" >/dev/null 2>&1; then
+                echo "$scope $unit"
+                return 0
+            fi
+        done
+    done
+    return 1
+}
+
+container_unit_stop() {
+    local desc; desc=$(detect_container_unit) || return 0
+    log "Swap: stopping supervisor unit ($desc) to prevent auto-restart"
+    # shellcheck disable=SC2086
+    systemctl $desc stop >>"$WATCHER_LOG" 2>&1 || \
+        log "Swap: warn — could not stop $desc (continuing)"
+}
+
+container_unit_start() {
+    local desc; desc=$(detect_container_unit) || return 0
+    log "Swap: re-arming supervisor unit ($desc)"
+    # shellcheck disable=SC2086
+    systemctl $desc reset-failed >/dev/null 2>&1 || true
+    # shellcheck disable=SC2086
+    systemctl $desc start >>"$WATCHER_LOG" 2>&1 || \
+        log "Swap: warn — could not start $desc"
+}
+
 # ── SWAP: stop old container, rename, run new ────────────────────────────────
 do_swap() {
     local target_version
@@ -693,6 +740,7 @@ do_swap() {
         "$RUNTIME" rename "$previous_name" "$CONTAINER_NAME" >/dev/null 2>&1 || true
         "$RUNTIME" start "$CONTAINER_NAME" >/dev/null 2>&1 || true
         write_status "failed" "$target_version" 100 "Rolled back" "New container failed to start; old container restored. See build.log for details."
+        container_unit_start
         return 1
     fi
 
@@ -738,6 +786,7 @@ do_swap() {
         "$RUNTIME" start "$CONTAINER_NAME" >/dev/null 2>&1 || true
         local tried="${health_candidates[*]}"
         write_status "failed" "$target_version" 100 "Rolled back after health failure" "New container did not respond at any of: ${tried} within ${HEALTH_TIMEOUT}s. See build.log for the new container's startup log."
+        container_unit_start
         return 1
     fi
 
@@ -750,8 +799,11 @@ do_swap() {
     # For the current design, the -previous container stays until next successful upgrade or manual GC.
 
     write_status "idle" "$target_version" 100 "Upgrade complete" ""
+    # Re-arm the supervisor so a host reboot or container crash brings the
+    # new container back. The unit references CONTAINER_NAME, which is now
+    # the new container.
+    container_unit_start
     return 0
-}
 
 # ── ROLLBACK: swap back to previous image ────────────────────────────────────
 do_rollback() {
@@ -771,9 +823,11 @@ do_rollback() {
             write_status "rolling_back" "$previous_version" 60 "Starting previous container"
             "$RUNTIME" start "$CONTAINER_NAME" >>"$WATCHER_LOG" 2>&1
             write_status "idle" "$previous_version" 100 "Rollback complete" ""
+            container_unit_start
             return 0
         fi
         write_status "failed" "$previous_version" 0 "Rollback failed" "No previous image tag or container available"
+        container_unit_start
         return 1
     fi
 
@@ -811,6 +865,7 @@ do_rollback() {
     update_version_state "$previous_version" "" "$previous_image_tag" ""
 
     write_status "idle" "$previous_version" 100 "Rollback complete" ""
+    container_unit_start
     return 0
 }
 
