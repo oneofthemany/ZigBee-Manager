@@ -28,7 +28,7 @@ APP_DIR="${ZMM_APP_DIR:-/opt/zigbee-matter-manager}"
 # execute under SELinux. /root/ and ~/ are labelled admin_home_t/user_home_t
 # which init_t is denied execute access to. /opt/ is labelled usr_t which
 # init_t can execute, and is the FHS-standard location for add-on packages.
-SCRIPTS_DIR="${ZMM_SCRIPTS_DIR:-/opt/zigbee-matter-manager}"
+SCRIPTS_DIR="${ZMM_SCRIPTS_DIR:-/opt/zigbee-matter-manager/scripts}"
 
 UPGRADE_DIR="${DATA_DIR}/data/upgrade"
 STATE_DIR="${DATA_DIR}/data/state"
