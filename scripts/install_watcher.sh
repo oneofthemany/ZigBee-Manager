@@ -21,20 +21,20 @@ ok()    { echo -e "${GREEN}${BOLD}[ OK ]${NC} $*"; }
 warn()  { echo -e "${YELLOW}${BOLD}[WARN]${NC} $*"; }
 err()   { echo -e "${RED}${BOLD}[ERR ]${NC} $*" >&2; }
 
-DATA_DIR="${ZMM_DATA_DIR:-$HOME/.zigbee-matter-manager}"
-APP_DIR="${ZMM_APP_DIR:-$HOME/zigbee-matter-manager}"
+DATA_DIR="${ZMM_DATA_DIR:-/opt/.zigbee-matter-manager}"
+APP_DIR="${ZMM_APP_DIR:-/opt/zigbee-matter-manager}"
 
 # IMPORTANT: scripts must live in a location systemd's init_t domain can
 # execute under SELinux. /root/ and ~/ are labelled admin_home_t/user_home_t
 # which init_t is denied execute access to. /opt/ is labelled usr_t which
 # init_t can execute, and is the FHS-standard location for add-on packages.
-SCRIPTS_DIR="${ZMM_SCRIPTS_DIR:-/opt/zmm}"
+SCRIPTS_DIR="${ZMM_SCRIPTS_DIR:-/opt/zigbee-matter-manager}"
 
 UPGRADE_DIR="${DATA_DIR}/data/upgrade"
 STATE_DIR="${DATA_DIR}/data/state"
 LOG_DIR="${DATA_DIR}/logs"
 
-# /opt/zmm needs root to create — sudo if we're not already root
+# /opt/zigbee-matter-manager needs root to create — sudo if we're not already root
 if [[ ! -d "$SCRIPTS_DIR" ]]; then
     if [[ "$(id -u)" -eq 0 ]]; then
         mkdir -p "$SCRIPTS_DIR"
@@ -132,7 +132,7 @@ fi
 
 # ── systemd user: path unit + service unit ───────────────────────────────────
 install_systemd_user() {
-    local unit_dir="$HOME/.config/systemd/user"
+    local unit_dir="/opt/.config/systemd/user"
     mkdir -p "$unit_dir"
 
     cat > "$unit_dir/zmm-upgrade.service" <<SERVICE
@@ -245,8 +245,8 @@ install_polling() {
 #!/bin/bash
 # Polling watcher — runs upgrade.sh every N seconds if a trigger exists.
 set -u
-DATA_DIR="${ZMM_DATA_DIR:-$HOME/.zigbee-matter-manager}"
-APP_DIR="${ZMM_APP_DIR:-$HOME/zigbee-matter-manager}"
+DATA_DIR="${ZMM_DATA_DIR:-/opt/.zigbee-matter-manager}"
+APP_DIR="${ZMM_APP_DIR:-/opt/zigbee-matter-manager}"
 UPGRADE_SH="${DATA_DIR}/scripts/upgrade.sh"
 TRIGGER="${DATA_DIR}/data/upgrade/trigger"
 INTERVAL=5
