@@ -45,11 +45,6 @@ VERSION_STATE_FILE="${STATE_DIR}/version.json"
 # Log for the watcher itself (separate from build.log)
 WATCHER_LOG="${DATA_DIR}/logs/upgrade_watcher.log"
 
-# Systemd unit that supervises the container (auto-detected if unset).
-# When set, do_swap will stop this unit before swapping and start it after,
-# preventing the unit from restarting the old container mid-swap.
-ZMM_CONTAINER_UNIT="${ZMM_CONTAINER_UNIT:-}"
-
 mkdir -p "$UPGRADE_DIR" "$STATE_DIR" "$(dirname "$WATCHER_LOG")"
 
 # ── LOGGING ──────────────────────────────────────────────────────────────────
@@ -359,7 +354,7 @@ import socket, sys
 for af in (socket.AF_INET, socket.AF_INET6):
     try:
         s = socket.socket(af, socket.SOCK_STREAM)
--       s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         s.bind(('::' if af == socket.AF_INET6 else '0.0.0.0', $port))
         s.close()
     except OSError:
@@ -544,10 +539,17 @@ do_build() {
     return 0
 }
 
-# ── CONTAINER SUPERVISOR DETECTION ───────────────────────────────────────────
-# Find the systemd unit that auto-restarts our container, so we can pause it
-# during the swap. Without this, the unit re-launches the old container in
-# the gap between stop and the new run, squatting our ports.
+# ── SUPERVISOR UNIT HANDLING ─────────────────────────────────────────────────
+# Detect and control the systemd unit that supervises the container. The unit
+# is configured with Restart=always, so we MUST mask it (not just stop) for
+# the duration of a swap — otherwise it relaunches the old container 10s
+# after our podman stop and fights us for the ports.
+#
+# Override unit detection by setting ZMM_CONTAINER_UNIT="--system unit.service"
+# (or "--user unit.service") in the environment.
+ZMM_CONTAINER_UNIT="${ZMM_CONTAINER_UNIT:-}"
+UNIT_WAS_MASKED=0
+
 detect_container_unit() {
     if [[ -n "$ZMM_CONTAINER_UNIT" ]]; then
         echo "$ZMM_CONTAINER_UNIT"
@@ -564,7 +566,6 @@ detect_container_unit() {
             return 0
         fi
     done
-
     if [[ "$(id -u)" -ne 0 ]]; then
         for unit in "${candidates[@]}"; do
             if systemctl --user cat "$unit" >/dev/null 2>&1; then
@@ -576,147 +577,122 @@ detect_container_unit() {
     return 1
 }
 
-container_unit_stop() {
-    local desc; desc=$(detect_container_unit) || return 0
-    log "Swap: stopping supervisor unit ($desc) to prevent auto-restart"
+# Mask + stop the supervisor. Mask blocks Restart=always from re-launching
+# the unit during our swap window. Always pair with unmask_unit_if_needed.
+container_unit_mask_and_stop() {
+    local unit_desc; unit_desc=$(detect_container_unit) || {
+        log "Supervisor: no unit detected (continuing without mask)"
+        return 0
+    }
+    log "Supervisor: masking $unit_desc to block auto-restart"
     # shellcheck disable=SC2086
-    systemctl $desc stop >>"$WATCHER_LOG" 2>&1 || \
-        log "Swap: warn — could not stop $desc (continuing)"
+    systemctl $unit_desc mask >>"$WATCHER_LOG" 2>&1 || \
+        log "Supervisor: warn — mask failed (continuing)"
+    UNIT_WAS_MASKED=1
+    # shellcheck disable=SC2086
+    systemctl $unit_desc stop >>"$WATCHER_LOG" 2>&1 || true
 }
 
+# Unmask the supervisor if we masked it. Idempotent.
+unmask_unit_if_needed() {
+    if [[ "${UNIT_WAS_MASKED:-0}" == "1" ]]; then
+        local unit_desc; unit_desc=$(detect_container_unit) || { UNIT_WAS_MASKED=0; return 0; }
+        log "Supervisor: unmasking $unit_desc"
+        # shellcheck disable=SC2086
+        systemctl $unit_desc unmask >>"$WATCHER_LOG" 2>&1 || true
+        # shellcheck disable=SC2086
+        systemctl $unit_desc reset-failed >/dev/null 2>&1 || true
+        UNIT_WAS_MASKED=0
+    fi
+}
+
+# Start the supervisor unit. Call only after unmask_unit_if_needed.
 container_unit_start() {
-    local desc; desc=$(detect_container_unit) || return 0
-    log "Swap: re-arming supervisor unit ($desc)"
+    local unit_desc; unit_desc=$(detect_container_unit) || return 0
+    log "Supervisor: starting $unit_desc"
     # shellcheck disable=SC2086
-    systemctl $desc reset-failed >/dev/null 2>&1 || true
-    # shellcheck disable=SC2086
-    systemctl $desc start >>"$WATCHER_LOG" 2>&1 || \
-        log "Swap: warn — could not start $desc"
+    systemctl $unit_desc start >>"$WATCHER_LOG" 2>&1 || \
+        log "Supervisor: warn — start failed for $unit_desc"
 }
 
 # ── SWAP: stop old container, rename, run new ────────────────────────────────
+# Linear flow:
+#   1. Mask + stop supervisor (so it can't auto-restart the old container)
+#   2. Stop the old container, rename to -previous
+#   3. Start new container
+#   4. Health check
+#   5. On failure → rollback. On success → unmask + start supervisor.
 do_swap() {
     local target_version
     target_version=$(echo "$TRIGGER_PAYLOAD" | jq -r '.target_version // empty')
     if [[ -z "$target_version" ]]; then
-        log "Swap: no target_version"
         write_status "failed" "" 0 "Swap failed" "No target_version in swap payload"
         return 1
     fi
 
-    local arch
+    local arch new_tag
     arch=$(detect_arch)
-    local new_tag="${IMAGE_NAME}:${target_version}-${arch}"
+    new_tag="${IMAGE_NAME}:${target_version}-${arch}"
 
     if ! "$RUNTIME" image inspect "$new_tag" >/dev/null 2>&1; then
         write_status "failed" "$target_version" 0 "Swap failed" "Image $new_tag not found — build first"
         return 1
     fi
 
-    # Inspect the current container to extract run arguments
     if ! "$RUNTIME" inspect "$CONTAINER_NAME" >/dev/null 2>&1; then
         write_status "failed" "$target_version" 0 "Swap failed" "Current container $CONTAINER_NAME not found"
         return 1
     fi
 
     log "Swap: starting for v$target_version"
-    write_status "swapping" "$target_version" 10 "Capturing current run-spec"
 
-    # Snapshot current container's run spec.
-    # We use inspect to pull out: the image, ports, volumes, devices, env, caps, network.
-    # Easiest reliable path: capture the CreateCommand (Podman) or Config.Cmd + HostConfig (Docker).
-    # Simpler: capture original image tag so we can roll back; for the run args, we rely on
-    # the fact that our build.sh wrote them consistently AND the data volumes stay the same.
-
-    local current_image
-    current_image=$("$RUNTIME" inspect -f '{{.Image}}' "$CONTAINER_NAME" 2>/dev/null)
-    local current_image_tag
-    current_image_tag=$("$RUNTIME" inspect -f '{{if .ImageName}}{{.ImageName}}{{else}}{{index .Config.Image}}{{end}}' "$CONTAINER_NAME" 2>/dev/null || echo "")
-
+    # Capture current state for rollback
+    local current_image_tag current_version previous_name
+    current_image_tag=$("$RUNTIME" inspect -f '{{.ImageName}}' "$CONTAINER_NAME" 2>/dev/null || echo "")
     if [[ -z "$current_image_tag" || "$current_image_tag" == "<nil>" ]]; then
-        # Fallback: get first repo tag for the image ID
+        local current_image
+        current_image=$("$RUNTIME" inspect -f '{{.Image}}' "$CONTAINER_NAME" 2>/dev/null)
         current_image_tag=$("$RUNTIME" image inspect --format '{{index .RepoTags 0}}' "$current_image" 2>/dev/null || echo "${IMAGE_NAME}:latest")
     fi
-
-    # Determine the current version from the running container's VERSION file (best effort)
-    local current_version
     current_version=$("$RUNTIME" exec "$CONTAINER_NAME" cat /app/VERSION 2>/dev/null | tr -d '[:space:]' || echo "unknown")
+    previous_name="${CONTAINER_NAME}-previous"
 
     log "Swap: current image = $current_image_tag (version $current_version)"
     log "Swap: new image     = $new_tag (version $target_version)"
 
-    # Capture the full run spec so we can replay it
-    local spec_file="${UPGRADE_DIR}/.current_spec.json"
-    "$RUNTIME" inspect "$CONTAINER_NAME" > "$spec_file" 2>/dev/null || true
+    # ── STEP 1: Mask the supervisor for the entire swap window ───────────────
+    write_status "swapping" "$target_version" 20 "Disabling supervisor auto-restart"
+    container_unit_mask_and_stop
 
-    write_status "swapping" "$target_version" 30 "Stopping current container"
-    # Stop the supervisor unit FIRST so it doesn't restart the old container
-    # the moment podman stop reports it as exited.
-    container_unit_stop
-    log "Swap: stopping $CONTAINER_NAME (timeout 45s for clean shutdown)"
-
-    # 45s gives uvicorn + matter-server + zigpy enough time to flush state
-    # and release sockets cleanly. Previously 15s caused SIGKILL escalation
-    # which left rootlessport holding ports in TIME_WAIT.
+    # ── STEP 2: Stop and rename the old container ────────────────────────────
+    write_status "swapping" "$target_version" 35 "Stopping current container"
+    log "Swap: stopping $CONTAINER_NAME (45s graceful)"
     if ! "$RUNTIME" stop -t 45 "$CONTAINER_NAME" >>"$WATCHER_LOG" 2>&1; then
-        log "Swap: stop returned non-zero (continuing anyway)"
+        log "Swap: stop returned non-zero (continuing)"
     fi
 
-    write_status "swapping" "$target_version" 35 "Waiting for ports to free"
-    log "Swap: waiting for ports 8000+5580 to become free"
-
-    # The killer fix: don't start the new container until the OS has actually
-    # released the ports. Otherwise we get "address already in use".
-    if ! wait_for_ports_free 60; then
-        log "Swap: ports still squatted after 60s — attempting to kill squatters"
-        kill_port_squatters 8000 5580
-        sleep 3
-        # One more chance after killing
-        wait_for_ports_free 15 || log "Swap: ports STILL not free — proceeding (run will likely fail)"
-    fi
-
-    write_status "swapping" "$target_version" 40 "Renaming old container"
-    local previous_name="${CONTAINER_NAME}-previous"
-    # Remove any stale -previous container
+    write_status "swapping" "$target_version" 45 "Renaming old container to -previous"
     "$RUNTIME" rm -f "$previous_name" >/dev/null 2>&1 || true
-    "$RUNTIME" rename "$CONTAINER_NAME" "$previous_name" >>"$WATCHER_LOG" 2>&1 || {
-        log "Swap: rename failed — falling back to stop+start of old container"
-        # If rename isn't supported (some docker versions), we'll just remove & re-create later
+    if ! "$RUNTIME" rename "$CONTAINER_NAME" "$previous_name" >>"$WATCHER_LOG" 2>&1; then
+        log "Swap: rename failed — removing old container instead"
         "$RUNTIME" rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
-    }
+    fi
 
-    # Run new container using the same run arguments. The canonical source for
-    # the run arguments is APP_DIR/build.sh's run_container function. We DON'T
-    # re-run build.sh because it rebuilds the image. Instead we extract the
-    # arguments from the spec file (best-effort), OR fall back to invoking a
-    # helper from build.sh.
-    #
-    # The cleanest path: have build.sh expose a `--run-only` mode. For now, we
-    # use a dedicated helper script installed alongside this one.
+    # ── STEP 3: Start the new container ──────────────────────────────────────
     local run_helper
     if ! run_helper=$(find_run_helper); then
         log "Swap: run_container.sh not found in any known location"
         write_status "failed" "$target_version" 50 "Swap failed" "run_container.sh helper not installed"
-        # Attempt to bring the old container back
+        # Restore old container
         "$RUNTIME" rename "$previous_name" "$CONTAINER_NAME" >/dev/null 2>&1 || true
         "$RUNTIME" start "$CONTAINER_NAME" >/dev/null 2>&1 || true
+        unmask_unit_if_needed
+        container_unit_start
         return 1
     fi
 
-    write_status "swapping" "$target_version" 55 "Starting new container"
+    write_status "swapping" "$target_version" 60 "Starting new container"
     log "Swap: starting new container from $new_tag via $run_helper"
-
-    # Final pre-run verification. Rename + helper invocation can take 1-3s
-    # during which a leftover rootlessport child can re-bind, or a TIME_WAIT
-    # socket can re-emerge. Re-check and reap.
-    pkill -f "rootlessport.*${CONTAINER_NAME}" 2>/dev/null || true
-    pkill -f "rootlessport.*${previous_name}"  2>/dev/null || true
-    if ! wait_for_ports_free 30; then
-        log "Swap: pre-run port check failed — killing squatters"
-        kill_port_squatters 8000 5580
-        sleep 2
-        wait_for_ports_free 30 || log "Swap: ports still busy — proceeding (run will likely fail)"
-    fi
 
     log_to_build ""
     log_to_build "=== Starting new container ==="
@@ -724,24 +700,18 @@ do_swap() {
     log_to_build "Helper: $run_helper"
     log_to_build ""
 
-    # Capture run_container.sh output to BOTH watcher log AND build log so the
-    # user sees errors (USB device missing, port binding, etc.) in the UI.
     if ! RUNTIME="$RUNTIME" \
          IMAGE_TAG="$new_tag" \
          CONTAINER_NAME="$CONTAINER_NAME" \
          DATA_DIR="$DATA_DIR" \
          bash "$run_helper" 2>&1 | tee -a "$BUILD_LOG" >>"$WATCHER_LOG"
     then
-        # Note: pipefail must be set for the above to work correctly.
-        # `set -o pipefail` is at the top of this script.
         log "Swap: new container failed to start — rolling back"
 
-        # Capture whatever logs the failed container produced before rolling back
         log_to_build ""
         log_to_build "=== NEW CONTAINER FAILED TO START — capturing logs ==="
         "$RUNTIME" logs --tail=100 "$CONTAINER_NAME" >>"$BUILD_LOG" 2>&1 || \
             log_to_build "(no logs available — container did not exist or runtime returned error)"
-        # Also capture inspect for the failed container in case it was created but not started
         log_to_build ""
         log_to_build "=== Failed container inspect ==="
         "$RUNTIME" inspect "$CONTAINER_NAME" 2>>"$BUILD_LOG" | head -100 >>"$BUILD_LOG" || true
@@ -750,15 +720,15 @@ do_swap() {
         "$RUNTIME" rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
         "$RUNTIME" rename "$previous_name" "$CONTAINER_NAME" >/dev/null 2>&1 || true
         "$RUNTIME" start "$CONTAINER_NAME" >/dev/null 2>&1 || true
-        write_status "failed" "$target_version" 100 "Rolled back" "New container failed to start; old container restored. See build.log for details."
+        unmask_unit_if_needed
         container_unit_start
+        write_status "failed" "$target_version" 100 "Rolled back" "New container failed to start; old container restored. See build.log for details."
         return 1
     fi
 
-    # Health check
+    # ── STEP 4: Health check ─────────────────────────────────────────────────
     write_status "swapping" "$target_version" 80 "Health-checking new container"
 
-    # Build the list of candidate URLs (HTTPS-first if SSL is enabled)
     local health_candidates=()
     while IFS= read -r url; do
         [[ -n "$url" ]] && health_candidates+=("$url")
@@ -767,9 +737,7 @@ do_swap() {
     log "Swap: health-check candidates: ${health_candidates[*]}"
     log "Swap: waiting up to ${HEALTH_TIMEOUT}s for new container to become healthy"
 
-    local healthy=0
-    local elapsed=0
-    local working_url=""
+    local healthy=0 elapsed=0 working_url=""
     while (( elapsed < HEALTH_TIMEOUT )); do
         if working_url=$(is_app_healthy "${health_candidates[@]}"); then
             healthy=1
@@ -784,7 +752,6 @@ do_swap() {
         log "Swap: health check failed — rolling back"
         write_status "rolling_back" "$target_version" 90 "Health check failed — rolling back"
 
-        # Capture the failed container's logs so the user can see WHY it failed
         log_to_build ""
         log_to_build "=== HEALTH CHECK FAILED — capturing failed container logs ==="
         log_to_build "Tried URLs: ${health_candidates[*]}"
@@ -795,26 +762,21 @@ do_swap() {
         "$RUNTIME" rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
         "$RUNTIME" rename "$previous_name" "$CONTAINER_NAME" >/dev/null 2>&1 || true
         "$RUNTIME" start "$CONTAINER_NAME" >/dev/null 2>&1 || true
+        unmask_unit_if_needed
+        container_unit_start
         local tried="${health_candidates[*]}"
         write_status "failed" "$target_version" 100 "Rolled back after health failure" "New container did not respond at any of: ${tried} within ${HEALTH_TIMEOUT}s. See build.log for the new container's startup log."
-        container_unit_start
         return 1
     fi
 
-    # Success — update version state
+    # ── STEP 5: Success ──────────────────────────────────────────────────────
     log "Swap: SUCCESS. New container healthy. Keeping $previous_name for rollback."
     update_version_state "$target_version" "$current_version" "$new_tag" "$current_image_tag"
-
-    # GC: schedule cleanup of the old container's filesystem (but keep image for rollback)
-    # We remove the -previous container after a grace period so `podman start previous` rollback is instant.
-    # For the current design, the -previous container stays until next successful upgrade or manual GC.
-
-    write_status "idle" "$target_version" 100 "Upgrade complete" ""
-    # Re-arm the supervisor so a host reboot or container crash brings the
-    # new container back. The unit references CONTAINER_NAME, which is now
-    # the new container.
+    unmask_unit_if_needed
     container_unit_start
+    write_status "idle" "$target_version" 100 "Upgrade complete" ""
     return 0
+}
 
 # ── ROLLBACK: swap back to previous image ────────────────────────────────────
 do_rollback() {
@@ -828,18 +790,18 @@ do_rollback() {
         if "$RUNTIME" inspect "${CONTAINER_NAME}-previous" >/dev/null 2>&1; then
             log "Rollback: using ${CONTAINER_NAME}-previous"
             write_status "rolling_back" "$previous_version" 20 "Stopping current container"
-            container_unit_stop
+            container_unit_mask_and_stop
             "$RUNTIME" stop -t 15 "$CONTAINER_NAME" >/dev/null 2>&1 || true
             "$RUNTIME" rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
             "$RUNTIME" rename "${CONTAINER_NAME}-previous" "$CONTAINER_NAME" >/dev/null 2>&1 || true
             write_status "rolling_back" "$previous_version" 60 "Starting previous container"
             "$RUNTIME" start "$CONTAINER_NAME" >>"$WATCHER_LOG" 2>&1
-            write_status "idle" "$previous_version" 100 "Rollback complete" ""
+            unmask_unit_if_needed
             container_unit_start
+            write_status "idle" "$previous_version" 100 "Rollback complete" ""
             return 0
         fi
         write_status "failed" "$previous_version" 0 "Rollback failed" "No previous image tag or container available"
-        container_unit_start
         return 1
     fi
 
@@ -848,9 +810,9 @@ do_rollback() {
         return 1
     fi
 
-    # Simulate a "swap" to the previous image using the same helper
     log "Rollback: swapping to $previous_image_tag"
     write_status "rolling_back" "$previous_version" 30 "Stopping current"
+    container_unit_mask_and_stop
 
     local failed_name="${CONTAINER_NAME}-failed-$(date +%s)"
     "$RUNTIME" stop -t 15 "$CONTAINER_NAME" >/dev/null 2>&1 || true
@@ -860,6 +822,8 @@ do_rollback() {
     local run_helper
     if ! run_helper=$(find_run_helper); then
         write_status "failed" "$previous_version" 50 "Rollback failed" "run_container.sh missing"
+        unmask_unit_if_needed
+        container_unit_start
         return 1
     fi
 
@@ -873,11 +837,10 @@ do_rollback() {
     # Clean up failed container
     "$RUNTIME" rm -f "$failed_name" >/dev/null 2>&1 || true
 
-    # Update state: swap current and previous
     update_version_state "$previous_version" "" "$previous_image_tag" ""
-
-    write_status "idle" "$previous_version" 100 "Rollback complete" ""
+    unmask_unit_if_needed
     container_unit_start
+    write_status "idle" "$previous_version" 100 "Rollback complete" ""
     return 0
 }
 
