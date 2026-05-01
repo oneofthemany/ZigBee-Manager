@@ -557,14 +557,22 @@ detect_container_unit() {
         "container-${CONTAINER_NAME}.service"
         "${CONTAINER_NAME}.service"
     )
-    for scope in "--system" "--user"; do
+    # System scope first (we run as root). User scope only if explicitly non-root.
+    for unit in "${candidates[@]}"; do
+        if systemctl --system cat "$unit" >/dev/null 2>&1; then
+            echo "--system $unit"
+            return 0
+        fi
+    done
+
+    if [[ "$(id -u)" -ne 0 ]]; then
         for unit in "${candidates[@]}"; do
-            if systemctl $scope cat "$unit" >/dev/null 2>&1; then
-                echo "$scope $unit"
+            if systemctl --user cat "$unit" >/dev/null 2>&1; then
+                echo "--user $unit"
                 return 0
             fi
         done
-    done
+    fi
     return 1
 }
 
@@ -642,6 +650,9 @@ do_swap() {
     "$RUNTIME" inspect "$CONTAINER_NAME" > "$spec_file" 2>/dev/null || true
 
     write_status "swapping" "$target_version" 30 "Stopping current container"
+    # Stop the supervisor unit FIRST so it doesn't restart the old container
+    # the moment podman stop reports it as exited.
+    container_unit_stop
     log "Swap: stopping $CONTAINER_NAME (timeout 45s for clean shutdown)"
 
     # 45s gives uvicorn + matter-server + zigpy enough time to flush state
@@ -817,6 +828,7 @@ do_rollback() {
         if "$RUNTIME" inspect "${CONTAINER_NAME}-previous" >/dev/null 2>&1; then
             log "Rollback: using ${CONTAINER_NAME}-previous"
             write_status "rolling_back" "$previous_version" 20 "Stopping current container"
+            container_unit_stop
             "$RUNTIME" stop -t 15 "$CONTAINER_NAME" >/dev/null 2>&1 || true
             "$RUNTIME" rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
             "$RUNTIME" rename "${CONTAINER_NAME}-previous" "$CONTAINER_NAME" >/dev/null 2>&1 || true
