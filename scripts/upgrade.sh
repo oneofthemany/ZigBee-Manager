@@ -506,10 +506,10 @@ do_build() {
 
     log_to_build ""
     log_to_build "Building image with $build_jobs parallel jobs..."
-    log_to_build "This typically takes 1-25 minutes on ARM devices."
+    log_to_build "Build time depends on host hardware (typically ~2-25 minutes)."
     log_to_build ""
 
-    write_status "building" "$target_version" 20 "Compiling image (~1-25min - heavily dependent on the host device)" "" "$started_at"
+    write_status "building" "$target_version" 20 "Compiling image (varies by host hardware)" "" "$started_at"
 
     # Run the build
     if ! "$RUNTIME" build \
@@ -540,15 +540,9 @@ do_build() {
 }
 
 # ── SUPERVISOR UNIT HANDLING ─────────────────────────────────────────────────
-# Detect and control the systemd unit that supervises the container. The unit
-# is configured with Restart=always, so we MUST mask it (not just stop) for
-# the duration of a swap — otherwise it relaunches the old container 10s
-# after our podman stop and fights us for the ports.
-#
-# Override unit detection by setting ZMM_CONTAINER_UNIT="--system unit.service"
-# (or "--user unit.service") in the environment.
 ZMM_CONTAINER_UNIT="${ZMM_CONTAINER_UNIT:-}"
 UNIT_WAS_MASKED=0
+UNIT_OVERRIDE_DIR=""
 
 detect_container_unit() {
     if [[ -n "$ZMM_CONTAINER_UNIT" ]]; then
@@ -586,10 +580,26 @@ container_unit_mask_and_stop() {
     }
     local scope unit
     read -r scope unit <<< "$unit_desc"
-    log "Supervisor: masking $scope $unit to block auto-restart"
-    systemctl "$scope" mask "$unit" >>"$WATCHER_LOG" 2>&1 || \
-        log "Supervisor: warn — mask failed (continuing)"
+    log "Supervisor: disabling auto-restart on $scope $unit"
+
+    # systemctl mask fails when the unit is a real file (not a symlink in
+    # /etc/systemd/system/). Use a runtime drop-in to override Restart=
+    # for the duration of the swap.
+    local override_dir
+    if [[ "$scope" == "--system" ]]; then
+        override_dir="/run/systemd/system/${unit}.d"
+    else
+        override_dir="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/systemd/user/${unit}.d"
+    fi
+    mkdir -p "$override_dir"
+    cat > "${override_dir}/zzz-zmm-upgrade-noresart.conf" <<EOF
+[Service]
+Restart=no
+EOF
+    systemctl "$scope" daemon-reload >>"$WATCHER_LOG" 2>&1 || true
     UNIT_WAS_MASKED=1
+    UNIT_OVERRIDE_DIR="$override_dir"
+
     systemctl "$scope" stop "$unit" >>"$WATCHER_LOG" 2>&1 || true
 }
 
@@ -599,10 +609,16 @@ unmask_unit_if_needed() {
         local unit_desc; unit_desc=$(detect_container_unit) || { UNIT_WAS_MASKED=0; return 0; }
         local scope unit
         read -r scope unit <<< "$unit_desc"
-        log "Supervisor: unmasking $scope $unit"
-        systemctl "$scope" unmask "$unit" >>"$WATCHER_LOG" 2>&1 || true
+        log "Supervisor: removing auto-restart override on $scope $unit"
+
+        if [[ -n "${UNIT_OVERRIDE_DIR:-}" && -d "$UNIT_OVERRIDE_DIR" ]]; then
+            rm -f "${UNIT_OVERRIDE_DIR}/zzz-zmm-upgrade-noresart.conf"
+            rmdir "$UNIT_OVERRIDE_DIR" 2>/dev/null || true
+        fi
+        systemctl "$scope" daemon-reload >>"$WATCHER_LOG" 2>&1 || true
         systemctl "$scope" reset-failed "$unit" >/dev/null 2>&1 || true
         UNIT_WAS_MASKED=0
+        UNIT_OVERRIDE_DIR=""
     fi
 }
 
