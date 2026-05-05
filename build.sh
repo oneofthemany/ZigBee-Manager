@@ -822,6 +822,19 @@ echo
 echo -e "${BOLD}=====================================================${NC}"
 echo -e "${BOLD}   Zigbee Matter Manager — Container Build & Deploy  ${NC}"
 echo -e "${BOLD}=====================================================${NC}"
+echo
+echo -e "${BOLD}This install will run 10 steps:${NC}"
+echo "   1. Pre-flight checks"
+echo "   2. Fetch repository"
+echo "   3. USB coordinator detection"
+echo "   4. Verify host ports are free"
+echo -e "   5. Build container image  ${BOLD}(longest step — 2-25 min)${NC}"
+echo "   6. Prepare data directories"
+echo "   7. OTBR D-Bus policy"
+echo "   8. Start container"
+echo "   9. Install systemd auto-start unit"
+echo "  10. Populate ${APP_DIR} and install upgrade watcher"
+echo
 
 step_announce "Pre-flight checks"
 check_deps
@@ -834,6 +847,8 @@ fetch_repo
 step_announce "USB coordinator detection"
 if [[ -z "${USB_DEVICE:-}" ]]; then
     detect_usb_coordinator
+else
+    info "Using --usb override: ${USB_DEVICE}"
 fi
 
 step_announce "Verify host ports are free"
