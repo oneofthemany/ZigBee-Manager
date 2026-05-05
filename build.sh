@@ -408,6 +408,11 @@ write_containerfile() {
 # Zigbee Matter Manager — Root Container
 FROM python:3.11-slim-bookworm
 
+ARG BUILD_JOBS=4
+ENV CMAKE_BUILD_PARALLEL_LEVEL=${BUILD_JOBS}
+ENV MAKEFLAGS="-j${BUILD_JOBS}"
+ENV CARGO_BUILD_JOBS=${BUILD_JOBS}
+
 # System deps
 RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential \
@@ -520,11 +525,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
  && pip
 
 ENV PATH="/root/.cargo/bin:${PATH}"
-
-ARG BUILD_JOBS=4
-ENV CMAKE_BUILD_PARALLEL_LEVEL=${BUILD_JOBS}
-ENV MAKEFLAGS="-j${BUILD_JOBS}"
-ENV CARGO_BUILD_JOBS=${BUILD_JOBS}
 
 COPY zmm_telemetry/ /tmp/zmm_telemetry/
 RUN cd /tmp/zmm_telemetry \
