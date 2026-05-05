@@ -58,6 +58,40 @@ function isAqaraTRV(device) {
     return (aqaraLike && trvMarker) || model.includes('agl001');
 }
 
+/**
+ * Pick the best "current temperature" to display for a thermostat/TRV.
+ *
+ * For Aqara TRVs with sensor_type=external, prefer external_temperature —
+ * this is the room-sensor value, not the hot-pipe reading from the TRV body
+ * itself. Falls back to local_temperature → temperature for all other cases.
+ *
+ * Returns a number, or null if no plausible reading is available.
+ */
+function getDisplayTemp(s, isAqara) {
+    if (isAqara && s.sensor_type === 'external') {
+        const ext = Number(s.external_temperature);
+        if (!isNaN(ext) && ext !== 0 && ext > -40 && ext < 80) return ext;
+    }
+    for (const k of ['local_temperature', 'temperature', 'current_temperature']) {
+        const v = Number(s[k]);
+        if (!isNaN(v) && v !== 0 && v > -40 && v < 80) return v;
+    }
+    return null;
+}
+
+/**
+ * Resolve the effective system mode for badge and select rendering.
+ *
+ * Aqara TRVs report their running mode via the manufacturer cluster (0xFCC0,
+ * attr 0x0271) stored as aqara_system_mode. The ZCL thermostat cluster
+ * system_mode is either absent or unreliable on these devices. When the
+ * Aqara key is present it takes priority; all other devices fall back to
+ * system_mode as before.
+ */
+function getEffectiveSystemMode(s, isAqara) {
+    if (isAqara && s.aqara_system_mode) return s.aqara_system_mode;
+    return s.system_mode || 'off';
+}
 
 // Which device state keys are considered valid "ambient room temperature"
 // readings. Excludes setpoints, internal TRV pipe readings that misreport
@@ -281,6 +315,7 @@ export function updateControlValues(device) {
     const s = device.state || {};
     const ieee = device.ieee;
     const interacting = state.controlInteractionActive;
+    const _isAqara = isAqaraTRV(device);
 
     // Update ON/OFF badges and controls for each endpoint
     if (device.capabilities && Array.isArray(device.capabilities)) {
@@ -341,15 +376,18 @@ export function updateControlValues(device) {
         });
     }
 
-    // Update thermostat current temp display
+    // Update thermostat current temp display.
+    // For Aqara TRVs in external-sensor mode, prefer external_temperature over
+    // the device's own probe (which reads the pipe, not the room).
     const currentTempEl = document.querySelector('[data-thermostat-current]');
     if (currentTempEl) {
-        const v = s.temperature;
-        if (v !== undefined && v !== null && Number(v) !== 0) {
-            currentTempEl.textContent = `${Number(v).toFixed(2)}°C`;
+        const liveTemp = getDisplayTemp(s, _isAqara);
+        if (liveTemp !== null) {
+            currentTempEl.textContent = `${Number(liveTemp).toFixed(2)}°C`;
         }
     }
-     // Update thermostat target setpoint display
+
+    // Update thermostat target setpoint display
     const setpointEl = document.querySelector(`[data-thermostat-setpoint="${ieee}"]`);
     if (setpointEl) {
         const rawTarget = s.occupied_heating_setpoint || s.heating_setpoint || s.temperature_setpoint;
@@ -358,13 +396,24 @@ export function updateControlValues(device) {
         }
     }
 
-    // Update thermostat badge (heating/standby/off)
+    // Update thermostat badge (heating/standby/off).
+    // Use aqara_system_mode for Aqara TRVs — system_mode (ZCL 0x0201) is
+    // absent or unreliable on these devices; their actual mode is stored in
+    // the manufacturer cluster and surfaced as aqara_system_mode.
+    // Aqara TRVs also never report running_state/hvac_action, so heat mode
+    // directly means the valve is open — show Heat, not Standby.
     const badgeEl = document.querySelector(`[data-thermostat-badge="${ieee}"]`);
     if (badgeEl) {
+        const sysMode = getEffectiveSystemMode(s, _isAqara);
         const hvacAction = s.hvac_action || 'idle';
-        const sysMode = s.system_mode || 'off';
         let badgeHtml;
-        if (hvacAction === 'heating') {
+        if (_isAqara) {
+            if (String(sysMode).toLowerCase() === 'heat') {
+                badgeHtml = '<span class="badge bg-danger"><i class="fas fa-fire"></i> Heat</span>';
+            } else {
+                badgeHtml = '<span class="badge bg-dark"><i class="fas fa-power-off"></i> Off</span>';
+            }
+        } else if (hvacAction === 'heating') {
             badgeHtml = '<span class="badge bg-danger"><i class="fas fa-fire"></i> Heating</span>';
         } else if (sysMode === 'off' || hvacAction === 'off') {
             badgeHtml = '<span class="badge bg-dark"><i class="fas fa-power-off"></i> Off</span>';
@@ -441,23 +490,41 @@ export function renderControlTab(device) {
     const hasThermostat = hasCluster(device, 0x0201);
     if (hasThermostat) {
         controlsFound = true;
-        const validTemp = s.temperature;
-        const currentTemp = (validTemp !== undefined && validTemp !== null && Number(validTemp) !== 0)
-            ? Number(validTemp).toFixed(2) : "--";
+
+        // Aqara TRVs need special treatment for both current temp and system mode:
+        //   - current temp: prefer external_temperature when sensor_type=external
+        //   - system mode:  aqara_system_mode (manufacturer cluster) is authoritative;
+        //                   ZCL system_mode is absent/unreliable on these devices
+        const _isAqara = isAqaraTRV(device);
+        const _displayTemp = getDisplayTemp(s, _isAqara);
+        const currentTemp = _displayTemp !== null ? Number(_displayTemp).toFixed(2) : '--';
+
         const rawTarget = s.occupied_heating_setpoint || s.heating_setpoint || 20;
         const targetTemp = Number(rawTarget).toFixed(1);
-        const systemMode = s.system_mode || 'off';
+        const systemMode = getEffectiveSystemMode(s, _isAqara);
         const runningState = s.running_state || 0;
         const piDemand = s.heating_demand || s.pi_heating_demand || 0;
         const battery = s.battery || 0;
 
-        // Heating detection: running_state (Hive/ZCL standard) then hvac_action (derived)
+        // Heating detection: running_state (Hive/ZCL standard) then hvac_action (derived).
+        // Aqara TRVs never report running_state or hvac_action — their active state is
+        // expressed purely through aqara_system_mode. Skip the isHeating gate for them
+        // and treat heat mode directly as the "valve open / calling" badge.
         const isHeating = (typeof runningState === 'number' && (runningState & 0x0001))
                        || String(runningState).includes('heat')
                        || s.hvac_action === 'heating';
 
         let thermostatBadge;
-        if (isHeating) {
+        if (_isAqara) {
+            // Aqara TRV: badge is driven purely by aqara_system_mode.
+            // "heat" → valve open (show Heat); "off" → valve closed (show Off).
+            // No Standby state exists on these devices.
+            if (String(systemMode).toLowerCase() === 'heat') {
+                thermostatBadge = '<span class="badge bg-danger"><i class="fas fa-fire"></i> Heat</span>';
+            } else {
+                thermostatBadge = '<span class="badge bg-dark"><i class="fas fa-power-off"></i> Off</span>';
+            }
+        } else if (isHeating) {
             thermostatBadge = '<span class="badge bg-danger"><i class="fas fa-fire"></i> Heating</span>';
         } else if (String(systemMode).toLowerCase() === 'off') {
             thermostatBadge = '<span class="badge bg-dark"><i class="fas fa-power-off"></i> Off</span>';
