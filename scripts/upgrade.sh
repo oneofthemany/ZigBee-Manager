@@ -283,12 +283,13 @@ is_app_healthy() {
 }
 
 # ── HELPER LOCATION ─────────────────────────────────────────────────────────
-# Locate run_container.sh — searches SELinux-friendly paths first, then legacy
-# /root/.zigbee-matter-manager/scripts/ as a fallback for older installs.
+# Locate run_container.sh in the canonical location ${APP_DIR}/scripts/.
+# Falls back to legacy ${DATA_DIR}/scripts/ for older installs that ran
+# install_watcher.sh before the single-source-of-truth migration.
 find_run_helper() {
     for candidate in \
-        "${DATA_DIR}/scripts/run_container.sh" \
-        "${APP_DIR}/scripts/run_container.sh"; do
+        "${APP_DIR}/scripts/run_container.sh" \
+        "${DATA_DIR}/scripts/run_container.sh"; do
         if [[ -n "$candidate" && -f "$candidate" ]]; then
             echo "$candidate"
             return 0
@@ -571,20 +572,17 @@ detect_container_unit() {
     return 1
 }
 
-# Mask + stop the supervisor. Mask blocks Restart=always from re-launching
-# the unit during our swap window. Always pair with unmask_unit_if_needed.
+# Drop a runtime override that disables Restart= for the swap window, then
+# stop the unit. Pair with unmask_unit_if_needed.
 container_unit_mask_and_stop() {
     local unit_desc; unit_desc=$(detect_container_unit) || {
-        log "Supervisor: no unit detected (continuing without mask)"
+        log "Supervisor: no unit detected (continuing without override)"
         return 0
     }
     local scope unit
     read -r scope unit <<< "$unit_desc"
-    log "Supervisor: disabling auto-restart on $scope $unit"
+    log "Supervisor: disabling auto-restart on $scope $unit (runtime drop-in)"
 
-    # systemctl mask fails when the unit is a real file (not a symlink in
-    # /etc/systemd/system/). Use a runtime drop-in to override Restart=
-    # for the duration of the swap.
     local override_dir
     if [[ "$scope" == "--system" ]]; then
         override_dir="/run/systemd/system/${unit}.d"
@@ -592,7 +590,7 @@ container_unit_mask_and_stop() {
         override_dir="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/systemd/user/${unit}.d"
     fi
     mkdir -p "$override_dir"
-    cat > "${override_dir}/zzz-zmm-upgrade-noresart.conf" <<EOF
+    cat > "${override_dir}/zzz-zmm-upgrade-norestart.conf" <<EOF
 [Service]
 Restart=no
 EOF
@@ -603,7 +601,7 @@ EOF
     systemctl "$scope" stop "$unit" >>"$WATCHER_LOG" 2>&1 || true
 }
 
-# Unmask the supervisor if we masked it. Idempotent.
+# Remove the runtime override if we placed one. Idempotent.
 unmask_unit_if_needed() {
     if [[ "${UNIT_WAS_MASKED:-0}" == "1" ]]; then
         local unit_desc; unit_desc=$(detect_container_unit) || { UNIT_WAS_MASKED=0; return 0; }
@@ -612,7 +610,7 @@ unmask_unit_if_needed() {
         log "Supervisor: removing auto-restart override on $scope $unit"
 
         if [[ -n "${UNIT_OVERRIDE_DIR:-}" && -d "$UNIT_OVERRIDE_DIR" ]]; then
-            rm -f "${UNIT_OVERRIDE_DIR}/zzz-zmm-upgrade-noresart.conf"
+            rm -f "${UNIT_OVERRIDE_DIR}/zzz-zmm-upgrade-norestart.conf"
             rmdir "$UNIT_OVERRIDE_DIR" 2>/dev/null || true
         fi
         systemctl "$scope" daemon-reload >>"$WATCHER_LOG" 2>&1 || true

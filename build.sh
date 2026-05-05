@@ -40,13 +40,17 @@ warn()    { echo -e "${YELLOW}${BOLD}[WARN]${NC}  $*"; }
 error()   { echo -e "${RED}${BOLD}[ERR ]${NC}  $*" >&2; }
 die()     { error "$*"; exit 1; }
 
-BUILD_JOBS=$(detect_build_jobs)
-info "Detected ${BUILD_JOBS} build jobs for parallel compile"
-
 # ── Defaults ─────────────────────────────────────────────────────────────────
 REPO_URL="https://github.com/oneofthemany/ZigBee-Matter-Manager.git"
 REPO_BRANCH="main"
-APP_DIR="${ZMM_APP_DIR:-/opt/zigbee-matter-manager}"
+# APP_DIR is the runtime location for the app — single source of truth for
+# build.sh, scripts/, and all data. The initial-install clone arrives at
+# /opt/zigbee-matter-manager/ as a transient working dir; build.sh copies
+# itself + scripts/ into APP_DIR which becomes the only location used at runtime.
+APP_DIR="${ZMM_APP_DIR:-/opt/.zigbee-matter-manager}"
+# CLONE_DIR is where the curl|bash installer puts the git clone. build.sh's
+# Step 10 copies needed files OUT of CLONE_DIR and INTO APP_DIR.
+CLONE_DIR="${ZMM_CLONE_DIR:-/opt/zigbee-matter-manager}"
 IMAGE_NAME="zigbee-matter-manager"
 CONTAINER_NAME="zigbee-matter-manager"
 INTERNAL_PORT=8000
@@ -178,15 +182,19 @@ check_deps() {
 # CLONE / UPDATE REPO
 # =============================================================================
 fetch_repo() {
-    if [[ -d "$APP_DIR/.git" ]]; then
-        info "Repository exists — pulling latest ${REPO_BRANCH}..."
-        git -C "$APP_DIR" fetch origin
-        git -C "$APP_DIR" checkout "$REPO_BRANCH"
-        git -C "$APP_DIR" pull --ff-only origin "$REPO_BRANCH"
+    # Clone or update the source clone at CLONE_DIR. This is the working
+    # directory for the build — it's where the Containerfile, Python source,
+    # and scripts/ are read from. APP_DIR (the runtime location) gets
+    # populated from CLONE_DIR in Step 10.
+    if [[ -d "$CLONE_DIR/.git" ]]; then
+        info "Repository exists at ${CLONE_DIR} — pulling latest ${REPO_BRANCH}..."
+        git -C "$CLONE_DIR" fetch origin
+        git -C "$CLONE_DIR" checkout "$REPO_BRANCH"
+        git -C "$CLONE_DIR" pull --ff-only origin "$REPO_BRANCH"
         ok "Repository updated."
     else
-        info "Cloning ${REPO_URL} → ${APP_DIR} ..."
-        git clone --branch "$REPO_BRANCH" "$REPO_URL" "$APP_DIR"
+        info "Cloning ${REPO_URL} → ${CLONE_DIR} ..."
+        git clone --branch "$REPO_BRANCH" "$REPO_URL" "$CLONE_DIR"
         ok "Repository cloned."
     fi
 }
@@ -295,7 +303,7 @@ _prompt_manual_usb() {
 # CONTAINERFILE
 # =============================================================================
 write_containerfile() {
-    cat > "$APP_DIR/Containerfile" << 'DOCKERFILE'
+    cat > "$CLONE_DIR/Containerfile" << 'DOCKERFILE'
 # Zigbee Matter Manager — Root Container
 FROM python:3.11-slim-bookworm
 
@@ -456,8 +464,8 @@ build_image() {
         --format docker \
         --build-arg BUILD_JOBS="${BUILD_JOBS}" \
         --tag "${IMAGE_NAME}:latest" \
-        --file "$APP_DIR/Containerfile" \
-        "$APP_DIR"
+        --file "$CLONE_DIR/Containerfile" \
+        "$CLONE_DIR"
     ok "Image built: ${IMAGE_NAME}:latest"
 }
 
@@ -476,9 +484,9 @@ prepare_data_dirs() {
         mkdir -p "$d"
     done
 
-    # Seed config.yaml
-    if [[ ! -f "$DATA_DIR/config/config.yaml" ]] && [[ -f "$APP_DIR/config/config.yaml" ]]; then
-        cp "$APP_DIR/config/config.yaml" "$DATA_DIR/config/config.yaml"
+    # Seed config.yaml from the clone (the only place a template config exists)
+    if [[ ! -f "$DATA_DIR/config/config.yaml" ]] && [[ -f "$CLONE_DIR/config/config.yaml" ]]; then
+        cp "$CLONE_DIR/config/config.yaml" "$DATA_DIR/config/config.yaml"
         ok "Default config.yaml seeded."
     fi
 
@@ -527,6 +535,10 @@ DBUS_POLICY
 run_container() {
     local host_port=$1
     local host_matter_port=$2
+    # Optional 3rd arg: full image ref to run. Defaults to ${IMAGE_NAME}:latest
+    # for the build-and-deploy flow. The upgrade swap flow passes a specific
+    # versioned tag like zigbee-matter-manager:2.0.1-amd64.
+    local image_tag="${3:-${IMAGE_NAME}:latest}"
 
     # Remove existing container
     if "$RUNTIME" inspect "$CONTAINER_NAME" &>/dev/null 2>&1; then
@@ -582,8 +594,8 @@ run_container() {
         ok "Mounted /dev/bus/usb for USB device reset support"
     fi
 
-    info "Starting container '${CONTAINER_NAME}' ..."
-    "$RUNTIME" run "${run_args[@]}" "${IMAGE_NAME}:latest"
+    info "Starting container '${CONTAINER_NAME}' from ${image_tag} ..."
+    "$RUNTIME" run "${run_args[@]}" "$image_tag"
     ok "Container started."
 
     # Verify device access
@@ -661,8 +673,12 @@ EOF
 }
 
 # =============================================================================
-# ARGUMENT PARSING
+# ARGUMENT PARSING + MAIN ORCHESTRATION
 # =============================================================================
+# Wrapped in a function so build.sh can be sourced (by run_container.sh) for
+# the run_container() function alone, without re-running the deploy flow.
+# Bottom-of-file guard decides between sourced and direct execution.
+main() {
 PREFERRED_PORT=$INTERNAL_PORT
 INSTALL_AUTOSTART=true
 FORCE_REBUILD=false
@@ -734,27 +750,36 @@ if [[ "$INSTALL_AUTOSTART" == true ]]; then
     install_autostart
 fi
 
-# Step 10: Install upgrade watcher (first-time only)
+# Step 10: Populate APP_DIR (single source of truth) from CLONE_DIR
+# build.sh, scripts/upgrade.sh, scripts/run_container.sh, scripts/install_watcher.sh
+# all live in APP_DIR after this. The transient CLONE_DIR is only used by the
+# initial install — runtime never reads from it.
+info "Populating ${APP_DIR} from ${CLONE_DIR} ..."
+mkdir -p "${APP_DIR}/scripts" "${DATA_DIR}/data/upgrade"
+
+# Copy build.sh itself
+if [[ -f "${CLONE_DIR}/build.sh" ]]; then
+    cp "${CLONE_DIR}/build.sh" "${APP_DIR}/build.sh"
+    chmod +x "${APP_DIR}/build.sh"
+fi
+
+# Copy scripts (chmod +x is critical — without it, systemd fails with
+# status=203/EXEC "Permission denied")
+if [[ -d "${CLONE_DIR}/scripts" ]]; then
+    cp "${CLONE_DIR}/scripts/"*.sh "${APP_DIR}/scripts/" 2>/dev/null || true
+    chmod +x "${APP_DIR}/scripts/"*.sh 2>/dev/null || true
+fi
+
+# Step 11: Install upgrade watcher (first-time only)
 if [[ ! -f "${DATA_DIR}/data/upgrade/.watcher_installed" ]]; then
     info "Installing in-app upgrade watcher ..."
-    mkdir -p "${DATA_DIR}/scripts" "${DATA_DIR}/data/upgrade"
-    # Copy the scripts from the cloned repo
-    if [[ -f "${APP_DIR}/scripts/upgrade.sh" ]]; then
-        cp "${APP_DIR}/scripts/upgrade.sh" "${DATA_DIR}/scripts/"
-        cp "${APP_DIR}/scripts/run_container.sh" "${DATA_DIR}/scripts/"
-        # CRITICAL: chmod after cp — without this, systemd will fail with
-        # status=203/EXEC "Permission denied"
-        chmod +x "${DATA_DIR}/scripts/"*.sh
-        # Run the installer
-        if [[ -f "${APP_DIR}/scripts/install_watcher.sh" ]]; then
-            chmod +x "${APP_DIR}/scripts/install_watcher.sh"
-            ZMM_DATA_DIR="$DATA_DIR" ZMM_APP_DIR="$APP_DIR" \
-                bash "${APP_DIR}/scripts/install_watcher.sh" || \
-                warn "Watcher install encountered issues — you can re-run it later from the Settings tab"
-        fi
+    if [[ -f "${APP_DIR}/scripts/upgrade.sh" && -f "${APP_DIR}/scripts/install_watcher.sh" ]]; then
+        ZMM_DATA_DIR="$DATA_DIR" ZMM_APP_DIR="$APP_DIR" \
+            bash "${APP_DIR}/scripts/install_watcher.sh" || \
+            warn "Watcher install encountered issues — you can re-run it later from the Settings tab"
     else
-        warn "scripts/upgrade.sh not found in repo — upgrade feature will not be available"
-        warn "You can enable it later by running: bash ${APP_DIR}/scripts/install_watcher.sh"
+        warn "scripts/upgrade.sh or install_watcher.sh missing in ${APP_DIR}/scripts/"
+        warn "Upgrade feature will not be available until install_watcher.sh is re-run."
     fi
 else
     ok "Upgrade watcher already installed"
@@ -794,3 +819,14 @@ echo
 echo -e "Should you wish to rebuild the container please use the teardown script"
 echo -e "  ${BOLD}Data:${NC}           ${DATA_DIR}/teardown.sh"
 echo
+}
+
+# =============================================================================
+# ENTRY POINT GUARD
+# =============================================================================
+# Only run main() when this script is executed directly. When sourced (e.g.
+# by run_container.sh) the function definitions are loaded but no orchestration
+# runs.
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    main "$@"
+fi

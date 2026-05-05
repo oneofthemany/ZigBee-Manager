@@ -74,15 +74,26 @@ The upgrade flow has to work under **all of**: rootless Podman + SELinux, rootle
                                   ▼
 ┌──────────────────────────────────────────────────────────────────────┐
 │  CONTAINER RUNTIME (podman or docker)                                │
-│    podman build → tag image as ${name}:${version}-${arch}            │
+│    Drop Restart=no override → /run/systemd/system/<unit>.d/          │
+│    systemctl stop <unit>    → kills supervisor first                 │
 │    podman stop  → stop -t 45 (clean shutdown for matter-server)      │
 │    podman rename → preserve old container as -previous               │
 │    podman run   → start new container with same volumes/devices      │
-│    Health check → curl /api/status with 60s window                   │
-│    Rollback     → swap names back if health fails                    │
+│    Health check → curl /api/system/health with 60s window            │
+│    Remove drop-in + start <unit> → re-arm supervisor on success      │
+│    Rollback     → swap names back if run/health fails                │
 └──────────────────────────────────────────────────────────────────────┘
 ```
-**Note:** /opt/zmm/scripts = /opt/zigbee-matter-manager/scripts/
+
+**Note:** the supervisor unit (`zigbee-matter-manager.service`) typically has
+`Restart=always`. Without disabling that for the swap window, it relaunches
+the old container the moment we stop it and binds the ports the new
+container needs. Suppression via runtime drop-in is the only reliable
+mechanism — `systemctl mask` fails when the unit is a real file at
+`/etc/systemd/system/<unit>.service`.
+
+**Path note:** `/opt/zmm/scripts` is shorthand for
+`/opt/zigbee-matter-manager/scripts/`.
 
 ### Why file-based IPC instead of socket mounting
 
@@ -314,7 +325,7 @@ The `build` action triggered when the user clicks "Build" in the UI:
 4. git clone --depth 1 --branch v${target_version} ${repo} ${work_dir}
    - Falls back to non-v-prefixed tag if first attempt fails
 5. Stamp VERSION file into the clone
-6. Write status: building / 20% / "Compiling image (~15-25min)"
+6. Write status: building / 20% / "Compiling image (varies by host hardware)"
 7. podman build --format docker --build-arg BUILD_JOBS=${nproc} \
      --tag ${image}:${version}-${arch} \
      --file ${work_dir}/Containerfile ${work_dir}
@@ -323,7 +334,12 @@ The `build` action triggered when the user clicks "Build" in the UI:
 10. Clean up clone directory
 ```
 
-The build typically takes 15–25 minutes on ARM64 hardware. The first 9–11 layers are usually cached from the previous build (apt packages, OpenThread bootstrap, Python deps, Rust toolchain), so only `COPY . .` and onward actually run.
+Build time depends entirely on host hardware:
+- **x86_64 NUC / desktop**: ~2 minutes with warm cache
+- **Rock 5B (aarch64)**: 3–8 minutes with warm cache
+- **Cold cache (any host)**: 15–25 minutes (full toolchain rebuild)
+
+The first 9–11 layers are usually cached from the previous build (apt packages, OpenThread bootstrap, Python deps, Rust toolchain), so only `COPY . .` and onward actually run on a warm cache. The "varies by host hardware" status text deliberately avoids quoting a number — empirical times across the Rock 5B, NUC, and Unraid hosts span an order of magnitude.
 
 ### Build cache behaviour
 
@@ -345,48 +361,45 @@ The most operationally-sensitive part of the system. Every step has a failure mo
 1. Verify target image exists (podman image inspect)
 2. Verify current container exists (podman inspect)
 3. Capture current image tag and version (for rollback)
-4. Write status: swapping / 30% / "Stopping current container"
-5. podman stop -t 45 ${name}                    [STEP A]
-6. wait_for_ports_free 60                       [STEP B]
-7. (if still squatted) kill_port_squatters
-8. Rename old: podman rename ${name} ${name}-previous
-9. Write status: swapping / 55% / "Starting new container"
-10. RUNTIME=podman IMAGE_TAG=... bash run_container.sh   [STEP C]
-11. (if step 10 fails) capture failed container logs    [STEP D]
-12. Write status: swapping / 80% / "Health-checking"
-13. Poll http://127.0.0.1:8000/api/status until 200 OR 60s timeout   [STEP E]
-14. (if health fails) rollback: stop new, rm new, rename previous back
+4. Suppress supervisor auto-restart                 [STEP A]
+5. podman stop -t 45 ${name}                        [STEP B]
+6. Rename old: podman rename ${name} ${name}-previous
+7. Write status: swapping / 60% / "Starting new container"
+8. RUNTIME=podman IMAGE_TAG=... bash run_container.sh   [STEP C]
+9. (if step 8 fails) capture failed container logs      [STEP D]
+10. Write status: swapping / 80% / "Health-checking"
+11. Poll health URL until 200 OR HEALTH_TIMEOUT (60s default)  [STEP E]
+12. (if health fails) rollback: stop new, rm new, rename previous back
+13. Restore supervisor: remove drop-in, daemon-reload, systemctl start
+14. Update version.json: current/previous version + image tags
 15. Write status: idle / 100% / "Upgrade complete"
-16. Update version.json: current/previous version + image tags
 ```
 
-### Step A — the stop timeout
+### Step A — suppress the supervisor
+
+`zigbee-matter-manager.service` is configured `Restart=always` with `ExecStart=podman start -a zigbee-matter-manager`. When we `podman stop` the container, the attached `podman start -a` exits and systemd treats the service as failed → `RestartSec=10` later it `podman start`s the old container again, binding port 8000 (and 5580) before our new container can.
+
+Suppression is done by writing a runtime drop-in:
+
+```
+/run/systemd/system/zigbee-matter-manager.service.d/zzz-zmm-upgrade-norestart.conf
+[Service]
+Restart=no
+```
+
+Then `systemctl daemon-reload` and `systemctl stop zigbee-matter-manager.service`. With `Restart=no` overriding `Restart=always`, the stop is a real stop. `/run/systemd/system/` is wiped at reboot, so no permanent state.
+
+`systemctl mask` was tried first but fails:
+```
+Failed to mask unit: File '/etc/systemd/system/<unit>.service' already exists
+```
+Mask works by creating a symlink to `/dev/null`. systemctl refuses to overwrite a real unit file. Drop-in override is the working alternative.
+
+### Step B — the stop timeout
 
 `podman stop -t 45` gives the container 45 seconds for clean shutdown via SIGTERM before escalating to SIGKILL. The 45s figure was chosen empirically: uvicorn + python-matter-server (subprocess) + zigpy + DuckDB writes + MQTT flush all need to drain.
 
-The original implementation used `-t 15`, which caused SIGKILL escalation. SIGKILL leaves rootlessport (the userspace network proxy in slirp4netns) holding the published ports in a half-closed state. The new container then fails to bind because the port is "in use" — even though no process is actually serving on it. This was the root cause of the first round of swap failures.
-
-### Step B — wait for ports to be free
-
-After stop, before run, we actively poll to verify ports `8000` and `5580` are unbound:
-
-```bash
-wait_for_ports_free() {
-    local timeout=60
-    local elapsed=0
-    while (( elapsed < timeout )); do
-        if ss -ltn "( sport = :8000 or sport = :5580 )" | grep -q LISTEN; then
-            sleep 2; elapsed=$((elapsed + 2)); continue
-        fi
-        return 0
-    done
-    return 1
-}
-```
-
-Tools tried in order: `ss` (preferred — fast, standard on systemd-based distros), `netstat` (fallback for older systems), bash `/dev/tcp` (last resort, works without any networking tools installed).
-
-If ports are still bound after 60 seconds, `kill_port_squatters` looks up holder PIDs via `ss -ltnp` or `fuser` and sends SIGTERM then SIGKILL. Safety guard: never kill PID 1 or the script's own PID.
+The original implementation used `-t 15`, which caused SIGKILL escalation. SIGKILL leaves rootlessport (the userspace network proxy in slirp4netns) holding the published ports in a half-closed state. The new container then fails to bind because the port is "in use" — even though no process is actually serving on it. Combining `-t 45` with Step A's supervisor suppression eliminated the entire class of port-binding failures.
 
 ### Step C — run_container.sh
 
@@ -397,7 +410,7 @@ The run args include:
 - `--cap-add=NET_ADMIN,NET_RAW,SYS_ADMIN` (for OTBR and netfilter)
 - `--sysctl net.ipv6.conf.all.forwarding=1` (Thread border routing)
 - `--device /dev/net/tun` (OTBR tun interface)
-- `--device /dev/serial/by-id/...` (auto-detected Zigbee dongle)
+- `--device /dev/serial/by-id/...` or `/dev/ttyACM0` / `/dev/ttyUSB0` (Zigbee dongle from `config.yaml`)
 - `--device /dev/hci0` (Bluetooth, conditional on existence)
 - `--volume /run/dbus:/run/dbus` (otbr-agent D-Bus)
 - `--volume ${DATA_DIR}/{config,data,certs,logs}:/app/...` (persistent state)
@@ -415,9 +428,9 @@ This means the user sees the actual Python startup error (or OOM kill, or import
 
 ### Step E — health check
 
-Polls `http://127.0.0.1:8000/api/status` from the host, every 3 seconds, up to 60 seconds total. The `/api/status` endpoint is one of the first things the FastAPI app registers, so it returns 200 as soon as the app is listening — even before all services are fully initialized. This is intentional: we want to detect "the app started up" not "the app is fully ready", because full readiness can take 30+ seconds with 40+ devices and the health check would time out.
+Polls `/api/system/health` from the host, every 3 seconds, up to `HEALTH_TIMEOUT` seconds total (default 60). Both `https://127.0.0.1:8000/api/system/health` and `http://127.0.0.1:8000/api/system/health` are tried — the URL is determined from `web.ssl.enabled` in `config.yaml`. The endpoint returns 200 as soon as the FastAPI app is listening — even before all services are fully initialized. This is intentional: full readiness can take 30+ seconds with 40+ devices, longer than the swap window allows.
 
-If health check fails, rollback is automatic — no user action needed.
+If health check fails, rollback is automatic — no user action needed. The drop-in override is removed and the supervisor is restarted as part of the rollback so the previous container is supervised properly.
 
 ---
 
@@ -584,6 +597,41 @@ The polling fallback is a simple `while true; do [[ -f trigger ]] && bash upgrad
 
 ---
 
+## Supervisor unit (the one that runs the container)
+
+The container itself is run as a system-managed service. A typical unit at
+`/etc/systemd/system/zigbee-matter-manager.service` looks like:
+
+```ini
+[Unit]
+Description=Zigbee Matter Manager Container
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Restart=always
+RestartSec=10
+ExecStart=/usr/sbin/podman start -a zigbee-matter-manager
+ExecStop=/usr/sbin/podman stop -t 15 zigbee-matter-manager
+
+[Install]
+WantedBy=multi-user.target
+```
+
+`upgrade.sh` finds this unit by trying these names in order (and both system
+and user scope, system first):
+1. `container-${CONTAINER_NAME}.service` (Podman quadlet / generated naming)
+2. `${CONTAINER_NAME}.service` (manually-written, as above)
+
+Override detection by exporting `ZMM_CONTAINER_UNIT="--system my-unit.service"` in the environment before invoking the watcher.
+
+If no supervisor unit is found, swaps still work — the new container just won't be auto-restarted on host reboot. You'll see this in the watcher log:
+```
+Supervisor: no unit detected (continuing without mask)
+```
+
+---
+
 ## Container restart semantics
 
 A subtle but important point: the running app **does not need to be aware of the upgrade**.
@@ -646,23 +694,116 @@ sudo chmod 755 /opt/zigbee-matter-manager/scripts/*.sh
 sudo restorecon -Rv /opt/zigbee-matter-manager/scripts/
 ```
 
-### `bind: address already in use`
+### Supervisor unit fights the swap (`bind: address already in use`)
 
 ```
 Error: rootlessport listen tcp 0.0.0.0:5580: bind: address already in use
 ```
-
-**Cause:** previous container's rootlessport process still holding the port. Most often happens when the old container was SIGKILL'd rather than cleanly stopped.
-
-**Recovery on the next upgrade:** the new `upgrade.sh` includes `wait_for_ports_free` which polls for up to 60 seconds before starting the new container. If you're hitting this, you're likely on an older `upgrade.sh` — re-run `install_watcher.sh` to update.
-
-**Manual recovery:**
-```bash
-ss -ltnp '( sport = :5580 )'
-# Find the holder PID, kill it
-kill -TERM ${pid}
-# Then retry the swap from the UI
+or, in the watcher log:
 ```
+Killing port-squatter PID NNNNN on port 8000
+```
+
+**Cause:** the supervisor systemd unit (`zigbee-matter-manager.service`) has `Restart=always`. When `upgrade.sh` does `podman stop`, the supervisor's `ExecStart=podman start -a` exits, systemd treats it as a service failure, and `RestartSec=10` later it re-launches the old container — binding the ports the new container is about to need.
+
+**The current `upgrade.sh` handles this** by writing a runtime drop-in to `/run/systemd/system/<unit>.service.d/zzz-zmm-upgrade-norestart.conf` containing `Restart=no`, then stopping the unit. After a successful (or rolled-back) swap the drop-in is removed and the unit is started again.
+
+If the watcher log shows `Failed to mask unit: File ... already exists`, you're on an older `upgrade.sh` that tried `systemctl mask`. Mask creates a symlink to `/dev/null` and refuses if a real unit file already lives at that path. Re-run `install_watcher.sh` to deploy the drop-in-based version.
+
+**If the supervisor-fight has already left you with two containers running:**
+```bash
+sudo systemctl stop zigbee-matter-manager.service
+sudo podman rm -f zigbee-matter-manager zigbee-matter-manager-previous
+
+# Bring up a known-good version manually (substitute the version you trust)
+sudo RUNTIME=podman \
+     IMAGE_TAG=localhost/zigbee-matter-manager:2.0.1-amd64 \
+     CONTAINER_NAME=zigbee-matter-manager \
+     DATA_DIR=/opt/.zigbee-matter-manager \
+     bash /opt/.zigbee-matter-manager/scripts/run_container.sh
+
+# Verify
+sudo podman ps | grep zigbee
+curl -fsk https://127.0.0.1:8000/api/system/health && echo OK
+
+# Re-arm the supervisor so reboot-resume works
+sudo systemctl reset-failed zigbee-matter-manager.service
+sudo systemctl enable zigbee-matter-manager.service
+```
+
+Note: do **not** `systemctl start` the supervisor while a manually-launched container with the same name is already running — the supervisor's `ExecStart=podman start -a` will fail with "container is already in the running state". Either stop the manual container first or just leave the supervisor stopped until next reboot.
+
+### `Unknown command verb '<unit>.service'`
+
+```
+Unknown command verb 'zigbee-matter-manager.service'.
+```
+
+**Cause:** systemctl was called with the verb in the wrong position, e.g. `systemctl --system zigbee-matter-manager.service mask` instead of `systemctl --system mask zigbee-matter-manager.service`. systemctl interprets the unit name as the verb because that's where it expects the verb.
+
+**Fix:** the supervisor helpers in `upgrade.sh` parse `unit_desc` (which holds e.g. `"--system zigbee-matter-manager.service"`) into separate `scope` and `unit` variables and place the verb between them:
+```bash
+read -r scope unit <<< "$unit_desc"
+systemctl "$scope" mask "$unit"     # correct
+```
+If you're still seeing this, your deployed `upgrade.sh` is older than the one that introduced the split. Verify with:
+```bash
+grep -c 'read -r scope unit' /opt/.zigbee-matter-manager/scripts/upgrade.sh
+# Should print 3 or more
+```
+
+### Wrong `ExecStart=` path in `zmm-upgrade.service`
+
+Symptom: you edit `upgrade.sh` and the watcher log STILL shows old behaviour (e.g. messages from removed code paths).
+
+**Cause:** the systemd unit's `ExecStart=` points to a different copy of the script than the one you're editing. `install_watcher.sh` historically used `/opt/zigbee-matter-manager/scripts/` (no dot), then later `/opt/.zigbee-matter-manager/scripts/` (with dot). If both copies exist, the unit runs whichever the unit file references.
+
+**Diagnose:**
+```bash
+sudo systemctl cat zmm-upgrade.service | grep ExecStart
+md5sum /opt/zigbee-matter-manager/scripts/upgrade.sh \
+       /opt/.zigbee-matter-manager/scripts/upgrade.sh 2>/dev/null
+```
+
+**Recovery:**
+```bash
+# Re-deploy from a known canonical source and remove the dead copy
+sudo install -m755 ./upgrade.sh /opt/.zigbee-matter-manager/scripts/upgrade.sh
+sudo rm -f /opt/zigbee-matter-manager/scripts/upgrade.sh
+sudo bash ./install_watcher.sh   # rewrites unit with current paths
+sudo systemctl daemon-reload
+```
+
+### Dongle wedged after a SIGKILL'd swap (`NcpResetCode.ERROR_EXCEEDED_MAXIMUM_ACK_TIMEOUT_COUNT`)
+
+Symptom in the new container's log:
+```
+WARNING - core - Startup Attempt 1 failed: NcpResetCode.ERROR_EXCEEDED_MAXIMUM_ACK_TIMEOUT_COUNT
+```
+
+**Cause:** an earlier process holding `/dev/ttyACM0` (or equivalent) was SIGKILL'd mid-session. The kernel's `cdc_acm` driver releases the device but the EFR32 firmware is mid-frame — bellows opens the port and the NCP doesn't ACK because it's still expecting frames from the dead session.
+
+This typically follows a supervisor-fight scenario where `kill_port_squatters` (legacy code) or a manual `kill -9` killed a container that owned the dongle.
+
+**Recovery:**
+```bash
+# Stop everything touching the dongle
+sudo systemctl stop zigbee-matter-manager.service
+sudo podman stop zigbee-matter-manager 2>/dev/null
+
+# USB-bus reset (find the device first)
+lsusb | grep -i 'CP210\|EFR32\|Sonoff'   # note the bus / device nums
+# or unbind/rebind the cdc_acm driver:
+ls /sys/bus/usb/drivers/cp210x/   # look for the entry like '1-1.4:1.0'
+echo '1-1.4:1.0' | sudo tee /sys/bus/usb/drivers/cp210x/unbind
+sleep 2
+echo '1-1.4:1.0' | sudo tee /sys/bus/usb/drivers/cp210x/bind
+
+# Restart container
+sudo systemctl start zigbee-matter-manager.service
+```
+
+If the dongle keeps wedging across upgrades, the swap is killing it dirty. Confirm `upgrade.sh` is current (no `kill_port_squatters` calls in `do_swap`) — the new flow doesn't SIGKILL anything.
 
 ### Trigger directory instead of file
 
@@ -720,7 +861,7 @@ The UI shows this when `request_build` / `request_swap` finds the lock file held
 ps aux | grep -E "podman build|upgrade.sh" | grep -v grep
 ```
 
-If anything is running, **wait for it**. Builds take 15–25 minutes.
+If anything is running, **wait for it**. Builds typically take 2–10 minutes on x86_64 / Rock 5B with warm cache; up to 25 minutes on a cold cache.
 
 If nothing is running, the lock is stale. The Python side auto-detects stale locks (PID dead OR age > 60min) and clears them. If you want to force-clear immediately, the UI surfaces a "Force-clear lock" option after a 409, or:
 
@@ -763,6 +904,12 @@ tail -100 /opt/.zigbee-matter-manager/data/upgrade/build.log
 systemctl status zmm-upgrade.path zmm-upgrade.service
 systemctl cat zmm-upgrade.service
 
+# Supervisor unit (the one that runs the container) and any active drop-in
+systemctl status zigbee-matter-manager.service --no-pager
+systemctl cat zigbee-matter-manager.service
+ls /run/systemd/system/zigbee-matter-manager.service.d/ 2>/dev/null
+# A file ending in -norestart.conf means a swap is in flight or aborted
+
 # Lock contents
 cat /opt/.zigbee-matter-manager/data/upgrade/lock
 
@@ -778,10 +925,58 @@ podman images | grep zigbee
 # What containers exist?
 podman ps -a | grep zigbee
 
+# Verify the deployed upgrade.sh matches the repo copy
+md5sum /opt/.zigbee-matter-manager/scripts/upgrade.sh \
+       ~/zigbee-matter-manager/scripts/upgrade.sh
+
 # Test that upgrade.sh runs at all from systemd's perspective
-sudo /opt/zigbee-matter-manager/scripts/upgrade.sh
+sudo /opt/.zigbee-matter-manager/scripts/upgrade.sh
 # Should print "[timestamp] Using container runtime: podman" and exit
 ```
+
+---
+
+## Manual recovery to a known-good version
+
+When an upgrade has left the system in a broken state — two containers running on the same ports, a half-renamed `-previous`, a stuck `Restart=always` loop, or the supervisor unit refusing to come up — the recovery procedure is always the same:
+
+```bash
+# 1. Stop the supervisor and remove any stale drop-in
+sudo systemctl stop zigbee-matter-manager.service
+sudo rm -rf /run/systemd/system/zigbee-matter-manager.service.d/
+sudo systemctl daemon-reload
+
+# 2. Remove any container that's currently named zigbee-matter-manager
+#    or zigbee-matter-manager-previous
+sudo podman rm -f zigbee-matter-manager zigbee-matter-manager-previous 2>/dev/null
+
+# 3. Pick a known-good image (check `podman images | grep zigbee` for tags)
+#    and bring it up via run_container.sh — same args the swap flow uses.
+sudo RUNTIME=podman \
+     IMAGE_TAG=localhost/zigbee-matter-manager:2.0.1-amd64 \
+     CONTAINER_NAME=zigbee-matter-manager \
+     DATA_DIR=/opt/.zigbee-matter-manager \
+     bash /opt/.zigbee-matter-manager/scripts/run_container.sh
+
+# 4. Verify the app responds
+sudo podman ps | grep zigbee
+curl -fsk https://127.0.0.1:8000/api/system/health && echo OK
+
+# 5. Re-arm the supervisor unit so a host reboot brings it back automatically.
+#    Don't `start` it — the container is already running, and the unit's
+#    ExecStart=podman start -a will fail with "already in the running state".
+sudo systemctl reset-failed zigbee-matter-manager.service
+sudo systemctl enable zigbee-matter-manager.service
+```
+
+Before retrying an upgrade, check `version.json` reflects reality:
+
+```bash
+sudo jq '.current_version, .current_image_tag' \
+    /opt/.zigbee-matter-manager/data/state/version.json
+```
+
+If those fields don't match what's actually running, edit them by hand or trigger an upgrade to a different version (the swap will overwrite them on success).
 
 ---
 
