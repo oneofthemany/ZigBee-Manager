@@ -6,6 +6,7 @@
 import { state } from './state.js';
 import { fetchAllDevices, handleDeviceUpdate, removeDeviceRow, renderDeviceTable } from './devices.js';
 import { addLogEntry, updateDebugStatus, handleLivePacket, checkDebugStatus } from './logging.js';
+import { handlePacketFlow } from './packet-flow.js';
 import { updatePairingUI, checkPairingStatus } from './actions.js';
 import { handleMQTTMessage } from './mqtt-explorer.js';
 import { handleOTAProgress } from './modal/ota.js';
@@ -160,6 +161,11 @@ export function initWS() {
                 case "debug_packet":
                 case "packet":
                     handleLivePacket(msg.data || msg.payload);
+                    break;
+
+                // Live packet flow (rates, top talkers, anomalies, sparkline)
+                case "packet_flow":
+                    handlePacketFlow(msg.payload || msg.data);
                     break;
 
                 case "matter_button_event":

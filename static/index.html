@@ -1193,9 +1193,55 @@
                         </div>
                     </div>
                 </div>
+                <!-- Packet Flow Live Panel -->
+                <div class="card mb-2 bg-body-tertiary border-0">
+                    <div class="card-body py-2 px-3">
+                        <div class="row g-2 align-items-center">
+                            <div class="col-md-5">
+                                <div class="d-flex align-items-center gap-2 flex-wrap">
+                                    <small class="text-muted text-uppercase fw-bold">Live Flow</small>
+                                    <span id="flowGlobalRate"><span class="text-muted small">—</span></span>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div id="flowSparkline" style="min-height:30px;"></div>
+                            </div>
+                            <div class="col-md-4 text-end">
+                                <div id="flowAnomalies"><span class="badge bg-secondary">—</span></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="accordion mb-2" id="flowDetailsAccordion">
+                    <div class="accordion-item">
+                        <h2 class="accordion-header">
+                            <button class="accordion-button collapsed py-1 px-2 small" type="button"
+                                    data-bs-toggle="collapse" data-bs-target="#flowDetailsCollapse">
+                                Top Talkers &amp; Clusters
+                            </button>
+                        </h2>
+                        <div id="flowDetailsCollapse" class="accordion-collapse collapse">
+                            <div class="accordion-body p-2">
+                                <div class="row g-3">
+                                    <div class="col-md-6">
+                                        <div class="small fw-bold mb-1 text-muted">Top Talkers</div>
+                                        <div id="flowTopTalkers"></div>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <div class="small fw-bold mb-1 text-muted">Clusters</div>
+                                        <div id="flowClusters"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <div id="debugPacketsContent" style="max-height: 60vh; overflow-y: auto;">
                     <div class="text-center p-4"><i class="fas fa-spinner fa-spin"></i> Loading...</div>
                 </div>
+
             </div>
         </div>
     </div>

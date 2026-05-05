@@ -205,6 +205,21 @@ class ZigbeeDebugger:
             direction: str = "RX"
     ) -> Optional[ZigbeePacket]:
         """Capture and analyse a raw Zigbee message."""
+        # Always-on flow accounting — runs even when full debug capture is
+        # disabled. Counting is microseconds per packet; decoding is not.
+        # Keeps the 1000-deep packet ring untouched while still surfacing
+        # rate / anomaly data to the UI.
+        try:
+            from modules.packet_flow import get_flow_analyzer
+            get_flow_analyzer().record(
+                str(sender_ieee) if sender_ieee else None,
+                cluster,
+                direction,
+            )
+        except Exception:
+            # Flow accounting must NEVER break packet handling.
+            pass
+
         if not self.enabled:
             return None
 

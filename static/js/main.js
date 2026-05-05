@@ -66,6 +66,7 @@ import {
     clearDebugFilters,
     downloadDebugLog
 } from './logging.js';
+import { initPacketFlow } from './packet-flow.js';
 import {
     loadConfigYaml,
     saveConfigYaml,
@@ -281,6 +282,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Initialise system tab
     initSystemTab();
+
+    // Initialise packet-flow panel cache (handles WS events before modal is
+    // ever opened — first open then has data instantly).
+    initPacketFlow();
 
     // Initial fetch
     fetchAllDevices();

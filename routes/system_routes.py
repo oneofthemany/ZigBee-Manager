@@ -121,6 +121,39 @@ def register_system_routes(app: FastAPI, get_zigbee_service, get_mqtt_service, g
         except Exception as e:
             return {"error": str(e)}
 
+    @app.get("/api/debug/flow")
+    async def get_packet_flow(top_n: int = 20, history: int = 60):
+        """
+        Live packet-flow snapshot — pure in-memory rates, not the full debug
+        capture. Always populated, even when debug capture is disabled.
+
+        Returns:
+            global    — {rate_1s, rate_10s, rate_60s, total, rx, tx, ...}
+            devices   — top-N busiest devices ranked by 60s rate
+            clusters  — per-cluster aggregate rates
+            anomalies — devices currently exceeding their EWMA baseline
+            history   — per-second counts for sparkline (oldest first)
+        """
+        try:
+            from modules.packet_flow import get_flow_analyzer
+            return get_flow_analyzer().get_snapshot(
+                top_n=top_n,
+                history_seconds=history,
+            )
+        except Exception as e:
+            logger.error(f"Failed to build packet flow snapshot: {e}")
+            return {"error": str(e)}
+
+    @app.post("/api/debug/flow/reset")
+    async def reset_packet_flow():
+        """Clear all in-memory flow counters and baselines."""
+        try:
+            from modules.packet_flow import get_flow_analyzer
+            get_flow_analyzer().reset()
+            return {"success": True}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
     # ---- Resilience ----
 
     @app.get("/api/resilience/stats")

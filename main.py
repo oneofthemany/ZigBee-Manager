@@ -678,6 +678,29 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Failed to start upgrade manager loops: {e}")
 
+    # Packet flow broadcaster — pushes a 2s snapshot of rates / top talkers /
+    # anomalies / sparkline history to all connected clients. Independent of
+    # debug capture; counters in modules/packet_flow run always-on.
+    try:
+        from modules.packet_flow import get_flow_analyzer
+
+        async def _packet_flow_loop(interval: float = 2.0):
+            analyzer = get_flow_analyzer()
+            while True:
+                try:
+                    snap = analyzer.get_snapshot(top_n=10, history_seconds=60)
+                    await manager.broadcast({"type": "packet_flow", "payload": snap})
+                except asyncio.CancelledError:
+                    raise
+                except Exception as e:
+                    logger.debug(f"packet_flow broadcast failed: {e}")
+                await asyncio.sleep(interval)
+
+        app.state.flow_broadcast_task = asyncio.create_task(_packet_flow_loop(2.0))
+        logger.info("Packet flow broadcaster started (2s interval)")
+    except Exception as e:
+        logger.warning(f"Failed to start packet flow broadcaster: {e}")
+
     yield  # Application runs here
 
     # Shutdown
@@ -707,7 +730,7 @@ async def lifespan(app: FastAPI):
         await matter_server.stop()
     log_listener.stop()
     # Stop upgrade manager loops
-    for task_name in ("upgrade_check_task", "upgrade_status_task"):
+    for task_name in ("upgrade_check_task", "upgrade_status_task", "flow_broadcast_task"):
         task = getattr(app.state, task_name, None)
         if task and not task.done():
             task.cancel()

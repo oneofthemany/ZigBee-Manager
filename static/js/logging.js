@@ -6,6 +6,7 @@
 import { state } from './state.js';
 import { getTimestamp } from './utils.js';
 import { analysePacket, renderPacketAnalysis } from './packet-analysis.js';
+import { initPacketFlow } from './packet-flow.js';
 
 // Debug packets cache and sort state
 let _debugPacketCache = [];
@@ -299,6 +300,10 @@ export function handleLivePacket(p) {
 export async function viewDebugPackets() {
     const modal = new bootstrap.Modal(document.getElementById('debugPacketsModal'));
     modal.show();
+    // Kick off the packet-flow panel — pulls a one-shot snapshot so the
+    // bar at the top of the modal is populated immediately, then live
+    // updates take over via the `packet_flow` WS message handler.
+    try { initPacketFlow(); } catch (e) { console.debug('initPacketFlow failed', e); }
     // Ensure refresh is called to fetch the full data history
     await refreshDebugPackets();
 }
