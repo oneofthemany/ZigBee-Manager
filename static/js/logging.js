@@ -8,9 +8,136 @@ import { getTimestamp } from './utils.js';
 import { analysePacket, renderPacketAnalysis } from './packet-analysis.js';
 import { initPacketFlow } from './packet-flow.js';
 
+// Local utility: HTML-escape arbitrary values. Defined at the very top of
+// the module so it's unambiguously in scope for every function below,
+// avoiding any hoisting / TDZ surprises in bundled or transformed builds.
+const escapeHtml = (text) => {
+    if (text === null || text === undefined) return '';
+    if (typeof text !== 'string') text = String(text);
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+};
+
 // Debug packets cache and sort state
 let _debugPacketCache = [];
 let _debugSortState = { col: 'time', dir: 'desc' };
+
+// Inject the CSS for the wider debug modal and side-by-side packet detail
+// view exactly once. We do this from JS so we don't have to touch index.html.
+let _debugStylesInjected = false;
+function ensureDebugStyles() {
+    if (_debugStylesInjected) return;
+    _debugStylesInjected = true;
+
+    const css = `
+        /* Widen the debug packets modal so the side-by-side decoded / raw view
+           has room to breathe on desktop. Falls back to default on small screens. */
+        @media (min-width: 992px) {
+            #debugPacketsModal .modal-dialog {
+                max-width: 95vw;
+            }
+        }
+        #debugPacketsModal .packet-detail-cell {
+            background-color: #212529 !important;
+            color: #f8f9fa !important;
+        }
+        #debugPacketsModal .packet-detail-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+            align-items: start;
+        }
+        @media (max-width: 991.98px) {
+            #debugPacketsModal .packet-detail-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+        #debugPacketsModal .packet-detail-grid .panel-title {
+            font-weight: 600;
+            color: #ffd966;
+            margin-bottom: 0.5rem;
+            display: block;
+            font-size: 0.875rem;
+            letter-spacing: 0.02em;
+            text-transform: uppercase;
+        }
+        #debugPacketsModal .packet-detail-grid pre.raw-json {
+            background: #0d0d0d;
+            color: #d4d4d4;
+            padding: 0.5rem;
+            border-radius: 4px;
+            max-height: 600px;
+            overflow: auto;
+            font-size: 0.78rem;
+            margin: 0;
+        }
+    `;
+    const style = document.createElement('style');
+    style.id = 'zmm-debug-packet-styles';
+    style.textContent = css;
+    document.head.appendChild(style);
+}
+
+/**
+ * Build the side-by-side detail panel HTML used for both live and refreshed
+ * packet rows. Decoded analysis on the left, raw JSON on the right.
+ *
+ * @param {Object} packet - the packet object
+ * @param {boolean} isMatter - whether this is a Matter packet (different rendering)
+ * @returns {string} HTML for the inner content of the expanded row's <td>
+ */
+function renderDetailPanel(packet, isMatter) {
+    let decodedHtml = '';
+    try {
+        if (isMatter) {
+            decodedHtml = `
+                <div class="packet-analysis border-start border-3 border-info ps-3">
+                    <div class="d-flex justify-content-between align-items-start mb-2 flex-wrap gap-1">
+                        <div>
+                            <strong>${escapeHtml(packet.cluster_name || 'Matter')}</strong>
+                            <span class="text-muted ms-2 small">cluster ${escapeHtml(packet.cluster ?? packet.data?.cluster_id ?? '?')}</span>
+                        </div>
+                        <span class="badge bg-info">${escapeHtml(packet.event || packet.data?.command_name || 'event')}</span>
+                    </div>
+                    <div class="small">
+                        <div><strong>Node ID:</strong> ${escapeHtml(packet.node_id ?? '?')}</div>
+                        <div><strong>Endpoint:</strong> ${escapeHtml(packet.endpoint ?? packet.data?.endpoint_id ?? '?')}</div>
+                        <div><strong>Direction:</strong> ${escapeHtml(packet.direction || 'RX')}</div>
+                        <div><strong>Importance:</strong> ${escapeHtml(packet.importance || 'normal')}</div>
+                        ${packet.summary ? `<div class="mt-1"><strong>Summary:</strong> ${escapeHtml(packet.summary)}</div>` : ''}
+                    </div>
+                </div>`;
+        } else {
+            decodedHtml = renderPacketAnalysis(packet);
+        }
+    } catch (e) {
+        decodedHtml = `<div class="alert alert-warning">Packet analyser error: ${escapeHtml(e.message)}</div>`;
+    }
+
+    const rawData = isMatter ? (packet.data || packet) : packet.decoded;
+    let rawJson;
+    try {
+        rawJson = JSON.stringify(rawData, null, 2);
+    } catch (e) {
+        rawJson = `(failed to stringify: ${e.message})`;
+    }
+
+    return `
+        <div class="p-3 packet-detail-cell">
+            <div class="packet-detail-grid">
+                <div class="decoded-panel">
+                    <span class="panel-title"><i class="fas fa-magnifying-glass me-1"></i>Human Readable</span>
+                    ${decodedHtml}
+                </div>
+                <div class="raw-panel">
+                    <span class="panel-title"><i class="fas fa-code me-1"></i>Raw Packet</span>
+                    <pre class="raw-json">${escapeHtml(rawJson)}</pre>
+                </div>
+            </div>
+        </div>
+    `;
+}
 
 /**
  * Add log entry to the log buffer
@@ -23,7 +150,7 @@ export function addLogEntry(log) {
     // Keep buffer size reasonable
     state.allLogs.push(log);
     if (state.allLogs.length > 2000) state.allLogs.shift();
-    
+
     // Use requestAnimationFrame for smoother UI updates during packet bursts
     requestAnimationFrame(renderLogs);
 }
@@ -221,7 +348,6 @@ export function handleLivePacket(p) {
         : '';
 
     // Generate a unique ID for this packet row
-    // We use a timestamp-random combo to ensure uniqueness for DOM IDs
     const rowId = `live-packet-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
 
     let analysis;
@@ -266,24 +392,10 @@ export function handleLivePacket(p) {
         </tr>
     `;
 
-    // 2. The Detailed Row (Hidden by default)
-    // ADDED text-light to fix visibility on dark background
-    let detailsHtml = `<tr id="${rowId}" style="display: none;">
-        <td colspan="8" class="bg-dark text-light">
-            <div class="p-3">`;
-
-    try {
-        detailsHtml += renderPacketAnalysis(p);
-    } catch (e) {
-        detailsHtml += `<div class="alert alert-warning">Packet analyser error: ${e.message}</div>`;
-    }
-
-    detailsHtml += `
-                <div class="mt-3">
-                    <strong class="d-block mb-2">Raw Packet Data:</strong>
-                    <pre class="bg-black text-light p-2 rounded small" style="max-height: 300px; overflow-y: auto;">${JSON.stringify(p.decoded, null, 2)}</pre>
-                </div>
-            </div>
+    // 2. The Detailed Row (Hidden by default) — side-by-side decoded / raw
+    const detailsHtml = `<tr id="${rowId}" style="display: none;">
+        <td colspan="8" class="bg-dark text-light p-0">
+            ${renderDetailPanel(p, isMatter)}
         </td>
     </tr>`;
 
@@ -298,6 +410,7 @@ export function handleLivePacket(p) {
 }
 
 export async function viewDebugPackets() {
+    ensureDebugStyles();
     const modal = new bootstrap.Modal(document.getElementById('debugPacketsModal'));
     modal.show();
     // Kick off the packet-flow panel — pulls a one-shot snapshot so the
@@ -309,6 +422,7 @@ export async function viewDebugPackets() {
 }
 
 export async function refreshDebugPackets() {
+    ensureDebugStyles();
     const content = document.getElementById('debugPacketsContent');
     content.innerHTML = '<div class="text-center p-4"><i class="fas fa-spinner fa-spin"></i> Loading...</div>';
 
@@ -409,6 +523,7 @@ export async function exportDebugPackets() {
                 command:  analysis.command,
                 summary:  analysis.summary,
                 importance: p.importance || null,
+                attribute_reports: analysis.attribute_reports || [],
                 raw:      p.decoded || p.data || p,
             };
         });
@@ -557,34 +672,10 @@ function renderDebugPacketTable() {
                 </tr>`;
 
                 html += `<tr id="${rowId}" style="display:none;">
-                    <td colspan="8" class="bg-dark text-light"><div class="p-3">`;
-                try {
-                    if (isMatter) {
-                        // Matter packet detail view
-                        html += `
-                            <div class="row g-3">
-                                <div class="col-md-6">
-                                    <strong>Event:</strong> ${p.event || 'unknown'}<br>
-                                    <strong>Node ID:</strong> ${p.node_id || '?'}<br>
-                                    <strong>Endpoint:</strong> ${p.endpoint || p.data?.endpoint_id || '?'}<br>
-                                    <strong>Cluster:</strong> ${p.cluster || p.data?.cluster_id || '?'}<br>
-                                    <strong>Direction:</strong> ${p.direction || 'RX'}
-                                </div>
-                                <div class="col-md-6">
-                                    <strong>Summary:</strong> ${p.summary || '-'}<br>
-                                    <strong>Importance:</strong> ${p.importance || 'normal'}
-                                </div>
-                            </div>`;
-                    } else {
-                        html += renderPacketAnalysis(p);
-                    }
-                } catch (e) {
-                    html += `<div class="alert alert-warning">Packet analyser error: ${e.message}</div>`;
-                }
-                html += `<div class="mt-3">
-                    <strong class="d-block mb-2">Raw Data:</strong>
-                    <pre class="bg-black text-light p-2 rounded small" style="max-height:300px;overflow-y:auto;">${JSON.stringify(isMatter ? (p.data || p) : p.decoded, null, 2)}</pre>
-                </div></div></td></tr>`;
+                    <td colspan="8" class="bg-dark text-light p-0">
+                        ${renderDetailPanel(p, isMatter)}
+                    </td>
+                </tr>`;
 
             } catch (rowError) {
                 console.error('Error rendering packet row:', rowError);
