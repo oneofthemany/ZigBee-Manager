@@ -742,6 +742,11 @@ class ZigbeeService(
                     logger.info(
                         f"🔗 Auto-paired thermostat [{ieee}] ↔ receiver [{via_ieee}]"
                     )
+                    # Schedule the radio-level bind + report-config so the SLT
+                    # actually transmits temperature reports to the SLR.
+                    asyncio.create_task(
+                        self._setup_hive_thermostat_binding(slt_ieee=ieee, slr_ieee=via_ieee)
+                    )
 
                 # SLR receiver joined via SLT thermostat (reverse)
                 elif ("SLR" in new_model or "RECEIVER" in new_model) and "SLT" in via_model:
@@ -750,6 +755,9 @@ class ZigbeeService(
                     self._save_json("./data/device_settings.json", self.device_settings)
                     logger.info(
                         f"🔗 Auto-paired receiver [{ieee}] ↔ thermostat [{via_ieee}]"
+                    )
+                    asyncio.create_task(
+                        self._setup_hive_thermostat_binding(slt_ieee=via_ieee, slr_ieee=ieee)
                     )
 
         asyncio.create_task(self._async_device_initialized(ieee))
@@ -791,6 +799,210 @@ class ZigbeeService(
         except Exception as e:
             logger.warning(f"[{ieee}] Device configuration failed: {e}")
             self._emit_sync("join_progress", {"ieee": ieee, "stage": "error", "error": str(e)})
+
+    # =========================================================================
+    # HIVE SLT → SLR TEMPERATURE BINDING
+    # =========================================================================
+    #
+    # Hive's SLT thermostat has the room temperature sensor; the SLR receiver
+    # needs that data to display the room temperature and (in some firmware
+    # versions) to refine its heating decisions.
+    #
+    # When you pair both devices to a third-party coordinator (rather than
+    # the official Hive hub), the SLT does NOT auto-bind to the SLR and does
+    # NOT auto-configure reporting on its 0x0402 cluster. We have to do it
+    # ourselves.
+    #
+    # Two operations, both targeted at the SLT (which is a sleepy end-device,
+    # so timeouts are generous and we retry):
+    #
+    #   1. ZDO Bind_req: SLT(EP9, 0x0402, server) → SLR(EP5, client)
+    #      Tells the SLT where to send Report Attributes commands for
+    #      cluster 0x0402.
+    #
+    #   2. Configure Reporting on SLT's 0x0402.measured_value:
+    #      min=30s, max=300s, change=25 centi-degrees (0.25°C)
+    #
+    # Without (1) the SLT only reports to the coordinator (default).
+    # Without (2) the SLT may report on an arbitrary firmware schedule, or
+    # not at all.
+    #
+    # NOTE: Cannot use bind_devices() here because it uses output→input
+    # direction (correct for actuator binds like a switch→light), but for
+    # sensor-style clusters the source is the cluster *server* (the side
+    # that owns the data), which is in the SLT's *input* clusters.
+    # =========================================================================
+
+    # Hive endpoint conventions (verified from device descriptors)
+    _HIVE_SLT_THERMOSTAT_EP = 9     # SLT6 puts thermostat & temp on EP9
+    _HIVE_SLR_RECEIVER_EP = 5       # SLR1c puts thermostat & temp on EP5
+    _HIVE_TEMP_MEASUREMENT_CLUSTER = 0x0402
+
+    # Reporting parameters
+    _HIVE_TEMP_REPORT_MIN_S = 30
+    _HIVE_TEMP_REPORT_MAX_S = 300
+    _HIVE_TEMP_REPORT_CHANGE_CD = 25   # 25 centi-degrees = 0.25°C
+
+    # Sleepy-device retry behaviour
+    _HIVE_BIND_RETRY_DELAY_S = 30
+    _HIVE_BIND_MAX_ATTEMPTS = 6        # ~3 minutes total
+
+    async def _setup_hive_thermostat_binding(self, slt_ieee: str, slr_ieee: str) -> dict:
+        """
+        Bind the SLT's TemperatureMeasurement cluster to the SLR and
+        configure reporting on it. Returns {"bound": bool, "reporting": bool,
+        "messages": [...]}.
+
+        Safe to call repeatedly — re-binding and re-configuring reporting
+        is idempotent on the device side.
+        """
+        result = {"bound": False, "reporting": False, "messages": []}
+
+        slt = self.devices.get(slt_ieee)
+        slr = self.devices.get(slr_ieee)
+        if not slt or not slr:
+            msg = (f"Cannot bind {slt_ieee} → {slr_ieee}: "
+                   f"slt_present={bool(slt)} slr_present={bool(slr)}")
+            logger.warning(f"[hive-bind] {msg}")
+            result["messages"].append(msg)
+            return result
+
+        slt_zdev = slt.zigpy_dev
+        slr_zdev = slr.zigpy_dev
+
+        # ── Pre-flight: verify expected endpoints/clusters ──────────────
+        ep = self._HIVE_SLT_THERMOSTAT_EP
+        cluster_id = self._HIVE_TEMP_MEASUREMENT_CLUSTER
+
+        if ep not in slt_zdev.endpoints:
+            msg = (f"SLT {slt_ieee} missing EP{ep}; "
+                   f"available: {list(slt_zdev.endpoints.keys())}")
+            logger.warning(f"[hive-bind] {msg}")
+            result["messages"].append(msg)
+            return result
+
+        slt_ep = slt_zdev.endpoints[ep]
+        if cluster_id not in slt_ep.in_clusters:
+            msg = (f"SLT {slt_ieee} EP{ep} has no input cluster "
+                   f"0x{cluster_id:04x}")
+            logger.warning(f"[hive-bind] {msg}")
+            result["messages"].append(msg)
+            return result
+
+        if self._HIVE_SLR_RECEIVER_EP not in slr_zdev.endpoints:
+            msg = (f"SLR {slr_ieee} missing EP{self._HIVE_SLR_RECEIVER_EP}; "
+                   f"available: {list(slr_zdev.endpoints.keys())}")
+            logger.warning(f"[hive-bind] {msg}")
+            result["messages"].append(msg)
+            return result
+
+        # ── Step 1: ZDO Bind_req on the SLT ─────────────────────────────
+        dst = zdo_types.MultiAddress()
+        dst.addrmode = 3                       # 64-bit IEEE + endpoint
+        dst.ieee = slr_zdev.ieee
+        dst.endpoint = self._HIVE_SLR_RECEIVER_EP
+
+        for attempt in range(1, self._HIVE_BIND_MAX_ATTEMPTS + 1):
+            try:
+                async with asyncio.timeout(20.0):
+                    await slt_zdev.zdo.Bind_req(
+                        slt_zdev.ieee,
+                        ep,
+                        cluster_id,
+                        dst,
+                    )
+                msg = (f"✅ Bind sent: SLT [{slt_ieee}] EP{ep}/0x{cluster_id:04x} "
+                       f"→ SLR [{slr_ieee}] EP{self._HIVE_SLR_RECEIVER_EP} "
+                       f"(attempt {attempt})")
+                logger.info(f"[hive-bind] {msg}")
+                result["messages"].append(msg)
+                result["bound"] = True
+                break
+            except asyncio.TimeoutError:
+                msg = (f"Bind attempt {attempt}/{self._HIVE_BIND_MAX_ATTEMPTS} "
+                       f"timed out (SLT sleeping); retry in "
+                       f"{self._HIVE_BIND_RETRY_DELAY_S}s")
+                logger.info(f"[hive-bind] {msg}")
+                result["messages"].append(msg)
+            except Exception as e:
+                msg = (f"Bind attempt {attempt}/{self._HIVE_BIND_MAX_ATTEMPTS} "
+                       f"errored: {e}; retry in "
+                       f"{self._HIVE_BIND_RETRY_DELAY_S}s")
+                logger.warning(f"[hive-bind] {msg}")
+                result["messages"].append(msg)
+
+            if attempt < self._HIVE_BIND_MAX_ATTEMPTS:
+                await asyncio.sleep(self._HIVE_BIND_RETRY_DELAY_S)
+
+        if not result["bound"]:
+            msg = (f"Gave up binding SLT [{slt_ieee}] → SLR [{slr_ieee}] "
+                   f"after {self._HIVE_BIND_MAX_ATTEMPTS} attempts")
+            logger.error(f"[hive-bind] {msg}")
+            result["messages"].append(msg)
+            return result
+
+        # ── Step 2: Configure Reporting on SLT's 0x0402 ────────────────
+        cluster = slt_ep.in_clusters[cluster_id]
+        for attempt in range(1, self._HIVE_BIND_MAX_ATTEMPTS + 1):
+            try:
+                async with asyncio.timeout(20.0):
+                    cfg_result = await cluster.configure_reporting(
+                        attribute=0x0000,                       # measured_value
+                        min_interval=self._HIVE_TEMP_REPORT_MIN_S,
+                        max_interval=self._HIVE_TEMP_REPORT_MAX_S,
+                        reportable_change=self._HIVE_TEMP_REPORT_CHANGE_CD,
+                    )
+                msg = (f"✅ SLT temp reporting configured: "
+                       f"min={self._HIVE_TEMP_REPORT_MIN_S}s "
+                       f"max={self._HIVE_TEMP_REPORT_MAX_S}s "
+                       f"change={self._HIVE_TEMP_REPORT_CHANGE_CD}cd "
+                       f"→ {cfg_result}")
+                logger.info(f"[hive-bind] {msg}")
+                result["messages"].append(msg)
+                result["reporting"] = True
+                return result
+            except asyncio.TimeoutError:
+                msg = (f"Configure Reporting attempt "
+                       f"{attempt}/{self._HIVE_BIND_MAX_ATTEMPTS} timed out; "
+                       f"retry in {self._HIVE_BIND_RETRY_DELAY_S}s")
+                logger.info(f"[hive-bind] {msg}")
+                result["messages"].append(msg)
+            except Exception as e:
+                msg = (f"Configure Reporting attempt "
+                       f"{attempt}/{self._HIVE_BIND_MAX_ATTEMPTS} errored: {e}; "
+                       f"retry in {self._HIVE_BIND_RETRY_DELAY_S}s")
+                logger.warning(f"[hive-bind] {msg}")
+                result["messages"].append(msg)
+
+            if attempt < self._HIVE_BIND_MAX_ATTEMPTS:
+                await asyncio.sleep(self._HIVE_BIND_RETRY_DELAY_S)
+
+        msg = ("Bind succeeded but Configure Reporting did not. "
+               "SLT may report on default firmware schedule, or not at all.")
+        logger.warning(f"[hive-bind] {msg}")
+        result["messages"].append(msg)
+        return result
+
+    async def repair_hive_thermostat_binding(self, slr_ieee: str) -> dict:
+        """
+        Public entry point for re-running the SLT→SLR binding. Useful for
+        devices that were paired before this code existed, or to recover
+        after a device drops off and rejoins.
+
+        Looks up the paired SLT from device_settings and runs the helper.
+        """
+        slr_settings = self.device_settings.get(slr_ieee, {})
+        slt_ieee = slr_settings.get("paired_thermostat")
+        if not slt_ieee:
+            return {
+                "bound": False,
+                "reporting": False,
+                "messages": [
+                    f"No paired_thermostat in device_settings for SLR {slr_ieee}. "
+                    f"Pair via 'Permit Join via Heatlink' first."
+                ],
+            }
+        return await self._setup_hive_thermostat_binding(slt_ieee, slr_ieee)
 
     def device_left(self, device: zigpy.device.Device):
         ieee = str(device.ieee)
