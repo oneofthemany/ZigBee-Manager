@@ -408,6 +408,9 @@ write_containerfile() {
 # Zigbee Matter Manager — Root Container
 FROM python:3.11-slim-bookworm
 
+# Force Python to flush logs immediately so the first-run password is visible
+ENV PYTHONUNBUFFERED=1
+
 ARG BUILD_JOBS=4
 ENV CMAKE_BUILD_PARALLEL_LEVEL=${BUILD_JOBS}
 ENV MAKEFLAGS="-j${BUILD_JOBS}"
