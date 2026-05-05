@@ -559,11 +559,11 @@ DOCKERFILE
 # BUILD IMAGE
 # =============================================================================
 build_image() {
-    info "Building image ${BOLD}${IMAGE_NAME}${NC} with ${BUILD_JOBS} parallel jobs ..."
-    info "(progress shown below; full build output saved to ${log_file:-/tmp/zmm-build.log})"
-
     local log_file="${ZMM_BUILD_LOG:-/tmp/zmm-build-$$.log}"
     local rc=0
+
+    info "Building image ${BOLD}${IMAGE_NAME}${NC} with ${BUILD_JOBS} parallel jobs ..."
+    info "(progress shown below; full build output saved to ${log_file})"
 
     # set -o pipefail propagates podman's exit code through the pipe.
     "$RUNTIME" build \
