@@ -827,6 +827,6 @@ echo
 # Only run main() when this script is executed directly. When sourced (e.g.
 # by run_container.sh) the function definitions are loaded but no orchestration
 # runs.
-if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+if [[ "${BASH_SOURCE[0]:-${0}}" == "${0}" ]]; then
     main "$@"
 fi
