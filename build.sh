@@ -524,6 +524,7 @@ ENV PATH="/root/.cargo/bin:${PATH}"
 ARG BUILD_JOBS=4
 ENV CMAKE_BUILD_PARALLEL_LEVEL=${BUILD_JOBS}
 ENV MAKEFLAGS="-j${BUILD_JOBS}"
+ENV CARGO_BUILD_JOBS=${BUILD_JOBS}
 
 COPY zmm_telemetry/ /tmp/zmm_telemetry/
 RUN cd /tmp/zmm_telemetry \
