@@ -40,6 +40,107 @@ warn()    { echo -e "${YELLOW}${BOLD}[WARN]${NC}  $*"; }
 error()   { echo -e "${RED}${BOLD}[ERR ]${NC}  $*" >&2; }
 die()     { error "$*"; exit 1; }
 
+# ── Progress reporting ──────────────────────────────────────────────────────
+# Progress is reported in two layers:
+#   1. step_announce() — high-level phases ("Step 3 of 10: USB coordinator")
+#   2. build_progress_filter() — parses podman's STEP N/M output and renders
+#      an in-place progress bar. Falls back to plain pass-through if stdout
+#      isn't a TTY (e.g. when build.sh's output is being captured to a file).
+TOTAL_STEPS=10
+CURRENT_STEP=0
+
+step_announce() {
+    CURRENT_STEP=$((CURRENT_STEP + 1))
+    local desc="$1"
+    echo
+    echo -e "${BOLD}${CYAN}▸ Step ${CURRENT_STEP} of ${TOTAL_STEPS}: ${desc}${NC}"
+}
+
+# Render a progress bar to stderr. Caller passes current/total/description.
+# Uses \r and \033[K to redraw in place.
+_render_bar() {
+    local current="$1"
+    local total="$2"
+    local cached="$3"
+    local desc="$4"
+    local bar_width=30
+    local term_width
+    term_width=$(tput cols 2>/dev/null || echo 80)
+
+    local percent=0
+    (( total > 0 )) && percent=$(( current * 100 / total ))
+    local filled=$(( current * bar_width / (total > 0 ? total : 1) ))
+
+    local bar=""
+    local i
+    for ((i=0; i<bar_width; i++)); do
+        if (( i < filled )); then bar+="█"; else bar+="░"; fi
+    done
+
+    # Truncate desc to fit
+    local prefix_len=$((bar_width + 25))   # bar + percentages + spacing
+    local max_desc=$(( term_width - prefix_len ))
+    (( max_desc < 10 )) && max_desc=10
+    if (( ${#desc} > max_desc )); then
+        desc="${desc:0:$((max_desc - 3))}..."
+    fi
+
+    # Cached count appended only if we've seen any
+    local cached_suffix=""
+    (( cached > 0 )) && cached_suffix=" (${cached} cached)"
+
+    # \r = cursor to column 0; \033[K = clear from cursor to EOL
+    printf "\r\033[K  [%s] %3d%% (%2d/%-2d)%s %s" \
+        "$bar" "$percent" "$current" "$total" "$cached_suffix" "$desc" >&2
+}
+
+# Filter podman build output: parse STEP N/M lines, render bar, save full
+# log for debugging on failure. Pass-through when not a TTY.
+build_progress_filter() {
+    local log_file="$1"
+    : > "$log_file"
+
+    if [[ ! -t 2 ]]; then
+        # Not a TTY (output redirected) — just tee to log and pass through
+        tee -a "$log_file"
+        return
+    fi
+
+    local current=0
+    local total=0
+    local cached=0
+    local last_op=""
+
+    while IFS= read -r line; do
+        # Always log everything
+        printf '%s\n' "$line" >> "$log_file"
+
+        if [[ "$line" =~ ^STEP\ ([0-9]+)/([0-9]+):\ (.*)$ ]]; then
+            current="${BASH_REMATCH[1]}"
+            total="${BASH_REMATCH[2]}"
+            last_op="${BASH_REMATCH[3]}"
+            # Strip leading verbs we don't need to show
+            last_op="${last_op#RUN }"
+            last_op="${last_op#COPY }"
+            last_op="${last_op#FROM }"
+            last_op="${last_op#ENV }"
+            _render_bar "$current" "$total" "$cached" "$last_op"
+        elif [[ "$line" == *"Using cache"* ]]; then
+            cached=$((cached + 1))
+            _render_bar "$current" "$total" "$cached" "$last_op"
+        elif [[ "$line" == "Successfully tagged"* ]] || [[ "$line" == COMMIT* ]]; then
+            _render_bar "$total" "$total" "$cached" "finalising"
+        elif [[ "$line" =~ ^Error|^ERROR ]]; then
+            # Drop to a fresh line so the error is readable
+            printf "\n" >&2
+            printf '%s\n' "$line" >&2
+        fi
+    done
+
+    # Final newline so subsequent output isn't on the bar's line
+    printf "\n" >&2
+}
+
 # ── Defaults ─────────────────────────────────────────────────────────────────
 REPO_URL="https://github.com/oneofthemany/ZigBee-Matter-Manager.git"
 REPO_BRANCH="main"
@@ -459,14 +560,30 @@ DOCKERFILE
 # =============================================================================
 build_image() {
     info "Building image ${BOLD}${IMAGE_NAME}${NC} with ${BUILD_JOBS} parallel jobs ..."
+    info "(progress shown below; full build output saved to ${log_file:-/tmp/zmm-build.log})"
 
+    local log_file="${ZMM_BUILD_LOG:-/tmp/zmm-build-$$.log}"
+    local rc=0
+
+    # set -o pipefail propagates podman's exit code through the pipe.
     "$RUNTIME" build \
         --format docker \
         --build-arg BUILD_JOBS="${BUILD_JOBS}" \
         --tag "${IMAGE_NAME}:latest" \
         --file "$CLONE_DIR/Containerfile" \
-        "$CLONE_DIR"
+        "$CLONE_DIR" 2>&1 | build_progress_filter "$log_file" || rc=$?
+
+    if (( rc != 0 )); then
+        echo
+        error "Image build FAILED (exit $rc)."
+        error "Last 30 lines of build output:"
+        tail -n 30 "$log_file" | sed 's/^/    /' >&2
+        error "Full log: $log_file"
+        exit "$rc"
+    fi
+
     ok "Image built: ${IMAGE_NAME}:latest"
+    info "Full build log: $log_file"
 }
 
 # =============================================================================
@@ -705,26 +822,25 @@ echo
 echo -e "${BOLD}=====================================================${NC}"
 echo -e "${BOLD}   Zigbee Matter Manager — Container Build & Deploy  ${NC}"
 echo -e "${BOLD}=====================================================${NC}"
-echo
 
-# Step 1: Pre-flight checks
+step_announce "Pre-flight checks"
 check_deps
 check_dialout_group
 detect_runtime
 
-# Step 2: Get the code
+step_announce "Fetch repository"
 fetch_repo
 
-# Step 3: USB coordinator
+step_announce "USB coordinator detection"
 if [[ -z "${USB_DEVICE:-}" ]]; then
     detect_usb_coordinator
 fi
 
-# Step 4: Ports (--network=host — verify ports are free on host)
+step_announce "Verify host ports are free"
 HOST_PORT=$(check_host_port "$PREFERRED_PORT")
 HOST_MATTER_PORT=$(check_host_port "$MATTER_INTERNAL_PORT")
 
-# Step 5: Build
+step_announce "Build container image"
 write_containerfile
 
 BUILD_JOBS=$(detect_build_jobs)
@@ -736,25 +852,26 @@ else
     info "Image exists — skipping build (use --rebuild to force)."
 fi
 
-# Step 6: Prepare data dirs
+step_announce "Prepare data directories"
 prepare_data_dirs
 
-# Step 7: OTBR D-Bus policy on host
+step_announce "OTBR D-Bus policy"
 prepare_otbr_dbus_policy
 
-# Step 8: Run
+step_announce "Start container"
 run_container "$HOST_PORT" "$HOST_MATTER_PORT"
 
-# Step 9: Auto-start
+step_announce "Install systemd auto-start unit"
 if [[ "$INSTALL_AUTOSTART" == true ]]; then
     install_autostart
+else
+    info "Skipped (--no-autostart)"
 fi
 
-# Step 10: Populate APP_DIR (single source of truth) from CLONE_DIR
+step_announce "Populate ${APP_DIR} from ${CLONE_DIR}"
 # build.sh, scripts/upgrade.sh, scripts/run_container.sh, scripts/install_watcher.sh
 # all live in APP_DIR after this. The transient CLONE_DIR is only used by the
 # initial install — runtime never reads from it.
-info "Populating ${APP_DIR} from ${CLONE_DIR} ..."
 mkdir -p "${APP_DIR}/scripts" "${DATA_DIR}/data/upgrade"
 
 # Copy build.sh itself
@@ -770,9 +887,8 @@ if [[ -d "${CLONE_DIR}/scripts" ]]; then
     chmod +x "${APP_DIR}/scripts/"*.sh 2>/dev/null || true
 fi
 
-# Step 11: Install upgrade watcher (first-time only)
+step_announce "Install upgrade watcher"
 if [[ ! -f "${DATA_DIR}/data/upgrade/.watcher_installed" ]]; then
-    info "Installing in-app upgrade watcher ..."
     if [[ -f "${APP_DIR}/scripts/upgrade.sh" && -f "${APP_DIR}/scripts/install_watcher.sh" ]]; then
         ZMM_DATA_DIR="$DATA_DIR" ZMM_APP_DIR="$APP_DIR" \
             bash "${APP_DIR}/scripts/install_watcher.sh" || \
