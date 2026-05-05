@@ -33,7 +33,7 @@ You can edit these or add your own from Settings → Users.
 ### Scopes
 
 Permissions are expressed as dotted strings like `device:write` or
-`presence:write:sean`. Built-in scopes:
+`presence:write:user`. Built-in scopes:
 
 | Scope                  | Allows                                                   |
 |------------------------|----------------------------------------------------------|
@@ -112,16 +112,16 @@ app needs to do is report **its owner's** location, give it the narrowest
 possible scope.
 
 1. Settings → Users → Tokens tab → **Issue Token**.
-2. Pick the user (e.g. `sean`).
-3. Label: e.g. "Sean's Pixel 8".
+2. Pick the user (e.g. `user`).
+3. Label: e.g. "User's Pixel 8".
 4. Device ID (optional but recommended): a stable identifier from the
    phone — the companion app shows this in its settings screen.
 5. **Don't tick any built-in scope checkboxes.**
 6. In the "custom scope" field, enter exactly:
    ```
-   presence:write:sean
+   presence:write:user
    ```
-   (replacing `sean` with the user_id of the presence user this phone
+   (replacing `user` with the user_id of the presence user this phone
    should report for — see [presence_users.md](presence_users.md)).
 7. Optional expiry: 365 days is reasonable; the token can be revoked
    anytime regardless.
