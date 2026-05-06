@@ -176,17 +176,25 @@ export async function openDeviceModal(d) {
 
 export function refreshModalState(device) {
     if (!device) return;
-
     const isZigbee = !device.protocol || device.protocol === 'zigbee';
 
-    // Overview tab — always full re-render
-    const overviewTab = document.getElementById('tab-overview');
-    if (overviewTab) {
-        overviewTab.innerHTML = renderOverviewTab(device);
+    // Header badges
+    const modalBody = document.getElementById('capModalBody');
+    if (modalBody) {
+        const badges = modalBody.querySelectorAll(':scope > div:first-child .badge.bg-secondary');
+        if (badges.length >= 2) {
+            badges[badges.length - 2].textContent = device.manufacturer || 'Unknown';
+            badges[badges.length - 1].textContent = device.model || 'Unknown';
+        }
+        const title = modalBody.querySelector(':scope > div:first-child h5');
+        if (title && device.friendly_name) title.textContent = device.friendly_name;
     }
 
-    // Control tab — only skip the full re-render if a slider is being
-    // actively dragged (otherwise we'd stomp the user's drag).
+    // Overview
+    const overviewTab = document.getElementById('tab-overview');
+    if (overviewTab) overviewTab.innerHTML = renderOverviewTab(device);
+
+    // Control — preserve active slider drag
     const controlTab = document.getElementById('tab-control');
     if (controlTab) {
         const sliderActive =
@@ -195,23 +203,83 @@ export function refreshModalState(device) {
                 '#tab-control input[type="range"]:active, ' +
                 '#tab-control input[type="range"]:focus'
             );
-
         if (sliderActive) {
             updateControlValues(device);
         } else {
             controlTab.innerHTML =
                 (!isZigbee ? renderMatterEventsTab(device) : '') +
                 renderControlTab(device);
-            if (hasCluster(device, 0x0201)) {
-                bindScheduleEvents(device.ieee);
+            if (hasCluster(device, 0x0201)) bindScheduleEvents(device.ieee);
+        }
+    }
+
+    // Binding
+    const bindingTab = document.getElementById('tab-binding');
+    if (bindingTab) bindingTab.innerHTML = renderBindingTab(device);
+
+    // Clusters
+    const capsTab = document.getElementById('tab-caps');
+    if (capsTab) {
+        capsTab.innerHTML = isZigbee ? renderCapsTab(device) : renderMatterClustersTab(device);
+    }
+
+    // OTA
+    const otaTab = document.getElementById('tab-ota');
+    if (otaTab) otaTab.innerHTML = renderOTATab(device);
+
+}
+
+/**
+ * Heavier refresh, called once when an interview completes.
+ * Re-runs lazy-init for tabs whose data depends on the device's
+ * post-interview shape (attributes, capabilities, definitions).
+ */
+export function refreshModalAfterInterview(device) {
+    if (!device) return;
+    const isZigbee = !device.protocol || device.protocol === 'zigbee';
+
+    // Cheap pass first
+    refreshModalState(device);
+
+    // History — repopulate attribute dropdown against new telemetry
+    const histTab = document.getElementById('tab-history');
+    if (histTab && device.ieee) {
+        histTab.innerHTML = renderHistoryTab(device);
+        // Only re-init if the user is currently looking at it
+        if (histTab.classList.contains('active')) {
+            try { initHistoryTab(device.ieee); } catch(e) {}
+        }
+    }
+
+    // Mappings — definitions/cluster set may have changed
+    if (isZigbee) {
+        const mapTab = document.getElementById('tab-mappings');
+        if (mapTab) {
+            mapTab.innerHTML = renderMappingsTab(device);
+            if (mapTab.classList.contains('active') && device.ieee) {
+                try { initMappingsTab(device.ieee); } catch(e) {}
             }
         }
     }
 
-    // Binding tab — always full re-render
-    const bindingTab = document.getElementById('tab-binding');
-    if (bindingTab) {
-        bindingTab.innerHTML = renderBindingTab(device);
+    // Automation — available targets may have changed
+    const autoTab = document.getElementById('tab-automation');
+    if (autoTab) {
+        autoTab.innerHTML = renderAutomationTab(device);
+        if (autoTab.classList.contains('active') && device.ieee) {
+            try { initAutomationTab(device.ieee); } catch(e) {}
+        }
+    }
+
+    // Matter endpoints — same idea
+    if (!isZigbee) {
+        const epTab = document.getElementById('tab-endpoints');
+        if (epTab) {
+            epTab.innerHTML = renderMatterEndpointsTab(device);
+            if (epTab.classList.contains('active') && device.state?.node_id) {
+                try { initMatterEndpointsTab(device.state.node_id); } catch(e) {}
+            }
+        }
     }
 }
 

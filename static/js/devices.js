@@ -8,6 +8,7 @@ import { getTypeIcon, getLqiBadge, timeAgo } from './utils.js';
 import { refreshModalState } from './device-modal.js';
 import { openDeviceModal } from './device-modal.js';
 import { initTableSort, sortDevices, applySortState } from './table-sort.js';
+import { dismissKnownDevices } from './join-progress.js';
 
 
 
@@ -36,6 +37,8 @@ export async function fetchAllDevices() {
         state.devices = devices; // Update state
         renderDeviceTable();
         populateRouterList();
+
+        try { dismissKnownDevices(state.devices); } catch(e) {}
 
         // Initialise table sorting on first load
         if (!state.tableSortInitialised) {
@@ -261,6 +264,8 @@ export function handleDeviceUpdate(payload) {
 
         // Update the cache as well
         state.deviceCache[payload.ieee] = state.devices[devIndex];
+
+        try { dismissKnownDevices(state.devices); } catch(e) {}
 
         // Update only this device's row, not the entire table
         updateDeviceRow(state.devices[devIndex]);

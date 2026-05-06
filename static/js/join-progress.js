@@ -280,6 +280,29 @@ export function onJoinProgress(payload) {
     }
 }
 
+
+/**
+ * Scan current device list and dismiss cards for devices that are now identified.
+ * Called from devices.js after fetchAllDevices/handleDeviceUpdate.
+ */
+export function dismissKnownDevices(devices) {
+    if (!Array.isArray(devices) || _trackers.size === 0) return;
+
+    for (const dev of devices) {
+        if (!_trackers.has(dev.ieee)) continue;
+
+        const knownMfr   = dev.manufacturer && dev.manufacturer !== 'Unknown';
+        const knownModel = dev.model && dev.model !== 'Unknown';
+        const hasCaps    = Array.isArray(dev.capability_list) && dev.capability_list.length > 0;
+
+        if ((knownMfr && knownModel) || hasCaps) {
+            _updateCard(dev.ieee, 'ready', null,
+                `${dev.manufacturer || ''} ${dev.model || ''}`.trim() || 'Device identified.');
+            _scheduleDismiss(dev.ieee, 4_000);
+        }
+    }
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function _esc(s) {

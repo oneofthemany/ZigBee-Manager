@@ -96,25 +96,42 @@ export function initWS() {
                     if (window.handlePresenceUpdate) window.handlePresenceUpdate(payload);
                     break;
 
-                case "device_list": // New handler for full list updates
+                case "device_list":
                     state.devices = msg.data;
                     renderDeviceTable();
-                    // Check if updateMesh is available globally or imported
                     if (window.updateMesh) window.updateMesh();
+                    try { dismissKnownDevices(state.devices); } catch(e) {}
                     break;
 
                 case "device_joined":
                 case "device_initialized":
-                    fetchAllDevices();
+                    fetchAllDevices().then(() => {
+                        if (state.currentDeviceIeee) {
+                            const dev = state.devices.find(d => d.ieee === state.currentDeviceIeee);
+                            if (dev) {
+                                try { refreshModalAfterInterview(dev); } catch(e) {}
+                            }
+                        }
+                    });
                     if (msg.type === 'device_joined') {
                         try { onDeviceJoined(msg.payload || msg.data || {}); } catch(e) {}
                     }
                     break;
 
-                case "interview_status_update":
-                    handleInterviewStatusUpdate(msg.payload || msg.data);
-                    try { onInterviewStatusUpdate(msg.payload || msg.data); } catch(e) {}
+                case "interview_status_update": {
+                    const snap = msg.payload || msg.data;
+                    handleInterviewStatusUpdate(snap);
+                    try { onInterviewStatusUpdate(snap); } catch(e) {}
+                    // Settings tab updates itself via applyInterviewStatusUpdate (already wired).
+                    // When interview completes, refresh the heavier tabs once.
+                    if (snap?.state === 'interviewed' && state.currentDeviceIeee === snap.ieee) {
+                        fetchAllDevices().then(() => {
+                            const dev = state.devices.find(d => d.ieee === state.currentDeviceIeee);
+                            if (dev) { try { refreshModalAfterInterview(dev); } catch(e) {} }
+                        });
+                    }
                     break;
+                }
 
                 case "join_progress":
                     try { onJoinProgress(msg.payload || msg.data); } catch(e) {}
