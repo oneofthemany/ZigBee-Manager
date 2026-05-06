@@ -820,6 +820,7 @@ EOF
 # =============================================================================
 # ARGUMENT PARSING
 # =============================================================================
+main() {
 PREFERRED_PORT=$INTERNAL_PORT
 INSTALL_AUTOSTART=true
 FORCE_REBUILD=false
@@ -980,7 +981,7 @@ echo
 echo -e "Should you wish to rebuild the container please use the teardown script"
 echo -e "  ${BOLD}Data:${NC}           ${DATA_DIR}/teardown.sh"
 echo
-
+}
 # =============================================================================
 # ENTRY POINT GUARD
 # =============================================================================
