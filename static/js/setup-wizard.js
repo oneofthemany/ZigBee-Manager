@@ -343,7 +343,7 @@
                 <button class="btn btn-outline-secondary" onclick="window._setupWizard.startScan()">
                     <i class="fas fa-redo me-1"></i> Re-scan
                 </button>
-                <button class="btn btn-primary" onclick="window._setupWizard.goToStep(2)"
+                <button class="btn btn-primary" onclick="window._setupWizard.goToStep(3)"
                         id="setupNextBtn" ${selectedResult ? '' : 'disabled'}>
                     Next <i class="fas fa-arrow-right ms-1"></i>
                 </button>
@@ -438,7 +438,7 @@
             </div>
 
             <div class="setup-actions">
-                <button class="btn btn-outline-secondary" onclick="window._setupWizard.goToStep(1)">
+                <button class="btn btn-outline-secondary" onclick="window._setupWizard.goToStep(2)">
                     <i class="fas fa-arrow-left me-1"></i> Back
                 </button>
                 <button class="btn btn-primary" onclick="window._setupWizard.nextFromStep3()"
@@ -525,7 +525,7 @@
             <div id="wizMqttTestResult" class="mb-3" style="display:none;"></div>
 
             <div class="setup-actions">
-                <button class="btn btn-outline-secondary" onclick="window._setupWizard.goToStep(2)">
+                <button class="btn btn-outline-secondary" onclick="window._setupWizard.goToStep(3)">
                     <i class="fas fa-arrow-left me-1"></i> Back
                 </button>
                 <button class="btn btn-outline-info" onclick="window._setupWizard.testMqtt()">
@@ -696,7 +696,7 @@
             </div>` : ''}
 
             <div class="setup-actions">
-                <button class="btn btn-outline-secondary" onclick="window._setupWizard.goToStep(${mode === 'homeassistant' ? 3 : 2})">
+                <button class="btn btn-outline-secondary" onclick="window._setupWizard.goToStep(${mode === 'homeassistant' ? 4 : 3})">
                     <i class="fas fa-arrow-left me-1"></i> Back
                 </button>
                 <button class="btn btn-success" onclick="window._setupWizard.applyAll()" id="setupApplyBtn">
@@ -791,7 +791,7 @@
             <p class="subtitle text-danger">${error}</p>
 
             <div class="setup-actions">
-                <button class="btn btn-outline-secondary" onclick="window._setupWizard.goToStep(4)">
+                <button class="btn btn-outline-secondary" onclick="window._setupWizard.goToStep(5)">
                     <i class="fas fa-redo me-1"></i> Try Again
                 </button>
                 <button class="btn btn-outline-secondary" onclick="window._setupWizard.skip()">
@@ -853,17 +853,17 @@
             const data = await res.json();
             if (!data.success) {
                 scanning = false;
-                renderStep1Results([]);
+                renderStep2Results([]);
             }
         } catch (e) {
             scanning = false;
-            renderStep1Results([]);
+            renderStep2Results([]);
         }
     }
 
     function cancelScan() {
         scanning = false;
-        goToStep(1);
+        goToStep(2);
     }
 
     async function refreshPorts() {
@@ -901,7 +901,7 @@
 
     function selectResult(index) {
         selectedResult = scanResults[index];
-        renderStep1Results(scanResults);
+        renderStep2Results(scanResults);
     }
 
     function appendLog(text, type) {
@@ -1167,7 +1167,7 @@
         if (phase === 'complete') {
             scanning = false;
             const results = detail?.results || [];
-            renderStep1Results(results);
+            renderStep2Results(results);
         }
     }
 
