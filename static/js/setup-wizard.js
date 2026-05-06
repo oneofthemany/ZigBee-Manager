@@ -28,6 +28,12 @@
     let scanResults = [];
     let currentStep = 1;
     const TOTAL_STEPS = 4;
+    // When set, the wizard exits after the Account step instead of walking
+    // the user through coordinator/integration/MQTT again. Used for the
+    // recovery scenario where everything is configured but no admin user
+    // exists (e.g. someone manually wiped users to recover from a forgotten
+    // bootstrap password).
+    let recoveryMode = false;
 
     // Collected config across steps
     let wizardConfig = {
@@ -95,6 +101,19 @@
     // =====================================================================
 
     function renderStepIndicator() {
+        // Recovery mode: only the Account step is going to run.
+        // Don't pretend there are 5 steps coming.
+        if (recoveryMode) {
+            return `
+                <div class="setup-steps mb-4">
+                    <div class="setup-step active">
+                        <div class="step-dot">1</div>
+                        <div class="step-label">Account</div>
+                    </div>
+                </div>
+            `;
+        }
+
         const steps = [
             { num: 1, label: 'Account' },
             { num: 2, label: 'Coordinator' },
@@ -210,6 +229,14 @@
             // once the wizard finishes (without a full page reload).
             if (window.zmmAuth && window.zmmAuth.refresh) {
                 try { await window.zmmAuth.refresh(); } catch (_) {}
+            }
+
+            // Recovery mode: everything else was already configured. Close
+            // the wizard and reload so the dashboard takes over cleanly.
+            if (recoveryMode) {
+                hide();
+                window.location.reload();
+                return;
             }
 
             currentStep = 2;
@@ -1205,6 +1232,11 @@
             show();
 
             if (needsAdmin) {
+                // Recovery scenario: setup was previously completed (config is
+                // fine, port is fine) but the admin user is gone. Run *only*
+                // the Account step and exit — no need to redo coordinator,
+                // integration or MQTT.
+                recoveryMode = (data.reason === 'no_admin_user');
                 currentStep = 1;
                 renderStep1Account();
                 return;
