@@ -1212,86 +1212,86 @@ class ZigbeeService(
             logger.debug(f"[{ieee}] Generic dispatch error: {e}")
 
 
-        @staticmethod
-        def _parse_zcl_value(data_type, message, idx):
-            """
-            Parse a ZCL typed value from raw bytes.
-            Returns (value, size) or (None, -1) on error.
-            """
-            try:
-                remaining = len(message) - idx
+    @staticmethod
+    def _parse_zcl_value(data_type, message, idx):
+        """
+        Parse a ZCL typed value from raw bytes.
+        Returns (value, size) or (None, -1) on error.
+        """
+        try:
+            remaining = len(message) - idx
 
-                # Boolean (0x10)
-                if data_type == 0x10:
-                    if remaining < 1:
-                        return None, -1
-                    return bool(message[idx]), 1
+            # Boolean (0x10)
+            if data_type == 0x10:
+                if remaining < 1:
+                    return None, -1
+                return bool(message[idx]), 1
 
-                # Bitmap8 (0x18), Uint8 (0x20), Enum8 (0x30)
-                if data_type in (0x18, 0x20, 0x30):
-                    if remaining < 1:
-                        return None, -1
-                    return message[idx], 1
+            # Bitmap8 (0x18), Uint8 (0x20), Enum8 (0x30)
+            if data_type in (0x18, 0x20, 0x30):
+                if remaining < 1:
+                    return None, -1
+                return message[idx], 1
 
-                # Bitmap16 (0x19), Uint16 (0x21), Enum16 (0x31)
-                if data_type in (0x19, 0x21, 0x31):
-                    if remaining < 2:
-                        return None, -1
-                    return int.from_bytes(message[idx:idx + 2], 'little'), 2
+            # Bitmap16 (0x19), Uint16 (0x21), Enum16 (0x31)
+            if data_type in (0x19, 0x21, 0x31):
+                if remaining < 2:
+                    return None, -1
+                return int.from_bytes(message[idx:idx + 2], 'little'), 2
 
-                # Uint24 (0x22)
-                if data_type == 0x22:
-                    if remaining < 3:
-                        return None, -1
-                    return int.from_bytes(message[idx:idx + 3], 'little'), 3
+            # Uint24 (0x22)
+            if data_type == 0x22:
+                if remaining < 3:
+                    return None, -1
+                return int.from_bytes(message[idx:idx + 3], 'little'), 3
 
-                # Uint32 (0x23), Bitmap32 (0x1B)
-                if data_type in (0x23, 0x1B):
-                    if remaining < 4:
-                        return None, -1
-                    return int.from_bytes(message[idx:idx + 4], 'little'), 4
+            # Uint32 (0x23), Bitmap32 (0x1B)
+            if data_type in (0x23, 0x1B):
+                if remaining < 4:
+                    return None, -1
+                return int.from_bytes(message[idx:idx + 4], 'little'), 4
 
-                # Int8 (0x28)
-                if data_type == 0x28:
-                    if remaining < 1:
-                        return None, -1
-                    return int.from_bytes(message[idx:idx + 1], 'little', signed=True), 1
+            # Int8 (0x28)
+            if data_type == 0x28:
+                if remaining < 1:
+                    return None, -1
+                return int.from_bytes(message[idx:idx + 1], 'little', signed=True), 1
 
-                # Int16 (0x29)
-                if data_type == 0x29:
-                    if remaining < 2:
-                        return None, -1
-                    return int.from_bytes(message[idx:idx + 2], 'little', signed=True), 2
+            # Int16 (0x29)
+            if data_type == 0x29:
+                if remaining < 2:
+                    return None, -1
+                return int.from_bytes(message[idx:idx + 2], 'little', signed=True), 2
 
-                # Int32 (0x2B)
-                if data_type == 0x2B:
-                    if remaining < 4:
-                        return None, -1
-                    return int.from_bytes(message[idx:idx + 4], 'little', signed=True), 4
+            # Int32 (0x2B)
+            if data_type == 0x2B:
+                if remaining < 4:
+                    return None, -1
+                return int.from_bytes(message[idx:idx + 4], 'little', signed=True), 4
 
-                # Bitmap24 (0x1A), Uint24 (0x22)
-                if data_type == 0x1A:
-                    if remaining < 3:
-                        return None, -1
-                    return int.from_bytes(message[idx:idx + 3], 'little'), 3
+            # Bitmap24 (0x1A), Uint24 (0x22)
+            if data_type == 0x1A:
+                if remaining < 3:
+                    return None, -1
+                return int.from_bytes(message[idx:idx + 3], 'little'), 3
 
-                # Octet string (0x41), Character string (0x42)
-                if data_type in (0x41, 0x42):
-                    if remaining < 1:
-                        return None, -1
-                    str_len = message[idx]
-                    if remaining < 1 + str_len:
-                        return None, -1
-                    raw = message[idx + 1:idx + 1 + str_len]
-                    if data_type == 0x42:
-                        return raw.decode('utf-8', errors='replace'), 1 + str_len
-                    return raw, 1 + str_len
+            # Octet string (0x41), Character string (0x42)
+            if data_type in (0x41, 0x42):
+                if remaining < 1:
+                    return None, -1
+                str_len = message[idx]
+                if remaining < 1 + str_len:
+                    return None, -1
+                raw = message[idx + 1:idx + 1 + str_len]
+                if data_type == 0x42:
+                    return raw.decode('utf-8', errors='replace'), 1 + str_len
+                return raw, 1 + str_len
 
-                # Unknown type — skip
-                return None, -1
+            # Unknown type — skip
+            return None, -1
 
-            except Exception:
-                return None, -1
+        except Exception:
+            return None, -1
     # =========================================================================
     # DEVICE UPDATE HANDLING
     # =========================================================================
