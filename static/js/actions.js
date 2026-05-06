@@ -915,22 +915,62 @@ export async function cleanupOrphans() {
     }
 
     // First, show what will be removed
-    const orphaned = await fetch('/api/devices/orphaned').then(r => r.json());
+    let orphaned;
+    try {
+        const res = await fetch('/api/devices/orphaned');
+        if (!res.ok) {
+            alert(`Failed to scan for orphaned devices: HTTP ${res.status} ${res.statusText}`);
+            return;
+        }
+        orphaned = await res.json();
+    } catch (e) {
+        alert(`Failed to scan for orphaned devices: ${e.message || e}`);
+        return;
+    }
 
-    if (orphaned.count === 0) {
+    // Backend returns {"error": "..."} on failure (e.g. couldn't detect table version)
+    if (orphaned && orphaned.error) {
+        alert(`Orphan scan failed: ${orphaned.error}`);
+        return;
+    }
+
+    // Defensive: ensure we got the expected shape
+    const list = Array.isArray(orphaned?.orphaned) ? orphaned.orphaned : [];
+    const count = typeof orphaned?.count === 'number' ? orphaned.count : list.length;
+
+    if (count === 0) {
         alert('No orphaned devices found. Database is clean!');
         return;
     }
 
-    const msg = `Found ${orphaned.count} orphaned devices:\n\n${orphaned.orphaned.join('\n')}\n\nRemove these from database?`;
+    const msg = `Found ${count} orphaned devices:\n\n${list.join('\n')}\n\nRemove these from database?`;
 
     if (!confirm(msg)) return;
 
-    const result = await fetch('/api/devices/cleanup-orphaned', {
-        method: 'POST'
-    }).then(r => r.json());
+    let result;
+    try {
+        const res = await fetch('/api/devices/cleanup-orphaned', { method: 'POST' });
+        if (!res.ok) {
+            alert(`Cleanup request failed: HTTP ${res.status} ${res.statusText}`);
+            return;
+        }
+        result = await res.json();
+    } catch (e) {
+        alert(`Cleanup request failed: ${e.message || e}`);
+        return;
+    }
 
-    alert(`Cleanup complete:\n✓ Removed: ${result.count_removed}\n♻ Recovered: ${result.count_recovered}\n✗ Failed: ${result.count_failed}`);
+    if (result && result.error) {
+        alert(`Cleanup failed: ${result.error}`);
+        return;
+    }
+
+    alert(
+        `Cleanup complete:\n` +
+        `✓ Removed: ${result?.count_removed ?? 0}\n` +
+        `♻ Recovered: ${result?.count_recovered ?? 0}\n` +
+        `✗ Failed: ${result?.count_failed ?? 0}`
+    );
 
     // Refresh device list
     await fetchAllDevices();
