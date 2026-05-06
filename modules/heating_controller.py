@@ -336,6 +336,9 @@ def _check_room_health(room: dict, devices: Dict[str, Any],
             )
             stale.append({"ieee": ieee, "age_sec": int(age), "kind": "trv"})
 
+        if trv_dec.get("valve_alarm"):
+            reasons.append(f"TRV {trv_dec.get('name') or ieee}: valve alarm (stuck/seized)")
+
     # ── No data source at all ───────────────────────────────────────
     if decision.temp_source == "none":
         reasons.append("No temperature data available — room cannot be controlled")
@@ -1222,6 +1225,8 @@ class HeatingController:
                     "current_temp": None,
                     "current_setpoint": None,
                     "online": False,
+                    "valve_alarm": False,
+                    "window_open": False,
                 })
                 continue
             state = _device_state(dev)
@@ -1235,6 +1240,8 @@ class HeatingController:
                 "current_temp": temp,
                 "current_setpoint": _as_float(setpoint),
                 "online": True,
+                "valve_alarm": bool(state.get("valve_alarm")),
+                "window_open": bool(state.get("window_open")),
             })
 
         decision.trvs = trvs

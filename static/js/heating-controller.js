@@ -254,10 +254,17 @@ function renderCircuitStatusCard(c) {
             const actionTag = t.action === 'force_close'
                 ? ` <span class="badge bg-warning text-dark" style="font-size:0.65rem;">force-close</span>`
                 : '';
+            const valveAlarmTag = t.valve_alarm
+                ? ` <span class="badge bg-danger" style="font-size:0.65rem;"><i class="fas fa-exclamation-triangle me-1"></i>VALVE ALARM</span>`
+                : '';
+            const windowTag = t.window_open
+                ? ` <span class="badge bg-info text-dark" style="font-size:0.65rem;"><i class="fas fa-window-maximize me-1"></i>window</span>`
+                : '';
             const cur = t.current_temp != null ? `${t.current_temp.toFixed(1)}°` : '—';
-            return `<div class="small">
+            const rowCls = t.valve_alarm ? 'small text-danger fw-semibold' : 'small';
+            return `<div class="${rowCls}">
                 <i class="fas fa-thermometer-half text-muted me-1"></i>
-                ${escapeHtml(t.name || t.ieee.slice(-8))}: ${cur}${sp}${actionTag}${offline}
+                ${escapeHtml(t.name || t.ieee.slice(-8))}: ${cur}${sp}${actionTag}${valveAlarmTag}${windowTag}${offline}
             </div>`;
         }).join('');
 
