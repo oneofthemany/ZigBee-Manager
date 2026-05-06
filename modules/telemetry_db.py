@@ -36,13 +36,28 @@ _db = None
 
 
 # ── Optional Rust appender ──
+# Backend selection precedence (highest first):
+#   1. ZMM_TELEMETRY_BACKEND=python  → force Python executemany fallback
+#   2. zmm_telemetry wheel installed → use Rust appender
+#   3. Otherwise                     → Python executemany fallback
+#
+# This lets you revert from Rust to Python without rebuilding the image:
+# just set ZMM_TELEMETRY_BACKEND=python in the systemd unit / container env
+# and restart. Schema is identical between backends, so the existing
+# telemetry.duckdb file continues to work either way.
+_FORCE_PY = os.environ.get("ZMM_TELEMETRY_BACKEND", "").strip().lower() == "python"
 try:
+    if _FORCE_PY:
+        raise ImportError("ZMM_TELEMETRY_BACKEND=python — forcing Python fallback")
     import zmm_telemetry as _zt
     _USE_RUST = True
-except ImportError:
+except ImportError as _imp_err:
     _zt = None
     _USE_RUST = False
-    logger.info("zmm_telemetry not available — using Python INSERT fallback")
+    if _FORCE_PY:
+        logger.info("zmm_telemetry disabled by ZMM_TELEMETRY_BACKEND=python — using Python executemany fallback")
+    else:
+        logger.info("zmm_telemetry not available — using Python executemany fallback")
 
 _appender = None  # zmm_telemetry.Appender singleton
 
@@ -170,14 +185,14 @@ def write_system_metrics(metrics: Dict[str, Any]):
         return
     # ── Python fallback ──
     db = _get_db()
-    db.execute("""
+    db.executemany("""
         INSERT INTO system_metrics (
             cpu_percent, cpu_freq, mem_total, mem_used, mem_percent,
             swap_used, swap_percent, disk_total, disk_used, disk_percent,
             cpu_temp, gpu_temp, load_1m, load_5m, load_15m,
             uptime_secs, process_rss, process_threads
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    """, [
+    """, [(
         metrics.get("cpu_percent"), metrics.get("cpu_freq"),
         metrics.get("mem_total"), metrics.get("mem_used"), metrics.get("mem_percent"),
         metrics.get("swap_used"), metrics.get("swap_percent"),
@@ -185,7 +200,7 @@ def write_system_metrics(metrics: Dict[str, Any]):
         metrics.get("cpu_temp"), metrics.get("gpu_temp"),
         metrics.get("load_1m"), metrics.get("load_5m"), metrics.get("load_15m"),
         metrics.get("uptime_secs"), metrics.get("process_rss"), metrics.get("process_threads"),
-    ])
+    )])
 
 
 def write_packet_stats(stats_batch: List[Dict[str, Any]]):
@@ -230,10 +245,10 @@ def write_device_state(ieee: str, attribute: str, value: Any):
         return
     # ── Python fallback ──
     db = _get_db()
-    db.execute("""
+    db.executemany("""
         INSERT INTO device_states (ieee, attribute, value, numeric_val)
         VALUES (?, ?, ?, ?)
-    """, [ieee, attribute, str_val, num_val])
+    """, [(ieee, attribute, str_val, num_val)])
 
 
 def write_spectrum_scan(results: Dict[int, int]):

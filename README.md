@@ -56,6 +56,10 @@ curl -fsSL https://raw.githubusercontent.com/oneofthemany/ZigBee-Matter-Manager/
 
 # if you know the device
 curl -fsSL https://raw.githubusercontent.com/oneofthemany/ZigBee-Matter-Manager/main/build.sh | bash -s -- --usb /dev/ttyUSB0
+
+# large/enterprise networks — bake the Rust telemetry appender into the image
+# (adds ~3–5 min to the build for the Rust toolchain + maturin compile)
+curl -fsSL https://raw.githubusercontent.com/oneofthemany/ZigBee-Matter-Manager/main/build.sh | bash -s -- --with-appender --usb /dev/ttyUSB0
 ```
 
 **Note**: You may see the following during boot - DO NOT PANIC THIS IS INTENTIONAL

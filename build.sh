@@ -141,6 +141,9 @@ build_progress_filter() {
     printf "\n" >&2
 }
 
+BUILD_JOBS=$(detect_build_jobs)
+info "Detected ${BUILD_JOBS} build jobs for parallel compile"
+
 # ── Defaults ─────────────────────────────────────────────────────────────────
 REPO_URL="https://github.com/oneofthemany/ZigBee-Matter-Manager.git"
 REPO_BRANCH="main"
@@ -404,17 +407,12 @@ _prompt_manual_usb() {
 # CONTAINERFILE
 # =============================================================================
 write_containerfile() {
-    cat > "$CLONE_DIR/Containerfile" << 'DOCKERFILE'
+    cat > "$CLONE_DIR/Containerfile" << 'DOCKERFILE_TOP'
 # Zigbee Matter Manager — Root Container
 FROM python:3.11-slim-bookworm
 
 # Force Python to flush logs immediately so the first-run password is visible
 ENV PYTHONUNBUFFERED=1
-
-ARG BUILD_JOBS=4
-ENV CMAKE_BUILD_PARALLEL_LEVEL=${BUILD_JOBS}
-ENV MAKEFLAGS="-j${BUILD_JOBS}"
-ENV CARGO_BUILD_JOBS=${BUILD_JOBS}
 
 # System deps
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -516,6 +514,12 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip \
  && pip install --no-cache-dir -r requirements.txt \
  && pip install --no-cache-dir "python-matter-server[server]"
+DOCKERFILE_TOP
+
+    # Part 2 — zmm_telemetry Rust appender (optional)
+    if [[ "$WITH_APPENDER" == true ]]; then
+        info "Including zmm_telemetry Rust appender in image build"
+        cat >> "$APP_DIR/Containerfile" << 'DOCKERFILE_APPENDER'
 
 # ── Build zmm_telemetry from source inside the container ──
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -524,16 +528,33 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
  && rm -rf /var/lib/apt/lists/* \
  && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
         | sh -s -- -y --default-toolchain stable --profile minimal \
- && pip install --no-cache-dir maturin \
- && pip
+ && pip install --no-cache-dir maturin
 
 ENV PATH="/root/.cargo/bin:${PATH}"
+
+ARG BUILD_JOBS=4
+ENV CMAKE_BUILD_PARALLEL_LEVEL=${BUILD_JOBS}
+ENV MAKEFLAGS="-j${BUILD_JOBS}"
 
 COPY zmm_telemetry/ /tmp/zmm_telemetry/
 RUN cd /tmp/zmm_telemetry \
  && maturin build --release --out /tmp/wheels \
  && pip install --no-cache-dir /tmp/wheels/zmm_telemetry-*.whl \
  && rm -rf /tmp/zmm_telemetry /tmp/wheels /root/.cargo /root/.rustup /root/.cache
+DOCKERFILE_APPENDER
+    else
+        info "Skipping zmm_telemetry Rust appender — Python executemany fallback will be used"
+        # Bake an env var into the image so telemetry_db.py forces the Python path
+        # even if a stray zmm_telemetry wheel is somehow present at runtime.
+        cat >> "$APP_DIR/Containerfile" << 'DOCKERFILE_NOAPPENDER'
+
+# Force Python executemany fallback (no Rust appender built into this image)
+ENV ZMM_TELEMETRY_BACKEND=python
+DOCKERFILE_NOAPPENDER
+    fi
+
+    # Part 3 — application source and final image config (always present)
+    cat >> "$APP_DIR/Containerfile" << 'DOCKERFILE_BOTTOM'
 
 # Application source
 COPY . .
@@ -555,8 +576,8 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
         curl -fs  http://localhost:${ZMM_PORT:-8000}/api/system/health  || exit 1
 
 CMD ["python", "launcher.py"]
-DOCKERFILE
-    ok "Containerfile written."
+DOCKERFILE_BOTTOM
+    ok "Containerfile written (appender=${WITH_APPENDER})."
 }
 
 # =============================================================================
@@ -784,6 +805,9 @@ ${BOLD}Options:${NC}
   --runtime NAME     docker or podman     (default: auto-detect)
   --no-autostart     Skip systemd unit installation
   --rebuild          Force image rebuild
+  --with-appender    Build the Rust zmm_telemetry appender into the image
+                     (default: off — Python executemany fallback is used)
+  --no-appender      Explicitly skip the Rust appender (default)
   --help             Show this message
 
 ${BOLD}Environment:${NC}
@@ -794,15 +818,15 @@ EOF
 }
 
 # =============================================================================
-# ARGUMENT PARSING + MAIN ORCHESTRATION
+# ARGUMENT PARSING
 # =============================================================================
-# Wrapped in a function so build.sh can be sourced (by run_container.sh) for
-# the run_container() function alone, without re-running the deploy flow.
-# Bottom-of-file guard decides between sourced and direct execution.
-main() {
 PREFERRED_PORT=$INTERNAL_PORT
 INSTALL_AUTOSTART=true
 FORCE_REBUILD=false
+WITH_APPENDER=false   # Build the Rust zmm_telemetry wheel into the image.
+                      # Default off — the Python executemany fallback in
+                      # telemetry_db.py is sufficient for small/medium
+                      # networks. Enable for large/enterprise debug captures.
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -814,6 +838,8 @@ while [[ $# -gt 0 ]]; do
         --runtime)      RUNTIME="$2";           shift 2 ;;
         --no-autostart) INSTALL_AUTOSTART=false; shift ;;
         --rebuild)      FORCE_REBUILD=true;     shift ;;
+        --with-appender)    WITH_APPENDER=true;  shift ;;
+        --no-appender)      WITH_APPENDER=false; shift ;;
         --help|-h)      usage ;;
         *) die "Unknown argument: $1  (use --help)" ;;
     esac
