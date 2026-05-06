@@ -13,7 +13,7 @@ class DatabaseMixin:
 
     def _force_clean_database(self, ieee: str):
         """Force-clean all database tables for a device IEEE."""
-        db_path = "zigbee.db"
+        db_path = "./data/zigbee.db"
 
         try:
             conn = sqlite3.connect(db_path)
@@ -57,7 +57,7 @@ class DatabaseMixin:
     async def find_duplicate_devices(self) -> dict:
         """Find devices that exist in database but not in active network."""
         import sqlite3
-        db_path = "zigbee.db"
+        db_path = "./data/zigbee.db"
 
         try:
             conn = sqlite3.connect(db_path)
