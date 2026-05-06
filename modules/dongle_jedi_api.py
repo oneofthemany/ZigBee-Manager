@@ -25,7 +25,7 @@ import asyncio
 import logging
 from typing import Optional
 
-from fastapi import FastAPI, APIRouter, HTTPException
+from fastapi import FastAPI, APIRouter, HTTPException, Response
 from pydantic import BaseModel, Field
 
 from modules.dongle_jedi import DongleJedi, list_serial_ports, ScanProgress
@@ -38,6 +38,10 @@ router = APIRouter(prefix="/api/setup", tags=["setup"])
 _jedi: Optional[DongleJedi] = None
 _ws_manager = None   # WebSocket connection manager (set during registration)
 _setup_skipped = False
+
+class CreateAdminRequest(BaseModel):
+    username: str
+    password: str
 
 
 # ---------------------------------------------------------------------------
@@ -79,6 +83,58 @@ async def _broadcast_scan_progress(progress: ScanProgress):
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
+
+
+@router.post("/create-admin")
+async def create_first_admin(req: CreateAdminRequest, response: Response):
+    from modules.auth import get_auth_manager
+    from modules.auth_middleware import issue_session_cookie, _derive_session_secret
+
+    auth = get_auth_manager()
+    if auth is None:
+        raise HTTPException(503, "Auth not initialised")
+
+    # Self-disable: only valid while no admin exists
+    has_admin = any(
+        (not u.disabled) and ("admins" in u.groups or "admin" in u.extra_scopes)
+        for u in auth.users.values()
+    )
+    if has_admin:
+        raise HTTPException(409, "Admin user already exists")
+
+    if not req.username.strip():
+        raise HTTPException(400, "Username required")
+    if len(req.password) < 8:
+        raise HTTPException(400, "Password must be at least 8 characters")
+
+    user = await auth.create_user(
+        username=req.username.strip(),
+        password=req.password,
+        groups=["admins"],
+        description="Initial administrator (created via setup wizard)",
+    )
+
+    # Auto-login: issue session cookie so the wizard can keep going
+    secret = _derive_session_secret(str(auth.config_path))
+    cookie = issue_session_cookie(user.username, secret)
+    response.set_cookie(
+        key="zmm_session", value=cookie,
+        max_age=30 * 24 * 3600, httponly=True,
+        samesite="lax", secure=False, path="/",
+    )
+    return {"success": True, "username": user.username}
+
+@router.get("/needs-admin")
+async def setup_needs_admin():
+    from modules.auth import get_auth_manager
+    auth = get_auth_manager()
+    if auth is None:
+        return {"needs_admin": True}
+    has_admin = any(
+        (not u.disabled) and ("admins" in u.groups or "admin" in u.extra_scopes)
+        for u in auth.users.values()
+    )
+    return {"needs_admin": not has_admin}
 
 @router.get("/status")
 async def setup_status():

@@ -3,6 +3,13 @@
    ============================================================
    Replaces the previous static/js/auth.js. Backwards compatible
    with the same window.zmmAuth public API; adds MFA flow.
+
+   First-run note:
+   When no admin user exists yet (setup wizard creates the first
+   admin), we don't auto-pop the login modal — the wizard handles
+   onboarding instead. After submitAccount() in the wizard, callers
+   should invoke window.zmmAuth.refresh() to pick up the freshly
+   issued session cookie and propagate the principal to listeners.
    ============================================================ */
 
 (function () {
@@ -41,6 +48,21 @@
         listeners.forEach(function (fn) {
             try { fn(state.principal); } catch (e) { console.error(e); }
         });
+    }
+
+    /**
+     * Re-fetches /api/auth/whoami and updates internal state.
+     * Use after an out-of-band login (e.g. setup wizard creating
+     * the first admin via /api/setup/create-admin) to propagate
+     * the new principal to all onChange listeners without a
+     * full page reload.
+     */
+    async function refresh() {
+        var p = await whoami();
+        state.principal = p;
+        state.ready = true;
+        notify();
+        return p;
     }
 
     /**
@@ -245,7 +267,7 @@
                 } else {
                     modal.hide();
                     modalEl.remove();
-                    window.location.reload(); // <-- ADD THIS HERE
+                    window.location.reload();
                 }
             }).catch(function (e) {
                 err.textContent = e.message || String(e);
@@ -269,7 +291,7 @@
             submitMfa(code).then(function () {
                 modal.hide();
                 modalEl.remove();
-                window.location.reload(); // <-- ADD THIS HERE
+                window.location.reload();
             }).catch(function (e) {
                 err.textContent = e.message || String(e);
                 err.style.display = '';
@@ -298,7 +320,7 @@
                 if (url.indexOf('/api/') !== -1
                     && url.indexOf('/api/auth/login') === -1
                     && state.ready
-                    && state.principal // <-- ADD THIS: Only trigger if currently logged in
+                    && state.principal // Only trigger if currently logged in
                 ) {
                     state.principal = null;
                     notify();
@@ -320,13 +342,32 @@
         hasScope: hasScope,
         onChange: onAuthChange,
         showLogin: showLoginModal,
+        refresh: refresh,
     };
 
+    /**
+     * Boot: probe whoami, then decide what UI to surface.
+     *
+     *   - Authenticated:                  do nothing here (main.js inits dashboard).
+     *   - Anonymous + setup needed:       do nothing — setup wizard takes over.
+     *   - Anonymous + setup complete:     show login modal.
+     *   - /api/setup/status unreachable:  show login modal (fail-safe).
+     */
     document.addEventListener('DOMContentLoaded', async function () {
         var p = await whoami();
         state.principal = p;
         state.ready = true;
-        if (!p) showLoginModal();
         notify();
+
+        if (!p) {
+            try {
+                var s = await fetch('/api/setup/status').then(function (r) { return r.json(); });
+                if (!s || !s.needs_setup) {
+                    showLoginModal();
+                }
+            } catch (e) {
+                showLoginModal();
+            }
+        }
     });
 })();

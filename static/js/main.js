@@ -241,157 +241,155 @@ window.toggleDeviceInTab = toggleDeviceInTab;
 // ============================================================================
 
 document.addEventListener('DOMContentLoaded', () => {
-    // Initialise WebSocket connection
+
+    /**
+     * Idempotent dashboard initialiser. Only fires once a valid principal is
+     * available — gated by zmmAuth.onChange below. Safe to call multiple times;
+     * the state._dashboardInited guard prevents re-running.
+     *
+     * On first run with no admin user yet, the setup wizard is shown by
+     * setup-wizard.js and this function never runs (no principal). Once the
+     * wizard's submitAccount() creates the admin and we refresh the auth
+     * principal, onChange fires and the dashboard inits cleanly.
+     */
+    function initDashboard() {
+        if (state._dashboardInited) return;
+        state._dashboardInited = true;
+
+        // WebSocket
+        if (!state.socket) initWS();
+
+        // Live "last seen" tick
+        setInterval(updateLastSeenTimes, 1000);
+
+        // Module inits
+        initOtbr();
+        loadTabs();
+        initMesh();
+        initGroups();
+        initMQTTExplorer();
+        initAutomationsPage();
+        initZones();
+        initHeating();
+        initSystemTab();
+        initPacketFlow();
+
+        // Initial data fetches
+        fetchAllDevices();
+        loadInterviewStatusPending();
+        if (typeof checkPairingStatus === 'function') checkPairingStatus();
+        checkMatterStatus();
+
+        // Settings tab listener
+        const settingsTab = document.querySelector('button[data-bs-target="#settings"]');
+        if (settingsTab) {
+            settingsTab.addEventListener('click', () => {
+                loadConfigYaml();
+                loadSSLStatus();
+
+                if (window.initMyAccount) window.initMyAccount();
+                if (window.initAuthSettings) window.initAuthSettings();
+                if (window.initPresenceSettings) window.initPresenceSettings();
+            });
+        }
+
+        // Topology tab listener
+        const topologyTab = document.querySelector('button[data-bs-target="#topology"]');
+        if (topologyTab) {
+            topologyTab.addEventListener('shown.bs.tab', () => {
+                // Ensures the D3 force simulation or SVG scales correctly once
+                // the container is actually visible.
+                if (typeof loadMeshTopology === 'function') {
+                    loadMeshTopology();
+                }
+            });
+        }
+
+        // MQTT Explorer tab listener
+        const mqttTabTrigger = document.querySelector('button[data-bs-target="#mqtt-explorer"], a[data-bs-target="#mqtt-explorer"]');
+        if (mqttTabTrigger) {
+            mqttTabTrigger.addEventListener('shown.bs.tab', () => {
+                startMQTTStats();
+            });
+            mqttTabTrigger.addEventListener('hidden.bs.tab', () => {
+                stopMQTTStats();
+            });
+        }
+
+        // Editor tab listener
+        document.querySelector('[data-bs-target="#editor-tab"]')?.addEventListener('shown.bs.tab', () => {
+            if (!editorInitialised) {
+                initEditor();
+                editorInitialised = true;
+            } else {
+                const inst = getEditorInstance();
+                if (inst) inst.layout();
+            }
+        });
+
+        // Test-recovery banner check (auth-gated)
+        fetch('/api/editor/test-status').then(r => r.json()).then(data => {
+            if (data.pending) {
+                const banner = document.createElement('div');
+                banner.id = 'testRecoveryBanner';
+                banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99999;';
+                let remaining = data.remaining || 120;
+                banner.innerHTML = `
+                    <div style="background:#1e1e1e;border-bottom:2px solid #dc3545;padding:8px 16px;">
+                        <div class="d-flex align-items-center justify-content-between">
+                            <div class="d-flex align-items-center gap-2" style="color:#fff;font-size:13px;">
+                                <i class="fas fa-flask" style="color:#ffc107;"></i>
+                                <strong>Test Deploy Active</strong>
+                                <span style="color:#ffc107;"><span id="testCountdown">${remaining}</span>s remaining</span>
+                            </div>
+                            <div class="d-flex gap-2">
+                                <button class="btn btn-sm btn-success px-3" onclick="fetch('/api/editor/test-confirm',{method:'POST'}).then(r=>r.json()).then(d=>{if(d.success){document.getElementById('testRecoveryBanner').remove()}else{alert(d.error)}})">
+                                    <i class="fas fa-check me-1"></i> Confirm
+                                </button>
+                                <button class="btn btn-sm btn-danger px-3" onclick="fetch('/api/editor/test-rollback',{method:'POST'}).then(r=>r.json()).then(d=>{alert(d.message||d.error);document.getElementById('testRecoveryBanner').remove()})">
+                                    <i class="fas fa-undo me-1"></i> Rollback
+                                </button>
+                            </div>
+                        </div>
+                        <div class="progress mt-1" style="height:3px;">
+                            <div id="testProgressBar" class="progress-bar bg-warning" style="width:100%;transition:width 1s linear;"></div>
+                        </div>
+                    </div>`;
+                document.body.prepend(banner);
+                const iv = setInterval(() => {
+                    remaining--;
+                    const el = document.getElementById('testCountdown');
+                    const bar = document.getElementById('testProgressBar');
+                    if (el) el.textContent = remaining;
+                    if (bar) bar.style.width = (remaining / (data.remaining || 120) * 100) + '%';
+                    if (remaining <= 0) {
+                        clearInterval(iv);
+                        fetch('/api/editor/test-status').then(r => r.json()).then(d => {
+                            if (d.pending) location.reload();
+                            else document.getElementById('testRecoveryBanner')?.remove();
+                        }).catch(() => location.reload());
+                    }
+                }, 1000);
+            }
+        }).catch(() => {});
+
+        console.log("Zigbee Matter Manager Frontend Initialised");
+    }
+
+    // Gate the dashboard on authentication. zmmAuth.onChange fires
+    // immediately if state.ready is already true (re-attaches), and again
+    // every time the principal changes (login / logout / refresh).
     if (window.zmmAuth) {
         window.zmmAuth.onChange(function (principal) {
-            if (principal && !state.socket) {
-                initWS();
+            if (principal) {
+                initDashboard();
             }
         });
     } else {
-        // Fallback if auth.js failed to load — old behaviour
-        initWS();
+        // auth.js failed to load — fall back to old unconditional behaviour
+        initDashboard();
     }
-
-    // Start update interval for "last seen" times
-    setInterval(updateLastSeenTimes, 1000);
-
-    // Initialise Thread/OTBR
-    initOtbr();
-
-    // Initialise Tabs
-    loadTabs();
-
-    // Initialise Mesh Tab listener
-    initMesh();
-
-    // Initialise Groups
-    initGroups();
-
-    // Initialise Explorer
-    initMQTTExplorer();
-
-    // Initialise Automations Page
-    initAutomationsPage();
-
-    // Initialise Zones
-    initZones();
-
-    // Initialise Heating
-    initHeating();
-
-    // Initialise system tab
-    initSystemTab();
-
-    // Initialise packet-flow panel cache (handles WS events before modal is
-    // ever opened — first open then has data instantly).
-    initPacketFlow();
-
-    // Initial fetch
-    fetchAllDevices();
-
-    // Check if pairing is currently active (Persistence)
-    if(typeof checkPairingStatus === 'function') checkPairingStatus();
-
-    // Initial matter
-    checkMatterStatus();
-
-    // Initialise Settings Tab listener
-    const settingsTab = document.querySelector('button[data-bs-target="#settings"]');
-    if(settingsTab) {
-        settingsTab.addEventListener('click', () => {
-            loadConfigYaml();
-            loadSSLStatus();
-
-            if (window.initMyAccount) window.initMyAccount();
-            if (window.initAuthSettings) window.initAuthSettings();
-            if (window.initPresenceSettings) window.initPresenceSettings();
-        });
-    }
-
-    const topologyTab = document.querySelector('button[data-bs-target="#topology"]');
-    if (topologyTab) {
-        topologyTab.addEventListener('shown.bs.tab', () => {
-            // This ensures the D3 force simulation or SVG scales
-            // correctly once the container is actually visible.
-            if (typeof loadMeshTopology === 'function') {
-                loadMeshTopology();
-            }
-        });
-    }
-
-    // Set up listeners for the MQTT Explorer Tab
-    const mqttTabTrigger = document.querySelector('button[data-bs-target="#mqtt-explorer"], a[data-bs-target="#mqtt-explorer"]');
-    if (mqttTabTrigger) {
-        // When tab is shown, start polling
-        mqttTabTrigger.addEventListener('shown.bs.tab', () => {
-            startMQTTStats();
-        });
-
-        // When tab is hidden, stop polling
-        mqttTabTrigger.addEventListener('hidden.bs.tab', () => {
-            stopMQTTStats();
-        });
-    }
-
-    document.querySelector('[data-bs-target="#editor-tab"]')?.addEventListener('shown.bs.tab', () => {
-        if (!editorInitialised) {
-            initEditor();
-            editorInitialised = true;
-        } else {
-            const inst = getEditorInstance();
-            if (inst) inst.layout();
-        }
-    });
-
-    // Check for pending test recovery on every page load
-    fetch('/api/editor/test-status').then(r => r.json()).then(data => {
-        if (data.pending) {
-            const banner = document.createElement('div');
-            banner.id = 'testRecoveryBanner';
-            banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99999;';
-            let remaining = data.remaining || 120;
-            banner.innerHTML = `
-                <div style="background:#1e1e1e;border-bottom:2px solid #dc3545;padding:8px 16px;">
-                    <div class="d-flex align-items-center justify-content-between">
-                        <div class="d-flex align-items-center gap-2" style="color:#fff;font-size:13px;">
-                            <i class="fas fa-flask" style="color:#ffc107;"></i>
-                            <strong>Test Deploy Active</strong>
-                            <span style="color:#ffc107;"><span id="testCountdown">${remaining}</span>s remaining</span>
-                        </div>
-                        <div class="d-flex gap-2">
-                            <button class="btn btn-sm btn-success px-3" onclick="fetch('/api/editor/test-confirm',{method:'POST'}).then(r=>r.json()).then(d=>{if(d.success){document.getElementById('testRecoveryBanner').remove()}else{alert(d.error)}})">
-                                <i class="fas fa-check me-1"></i> Confirm
-                            </button>
-                            <button class="btn btn-sm btn-danger px-3" onclick="fetch('/api/editor/test-rollback',{method:'POST'}).then(r=>r.json()).then(d=>{alert(d.message||d.error);document.getElementById('testRecoveryBanner').remove()})">
-                                <i class="fas fa-undo me-1"></i> Rollback
-                            </button>
-                        </div>
-                    </div>
-                    <div class="progress mt-1" style="height:3px;">
-                        <div id="testProgressBar" class="progress-bar bg-warning" style="width:100%;transition:width 1s linear;"></div>
-                    </div>
-                </div>`;
-            document.body.prepend(banner);
-            const iv = setInterval(() => {
-                remaining--;
-                const el = document.getElementById('testCountdown');
-                const bar = document.getElementById('testProgressBar');
-                if (el) el.textContent = remaining;
-                if (bar) bar.style.width = (remaining / (data.remaining || 120) * 100) + '%';
-                if (remaining <= 0) {
-                    clearInterval(iv);
-                    fetch('/api/editor/test-status').then(r => r.json()).then(d => {
-                        if (d.pending) location.reload();
-                        else document.getElementById('testRecoveryBanner')?.remove();
-                    }).catch(() => location.reload());
-                }
-            }, 1000);
-        }
-    }).catch(() => {});
-
-    console.log("Zigbee Matter Manager Frontend Initialised");
 });
 
 // Initial fetch of devices needing interview attention
-loadInterviewStatusPending();
+//loadInterviewStatusPending();

@@ -511,6 +511,24 @@ class DongleJedi:
                 "current_port": config.get("zigbee", {}).get("port", ""),
             }
 
+        # Don't let setup be considered complete until an admin user exists
+        try:
+            from modules.auth import get_auth_manager
+            auth = get_auth_manager()
+            if auth is not None:
+                has_admin = any(
+                    (not u.disabled) and ("admins" in u.groups or "admin" in u.extra_scopes)
+                    for u in auth.users.values()
+                )
+                if not has_admin:
+                    return {
+                        "needs_setup": True,
+                        "reason": "no_admin_user",
+                        "current_port": config.get("zigbee", {}).get("port", ""),
+                    }
+        except Exception:
+            pass
+
         # Secondary: port must still exist
         zigbee = config.get("zigbee", {})
         port = zigbee.get("port", "")

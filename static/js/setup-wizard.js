@@ -96,10 +96,11 @@
 
     function renderStepIndicator() {
         const steps = [
-            { num: 1, label: 'Coordinator' },
-            { num: 2, label: 'Integration' },
-            { num: 3, label: 'MQTT' },
-            { num: 4, label: 'Summary' },
+            { num: 1, label: 'Account' },
+            { num: 2, label: 'Coordinator' },
+            { num: 3, label: 'Integration' },
+            { num: 4, label: 'MQTT' },
+            { num: 5, label: 'Summary' },
         ];
 
         return `
@@ -108,8 +109,8 @@
                     const state = s.num < currentStep ? 'completed'
                                 : s.num === currentStep ? 'active'
                                 : 'pending';
-                    // Skip step 3 indicator if standalone mode
-                    if (s.num === 3 && wizardConfig.integrationMode === 'standalone') {
+                    // Skip MQTT (step 4) indicator in standalone mode
+                    if (s.num === 4 && wizardConfig.integrationMode === 'standalone') {
                         return '';
                     }
                     return `
@@ -127,11 +128,103 @@
         `;
     }
 
+
     // =====================================================================
-    // STEP 1: COORDINATOR DETECTION
+    // STEP 1: ACCOUNT CREATION
     // =====================================================================
 
-    function renderStep1Welcome(reason, currentPort) {
+    function renderStep1Account() {
+        const el = getContent();
+        el.innerHTML = `
+            ${renderStepIndicator()}
+            <h4><i class="fas fa-user-shield me-2 text-primary"></i>Create Admin Account</h4>
+            <p class="subtitle">Pick the credentials you'll use to sign in. You can add more users later from Settings → Users.</p>
+
+            <div class="mb-3">
+                <label class="form-label">Username</label>
+                <input id="wizAdminUser" class="form-control" autocomplete="username"
+                       value="admin" autofocus>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Password</label>
+                <input id="wizAdminPass" type="password" class="form-control"
+                       autocomplete="new-password" placeholder="At least 8 characters">
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Confirm password</label>
+                <input id="wizAdminPass2" type="password" class="form-control"
+                       autocomplete="new-password">
+            </div>
+
+            <div id="wizAdminError" class="alert alert-danger" style="display:none;"></div>
+
+            <div class="setup-actions">
+                <button class="btn btn-primary" id="wizAdminSubmit"
+                        onclick="window._setupWizard.submitAccount()">
+                    <i class="fas fa-arrow-right me-1"></i> Continue
+                </button>
+            </div>
+        `;
+    }
+
+    async function submitAccount() {
+        const u = (document.getElementById('wizAdminUser')?.value || '').trim();
+        const p = document.getElementById('wizAdminPass')?.value || '';
+        const p2 = document.getElementById('wizAdminPass2')?.value || '';
+        const err = document.getElementById('wizAdminError');
+        const btn = document.getElementById('wizAdminSubmit');
+
+        function showError(msg) {
+            err.textContent = msg;
+            err.style.display = '';
+            btn.disabled = false;
+        }
+        err.style.display = 'none';
+
+        if (!u) return showError('Username is required.');
+        if (p.length < 8) return showError('Password must be at least 8 characters.');
+        if (p !== p2) return showError('Passwords do not match.');
+
+        btn.disabled = true;
+
+        try {
+            const r = await fetch('/api/setup/create-admin', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'same-origin',
+                body: JSON.stringify({ username: u, password: p }),
+            });
+
+            if (r.status === 409) {
+                // Admin already exists — skip past this step
+                currentStep = 2;
+                renderStep2Welcome('', '');
+                return;
+            }
+            if (!r.ok) {
+                const e = await r.json().catch(() => ({}));
+                return showError(e.detail || `Create failed (HTTP ${r.status})`);
+            }
+
+            // Refresh the auth principal so main.js can init the dashboard
+            // once the wizard finishes (without a full page reload).
+            if (window.zmmAuth && window.zmmAuth.refresh) {
+                try { await window.zmmAuth.refresh(); } catch (_) {}
+            }
+
+            currentStep = 2;
+            renderStep2Welcome('', '');
+        } catch (e) {
+            showError('Network error: ' + e.message);
+        }
+    }
+
+    // =====================================================================
+    // STEP 2: COORDINATOR DETECTION
+    // =====================================================================
+
+    function renderStep2Welcome(reason, currentPort) {
+        currentStep = 2;
         const el = getContent();
 
         let reasonText = '';
@@ -205,7 +298,7 @@
         `;
     }
 
-    function renderStep1Results(results) {
+    function renderStep2Results(results) {
         const el = getContent();
         const zigbeeResults = results.filter(r => r.adapter_family !== 'Non-Zigbee serial device');
         scanResults = zigbeeResults;
@@ -286,11 +379,11 @@
     }
 
     // =====================================================================
-    // STEP 2: INTEGRATION MODE
+    // STEP 3: INTEGRATION MODE
     // =====================================================================
 
-    function renderStep2() {
-        currentStep = 2;
+    function renderStep3() {
+        currentStep = 3;
         const el = getContent();
 
         el.innerHTML = `
@@ -348,7 +441,7 @@
                 <button class="btn btn-outline-secondary" onclick="window._setupWizard.goToStep(1)">
                     <i class="fas fa-arrow-left me-1"></i> Back
                 </button>
-                <button class="btn btn-primary" onclick="window._setupWizard.nextFromStep2()"
+                <button class="btn btn-primary" onclick="window._setupWizard.nextFromStep3()"
                         id="setupStep2Next" ${wizardConfig.integrationMode ? '' : 'disabled'}>
                     Next <i class="fas fa-arrow-right ms-1"></i>
                 </button>
@@ -358,25 +451,25 @@
 
     function selectIntegration(mode) {
         wizardConfig.integrationMode = mode;
-        renderStep2();
+        renderStep3();
     }
 
-    function nextFromStep2() {
+    function nextFromStep3() {
         if (!wizardConfig.integrationMode) return;
         if (wizardConfig.integrationMode === 'homeassistant') {
-            goToStep(3);
+            goToStep(4);
         } else {
             // Standalone — skip MQTT, go to summary
-            goToStep(4);
+            goToStep(5);
         }
     }
 
     // =====================================================================
-    // STEP 3: MQTT CONFIGURATION (HA mode only)
+    // STEP 4: MQTT CONFIGURATION (HA mode only)
     // =====================================================================
 
-    function renderStep3() {
-        currentStep = 3;
+    function renderStep4() {
+        currentStep = 4;
         const el = getContent();
         const m = wizardConfig.mqtt;
 
@@ -470,7 +563,7 @@
             return;
         }
 
-        goToStep(4);
+        goToStep(5);
     }
 
     async function testMqtt() {
@@ -508,11 +601,11 @@
     }
 
     // =====================================================================
-    // STEP 4: SUMMARY & APPLY
+    // STEP 5: SUMMARY & APPLY
     // =====================================================================
 
-    function renderStep4() {
-        currentStep = 4;
+    function renderStep5() {
+        currentStep = 5;
         const el = getContent();
         const coord = wizardConfig.coordinator || selectedResult || {};
         const mode = wizardConfig.integrationMode;
@@ -716,21 +809,24 @@
         currentStep = step;
         switch (step) {
             case 1:
-                if (scanResults.length > 0) {
-                    renderStep1Results(scanResults);
-                } else {
-                    renderStep1Welcome('', '');
-                }
+                renderStep1Account();
                 break;
             case 2:
-                wizardConfig.coordinator = selectedResult;
-                renderStep2();
+                if (scanResults.length > 0) {
+                    renderStep2Results(scanResults);
+                } else {
+                    renderStep2Welcome('', '');
+                }
                 break;
             case 3:
+                wizardConfig.coordinator = selectedResult;
                 renderStep3();
                 break;
             case 4:
                 renderStep4();
+                break;
+            case 5:
+                renderStep5();
                 break;
         }
     }
@@ -1084,20 +1180,46 @@
             const res = await fetch('/api/setup/status');
             const data = await res.json();
 
-            if (data.needs_setup && !data.skipped) {
-                show();
-                currentStep = 1;
+            if (!data.needs_setup || data.skipped) {
+                return;   // nothing to do
+            }
 
-                // If coordinator is already configured but MQTT isn't,
-                // jump to step 2
-                if (data.reason === 'mqtt_not_configured') {
-                    // Pre-fill coordinator info
-                    wizardConfig.coordinator = { port: data.current_port };
-                    selectedResult = wizardConfig.coordinator;
-                    renderStep2();
-                } else {
-                    renderStep1Welcome(data.reason, data.current_port);
+            // Decide whether to start at step 1 (Account) or jump past it.
+            // /api/setup/needs-admin self-disables once any admin user exists.
+            let needsAdmin = true;
+            try {
+                const a = await fetch('/api/setup/needs-admin', {
+                    credentials: 'same-origin',
+                });
+                if (a.ok) {
+                    const ad = await a.json();
+                    needsAdmin = !!ad.needs_admin;
                 }
+            } catch (_) {
+                // If the endpoint is unreachable, fall through to wizard-default
+                // (start at coordinator step, since the user is presumably
+                // already authenticated to be hitting this code path).
+                needsAdmin = false;
+            }
+
+            show();
+
+            if (needsAdmin) {
+                currentStep = 1;
+                renderStep1Account();
+                return;
+            }
+
+            // Admin exists — resume from the appropriate later step.
+            if (data.reason === 'mqtt_not_configured') {
+                // Pre-fill coordinator info, jump to integration step
+                wizardConfig.coordinator = { port: data.current_port };
+                selectedResult = wizardConfig.coordinator;
+                currentStep = 3;
+                renderStep3();
+            } else {
+                currentStep = 2;
+                renderStep2Welcome(data.reason, data.current_port);
             }
         } catch (e) {
             console.debug('Setup wizard: status check failed, skipping', e);
@@ -1110,12 +1232,13 @@
         init,
         show,
         hide,
+        submitAccount,
         startScan,
         cancelScan,
         refreshPorts,
         selectResult,
         selectIntegration,
-        nextFromStep2,
+        nextFromStep3,
         saveMqttAndNext,
         testMqtt,
         goToStep,

@@ -302,25 +302,16 @@ class AuthManager:
         self._loaded = True
 
     def _bootstrap(self) -> None:
-        """First-run setup: default groups + admin user with random password."""
+        """First-run setup: default groups only. The first admin user is
+        created interactively via the setup wizard (POST /api/setup/create-admin)."""
         for name, scopes in DEFAULT_GROUPS.items():
             self.groups[name] = Group(name=name, scopes=list(scopes),
                                       description=f"Default {name} group")
-        admin_password = secrets.token_urlsafe(12)
-        self.users["admin"] = User(
-            username="admin",
-            password_hash=hash_password(admin_password),
-            groups=["admins"],
-            description="Initial administrator account",
-        )
         self._save_locked()
-        # Print exactly once. The admin password will not be recoverable.
-        logger.warning("=" * 70)
-        logger.warning("FIRST-RUN AUTH BOOTSTRAP")
-        logger.warning(f"  Admin username: admin")
-        logger.warning(f"  Admin password: {admin_password}")
-        logger.warning("  Change it via Settings → Users as soon as possible.")
-        logger.warning("=" * 70)
+        logger.info(
+            "Auth bootstrap: %d default groups, no users yet — "
+            "wizard will create the first admin", len(self.groups)
+        )
 
     def _save_locked(self) -> None:
         """Write atomically. Caller must hold _lock OR be in init."""

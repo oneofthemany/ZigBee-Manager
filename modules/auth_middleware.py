@@ -129,13 +129,17 @@ ANONYMOUS_PREFIXES: Tuple[str, ...] = (
 )
 
 
-def _is_anonymous_path(path: str) -> bool:
+def _is_anonymous_path(path: str, no_admin_yet: bool = False) -> bool:
     if path in ANONYMOUS_PATHS:
         return True
     for p in ANONYMOUS_PREFIXES:
         if path.startswith(p):
             return True
     if path == "/" or path == "/index.html":
+        return True
+    # First-run gate: setup wizard endpoints are anonymous *only* while
+    # no admin user exists. Self-closes the moment one is created.
+    if no_admin_yet and path.startswith("/api/setup/"):
         return True
     return False
 
@@ -181,7 +185,11 @@ class AuthMiddleware(BaseHTTPMiddleware):
         if principal:
             request.state.principal = principal
 
-        if _is_anonymous_path(path):
+        no_admin_yet = not any(
+            (not u.disabled) and ("admins" in u.groups or "admin" in u.extra_scopes)
+            for u in self.auth.users.values()
+        )
+        if _is_anonymous_path(path, no_admin_yet=no_admin_yet):
             return await call_next(request)
 
         if not self.enforce:
