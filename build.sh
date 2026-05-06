@@ -519,7 +519,7 @@ DOCKERFILE_TOP
     # Part 2 — zmm_telemetry Rust appender (optional)
     if [[ "$WITH_APPENDER" == true ]]; then
         info "Including zmm_telemetry Rust appender in image build"
-        cat >> "$APP_DIR/Containerfile" << 'DOCKERFILE_APPENDER'
+        cat >> "$CLONE_DIR/Containerfile" << 'DOCKERFILE_APPENDER'
 
 # ── Build zmm_telemetry from source inside the container ──
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -546,7 +546,7 @@ DOCKERFILE_APPENDER
         info "Skipping zmm_telemetry Rust appender — Python executemany fallback will be used"
         # Bake an env var into the image so telemetry_db.py forces the Python path
         # even if a stray zmm_telemetry wheel is somehow present at runtime.
-        cat >> "$APP_DIR/Containerfile" << 'DOCKERFILE_NOAPPENDER'
+        cat >> "$CLONE_DIR/Containerfile" << 'DOCKERFILE_NOAPPENDER'
 
 # Force Python executemany fallback (no Rust appender built into this image)
 ENV ZMM_TELEMETRY_BACKEND=python
@@ -554,7 +554,7 @@ DOCKERFILE_NOAPPENDER
     fi
 
     # Part 3 — application source and final image config (always present)
-    cat >> "$APP_DIR/Containerfile" << 'DOCKERFILE_BOTTOM'
+    cat >> "$CLONE_DIR/Containerfile" << 'DOCKERFILE_BOTTOM'
 
 # Application source
 COPY . .
