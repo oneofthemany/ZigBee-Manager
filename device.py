@@ -961,6 +961,15 @@ class ZigManDevice:
         """Execute command on device."""
         try:
             packet_stats.record_tx(self.ieee)
+            # Feed the always-on flow analyzer for TX accounting. Cluster is
+            # unknown at this layer (resolved inside the command dispatch
+            # below), so we record with cluster=None — the analyzer keeps
+            # global + per-device counts, only cluster aggregates miss this.
+            try:
+                from modules.packet_flow import get_flow_analyzer
+                get_flow_analyzer().record(self.ieee, None, direction="TX")
+            except Exception:
+                pass
             logger.info(f"[{self.ieee}] CMD: {command}={value} EP={endpoint_id}")
             command = command.lower()
 

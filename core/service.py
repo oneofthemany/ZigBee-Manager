@@ -1068,10 +1068,14 @@ class ZigbeeService(
         """Raw message interceptor - called for EVERY Zigbee message."""
         ieee = str(sender.ieee)
 
-        # 1. DEBUGGER - Capture packet BEFORE any logic
+        # 1. DEBUGGER + FLOW ANALYZER
+        # Always call capture_packet — its always-on flow accounting branch
+        # runs unconditionally; the expensive packet decoding/buffering is
+        # gated internally by debugger.enabled. This ensures /api/debug/flow
+        # has accurate data even when full debug capture is off.
         try:
             debugger = get_debugger()
-            if debugger and debugger.enabled:
+            if debugger:
                 debugger.capture_packet(
                     sender_ieee=ieee,
                     sender_nwk=sender.nwk,

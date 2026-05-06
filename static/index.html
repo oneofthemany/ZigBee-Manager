@@ -1201,6 +1201,7 @@
                                 <div class="d-flex align-items-center gap-2 flex-wrap">
                                     <small class="text-muted text-uppercase fw-bold">Live Flow</small>
                                     <span id="flowGlobalRate"><span class="text-muted small">—</span></span>
+                                    <span id="flowPeakLine" class="ms-2"></span>
                                 </div>
                             </div>
                             <div class="col-md-3">
@@ -1208,6 +1209,26 @@
                             </div>
                             <div class="col-md-4 text-end">
                                 <div id="flowAnomalies"><span class="badge bg-secondary">—</span></div>
+                            </div>
+                        </div>
+
+                        <!-- Statistical summary (last hour) -->
+                        <hr class="my-2 opacity-25">
+                        <div id="flowStatsSummary" class="small">
+                            <span class="text-muted">Stats loading…</span>
+                        </div>
+
+                        <!-- Peak history (top 5 of the last hour) -->
+                        <div class="row g-2 mt-1">
+                            <div class="col-12">
+                                <details>
+                                    <summary class="text-muted small text-uppercase fw-bold"
+                                             style="cursor:pointer;">
+                                        <i class="fas fa-history"></i>
+                                        Peak history
+                                    </summary>
+                                    <div id="flowPeakHistory" class="mt-1"></div>
+                                </details>
                             </div>
                         </div>
                     </div>
