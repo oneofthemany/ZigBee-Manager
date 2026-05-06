@@ -54,10 +54,28 @@ class BasicHandler(ClusterHandler):
         if attrid == self.ATTR_POWER_SOURCE:
             source_name = self.POWER_SOURCES.get(value, f"Unknown({value})")
             self.device.update_state({"power_source": source_name})
-        elif attrid == self.ATTR_MANUFACTURER:
-            self.device.update_state({"manufacturer": str(value)})
         elif attrid == self.ATTR_MODEL:
-            self.device.update_state({"model": str(value)})
+            model_str = str(value)
+            self.device.update_state({"model": model_str})
+            # propagate so capability detection and quirks see it
+            try:
+                self.device.zigpy_dev.model = model_str
+            except Exception:
+                pass
+            self.device.model = model_str
+            if hasattr(self.device, 'capabilities'):
+                self.device.capabilities._detect_capabilities()
+
+        elif attrid == self.ATTR_MANUFACTURER:
+            mfr_str = str(value)
+            self.device.update_state({"manufacturer": mfr_str})
+            try:
+                self.device.zigpy_dev.manufacturer = mfr_str
+            except Exception:
+                pass
+            self.device.manufacturer = mfr_str
+            if hasattr(self.device, 'capabilities'):
+                self.device.capabilities._detect_capabilities()
         elif attrid == self.ATTR_SW_BUILD_ID:
             self.device.update_state({"sw_version": str(value)})
         elif attrid == self.ATTR_DATE_CODE:

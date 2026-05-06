@@ -1176,8 +1176,10 @@ class ZigbeeService(
         try:
             if ieee in self.devices and message and len(message) >= 7:
                 frame_control = message[0]
-                is_global = (frame_control & 0x03) == 0x00  # Frame type = global
-                command_id = message[2]
+                is_global = (frame_control & 0x03) == 0x00
+                mfg_specific = bool(frame_control & 0x04)
+                hdr_len = 5 if mfg_specific else 3   # FC + [mfg(2)] + TSN + cmd
+                command_id = message[4] if mfg_specific else message[2]
 
                 if is_global and command_id == 0x0A:  # Report Attributes
                     zdev = self.devices[ieee]

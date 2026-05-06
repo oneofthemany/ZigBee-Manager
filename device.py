@@ -68,9 +68,40 @@ class ZigManDevice:
         self._pending_configure = False
         self._awake_proof_received = False
 
-        # Initialize basic info from Zigpy device
         self.manufacturer = zigpy_dev.manufacturer
         self.model = zigpy_dev.model
+
+        # Hydrate from state cache if zigpy DB lost them (sleepy devices, partial interviews)
+        cached = self.service.state_cache.get(self.ieee, {}) if hasattr(self.service, 'state_cache') else {}
+        if not self.manufacturer and cached.get('manufacturer') and cached['manufacturer'] != 'Unknown':
+            self.manufacturer = cached['manufacturer']
+            try: zigpy_dev.manufacturer = self.manufacturer
+            except Exception: pass
+        if not self.model and cached.get('model') and cached['model'] != 'Unknown':
+            self.model = cached['model']
+            try: zigpy_dev.model = self.model
+            except Exception: pass
+
+        if not self.model or not self.manufacturer:
+            for ep_id, ep in zigpy_dev.endpoints.items():
+                if ep_id == 0:
+                    continue
+                basic = (getattr(ep, 'in_clusters', {}) or {}).get(0x0000)
+                if not basic:
+                    continue
+                cache = getattr(basic, '_attr_cache', {}) or {}
+                if not self.model and 0x0005 in cache:
+                    v = cache[0x0005]
+                    self.model = str(getattr(v, 'value', v))
+                    try: zigpy_dev.model = self.model
+                    except Exception: pass
+                if not self.manufacturer and 0x0004 in cache:
+                    v = cache[0x0004]
+                    self.manufacturer = str(getattr(v, 'value', v))
+                    try: zigpy_dev.manufacturer = self.manufacturer
+                    except Exception: pass
+                if self.model and self.manufacturer:
+                    break
 
         # --- FORCE INFO INTO STATE IMMEDIATELY ---
         if self.manufacturer:
