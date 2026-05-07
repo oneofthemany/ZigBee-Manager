@@ -716,14 +716,17 @@ class ZigbeeService(
         logger.info(f"Device initialised: {ieee}")
 
         if ieee in self.devices:
-            self.devices[ieee] = ZigManDevice(self, device)
-            self.devices[ieee].last_seen = int(time.time() * 1000)
-            if ieee in self.state_cache:
-                logger.info(f"[{ieee}] Restoring state from cache")
-                self.devices[ieee].restore_state(self.state_cache[ieee])
+            # Refresh in place — preserves listeners/state across re-inits
+            wrapper = self.devices[ieee]
+            wrapper.zigpy_dev = device
+            wrapper._identify_handlers()
+            wrapper.capabilities._detect_capabilities()
+            wrapper.last_seen = int(time.time() * 1000)
         else:
             self.devices[ieee] = ZigManDevice(self, device)
             self.devices[ieee].last_seen = int(time.time() * 1000)
+            if ieee in self.state_cache:
+                self.devices[ieee].restore_state(self.state_cache[ieee])
 
         # --- Auto-pair Hive thermostat ↔ receiver ---
         # Model is now known at this point (unlike device_joined where it's None)
