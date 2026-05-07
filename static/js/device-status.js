@@ -128,6 +128,81 @@
     }
 
     // ----------------------------------------------------------
+    // 4c. SETUP-MODE BADGE (Aqara TRV E11 / not yet calibrated)
+    // ----------------------------------------------------------
+    //
+    // Pulses amber to draw the user's attention to a TRV that needs
+    // physical interaction (calibration). Default-to-needs-calibration:
+    // a freshly-joined TRV that hasn't yet pushed any 0xFCC0 reports
+    // shows NEEDS CAL until the device confirms calibration_status='ready'.
+    // The badge clears automatically the moment the device confirms ready.
+    //
+    // Only fires for Aqara TRVs (lumi.airrtc.agl001 / SRTS-A01) — gated
+    // by the manufacturer/model check below so it doesn't appear on
+    // generic thermostats that have no calibration concept.
+
+    function isAqaraTRV(device) {
+        if (!device) return false;
+        var manuf = String(device.manufacturer || '').toLowerCase();
+        var model = String(device.model || '').toLowerCase();
+        var aqaraLike = manuf.indexOf('lumi') !== -1 || manuf.indexOf('aqara') !== -1;
+        var trvMarker = (
+            model.indexOf('airrtc') !== -1 ||
+            model.indexOf('agl001') !== -1 ||
+            (aqaraLike && model.indexOf('thermostat') !== -1)
+        );
+        return (aqaraLike && trvMarker) || model.indexOf('agl001') !== -1;
+    }
+
+    /**
+     * Returns: 'ready' | 'in_progress' | 'error' | 'needs_setup' | 'needs_cal' | null
+     * null means "not an Aqara TRV — no badge applicable".
+     */
+    function getAqaraTRVCalibrationState(device) {
+        if (!isAqaraTRV(device)) return null;
+        var s = device.state || {};
+        if (s.setup_mode === true) return 'needs_setup';
+        var cal = s.calibration_status;
+        if (cal === 'ready') return 'ready';
+        if (cal === 'in_progress') return 'in_progress';
+        if (cal === 'error') return 'error';
+        if (cal === 'not_ready') return 'needs_cal';
+        // Unknown / never-reported — assume not calibrated. Badge clears
+        // when device confirms 'ready'.
+        return 'needs_cal';
+    }
+
+    function renderSetupMode(device) {
+        var calState = getAqaraTRVCalibrationState(device);
+        if (!calState || calState === 'ready') return '';
+
+        var label, tooltip, iconClass, extraClass = '';
+        if (calState === 'needs_setup') {
+            label = 'SETUP';
+            iconClass = 'fa-screwdriver-wrench';
+            tooltip = 'Device in setup mode (E11). Triple-tap the button on the TRV to start calibration. Controls will not work until calibration completes.';
+        } else if (calState === 'in_progress') {
+            label = 'CALIBRATING';
+            iconClass = 'fa-spinner fa-spin';
+            tooltip = 'Calibration in progress — the valve is moving through its full range. Should complete within ~2 minutes.';
+            extraClass = ' calibrating';
+        } else if (calState === 'error') {
+            label = 'CAL ERROR';
+            iconClass = 'fa-triangle-exclamation';
+            tooltip = 'Calibration failed. Triple-tap the button on the TRV to retry, or check the valve mounting.';
+            extraClass = ' error';
+        } else {
+            // 'needs_cal'
+            label = 'NEEDS CAL';
+            iconClass = 'fa-screwdriver-wrench';
+            tooltip = 'Device not yet calibrated. Triple-tap the button on the TRV to start calibration. Setpoint commands will not take effect reliably until calibrated.';
+        }
+
+        return '<span class="zbm-setup-badge' + extraClass + '" title="' + tooltip + '">' +
+               '<i class="fas ' + iconClass + '"></i> ' + label + '</span>';
+    }
+
+    // ----------------------------------------------------------
     // 5. CHECK IF DEVICE IS A THERMOSTAT
     // ----------------------------------------------------------
 
@@ -291,6 +366,9 @@
 
                 // Thermostat / TRV heating status
                 if (isThermostat(device)) {
+                    // Setup-mode badge first — most attention-grabbing,
+                    // and if shown means the other readings are stale.
+                    extras += ' ' + renderSetupMode(device);
                     extras += ' ' + renderHeatingStatus(device);
                     extras += ' ' + renderTempMini(device);
                     extras += ' ' + renderSetpoint(device);

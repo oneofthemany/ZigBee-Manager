@@ -12,6 +12,35 @@ let interactionTimeout = null;
 const INTERACTION_DEBOUNCE_MS = 2000;
 let activeTouchSlider = null;
 
+// Track last-seen calibration state per Aqara TRV. Used to fire a one-shot
+// toast on transition INTO a non-ready state so the user is alerted without
+// being spammed on every WebSocket update.
+const _aqaraCalStateLastSeen = new Map();
+
+/**
+ * Classify an Aqara TRV's calibration state from its reported attributes.
+ * Returns: 'ready' | 'in_progress' | 'error' | 'needs_setup' | 'needs_cal' | null
+ *
+ * Default-to-needs-cal: if the device hasn't yet pushed any calibration
+ * attribute (common for freshly-joined sleepy TRVs), we assume it's not
+ * calibrated. The badge clears the moment the device confirms it's ready.
+ *
+ * Returns null for non-Aqara devices so callers can short-circuit.
+ */
+function getAqaraTRVCalibrationState(device) {
+    if (!isAqaraTRV(device)) return null;
+    const s = device.state || {};
+    if (s.setup_mode === true) return 'needs_setup';
+    const cal = s.calibration_status;
+    if (cal === 'ready') return 'ready';
+    if (cal === 'in_progress') return 'in_progress';
+    if (cal === 'error') return 'error';
+    if (cal === 'not_ready') return 'needs_cal';
+    // Unknown / never-reported — for a TRV that may be brand new, assume
+    // not yet calibrated. Badge will clear when device confirms 'ready'.
+    return 'needs_cal';
+}
+
 // ============================================================================
 // HEATING-CONTROLLER INTEGRATION
 // ----------------------------------------------------------------------------
@@ -427,17 +456,102 @@ export function updateControlValues(device) {
         }
     }
 
-    // Update Aqara TRV state-only badges (window/valve/calibration)
+    // Update Aqara TRV state-only badges (window/valve/calibration/setup)
     const aqHdr = document.querySelector(`[data-aqara-trv-badges="${ieee}"]`);
     if (aqHdr) {
         const windowOpen = !!s.window_open;
         const valveAlarm = !!s.valve_alarm;
         const calStatus = s.calibration_status || s.motor_calibration || 'idle';
+        const calState = getAqaraTRVCalibrationState(device);
+        const isAttention = calState && calState !== 'ready';
+
+        // Fire a one-shot toast on transition INTO a non-ready state so
+        // the user is alerted without being spammed on every WS update.
+        const lastState = _aqaraCalStateLastSeen.get(ieee);
+        if (isAttention && lastState !== calState && window.toast &&
+            typeof window.toast.warning === 'function') {
+            const friendly = device.friendly_name || device.name || ieee;
+            let msg;
+            if (calState === 'needs_setup') {
+                msg = `${friendly}: TRV is in setup mode (E11). ` +
+                      `Triple-tap the button on the device to start calibration.`;
+            } else if (calState === 'needs_cal') {
+                msg = `${friendly}: TRV not yet calibrated. ` +
+                      `Triple-tap the button on the device to calibrate. ` +
+                      `Setpoint commands won't take effect reliably until then.`;
+            } else if (calState === 'error') {
+                msg = `${friendly}: Calibration failed. ` +
+                      `Triple-tap the button on the device to retry, or check the valve mounting.`;
+            } else {
+                // 'in_progress' — informational, less alarming
+                msg = `${friendly}: Calibration in progress (~2 minutes).`;
+            }
+            window.toast.warning(msg);
+        }
+        _aqaraCalStateLastSeen.set(ieee, calState);
+
+        // Build header badge for setup/calibration state
+        let setupBadgeHtml = '';
+        if (calState === 'needs_setup') {
+            setupBadgeHtml = '<span class="badge bg-warning text-dark me-1"><i class="fas fa-screwdriver-wrench"></i> Setup mode</span>';
+        } else if (calState === 'needs_cal') {
+            setupBadgeHtml = '<span class="badge bg-warning text-dark me-1"><i class="fas fa-screwdriver-wrench"></i> Needs calibration</span>';
+        } else if (calState === 'in_progress') {
+            setupBadgeHtml = '<span class="badge bg-info text-dark me-1"><i class="fas fa-spinner fa-spin"></i> Calibrating</span>';
+        } else if (calState === 'error') {
+            setupBadgeHtml = '<span class="badge bg-danger me-1"><i class="fas fa-triangle-exclamation"></i> Cal error</span>';
+        }
+
         aqHdr.innerHTML =
+            setupBadgeHtml +
             (windowOpen ? '<span class="badge bg-warning text-dark me-1"><i class="fas fa-window-maximize"></i> Window open</span>' : '') +
             (valveAlarm ? '<span class="badge bg-danger me-1"><i class="fas fa-exclamation-triangle"></i> Valve alarm</span>' : '') +
             `<span class="badge bg-secondary">${String(calStatus).replace(/_/g, ' ')}</span>`;
+
+        // Toggle the in-card setup banner
+        const banner = document.querySelector(`[data-aqara-setup-banner="${ieee}"]`);
+        if (banner) {
+            banner.classList.toggle('d-none', !isAttention || calState === 'in_progress');
+            // Update banner text content live based on state
+            const bannerBody = banner.querySelector('[data-aqara-setup-banner-body]');
+            if (bannerBody && isAttention && calState !== 'in_progress') {
+                bannerBody.innerHTML = aqaraSetupBannerCopy(calState);
+            }
+        }
     }
+}
+
+/**
+ * Copy text for the in-card setup/calibration banner.
+ * Returned HTML is inserted into the banner's body div.
+ */
+function aqaraSetupBannerCopy(calState) {
+    if (calState === 'needs_setup') {
+        return `<strong>This TRV is in setup mode (E11)</strong> and is not yet calibrated.
+                <span class="text-muted">Controls below will not take effect until calibration completes.</span>
+                <div class="mt-1">
+                    To start: <strong>triple-tap the button on the TRV body</strong>.
+                    Calibration takes about two minutes — the valve will move through its full range.
+                    The badge above will update to <em>ready</em> when finished.
+                </div>`;
+    }
+    if (calState === 'error') {
+        return `<strong>Calibration failed.</strong>
+                <span class="text-muted">The valve didn't complete its calibration cycle.</span>
+                <div class="mt-1">
+                    <strong>Triple-tap the button on the TRV</strong> to retry.
+                    If it keeps failing, check the valve adapter is correctly fitted and
+                    the valve pin moves freely.
+                </div>`;
+    }
+    // 'needs_cal' — generic "not ready" without explicit setup-mode flag
+    return `<strong>This TRV has not been calibrated yet.</strong>
+            <span class="text-muted">Setpoint and mode commands won't take effect reliably until calibration completes.</span>
+            <div class="mt-1">
+                To start: <strong>triple-tap the button on the TRV body</strong>.
+                Calibration takes about two minutes — the valve will move through its full range.
+                The badge above will update to <em>ready</em> when finished.
+            </div>`;
 }
 
 export function renderControlTab(device) {

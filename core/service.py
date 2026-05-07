@@ -1594,6 +1594,11 @@ class ZigbeeService(
             device = self.devices[ieee]
             result = await device.send_command(command, value, endpoint_id)
             if result is False:
+                # Provide a friendlier error if the device wasn't ready yet,
+                # so the heating controller's retry logic can distinguish
+                # "transient initialisation" from "actual protocol failure".
+                if not getattr(device, 'handlers', None):
+                    return {"success": False, "error": "Device initialising"}
                 return {"success": False, "error": "Device rejected command"}
             return {"success": True, "result": result}
         except NcpFailure as e:

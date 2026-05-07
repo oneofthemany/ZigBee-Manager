@@ -68,6 +68,7 @@ class ZigManDevice:
         self._pending_configure = False
         self._awake_proof_received = False
 
+        # Initialize basic info from Zigpy device
         self.manufacturer = zigpy_dev.manufacturer
         self.model = zigpy_dev.model
 
@@ -1004,6 +1005,20 @@ class ZigManDevice:
             logger.info(f"[{self.ieee}] CMD: {command}={value} EP={endpoint_id}")
             command = command.lower()
 
+            # GATE on device readiness. The heating controller fires commands
+            # on every tick — including immediately after a device joins,
+            # before zigpy has finished the interview and before our handlers
+            # are registered. Sending in that window produces "Device rejected
+            # command" log spam and confuses the controller's retry logic.
+            # If we have no handlers yet, the device isn't ready for any
+            # command — return a soft failure so the caller can retry next tick.
+            if not self.handlers:
+                logger.debug(
+                    f"[{self.ieee}] Rejecting {command} — device still "
+                    "initialising (no handlers registered yet)"
+                )
+                return False
+
             # Normalize value types (frontend sends strings)
             if value is not None and isinstance(value, str):
                 if value.replace('.', '').replace('-', '').isdigit():
@@ -1101,15 +1116,32 @@ class ZigManDevice:
                         logger.error(f"[{self.ieee}] No ColorClusterHandler (0x0300) for hs_color")
 
             # AQARA MANUFACTURER CLUSTER COMMANDS (0xFCC0)
-            if not success and command in ['window_detection', 'valve_detection', 'motor_calibration',
-                                           'child_lock', 'external_temp', 'sensor_type']:
+            # 'system_mode' is routed to the Aqara handler FIRST. The AGL001
+            # firmware silently ignores standard ZCL 0x0201/0x001C system_mode
+            # writes — only the Aqara 0x0271 write actually flips the device.
+            aqara_commands = [
+                'window_detection', 'valve_detection', 'motor_calibration',
+                'child_lock', 'external_temp', 'sensor_type',
+                'system_mode', 'preset', 'away_preset_temperature', 'schedule',
+            ]
+            if not success and command in aqara_commands:
                 h = get_handler(0xFCC0)
                 if h and hasattr(h, 'process_command'):
                     h.process_command(command, value)
                     success = True
                     # Optimistic updates
                     if command == 'motor_calibration':
-                        optimistic_state['motor_calibration'] = 'calibrating' if value else 'idle'
+                        # Real status comes from 0x027B, not 0x0270 (write-only).
+                        optimistic_state['calibration_status'] = 'in_progress'
+                    elif command == 'system_mode':
+                        sv = str(value).lower()
+                        optimistic_state['system_mode'] = (
+                            'heat' if sv in ('1', 'heat', 'on', 'true') else 'off'
+                        )
+                    elif command == 'preset':
+                        sv = str(value).lower()
+                        if sv in ('manual', 'away', 'auto'):
+                            optimistic_state['preset'] = sv
                     elif command == 'external_temp':
                         try:
                             optimistic_state['external_temperature'] = float(value)
@@ -1118,6 +1150,13 @@ class ZigManDevice:
                     elif command == 'sensor_type':
                         sv = str(value).lower()
                         optimistic_state['sensor_type'] = 'external' if sv in ('1', 'external', 'true', 'on') else 'internal'
+                    elif command == 'away_preset_temperature':
+                        try:
+                            optimistic_state['away_preset_temperature'] = float(value)
+                        except (TypeError, ValueError):
+                            pass
+                    elif command == 'schedule':
+                        optimistic_state['schedule_enabled'] = bool(value)
                     else:
                         optimistic_state[command] = bool(value)
 
@@ -1187,16 +1226,33 @@ class ZigManDevice:
                 self.update_state(optimistic_state, endpoint_id=endpoint_id)
 
             # Schedule delayed poll for HVAC commands to pick up actual device state
-            # (receiver state changes via thermostat binding may not trigger reports)
+            # (receiver state changes via thermostat binding may not trigger reports).
+            # SKIP for sleepy battery end-devices (e.g. Aqara TRVs) — each timed-out
+            # read blocks the radio queue for ~60s, which delays the next setpoint
+            # write. Sleepy devices push state unsolicited, no poll needed.
             if success and command in ['temperature', 'system_mode']:
-                async def _delayed_poll():
-                    await asyncio.sleep(5)
-                    try:
-                        await self.poll()
-                        logger.debug(f"[{self.ieee}] Post-command poll complete")
-                    except Exception:
-                        pass
-                asyncio.create_task(_delayed_poll())
+                is_sleepy = False
+                try:
+                    nd = getattr(self.zigpy_dev, 'node_desc', None)
+                    if nd:
+                        is_end = int(nd.logical_type) == 2
+                        rx_on_when_idle = bool(int(nd.mac_capability_flags) & 0x08)
+                        is_sleepy = is_end and not rx_on_when_idle
+                except Exception:
+                    pass
+                if not is_sleepy:
+                    async def _delayed_poll():
+                        await asyncio.sleep(5)
+                        try:
+                            await self.poll()
+                            logger.debug(f"[{self.ieee}] Post-command poll complete")
+                        except Exception:
+                            pass
+                    asyncio.create_task(_delayed_poll())
+                else:
+                    logger.debug(
+                        f"[{self.ieee}] Skipping post-{command} poll — sleepy device"
+                    )
 
             return success
 

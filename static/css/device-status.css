@@ -307,3 +307,106 @@
 [data-theme="dark"] .zbm-cover-open    { color: #60a5fa; }
 [data-theme="dark"] .zbm-cover-closed  { color: #9ca3af; }
 [data-theme="dark"] .zbm-cover-partial { color: #fbbf24; }
+
+/* --- Setup-mode / calibration-needed badge ---
+   Pulses amber to draw the user's attention to a TRV that's in E11
+   commissioning state or has a non-ready calibration status. The pulse
+   uses a separate keyframe (zbm-setup-pulse) so it doesn't share timing
+   or colour with the heating-active pulse on the status dot. */
+
+.zbm-setup-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.3px;
+    padding: 2px 7px;
+    border-radius: 4px;
+    color: #b45309;
+    background: rgba(245, 158, 11, 0.15);
+    border: 1px solid rgba(245, 158, 11, 0.4);
+    vertical-align: middle;
+    cursor: help;
+    animation: zbm-setup-pulse 1.6s ease-in-out infinite;
+}
+
+.zbm-setup-badge i {
+    font-size: 0.75rem;
+}
+
+/* "Calibrating" state — softer pulse, blue tint, the device is doing
+   the right thing, just hasn't finished. */
+.zbm-setup-badge.calibrating {
+    color: #1e40af;
+    background: rgba(59, 130, 246, 0.12);
+    border-color: rgba(59, 130, 246, 0.4);
+    animation: zbm-setup-pulse-blue 2s ease-in-out infinite;
+}
+
+/* "Cal error" — solid red, urgent, calibration genuinely failed. */
+.zbm-setup-badge.error {
+    color: #991b1b;
+    background: rgba(239, 68, 68, 0.15);
+    border-color: rgba(239, 68, 68, 0.5);
+    animation: zbm-setup-pulse-red 1.4s ease-in-out infinite;
+}
+
+@keyframes zbm-setup-pulse {
+    0%, 100% {
+        box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.55);
+        transform: scale(1);
+    }
+    50% {
+        box-shadow: 0 0 0 6px rgba(245, 158, 11, 0);
+        transform: scale(1.04);
+    }
+}
+
+@keyframes zbm-setup-pulse-blue {
+    0%, 100% {
+        box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.55);
+    }
+    50% {
+        box-shadow: 0 0 0 6px rgba(59, 130, 246, 0);
+    }
+}
+
+@keyframes zbm-setup-pulse-red {
+    0%, 100% {
+        box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.65);
+        transform: scale(1);
+    }
+    50% {
+        box-shadow: 0 0 0 7px rgba(239, 68, 68, 0);
+        transform: scale(1.05);
+    }
+}
+
+/* Dark-mode overrides — preserve contrast against dark row backgrounds. */
+[data-theme="dark"] .zbm-setup-badge {
+    color: #fbbf24;
+    background: rgba(245, 158, 11, 0.18);
+    border-color: rgba(245, 158, 11, 0.45);
+}
+
+[data-theme="dark"] .zbm-setup-badge.calibrating {
+    color: #60a5fa;
+    background: rgba(59, 130, 246, 0.18);
+    border-color: rgba(59, 130, 246, 0.45);
+}
+
+[data-theme="dark"] .zbm-setup-badge.error {
+    color: #f87171;
+    background: rgba(239, 68, 68, 0.2);
+    border-color: rgba(239, 68, 68, 0.55);
+}
+
+/* Respect users who've opted out of motion (battery-saving / accessibility). */
+@media (prefers-reduced-motion: reduce) {
+    .zbm-setup-badge,
+    .zbm-setup-badge.calibrating,
+    .zbm-setup-badge.error {
+        animation: none;
+    }
+}

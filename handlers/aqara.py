@@ -272,7 +272,11 @@ class AqaraManufacturerCluster(ClusterHandler):
     ATTR_SENSOR_TYPE = 0x027E           # uint8 - 0=Internal, 1=External sensor
     ATTR_EXTERNAL_TEMP = 0x0280         # int16 - External temp in centidegrees (signed)
     ATTR_BATTERY_PCT = 0x040A           # uint8 - Battery percentage
-    ATTR_REPORTING_INTERVAL = 0x00EE    # uint16 - Reporting interval seconds
+    ATTR_REPORTING_INTERVAL = 0x00EE    # uint32 - Aqara checkin/reporting interval (seconds)
+    ATTR_BATTERY_REPLACE = 0x000B       # Bool  - Battery replacement (rarely reported)
+    ATTR_SETUP_MODE = 0x027C            # uint8 - Setup/E11 commissioning flag
+    # Alias kept for legacy code paths that referenced the input form of 0x0280
+    ATTR_EXTERNAL_TEMP_INPUT = 0x0280
 
     # ===== Temperature/Humidity Sensor Attributes =====
     ATTR_TEMP_DISPLAY_UNIT = 0xFF01     # uint8 - 0=Celsius, 1=Fahrenheit
@@ -325,15 +329,23 @@ class AqaraManufacturerCluster(ClusterHandler):
 
         # === TRV System Mode ===
         elif attrid == self.ATTR_SYSTEM_MODE:  # 0x0271
-            SYSTEM_MODES = {0: "off", 1: "heat", 2: "cool", 3: "auto"}
+            # Aqara only supports off and heat. Map directly to the
+            # state key the frontend reads (`system_mode`), NOT the
+            # legacy `aqara_system_mode` which the UI never looked at.
+            SYSTEM_MODES = {0: "off", 1: "heat"}
             mode_name = SYSTEM_MODES.get(value, f"unknown({value})")
-            updates["aqara_system_mode"] = mode_name
-            logger.info(f"[{self.device.ieee}] Aqara system mode: {mode_name}")
+            updates["system_mode"] = mode_name
+            logger.info(f"[{self.device.ieee}] System mode: {mode_name}")
 
-        # === Valve Alarm ===
-        elif attrid == self.ATTR_VALVE_ALARM:  # 0x0275
-            updates["valve_alarm"] = bool(value)
-            logger.info(f"[{self.device.ieee}] Valve alarm: {bool(value)}")
+        # === TRV Preset (manual / away / auto) ===
+        elif attrid == self.ATTR_PRESET:  # 0x0272
+            # Canonical mapping from the official zhaquirks AGL001 quirk.
+            # Value 3 = device firmware-internal "in setup / commissioning"
+            # (matches E11 indicator on the LED display).
+            PRESET_MAP = {0: "manual", 1: "away", 2: "auto", 3: "setup"}
+            preset_name = PRESET_MAP.get(value, f"unknown({value})")
+            updates["preset"] = preset_name
+            logger.info(f"[{self.device.ieee}] Preset: {preset_name}")
 
         # === Calibration Status ===
         elif attrid == self.ATTR_CALIBRATED:  # 0x027B
@@ -342,6 +354,21 @@ class AqaraManufacturerCluster(ClusterHandler):
             updates["calibration_status"] = cal_name
             logger.info(f"[{self.device.ieee}] Calibration: {cal_name}")
 
+        # === Setup / E11 commissioning flag ===
+        elif attrid == self.ATTR_SETUP_MODE:  # 0x027C
+            updates["setup_mode"] = bool(value)
+            if value:
+                logger.warning(
+                    f"[{self.device.ieee}] Device is in SETUP mode — controls "
+                    "will be ignored until calibration completes (triple-tap "
+                    "the button on the device to start)"
+                )
+
+        # === Schedule enable/disable ===
+        elif attrid == self.ATTR_SCHEDULE:  # 0x027D
+            updates["schedule_enabled"] = bool(value)
+            logger.info(f"[{self.device.ieee}] Schedule: {'on' if value else 'off'}")
+
         # === Sensor Type ===
         elif attrid == self.ATTR_SENSOR_TYPE:  # 0x027E
             sensor_name = "external" if value == 1 else "internal"
@@ -349,19 +376,26 @@ class AqaraManufacturerCluster(ClusterHandler):
             logger.info(f"[{self.device.ieee}] Sensor type: {sensor_name}")
 
         # === External Temperature Input ===
-        elif attrid == 0x0280:
+        elif attrid == self.ATTR_EXTERNAL_TEMP:  # 0x0280
             updates["external_temperature"] = round(value / 100, 2) if value else 0
             logger.info(f"[{self.device.ieee}] External temperature: {updates['external_temperature']}°C")
 
+        # === Away Preset Temperature ===
+        elif attrid == self.ATTR_AWAY_PRESET_TEMPERATURE:  # 0x0279
+            updates["away_preset_temperature"] = round(value / 100, 1) if value else 0
+
         # === Battery Percentage ===
-        elif attrid == 0x040A:
+        elif attrid == self.ATTR_BATTERY_PCT:  # 0x040A
             updates["battery"] = min(value, 100)
             logger.info(f"[{self.device.ieee}] Battery: {value}%")
 
-        # === Reporting Interval ===
-        elif attrid == 0x00EE:
-            updates["reporting_interval"] = value
-            logger.info(f"[{self.device.ieee}] Reporting interval: {value}s")
+        # === Aqara Checkin / Reporting Interval ===
+        elif attrid == self.ATTR_REPORTING_INTERVAL:  # 0x00EE
+            updates["checkin_interval"] = value
+            logger.info(
+                f"[{self.device.ieee}] Aqara checkin interval: {value}s "
+                f"(~{value // 60}min)"
+            )
 
         elif attrid == self.ATTR_CHILD_LOCK:
             updates["child_lock"] = bool(value)
@@ -371,27 +405,18 @@ class AqaraManufacturerCluster(ClusterHandler):
             updates["window_open"] = bool(value)
             logger.info(f"[{self.device.ieee}] Window: {'open' if value else 'closed'}")
 
-        elif attrid == self.ATTR_MOTOR_CALIBRATION:
-            status = "calibrating" if value == 1 else "idle"
-            updates["motor_calibration"] = status
-            logger.info(f"[{self.device.ieee}] Motor calibration: {status}")
-
         elif attrid == self.ATTR_VALVE_ALARM:
             updates["valve_alarm"] = bool(value)
             if value:
                 logger.warning(f"[{self.device.ieee}] Valve alarm triggered!")
 
-        elif attrid == self.ATTR_SENSOR_TYPE:
-            sensor_type = "external" if value == 1 else "internal"
-            updates["sensor_type"] = sensor_type
-            logger.info(f"[{self.device.ieee}] Sensor type: {sensor_type}")
-
-        elif attrid == self.ATTR_EXTERNAL_TEMP_INPUT:
-            # External temp in 0.01Â°C units
-            temp_celsius = value / 100.0 if value != -32768 else None
-            if temp_celsius is not None:
-                updates["external_temperature"] = temp_celsius
-                logger.debug(f"[{self.device.ieee}] External temp: {temp_celsius}Â°C")
+        elif attrid == self.ATTR_MOTOR_CALIBRATION:
+            # 0x0270 is a write-only command attribute. The device auto-resets
+            # it to 0 when the command is consumed — that is NOT a status.
+            # Do not write 'idle'/'calibrating' to state from here, otherwise
+            # the frontend gets stuck on 'calibrating' forever. Real status
+            # comes from ATTR_CALIBRATED (0x027B).
+            logger.debug(f"[{self.device.ieee}] Motor calibration command echo: {value}")
 
         # === Switch/Relay Attributes ===
         elif attrid == self.ATTR_OPERATION_MODE:
@@ -499,35 +524,99 @@ class AqaraManufacturerCluster(ClusterHandler):
         """
         Configure the Aqara manufacturer cluster.
 
-        - Does NOT bind (0xFCC0 is manufacturer-specific, binding not needed)
-        - Reads initial attribute values with manufacturer code 0x115F
-        - Follows ZHA pattern: no binding, just initial read
+        For TRVs (lumi.airrtc.agl001 / SRTS-A01): write a baseline preset
+        and schedule state so the device's internal schedule doesn't fight
+        our setpoint writes. Without this, the device alternates between
+        our writes (e.g. 21.5°C from heating controller) and its built-in
+        schedule (e.g. 5°C "off" period), causing the visible bounce.
+
+          - 0x0272 (preset)         = 0  (manual)
+          - 0x027D (schedule)       = 0  (disabled)
         """
         logger.info(f"[{self.device.ieee}] Configuring Aqara manufacturer cluster 0xFCC0")
-        await self.poll()
+
+        if hasattr(self.device, 'hvac'):
+            # Best-effort writes — if the device is asleep these will time
+            # out and we'll retry on the next configure cycle. We swallow
+            # exceptions so a failed write doesn't abort the whole device
+            # config (the heating controller can still drive the device
+            # via standard 0x0201 setpoint writes regardless).
+            for attr_id, value, label in (
+                    (self.ATTR_PRESET, 0, "preset=manual"),
+                    (self.ATTR_SCHEDULE, 0, "schedule=off"),
+            ):
+                try:
+                    ok = await self.write_attribute(attr_id, value)
+                    if ok:
+                        logger.info(
+                            f"[{self.device.ieee}] TRV baseline: {label}"
+                        )
+                    else:
+                        logger.debug(
+                            f"[{self.device.ieee}] TRV baseline {label} not "
+                            "applied (device may be asleep — will retry next "
+                            "configure)"
+                        )
+                except Exception as e:
+                    logger.debug(
+                        f"[{self.device.ieee}] TRV baseline {label} write "
+                        f"raised: {e}"
+                    )
+
+        logger.info(f"[{self.device.ieee}] Aqara manufacturer cluster configured")
         return True
+
+    def _is_sleepy_end_device(self) -> bool:
+        """
+        True if the device is a battery-powered sleepy end device.
+        Sleepy devices push state unsolicited — we should NOT actively poll.
+        Reads done outside the device's wake window time out and clog the
+        radio queue, delaying legitimate writes (setpoints, calibrate).
+        """
+        try:
+            zdev = getattr(self.device, "zigpy_dev", None)
+            if zdev is None or not getattr(zdev, "node_desc", None):
+                return False
+            nd = zdev.node_desc
+            # logical_type 2 = EndDevice; mac flags & 0x08 = rx_on_when_idle
+            is_end_device = int(nd.logical_type) == 2
+            rx_on_when_idle = bool(int(nd.mac_capability_flags) & 0x08)
+            return is_end_device and not rx_on_when_idle
+        except Exception:
+            return False
 
     async def poll(self) -> Dict[str, Any]:
         """
         Poll manufacturer-specific attributes.
-        Must use manufacturer_code=0x115F for Aqara devices.
+
+        For sleepy end devices: skip entirely. They push reports unsolicited.
+        Otherwise: read with manufacturer=0x115F (mandatory — without it the
+        zigpy schema lookup misroutes the request and raises a misleading
+        cluster-id-shaped error like 513 = 0x0201).
         """
-        # Determine which attributes to read based on device type
-        # Try to read common attributes first
-        attrs_to_read = [
-            self.ATTR_POWER_OUTAGE_MEM,  # Common across many devices
-        ]
+        if self._is_sleepy_end_device():
+            logger.debug(
+                f"[{self.device.ieee}] Skipping Aqara poll — sleepy end device, "
+                "relying on unsolicited reports"
+            )
+            return {}
+
+        attrs_to_read = [self.ATTR_POWER_OUTAGE_MEM]
 
         # Add thermostat-specific attributes if we have a thermostat cluster
         if hasattr(self.device, 'hvac'):
             attrs_to_read.extend([
-                self.ATTR_WINDOW_DETECTION,
-                self.ATTR_CHILD_LOCK,
-                self.ATTR_VALVE_DETECTION,
-                self.ATTR_WINDOW_OPEN,
-                self.ATTR_MOTOR_CALIBRATION,
-                self.ATTR_VALVE_ALARM,
-                self.ATTR_SENSOR_TYPE,
+                self.ATTR_SYSTEM_MODE,             # 0x0271
+                self.ATTR_PRESET,                  # 0x0272
+                self.ATTR_WINDOW_DETECTION,        # 0x0273
+                self.ATTR_VALVE_DETECTION,         # 0x0274
+                self.ATTR_VALVE_ALARM,             # 0x0275
+                self.ATTR_CHILD_LOCK,              # 0x0277
+                self.ATTR_AWAY_PRESET_TEMPERATURE, # 0x0279
+                self.ATTR_WINDOW_OPEN,             # 0x027A
+                self.ATTR_CALIBRATED,              # 0x027B
+                # Note: do NOT poll ATTR_MOTOR_CALIBRATION (0x0270) — write-only.
+                self.ATTR_SENSOR_TYPE,             # 0x027E
             ])
 
         # Add motion sensor attributes if we have occupancy cluster
@@ -548,25 +637,29 @@ class AqaraManufacturerCluster(ClusterHandler):
             ])
 
         try:
-            logger.debug(f"[{self.device.ieee}] Reading Aqara attrs: {[hex(a) for a in attrs_to_read]}")
-
-            # CRITICAL: Must specify manufacturer=0x115F for Aqara devices
-            result = await self.cluster.read_attributes(attrs_to_read)
-
-            # Parse results: result is (success_dict, failure_dict)
+            logger.debug(
+                f"[{self.device.ieee}] Reading Aqara attrs: "
+                f"{[hex(a) for a in attrs_to_read]}"
+            )
+            result = await self.cluster.read_attributes(
+                attrs_to_read,
+                manufacturer=self.MANUFACTURER_CODE,
+            )
             if result and result[0]:
-                success_attrs = result[0]
-                logger.info(f"[{self.device.ieee}] Aqara poll success: {len(success_attrs)} attrs")
-                for attrid, value in success_attrs.items():
+                logger.info(
+                    f"[{self.device.ieee}] Aqara poll success: "
+                    f"{len(result[0])} attrs"
+                )
+                for attrid, value in result[0].items():
                     self.attribute_updated(attrid, value)
-
             if result and result[1]:
-                failed_attrs = result[1]
-                logger.debug(f"[{self.device.ieee}] Aqara poll failures: {failed_attrs}")
-
+                logger.debug(
+                    f"[{self.device.ieee}] Aqara poll failures: {result[1]}"
+                )
         except Exception as e:
-            logger.warning(f"[{self.device.ieee}] Aqara manufacturer cluster poll failed: {e}")
-
+            logger.warning(
+                f"[{self.device.ieee}] Aqara manufacturer cluster poll failed: {e}"
+            )
         return {}
 
     async def write_attribute(self, attr_id: int, value: Any) -> bool:
@@ -723,12 +816,16 @@ class AqaraManufacturerCluster(ClusterHandler):
         # Add device-specific attributes
         if hasattr(self.device, 'hvac'):  # Thermostat/TRV
             base_attrs.update({
+                self.ATTR_SYSTEM_MODE: "system_mode",
+                self.ATTR_PRESET: "preset",
                 self.ATTR_WINDOW_DETECTION: "window_detection",
                 self.ATTR_CHILD_LOCK: "child_lock",
                 self.ATTR_VALVE_DETECTION: "valve_detection",
-                self.ATTR_MOTOR_CALIBRATION: "motor_calibration",
+                # ATTR_MOTOR_CALIBRATION (0x0270) is write-only — use 0x027B.
+                self.ATTR_CALIBRATED: "calibration_status",
                 self.ATTR_WINDOW_OPEN: "window_open",
                 self.ATTR_VALVE_ALARM: "valve_alarm",
+                self.ATTR_SENSOR_TYPE: "sensor_type",
             })
 
         if hasattr(self.device, 'occupancy'):  # Motion sensor
@@ -775,7 +872,11 @@ class AqaraManufacturerCluster(ClusterHandler):
     async def process_command(self, command: str, value: Any) -> bool:
         """
         Process commands — returns True on successful device write, False otherwise.
-        Callers (device.send_command) rely on this return value to set success status.
+
+        For sleepy battery TRVs: do NOT issue follow-up reads after writes.
+        Each read either succeeds (in-window) or hangs the queue for ~60s
+        until APS timeout fires. We rely on the device's own unsolicited
+        reports for state confirmation.
         """
 
         def to_bool_int(val):
@@ -788,7 +889,65 @@ class AqaraManufacturerCluster(ClusterHandler):
         val_int = to_bool_int(value)
 
         if command in ("motor_calibration", "calibrate"):
-            return await self.write_attribute(self.ATTR_MOTOR_CALIBRATION, 1)
+            ok = await self.write_attribute(self.ATTR_MOTOR_CALIBRATION, 1)
+            if not ok:
+                return False
+            self.device.update_state({"calibration_status": "in_progress"})
+            return True
+
+        elif command == "system_mode":
+            # AGL001 firmware silently ignores standard ZCL 0x0201/0x001C
+            # system_mode writes — only Aqara 0x0271 actually flips the device.
+            if isinstance(value, str):
+                sv = value.strip().lower()
+                mode_int = 1 if sv in ("heat", "1", "on", "true") else 0
+            else:
+                mode_int = 1 if int(value) == 1 else 0
+            ok = await self.write_attribute(self.ATTR_SYSTEM_MODE, mode_int)
+            if ok:
+                self.device.update_state({
+                    "system_mode": "heat" if mode_int else "off"
+                })
+            return ok
+
+        elif command == "preset":
+            if isinstance(value, str):
+                p_map = {"manual": 0, "away": 1, "auto": 2}
+                p_int = p_map.get(value.strip().lower())
+                if p_int is None:
+                    logger.error(
+                        f"[{self.device.ieee}] preset: unknown value {value!r}"
+                    )
+                    return False
+            else:
+                p_int = int(value)
+                if p_int not in (0, 1, 2):
+                    logger.error(
+                        f"[{self.device.ieee}] preset: out-of-range {p_int}"
+                    )
+                    return False
+            ok = await self.write_attribute(self.ATTR_PRESET, p_int)
+            if ok:
+                self.device.update_state({
+                    "preset": {0: "manual", 1: "away", 2: "auto"}[p_int]
+                })
+            return ok
+
+        elif command == "away_preset_temperature":
+            try:
+                temp_c = float(value)
+            except (TypeError, ValueError):
+                logger.error(
+                    f"[{self.device.ieee}] away_preset_temperature: invalid {value!r}"
+                )
+                return False
+            temp_c = max(5.0, min(30.0, temp_c))
+            return await self.write_attribute(
+                self.ATTR_AWAY_PRESET_TEMPERATURE, int(round(temp_c * 100))
+            )
+
+        elif command == "schedule":
+            return await self.write_attribute(self.ATTR_SCHEDULE, val_int)
 
         elif command == "window_detection":
             return await self.write_attribute(self.ATTR_WINDOW_DETECTION, val_int)
@@ -797,18 +956,21 @@ class AqaraManufacturerCluster(ClusterHandler):
             return await self.write_attribute(self.ATTR_VALVE_DETECTION, val_int)
 
         elif command == "child_lock":
-            asyncio.create_task(self.write_attribute(self.ATTR_CHILD_LOCK, val_int))
+            return await self.write_attribute(self.ATTR_CHILD_LOCK, val_int)
 
         elif command == "external_temp":
-            # Accept float °C; convert to signed int16 centidegrees, clamp to -40..+80 °C.
+            # Float °C → signed int16 centidegrees, clamped to ±sane range.
             try:
                 temp_c = float(value)
             except (TypeError, ValueError):
-                logger.error(f"[{self.device.ieee}] external_temp: invalid value {value!r}")
-                return
+                logger.error(
+                    f"[{self.device.ieee}] external_temp: invalid value {value!r}"
+                )
+                return False
             temp_c = max(-40.0, min(80.0, temp_c))
-            centi = int(round(temp_c * 100))
-            asyncio.create_task(self.write_attribute(self.ATTR_EXTERNAL_TEMP, centi))
+            return await self.write_attribute(
+                self.ATTR_EXTERNAL_TEMP, int(round(temp_c * 100))
+            )
 
         elif command == "sensor_type":
             # Accept 'internal'/'external' strings or 0/1/bool.
@@ -817,7 +979,7 @@ class AqaraManufacturerCluster(ClusterHandler):
                 st_int = 1 if sv in ("external", "1", "true", "on", "yes") else 0
             else:
                 st_int = 1 if value else 0
-            asyncio.create_task(self.write_attribute(self.ATTR_SENSOR_TYPE, st_int))
+            return await self.write_attribute(self.ATTR_SENSOR_TYPE, st_int)
 
         logger.debug(f"[{self.device.ieee}] Unhandled Aqara command: {command}")
         return False
@@ -1002,17 +1164,23 @@ class AqaraManufacturerCluster(ClusterHandler):
 
 
     async def discover_attributes(self):
-        """Discover what attributes this device actually supports."""
+        """Discover what TRV-relevant attributes this device actually supports."""
         logger.info(f"[{self.device.ieee}] Discovering Aqara cluster attributes...")
         try:
-            # Try reading all the attributes we think exist
             attrs_to_check = [
-                (0x0272, "window_detection"),
-                (0x0273, "valve_detection"),
-                (0x0274, "child_lock"),
-                (0x0279, "motor_calibration"),
+                (self.ATTR_SYSTEM_MODE,              "system_mode"),
+                (self.ATTR_PRESET,                   "preset"),
+                (self.ATTR_WINDOW_DETECTION,         "window_detection"),
+                (self.ATTR_VALVE_DETECTION,          "valve_detection"),
+                (self.ATTR_VALVE_ALARM,              "valve_alarm"),
+                (self.ATTR_CHILD_LOCK,               "child_lock"),
+                (self.ATTR_AWAY_PRESET_TEMPERATURE,  "away_preset_temperature"),
+                (self.ATTR_WINDOW_OPEN,              "window_open"),
+                (self.ATTR_CALIBRATED,               "calibrated"),
+                (self.ATTR_SENSOR_TYPE,              "sensor_type"),
+                (self.ATTR_EXTERNAL_TEMP,            "external_temperature"),
+                (self.ATTR_BATTERY_PCT,              "battery_pct"),
             ]
-
             for attr_id, attr_name in attrs_to_check:
                 try:
                     result = await self.cluster.read_attributes(
@@ -1022,7 +1190,6 @@ class AqaraManufacturerCluster(ClusterHandler):
                     logger.info(f"[{self.device.ieee}] Attr 0x{attr_id:04X} ({attr_name}): {result}")
                 except Exception as e:
                     logger.warning(f"[{self.device.ieee}] Attr 0x{attr_id:04X} ({attr_name}) not supported: {e}")
-
         except Exception as e:
             logger.error(f"[{self.device.ieee}] Discovery failed: {e}")
 
