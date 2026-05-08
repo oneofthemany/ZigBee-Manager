@@ -141,25 +141,16 @@ build_progress_filter() {
     printf "\n" >&2
 }
 
-BUILD_JOBS=$(detect_build_jobs)
-info "Detected ${BUILD_JOBS} build jobs for parallel compile"
-
 # ── Defaults ─────────────────────────────────────────────────────────────────
 REPO_URL="https://github.com/oneofthemany/ZigBee-Matter-Manager.git"
 REPO_BRANCH="main"
-# APP_DIR is the runtime location for the app — single source of truth for
-# build.sh, scripts/, and all data. The initial-install clone arrives at
-# /opt/zigbee-matter-manager/ as a transient working dir; build.sh copies
-# itself + scripts/ into APP_DIR which becomes the only location used at runtime.
-APP_DIR="${ZMM_APP_DIR:-/opt/.zigbee-matter-manager}"
-# CLONE_DIR is where the curl|bash installer puts the git clone. build.sh's
-# Step 10 copies needed files OUT of CLONE_DIR and INTO APP_DIR.
-CLONE_DIR="${ZMM_CLONE_DIR:-/opt/zigbee-matter-manager}"
+DATA_DIR="${ZMM_DATA_DIR:-/opt/.zigbee-matter-manager}"
+APP_DIR="${ZMM_APP_DIR:-${DATA_DIR}/upgrade_build}"
+CLONE_DIR="${ZMM_CLONE_DIR:-${APP_DIR}}"
 IMAGE_NAME="zigbee-matter-manager"
 CONTAINER_NAME="zigbee-matter-manager"
 INTERNAL_PORT=8000
 MATTER_INTERNAL_PORT=5580
-DATA_DIR="${ZMM_DATA_DIR:-/opt/.zigbee-matter-manager}"
 
 # =============================================================================
 # PRE-FLIGHT: dialout group membership
@@ -286,18 +277,28 @@ check_deps() {
 # CLONE / UPDATE REPO
 # =============================================================================
 fetch_repo() {
-    # Clone or update the source clone at CLONE_DIR. This is the working
-    # directory for the build — it's where the Containerfile, Python source,
-    # and scripts/ are read from. APP_DIR (the runtime location) gets
-    # populated from CLONE_DIR in Step 10.
+    # We deliberately do NOT run 'git pull' here. Pulling would either:
+    #   - overwrite a deliberately-checked-out tag with main (wrong for upgrades), or
+    #   - abort with "local changes would be overwritten" if anything in the
+    #     tree was modified at runtime (which is exactly the swap-failure
+    #     symptom we are fixing).
+    #
+    # If the operator wants to refresh from origin/main, they should:
+    #   sudo rm -rf "$CLONE_DIR" && curl -fsSL <installer-url> | sudo bash
+    # or use the upgrade flow with target_version=<commit-or-tag>.
     if [[ -d "$CLONE_DIR/.git" ]]; then
-        info "Repository exists at ${CLONE_DIR} — pulling latest ${REPO_BRANCH}..."
-        git -C "$CLONE_DIR" fetch origin
-        git -C "$CLONE_DIR" checkout "$REPO_BRANCH"
-        git -C "$CLONE_DIR" pull --ff-only origin "$REPO_BRANCH"
-        ok "Repository updated."
+        local current_ref
+        current_ref=$(git -C "$CLONE_DIR" describe --tags --always --dirty 2>/dev/null || echo "unknown")
+        ok "Repository already present at ${CLONE_DIR} (ref: ${current_ref}) — skipping fetch."
+    elif [[ -d "$CLONE_DIR" ]] && [[ -n "$(ls -A "$CLONE_DIR" 2>/dev/null || true)" ]]; then
+        # Directory exists with content but no .git — could be a tarball
+        # extraction or a botched previous install. Leave it alone and let
+        # later steps (write_containerfile, build_image) decide whether the
+        # contents are usable.
+        warn "${CLONE_DIR} exists but is not a git checkout — proceeding with whatever is there."
     else
         info "Cloning ${REPO_URL} → ${CLONE_DIR} ..."
+        mkdir -p "$(dirname "$CLONE_DIR")"
         git clone --branch "$REPO_BRANCH" "$REPO_URL" "$CLONE_DIR"
         ok "Repository cloned."
     fi
@@ -864,7 +865,7 @@ echo "   6. Prepare data directories"
 echo "   7. OTBR D-Bus policy"
 echo "   8. Start container"
 echo "   9. Install systemd auto-start unit"
-echo "  10. Populate ${APP_DIR} and install upgrade watcher"
+echo "  10. Confirm app code location and install upgrade watcher"
 echo
 
 step_announce "Pre-flight checks"
@@ -914,23 +915,43 @@ else
     info "Skipped (--no-autostart)"
 fi
 
-step_announce "Populate ${APP_DIR} from ${CLONE_DIR}"
-# build.sh, scripts/upgrade.sh, scripts/run_container.sh, scripts/install_watcher.sh
-# all live in APP_DIR after this. The transient CLONE_DIR is only used by the
-# initial install — runtime never reads from it.
-mkdir -p "${APP_DIR}/scripts" "${DATA_DIR}/data/upgrade"
+step_announce "Confirm app code location"
+# In the new single-source-dir layout CLONE_DIR == APP_DIR, so there is no
+# copy step. Verify the canonical files are present and executable, then
+# carry on. The 'Populate APP_DIR' phase used to live here; it's retained
+# as a sanity check so the step count stays at 10.
+mkdir -p "${APP_DIR}/scripts" "${DATA_DIR}/data/upgrade" "${DATA_DIR}/data/state"
 
-# Copy build.sh itself
-if [[ -f "${CLONE_DIR}/build.sh" ]]; then
-    cp "${CLONE_DIR}/build.sh" "${APP_DIR}/build.sh"
-    chmod +x "${APP_DIR}/build.sh"
+if [[ -f "${APP_DIR}/build.sh" ]]; then
+    chmod +x "${APP_DIR}/build.sh" 2>/dev/null || true
+    ok "build.sh present at ${APP_DIR}/build.sh"
+else
+    warn "build.sh missing at ${APP_DIR}/build.sh — upgrade flow may break"
 fi
 
-# Copy scripts (chmod +x is critical — without it, systemd fails with
-# status=203/EXEC "Permission denied")
-if [[ -d "${CLONE_DIR}/scripts" ]]; then
-    cp "${CLONE_DIR}/scripts/"*.sh "${APP_DIR}/scripts/" 2>/dev/null || true
+if compgen -G "${APP_DIR}/scripts/*.sh" >/dev/null 2>&1; then
     chmod +x "${APP_DIR}/scripts/"*.sh 2>/dev/null || true
+    ok "Helper scripts present at ${APP_DIR}/scripts/"
+else
+    warn "No helper scripts found in ${APP_DIR}/scripts/"
+    warn "Upgrade flow will not work until install_watcher.sh repopulates them."
+fi
+
+# ── Persist appender choice for upgrades ─────────────────────────────────────
+# The user passed --with-appender (or didn't) at install time. Record that
+# decision in DATA_DIR/data/state/ so upgrade.sh's do_build can read it back
+# when it re-runs write_containerfile against the new tag — without needing
+# the operator to remember and re-pass the flag.
+#
+# DATA_DIR survives APP_DIR wipes during upgrades; APP_DIR does not. So this
+# is the right place for the marker.
+APPENDER_MARKER="${DATA_DIR}/data/state/appender.enabled"
+if [[ "$WITH_APPENDER" == true ]]; then
+    echo "true"  > "$APPENDER_MARKER"
+    ok "Appender marker written: ${APPENDER_MARKER} = true"
+else
+    echo "false" > "$APPENDER_MARKER"
+    ok "Appender marker written: ${APPENDER_MARKER} = false"
 fi
 
 step_announce "Install upgrade watcher"

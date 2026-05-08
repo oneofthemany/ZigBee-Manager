@@ -22,7 +22,7 @@ warn()  { echo -e "${YELLOW}${BOLD}[WARN]${NC} $*"; }
 err()   { echo -e "${RED}${BOLD}[ERR ]${NC} $*" >&2; }
 
 DATA_DIR="${ZMM_DATA_DIR:-/opt/.zigbee-matter-manager}"
-APP_DIR="${ZMM_APP_DIR:-/opt/zigbee-matter-manager}"
+APP_DIR="${ZMM_APP_DIR:-/opt/.zigbee-matter-manager/upgrade_build}"
 
 # IMPORTANT: scripts must live in a location systemd's init_t domain can
 # execute under SELinux. /root/ and ~/ are labelled admin_home_t/user_home_t
@@ -246,7 +246,7 @@ install_polling() {
 # Polling watcher — runs upgrade.sh every N seconds if a trigger exists.
 set -u
 DATA_DIR="${ZMM_DATA_DIR:-/opt/.zigbee-matter-manager}"
-APP_DIR="${ZMM_APP_DIR:-/opt/zigbee-matter-manager}"
+APP_DIR="${ZMM_APP_DIR:-/opt/.zigbee-matter-manager/upgrade_build}"
 UPGRADE_SH="${DATA_DIR}/scripts/upgrade.sh"
 TRIGGER="${DATA_DIR}/data/upgrade/trigger"
 INTERVAL=5

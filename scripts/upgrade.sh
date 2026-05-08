@@ -19,7 +19,7 @@ set -o pipefail
 
 # ── CONFIG ───────────────────────────────────────────────────────────────────
 DATA_DIR="${ZMM_DATA_DIR:-/opt/.zigbee-matter-manager}"
-APP_DIR="${ZMM_APP_DIR:-/opt/zigbee-matter-manager}"
+APP_DIR="${ZMM_APP_DIR:-/opt/.zigbee-matter-manager/upgrade_build}"
 IMAGE_NAME="${ZMM_IMAGE_NAME:-zigbee-matter-manager}"
 CONTAINER_NAME="${ZMM_CONTAINER_NAME:-zigbee-matter-manager}"
 REPO_URL="${ZMM_REPO_URL:-https://github.com/oneofthemany/ZigBee-Matter-Manager.git}"
@@ -289,7 +289,9 @@ is_app_healthy() {
 find_run_helper() {
     for candidate in \
         "${APP_DIR}/scripts/run_container.sh" \
-        "${DATA_DIR}/scripts/run_container.sh"; do
+        "${DATA_DIR}/upgrade_build/scripts/run_container.sh" \
+        "${DATA_DIR}/scripts/run_container.sh" \
+        "/opt/zigbee-matter-manager/scripts/run_container.sh"; do
         if [[ -n "$candidate" && -f "$candidate" ]]; then
             echo "$candidate"
             return 0
@@ -444,9 +446,34 @@ do_build() {
 
     write_status "building" "$target_version" 5 "Preparing" "" "$started_at"
 
-    # Clone target tag to a temp dir
-    local work_dir
-    work_dir="${DATA_DIR}/upgrade_build"
+    # ── Sanity check: is APP_DIR in the expected state? ──────────────────────
+    # Before wiping APP_DIR, log what's there so the build log shows whether
+    # we found a sane prior install. This is informational only — we always
+    # proceed with the wipe-and-reclone because the new clone is authoritative,
+    # but if APP_DIR was in an unexpected state it goes in the log.
+    if [[ -d "$APP_DIR" ]]; then
+        local existing_version="(no VERSION file)"
+        [[ -f "$APP_DIR/VERSION" ]] && existing_version=$(tr -d '[:space:]' < "$APP_DIR/VERSION")
+        log_to_build "APP_DIR exists at $APP_DIR (VERSION=${existing_version}) — will be wiped and re-cloned"
+
+        # Cross-check against the running container's reported version. A
+        # mismatch means APP_DIR drifted from the image at some point — not
+        # fatal, but worth recording.
+        local running_version
+        running_version=$("$RUNTIME" exec "$CONTAINER_NAME" cat /app/VERSION 2>/dev/null | tr -d '[:space:]' || echo "")
+        if [[ -n "$running_version" && "$existing_version" != "$running_version" && "$existing_version" != "(no VERSION file)" ]]; then
+            log_to_build "WARN: APP_DIR VERSION (${existing_version}) does not match running container VERSION (${running_version})"
+        fi
+    else
+        log_to_build "APP_DIR does not exist at $APP_DIR — fresh clone"
+    fi
+
+    # APP_DIR is the canonical app-code location and also the build workspace.
+    # Wiping and re-cloning here means the post-build state of APP_DIR exactly
+    # matches the image we're about to ship — including scripts/run_container.sh,
+    # which do_swap will invoke from this path. No drift between the helper
+    # script and the image possible.
+    local work_dir="$APP_DIR"
     rm -rf "$work_dir"
     mkdir -p "$work_dir"
 
@@ -468,24 +495,42 @@ do_build() {
     # Stamp VERSION file into the clone so the image knows its own version
     echo "$target_version" > "$work_dir/VERSION"
 
-    # Ensure Containerfile exists — if the tag pre-dates migration, use a fallback.
-    # In your repo the Containerfile is written by build.sh at deploy time; for
-    # upgrade, we reuse the current local Containerfile if present, otherwise
-    # try to regenerate via build.sh's write_containerfile.
+    # ── Appender choice: read the persisted marker from previous install ─────
+    # build.sh writes ${DATA_DIR}/data/state/appender.enabled at install time
+    # (containing 'true' or 'false') to record whether the user passed
+    # --with-appender. We read it here and propagate the choice to the new
+    # tag's write_containerfile via the WITH_APPENDER variable. If the marker
+    # is missing (e.g. install pre-dates this mechanism) we default to false,
+    # which is build.sh's default and matches the small/home-network use case.
+    local appender_marker="${DATA_DIR}/data/state/appender.enabled"
+    local with_appender="false"
+    if [[ -f "$appender_marker" ]]; then
+        with_appender=$(tr -d '[:space:]' < "$appender_marker")
+        # Coerce anything other than 'true' to 'false' to keep it strict.
+        [[ "$with_appender" == "true" ]] || with_appender="false"
+        log_to_build "Appender marker found: ${appender_marker} = ${with_appender}"
+    else
+        log_to_build "Appender marker missing — defaulting WITH_APPENDER=false (matches build.sh default)"
+    fi
+
+    # Containerfile generation. With the new layout work_dir IS APP_DIR, so
+    # we can't copy "an existing Containerfile from APP_DIR" — they're the
+    # same path. The cloned tag's build.sh has write_containerfile() which
+    # produces the Containerfile expected by that version.
     if [[ ! -f "$work_dir/Containerfile" ]]; then
-        if [[ -f "$APP_DIR/Containerfile" ]]; then
-            log_to_build "Reusing existing Containerfile from $APP_DIR"
-            cp "$APP_DIR/Containerfile" "$work_dir/Containerfile"
-        elif [[ -f "$work_dir/build.sh" ]]; then
-            log_to_build "Generating Containerfile by invoking target tag's build.sh in write-only mode"
-            # Source build.sh's write_containerfile with APP_DIR=work_dir.
-            # This is fragile; we isolate it by running in a subshell with set +e.
+        if [[ -f "$work_dir/build.sh" ]]; then
+            log_to_build "Generating Containerfile via target tag's build.sh write_containerfile() (WITH_APPENDER=${with_appender})"
             (
                 set +u
-                APP_DIR="$work_dir"
                 # shellcheck disable=SC1090
-                source "$work_dir/build.sh" --help >/dev/null 2>&1 || true
-                type write_containerfile >/dev/null 2>&1 && write_containerfile
+                source "$work_dir/build.sh" >/dev/null 2>&1 || true
+                if type write_containerfile >/dev/null 2>&1; then
+                    # write_containerfile reads CLONE_DIR for the output path
+                    # and WITH_APPENDER for the appender stanza toggle.
+                    CLONE_DIR="$work_dir" APP_DIR="$work_dir" \
+                    WITH_APPENDER="$with_appender" \
+                        write_containerfile
+                fi
             ) >>"$BUILD_LOG" 2>&1 || true
         fi
     fi
