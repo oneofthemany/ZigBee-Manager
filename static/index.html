@@ -1167,8 +1167,8 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
-                <div class="row mb-3">
-                    <div class="col-md-3">
+                <div class="row mb-3 g-2">
+                    <div class="col-md-2">
                         <select id="packetImportanceFilter" class="form-select form-select-sm">
                             <option value="">All Importance</option>
                             <option value="critical">Critical</option>
@@ -1177,11 +1177,29 @@
                             <option value="normal">Normal</option>
                         </select>
                     </div>
-                    <div class="col-md-3">
-                        <input type="text" id="packetIeeeFilter" class="form-control form-control-sm" placeholder="Filter by IEEE...">
+                    <div class="col-md-2">
+                        <select id="packetDirectionFilter" class="form-select form-select-sm">
+                            <option value="">All Directions</option>
+                            <option value="RX">RX (inbound)</option>
+                            <option value="TX">TX (outbound)</option>
+                        </select>
                     </div>
-                    <div class="col-md-3">
-                        <input type="text" id="packetClusterFilter" class="form-control form-control-sm" placeholder="Cluster ID (e.g. 0x0406)">                    </div>
+                    <div class="col-md-2">
+                        <select id="packetIeeeFilter" class="form-select form-select-sm">
+                            <option value="">All Devices</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <input type="text" id="packetClusterFilter" class="form-control form-control-sm" placeholder="Cluster ID (e.g. 0x0406)">
+                    </div>
+                    <div class="col-md-1">
+                        <select id="packetLimitFilter" class="form-select form-select-sm" title="Max packets to fetch (ring buffer holds last 1000)">
+                            <option value="100">100</option>
+                            <option value="250">250</option>
+                            <option value="500">500</option>
+                            <option value="1000">1000</option>
+                        </select>
+                    </div>
                     <div class="col-md-3">
                         <div class="btn-group w-100">
                             <button class="btn btn-sm btn-primary" onclick="refreshDebugPackets()">

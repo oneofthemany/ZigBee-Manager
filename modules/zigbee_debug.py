@@ -371,6 +371,79 @@ class ZigbeeDebugger:
 
         return decoded
 
+    # Xiaomi/Aqara structured attribute mapping (subset of XIAOMI_ATTR_MAP
+    # from handlers/aqara.py — duplicated here to avoid a circular import).
+    _XIAOMI_SUB_ATTRS = {
+        0x01: ("battery_voltage_mV",  None),
+        0x03: ("device_temperature",  None),
+        0x04: ("xiaomi_attr_04",      None),
+        0x05: ("rssi_db",             None),
+        0x06: ("xiaomi_attr_06",      None),
+        0x07: ("xiaomi_attr_07",      None),
+        0x08: ("lqi",                 None),
+        0x09: ("cpu_temp",            None),
+        0x0A: ("parent_nwk",          lambda v: f"0x{v:04X}"),
+        0x0B: ("lighting",            None),
+        0x64: ("state",               None),
+        0x65: ("state_2",             None),
+        0x66: ("state_3",             None),
+        0x6E: ("state_ep3",           None),
+    }
+
+    # (cluster, attr) pairs that hold Xiaomi-style structured TLV.
+    _XIAOMI_STRUCT_ATTRS = {
+        (0x0000, 0xFF01),
+        (0x0000, 0xFF02),
+        (0xFCC0, 0x00DC),
+        (0xFCC0, 0x00DF),
+        (0xFCC0, 0x00E5),
+        (0xFCC0, 0x00F7),
+    }
+
+    @staticmethod
+    def _parse_xiaomi_struct(blob: bytes) -> Dict[int, Any]:
+        """Parse a Xiaomi/Aqara structured TLV blob: id(1) | type(1) | value(N)."""
+        out: Dict[int, Any] = {}
+        pos = 0
+        while pos + 2 <= len(blob):
+            sid, dt = blob[pos], blob[pos + 1]
+            pos += 2
+            try:
+                if dt == 0x10:    # bool
+                    out[sid] = bool(blob[pos]); pos += 1
+                elif dt == 0x20:  # u8
+                    out[sid] = blob[pos]; pos += 1
+                elif dt == 0x21:  # u16
+                    out[sid] = int.from_bytes(blob[pos:pos+2], 'little'); pos += 2
+                elif dt == 0x22:  # u24
+                    out[sid] = int.from_bytes(blob[pos:pos+3], 'little'); pos += 3
+                elif dt == 0x23:  # u32
+                    out[sid] = int.from_bytes(blob[pos:pos+4], 'little'); pos += 4
+                elif dt == 0x24:  # u40
+                    out[sid] = int.from_bytes(blob[pos:pos+5], 'little'); pos += 5
+                elif dt == 0x25:  # u48
+                    out[sid] = int.from_bytes(blob[pos:pos+6], 'little'); pos += 6
+                elif dt == 0x28:  # i8
+                    out[sid] = int.from_bytes(blob[pos:pos+1], 'little', signed=True); pos += 1
+                elif dt == 0x29:  # i16
+                    out[sid] = int.from_bytes(blob[pos:pos+2], 'little', signed=True); pos += 2
+                elif dt == 0x2B:  # i32
+                    out[sid] = int.from_bytes(blob[pos:pos+4], 'little', signed=True); pos += 4
+                elif dt == 0x39:  # float32
+                    import struct as _s
+                    out[sid] = _s.unpack('<f', blob[pos:pos+4])[0]; pos += 4
+                elif dt in (0x41, 0x42):  # octet/char string
+                    ln = blob[pos]; pos += 1
+                    chunk = blob[pos:pos+ln]
+                    out[sid] = chunk.hex() if dt == 0x41 else chunk.decode('utf-8', errors='replace')
+                    pos += ln
+                else:
+                    # Unknown type — bail out, leave the rest unparsed.
+                    break
+            except Exception:
+                break
+        return out
+
     def _decode_attribute_report(self, cluster: int, data: bytes) -> List[Dict]:
         """Decode attribute report payload."""
         attributes = []
@@ -395,14 +468,45 @@ class ZigbeeDebugger:
 
                 # Decode value based on type
                 value, consumed = self._decode_zcl_value(data_type, data[offset:])
+                # The string-type branch (8a) returns hex when the payload
+                # isn't printable ASCII. For Xiaomi structured attrs we now
+                # have a hex string in `value`; parse it into named sub-attrs.
+                xiaomi_parsed: Optional[Dict[str, Any]] = None
+                if (cluster, attr_id) in self._XIAOMI_STRUCT_ATTRS and data_type in (0x41, 0x42):
+                    try:
+                        # `value` is hex if non-ASCII (the common case here);
+                        # if some firmware emits a printable subset we'd get a
+                        # str back and bytes.fromhex would fail — fall back to
+                        # re-reading the raw slice from `data`.
+                        try:
+                            blob = bytes.fromhex(value)
+                        except Exception:
+                            # Re-extract the raw bytes from the source slice
+                            length_byte = data[offset]
+                            blob = bytes(data[offset + 1:offset + 1 + length_byte])
+
+                        parsed_map = self._parse_xiaomi_struct(blob)
+                        named: Dict[str, Any] = {}
+                        for sid, sval in parsed_map.items():
+                            label, fmt = self._XIAOMI_SUB_ATTRS.get(
+                                sid, (f"sub_0x{sid:02X}", None)
+                            )
+                            named[label] = fmt(sval) if (fmt and isinstance(sval, int)) else sval
+                        xiaomi_parsed = named
+                    except Exception as e:
+                        xiaomi_parsed = {"parse_error": str(e)}
+
                 offset += consumed
 
-                attributes.append({
+                entry = {
                     "id": f"0x{attr_id:04X}",
                     "name": attr_name,
                     "type": f"0x{data_type:02X}",
                     "value": value,
-                })
+                }
+                if xiaomi_parsed is not None:
+                    entry["xiaomi_parsed"] = xiaomi_parsed
+                attributes.append(entry)
 
         except Exception as e:
             attributes.append({"decode_error": str(e)})
@@ -450,10 +554,21 @@ class ZigbeeDebugger:
         if data_type == 0x30:
             return data[0], 1
 
-        # String
-        if data_type == 0x42:
+        # Octet string (0x41) and Character string (0x42)
+        if data_type in (0x41, 0x42):
+            if not data:
+                return "", 1
             length = data[0]
-            return data[1:1+length].decode('utf-8', errors='ignore'), 1 + length
+            payload = bytes(data[1:1 + length])
+            consumed = 1 + length
+            # Only return as text when every byte is printable ASCII (0x20–0x7E)
+            # plus tab/CR/LF — otherwise return hex.
+            try:
+                if all(b in (0x09, 0x0A, 0x0D) or 0x20 <= b <= 0x7E for b in payload):
+                    return payload.decode('ascii'), consumed
+            except Exception:
+                pass
+            return payload.hex(), consumed
 
         # Default: return hex
         return data[:4].hex(), min(4, len(data))
@@ -614,7 +729,8 @@ class ZigbeeDebugger:
             limit: int = 100,
             ieee_filter: str = None,
             cluster_filter: int = None,
-            importance: str = None
+            importance: str = None,
+            direction_filter: str = None
     ) -> List[Dict]:
         """Get captured packets with optional filtering.
 
@@ -623,6 +739,7 @@ class ZigbeeDebugger:
             ieee_filter: Partial or full IEEE address (case-insensitive, supports partial matches)
             cluster_filter: Cluster ID to filter by
             importance: Filter by importance level ('critical', 'high')
+            direction_filter: 'RX' or 'TX' (case-insensitive)
         """
         packets = list(self.packets)
 
@@ -643,10 +760,84 @@ class ZigbeeDebugger:
             important_clusters = [0x0500, 0x0406]
             packets = [p for p in packets if p.cluster in important_clusters]
 
+        # Direction Filter: 'RX' or 'TX' (case-insensitive)
+        if direction_filter:
+            d = direction_filter.upper()
+            if d in ("RX", "TX"):
+                packets = [p for p in packets if p.direction == d]
+
         # Return most recent first (reverse chronological)
         packets = packets[-limit:][::-1]
 
         return [p.to_dict() for p in packets]
+
+    def capture_tx_command(
+            self,
+            ieee: str,
+            command: str,
+            value: Any = None,
+            endpoint_id: Optional[int] = None,
+            cluster: Optional[int] = None,
+    ) -> Optional[ZigbeePacket]:
+        """
+        Record a synthetic TX packet for an outbound command.
+
+        Cluster is often unknown at the call site (Device.send_command runs
+        before the handler dispatch resolves the cluster); pass None and
+        we record a sentinel cluster (0xFFFE) with cluster_name='TX Command'.
+        Always-on flow accounting is the caller's responsibility (already
+        done in Device.send_command via packet_flow.record).
+        """
+        if not self.enabled:
+            return None
+        if self.filter_ieee and ieee != self.filter_ieee:
+            return None
+        if self.filter_cluster is not None and cluster != self.filter_cluster:
+            return None
+
+        cid = cluster if cluster is not None else 0xFFFE  # reserved sentinel
+        if cluster is None:
+            cluster_name = "TX Command"
+        else:
+            cluster_name = CLUSTER_NAMES.get(cid, f"0x{cid:04X}")
+
+        packet = ZigbeePacket(
+            timestamp=time.time(),
+            timestamp_str=datetime.now().strftime("%H:%M:%S.%f")[:-3],
+            ieee=str(ieee),
+            nwk="-",
+            profile=0x0104,
+            profile_name="HA",
+            cluster=cid,
+            cluster_name=cluster_name,
+            src_ep=0,
+            dst_ep=endpoint_id or 0,
+            direction="TX",
+            raw_data="",
+            decoded={
+                "command_name": command,
+                "value": value if (value is None or isinstance(value, (str, int, float, bool))) else str(value),
+                "endpoint_id": endpoint_id,
+            },
+        )
+
+        self.packets.append(packet)
+        self.stats["total_packets"] += 1
+        self.stats["packets_by_device"][ieee] = \
+            self.stats["packets_by_device"].get(ieee, 0) + 1
+
+        # Notify streaming callbacks so live table picks up the row
+        packet_dict = packet.to_dict()
+        for cb in self._callbacks:
+            try:
+                if asyncio.iscoroutinefunction(cb):
+                    asyncio.create_task(cb(packet_dict))
+                else:
+                    cb(packet_dict)
+            except Exception as e:
+                logger.error(f"Callback error: {e}")
+
+        return packet
 
     def get_motion_events(self, limit: int = 50) -> List[Dict]:
         """Get recent motion detection events from packets."""

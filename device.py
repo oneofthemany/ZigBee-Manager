@@ -1002,6 +1002,21 @@ class ZigManDevice:
                 get_flow_analyzer().record(self.ieee, None, direction="TX")
             except Exception:
                 pass
+            # Synthetic TX entry into the debug ring so /api/debug/packets
+            # surfaces outbound commands and the TX direction filter has
+            # something to match on. No-op when debugger.enabled is False.
+            try:
+                from modules.zigbee_debug import get_debugger
+                _dbg = get_debugger()
+                if _dbg:
+                    _dbg.capture_tx_command(
+                        ieee=self.ieee,
+                        command=command,
+                        value=value,
+                        endpoint_id=endpoint_id,
+                    )
+            except Exception:
+                pass
             logger.info(f"[{self.ieee}] CMD: {command}={value} EP={endpoint_id}")
             command = command.lower()
 

@@ -676,6 +676,53 @@ export function analysePacket(packet) {
     const cmdId = packet.decoded?.command_id !== undefined ? packet.decoded.command_id : -1;
     const isClusterSpecific = packet.decoded?.frame_control?.cluster_specific || false;
 
+    // 1a. TX Command short-circuit
+    // -----------------------------------------------------------------------
+    // Outbound commands captured by capture_tx_command (zigbee_debug.py) are
+    // synthetic packets — they don't have a ZCL frame, so cluster_id, command_id
+    // and frame_control are all absent. The backend stamps them with cluster
+    // 0xFFFE ("TX Command") and stores the human command name in
+    // decoded.command_name. Trying to run them through the normal RX command
+    // resolution produces nonsense like "0xfffe(0xfffe)" + "Global Cmd 0x-1 ?".
+    // Detect them up-front and build a tailored analysis instead.
+    const isTxCommand = packet.direction === "TX"
+        && (packet.cluster === 0xFFFE || packet.cluster_id === 0xFFFE)
+        && packet.decoded
+        && typeof packet.decoded.command_name === "string";
+
+    if (isTxCommand) {
+        const cmdName = packet.decoded.command_name;
+        const value   = packet.decoded.value;
+        const epId    = packet.decoded.endpoint_id;
+
+        // Build a friendly summary: "external_temp = 21.12" or just the
+        // command name when there is no value (toggle, identify, etc).
+        let summary = cmdName;
+        if (value !== undefined && value !== null && value !== "") {
+            summary = `${cmdName} = ${value}`;
+        }
+        if (epId !== undefined && epId !== null) {
+            summary += ` (endpoint ${epId})`;
+        }
+
+        return {
+            timestamp:      packet.timestamp_str,
+            ieee:           packet.ieee,
+            cluster_id:     0xFFFE,
+            // Prefer the backend-supplied cluster_name ("TX Command") so the
+            // header reads sensibly instead of falling back to "0xfffe".
+            cluster_name:   packet.cluster_name || "TX Command",
+            command:        cmdName,
+            command_id:     -1,
+            summary,
+            details:           [],
+            recommendations:   [],
+            tuya_analysis:     null,
+            attribute_reports: [],
+            is_tx_command:     true,
+        };
+    }
+
     // 2. Base Analysis Object
     const analysis = {
         timestamp: packet.timestamp_str,
@@ -744,22 +791,49 @@ export function analysePacket(packet) {
 
     // --- B. ZCL Attribute Reporting (0x0A) or Read Response (0x01) ---
     else if ((cmdId === 0x0A || cmdId === 0x01) && !isClusterSpecific) {
-        const attrs = packet.decoded?.attributes || [];
-        if (attrs.length > 0) {
-            analysis.attribute_reports = attrs.map(a => interpretZclAttribute(cid, a));
+        analysis.summary = `${analysis.cluster_name} Report`;
 
-            // Build a one-line summary from the decoded attributes.
-            const parts = analysis.attribute_reports.map(r =>
-                `${r.attr_name}=${r.display_value}`
-            );
-            analysis.summary = `${analysis.cluster_name} Report: ${parts.join(', ')}`;
-        } else {
-            analysis.summary = `${analysis.cluster_name} Report (no attributes parsed)`;
-            if (COMMON_ATTRIBUTES[cid]) {
-                analysis.recommendations.push(
-                    `ℹ️ This cluster usually reports: ${Object.values(COMMON_ATTRIBUTES[cid]).join(', ')}`
-                );
+        // Surface the backend-decoded attributes so the export (and the
+        // detail panel) can render them as structured data instead of
+        // dumping the raw mangled string.
+        const rawAttrs = packet.decoded?.attributes;
+        if (Array.isArray(rawAttrs) && rawAttrs.length > 0) {
+            const known = COMMON_ATTRIBUTES[cid] || {};
+            analysis.attribute_reports = rawAttrs.map(a => {
+                const idHex = (typeof a.id === 'string')
+                    ? a.id
+                    : `0x${(a.id || 0).toString(16).padStart(4, '0').toUpperCase()}`;
+                const idNum = parseInt(idHex.replace(/^0x/i, ''), 16);
+                const typeHex = (typeof a.type === 'string')
+                    ? a.type
+                    : `0x${(a.type || 0).toString(16).padStart(2, '0').toUpperCase()}`;
+                const typeNum = parseInt(typeHex.replace(/^0x/i, ''), 16);
+
+                return {
+                    id:             idHex,
+                    attr_name:      known[idNum] || `Attribute ${idHex}`,
+                    type_hex:       typeHex,
+                    type_name:      ZCL_DATA_TYPES[typeNum] || `0x${typeNum.toString(16)}`,
+                    value:          a.value,
+                    xiaomi_parsed:  a.xiaomi_parsed || null,
+                };
+            });
+
+            // Build a richer summary when we have a Xiaomi structured payload
+            // — the user should see "battery_voltage_mV=2975, state=false" etc.,
+            // not "Basic Report".
+            const xiaomiAttr = analysis.attribute_reports.find(r => r.xiaomi_parsed);
+            if (xiaomiAttr) {
+                const parts = Object.entries(xiaomiAttr.xiaomi_parsed)
+                    .map(([k, v]) => `${k}=${v}`);
+                if (parts.length) {
+                    analysis.summary = `${analysis.cluster_name}: ${parts.join(', ')}`;
+                }
             }
+        }
+
+        if (COMMON_ATTRIBUTES[cid]) {
+             analysis.recommendations.push(`ℹ️ This cluster usually reports: ${Object.values(COMMON_ATTRIBUTES[cid]).join(', ')}`);
         }
     }
 
@@ -802,15 +876,27 @@ export function renderPacketAnalysis(packet) {
         ? `0x${analysis.command_id.toString(16).padStart(2, '0')}`
         : '?';
 
+    // For synthetic TX-command packets the cluster id (0xFFFE) and command id (-1)
+    // are sentinels, not real on-the-wire values — printing them as "(0xfffe)"
+    // and "?" alongside the human-readable name is confusing, so omit them.
+    const showCidHex = !analysis.is_tx_command;
+    const showCmdHex = !analysis.is_tx_command;
+
     let html = '<div class="packet-analysis border-start border-3 border-primary ps-3">';
 
     // Header
     html += `<div class="d-flex justify-content-between align-items-start mb-2 flex-wrap gap-1">`;
     html += `<div>`;
     html += `<strong>${escapeHtml(analysis.cluster_name)}</strong>`;
-    html += `<span class="text-muted ms-2 small">(0x${cidHex})</span>`;
+    if (showCidHex) {
+        html += `<span class="text-muted ms-2 small">(0x${cidHex})</span>`;
+    }
     html += `</div>`;
-    html += `<span class="badge bg-secondary">${escapeHtml(analysis.command)} <span class="text-white-50 ms-1">${cmdHex}</span></span>`;
+    if (showCmdHex) {
+        html += `<span class="badge bg-secondary">${escapeHtml(analysis.command)} <span class="text-white-50 ms-1">${cmdHex}</span></span>`;
+    } else {
+        html += `<span class="badge bg-secondary">${escapeHtml(analysis.command)}</span>`;
+    }
     html += `</div>`;
 
     // Summary
@@ -919,6 +1005,36 @@ export function renderPacketAnalysis(packet) {
         html += `</div>`;
     }
 
+
+    // Attribute Reports (ZCL 0x0A / 0x01) — including parsed Xiaomi sub-attrs
+    if (Array.isArray(analysis.attribute_reports) && analysis.attribute_reports.length > 0) {
+        html += `<div class="attribute-reports bg-dark p-2 rounded mb-2">`;
+        html += `<div class="small text-warning mb-2"><i class="fas fa-list"></i> Attribute Reports</div>`;
+        analysis.attribute_reports.forEach(ar => {
+            html += `<div class="border-start border-info ps-2 mb-2">`;
+            html += `<div class="d-flex justify-content-between align-items-start">`;
+            html += `<strong class="text-info">${escapeHtml(ar.attr_name)}</strong>`;
+            html += `<span class="badge bg-secondary">${escapeHtml(ar.id)} · ${escapeHtml(ar.type_name)}</span>`;
+            html += `</div>`;
+
+            if (ar.xiaomi_parsed && typeof ar.xiaomi_parsed === 'object') {
+                html += `<div class="small mt-1 text-muted">Raw hex: <code class="text-light">${escapeHtml(String(ar.value))}</code></div>`;
+                html += `<table class="table table-sm table-borderless small mb-0 mt-1">`;
+                html += `<tbody>`;
+                Object.entries(ar.xiaomi_parsed).forEach(([k, v]) => {
+                    html += `<tr>`;
+                    html += `<td class="text-muted ps-0" style="width:40%">${escapeHtml(k)}</td>`;
+                    html += `<td class="text-light"><code class="text-success">${escapeHtml(String(v))}</code></td>`;
+                    html += `</tr>`;
+                });
+                html += `</tbody></table>`;
+            } else {
+                html += `<div class="small mt-1"><code class="text-success">${escapeHtml(String(ar.value))}</code></div>`;
+            }
+            html += `</div>`;
+        });
+        html += `</div>`;
+    }
 
     // Recommendations / Hints
     if (analysis.recommendations.length > 0) {

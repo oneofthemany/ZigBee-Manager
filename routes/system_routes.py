@@ -82,7 +82,13 @@ def register_system_routes(app: FastAPI, get_zigbee_service, get_mqtt_service, g
             return {"error": str(e)}
 
     @app.get("/api/debug/packets")
-    async def get_debug_packets(limit: int = 100, importance: str = None, ieee: str = None, cluster: int = None):
+    async def get_debug_packets(
+            limit: int = 100,
+            importance: str = None,
+            ieee: str = None,
+            cluster: int = None,
+            direction: str = None,
+    ):
         """Get captured debug packets."""
         try:
             debugger = get_debugger()
@@ -90,7 +96,8 @@ def register_system_routes(app: FastAPI, get_zigbee_service, get_mqtt_service, g
                 limit=limit,
                 ieee_filter=ieee,
                 cluster_filter=cluster,
-                importance=importance
+                importance=importance,
+                direction_filter=direction,
             )
             return {"success": True, "packets": packets, "count": len(packets)}
         except Exception as e:

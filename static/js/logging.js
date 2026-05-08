@@ -302,6 +302,7 @@ export function handleLivePacket(p) {
 
     // Apply client-side filtering for live packets to match current filter state
     const importanceFilter = document.getElementById('packetImportanceFilter')?.value || '';
+    const directionFilter  = document.getElementById('packetDirectionFilter')?.value || '';
     const ieeeFilter = document.getElementById('packetIeeeFilter')?.value?.trim().toLowerCase() || '';
     const clusterFilter = document.getElementById('packetClusterFilter')?.value?.trim() || '';
 
@@ -312,6 +313,11 @@ export function handleLivePacket(p) {
             !importantClusters.includes(p.cluster)) {
             return; // Skip this packet
         }
+    }
+
+    // Direction filter
+    if (directionFilter && p.direction !== directionFilter) {
+        return;
     }
 
     // Check IEEE filter (partial match, case-insensitive)
@@ -336,23 +342,33 @@ export function handleLivePacket(p) {
     const devName = device.friendly_name || p.friendly_name || device.name || 'Unknown';
     const devModel = device.model || device.model_id || '-';
     const isMatter = p.protocol === 'matter';
+    const isTx = p.direction === 'TX';
 
     // Protocol badge
     const protoBadge = isMatter
         ? '<span class="badge bg-info me-1" style="font-size:9px">Matter</span>'
         : '<span class="badge bg-success me-1" style="font-size:9px">Zigbee</span>';
 
-    // Direction badge for Matter TX packets
-    const dirBadge = p.direction === 'TX'
+    // Direction badge — shown for both Zigbee and Matter, RX and TX
+    const dirBadge = isTx
         ? '<span class="badge bg-warning me-1" style="font-size:9px">TX</span>'
-        : '';
+        : '<span class="badge bg-secondary me-1" style="font-size:9px">RX</span>';
 
     // Generate a unique ID for this packet row
     const rowId = `live-packet-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
 
     let analysis;
     try {
-        if (isMatter) {
+        if (isTx && !isMatter) {
+            // Synthetic TX command entry — analysePacket would mis-label this
+            // as 'Basic / Unknown' because cluster is a sentinel.
+            analysis = {
+                cluster_name: p.cluster_name || 'TX Command',
+                command: p.decoded?.command_name || 'Unknown',
+                summary: (p.decoded?.value !== undefined && p.decoded?.value !== null)
+                    ? `value=${p.decoded.value}` : ''
+            };
+        } else if (isMatter) {
             // Matter packets use a simplified analysis
             analysis = {
                 cluster_name: p.cluster_name || `Cluster ${p.cluster || '?'}`,
@@ -403,14 +419,79 @@ export function handleLivePacket(p) {
     tbody.insertAdjacentHTML('afterbegin', detailsHtml); // Detail row first (so it ends up below summary when prepending)
     tbody.insertAdjacentHTML('afterbegin', summaryHtml); // Summary row on top
 
-    if (tbody.rows.length > 200) {
+    // Cap live rows to 2× the user-chosen limit (each packet = summary + detail row).
+    // Fallback to 200 if the selector isn't present.
+    const limitVal = parseInt(document.getElementById('packetLimitFilter')?.value || '100', 10);
+    const maxRows = (isNaN(limitVal) ? 100 : limitVal) * 2;
+    while (tbody.rows.length > maxRows) {
         tbody.lastElementChild.remove();
         tbody.lastElementChild.remove();
     }
 }
 
+/**
+ * Populate the IEEE filter dropdown from state.devices.
+ * Each option's value is the full lower-case IEEE; the visible label is the
+ * device's friendly_name plus the last 4 hex chars of the IEEE for
+ * disambiguation when names collide.
+ *
+ * Preserves the currently-selected IEEE across re-populations so that, for
+ * example, a `device_list` WS update arriving while the modal is open does
+ * not silently drop the user's filter selection.
+ */
+export function populateIeeeFilterDropdown() {
+    const sel = document.getElementById('packetIeeeFilter');
+    if (!sel) return;
+
+    const previousValue = sel.value || '';
+    const devices = (state.devices || []).slice();
+
+    // Sort by friendly_name (case-insensitive), falling back to IEEE
+    devices.sort((a, b) => {
+        const an = (a.friendly_name || a.ieee || '').toLowerCase();
+        const bn = (b.friendly_name || b.ieee || '').toLowerCase();
+        return an.localeCompare(bn);
+    });
+
+    // Rebuild options
+    sel.innerHTML = '<option value="">All Devices</option>';
+    for (const d of devices) {
+        if (!d.ieee) continue;
+        const ieee = String(d.ieee).toLowerCase();
+        const tail = ieee.replace(/:/g, '').slice(-4).toUpperCase();
+        const name = d.friendly_name || ieee;
+
+        const opt = document.createElement('option');
+        opt.value = ieee;
+        opt.textContent = `${name} (${tail})`;
+        sel.appendChild(opt);
+    }
+
+    // Restore previous selection if it's still in the list
+    if (previousValue) {
+        const found = Array.from(sel.options).some(o => o.value === previousValue);
+        if (found) sel.value = previousValue;
+    }
+}
+
+// Expose for callers outside the module (e.g. device_list WS handler) so the
+// dropdown can be refreshed when the device list changes while the modal is
+// already open.
+window.populateIeeeFilterDropdown = populateIeeeFilterDropdown;
+
 export async function viewDebugPackets() {
     ensureDebugStyles();
+    populateIeeeFilterDropdown();
+
+    // Wire change handler exactly once so changing the device dropdown
+    // immediately re-runs the query, matching the more-natural behaviour
+    // expected of a select control.
+    const sel = document.getElementById('packetIeeeFilter');
+    if (sel && !sel.dataset.changeWired) {
+        sel.addEventListener('change', () => { refreshDebugPackets(); });
+        sel.dataset.changeWired = '1';
+    }
+
     const modal = new bootstrap.Modal(document.getElementById('debugPacketsModal'));
     modal.show();
     // Kick off the packet-flow panel — pulls a one-shot snapshot so the
@@ -428,12 +509,15 @@ export async function refreshDebugPackets() {
 
     try {
         const importanceFilter = document.getElementById('packetImportanceFilter')?.value || '';
+        const directionFilter  = document.getElementById('packetDirectionFilter')?.value || '';
         const ieeeFilter       = document.getElementById('packetIeeeFilter')?.value?.trim() || '';
         const clusterFilter    = document.getElementById('packetClusterFilter')?.value?.trim() || '';
+        const limitValue       = document.getElementById('packetLimitFilter')?.value || '100';
 
-        const params = new URLSearchParams({ limit: '100' });
+        const params = new URLSearchParams({ limit: limitValue });
 
         if (importanceFilter) params.append('importance', importanceFilter);
+        if (directionFilter)  params.append('direction', directionFilter);
         if (ieeeFilter)       params.append('ieee', ieeeFilter);
         if (clusterFilter) {
             const clusterInt = clusterFilter.startsWith('0x')
@@ -458,12 +542,14 @@ export async function refreshDebugPackets() {
 
 export async function exportDebugPackets() {
     const importanceFilter = document.getElementById('packetImportanceFilter')?.value || '';
+    const directionFilter  = document.getElementById('packetDirectionFilter')?.value || '';
     const ieeeFilter       = document.getElementById('packetIeeeFilter')?.value?.trim() || '';
     const clusterFilter    = document.getElementById('packetClusterFilter')?.value?.trim() || '';
 
     // Build query — fetch all matching packets (high limit) respecting current filters
     const params = new URLSearchParams({ limit: '10000' });
     if (importanceFilter) params.append('importance', importanceFilter);
+    if (directionFilter)  params.append('direction', directionFilter);
     if (ieeeFilter)       params.append('ieee', ieeeFilter);
     if (clusterFilter) {
         const clusterInt = clusterFilter.startsWith('0x')
@@ -530,6 +616,7 @@ export async function exportDebugPackets() {
 
         const filterInfo = [];
         if (importanceFilter) filterInfo.push(`importance=${importanceFilter}`);
+        if (directionFilter)  filterInfo.push(`direction=${directionFilter}`);
         if (ieeeFilter)       filterInfo.push(`ieee=${ieeeFilter}`);
         if (clusterFilter)    filterInfo.push(`cluster=${clusterFilter}`);
 
@@ -545,6 +632,7 @@ export async function exportDebugPackets() {
         const parts = ['packets', ts];
         if (ieeeFilter)       parts.push(ieeeFilter.replace(/:/g, ''));
         if (clusterFilter)    parts.push(clusterFilter.replace(/^0x/i, 'c'));
+        if (directionFilter)  parts.push(directionFilter.toLowerCase());
         if (importanceFilter) parts.push(importanceFilter);
         const filename = parts.join('_') + '.json';
 
@@ -578,9 +666,19 @@ function renderDebugPacketTable() {
         const devName   = device.friendly_name || p.friendly_name || device.name || 'Unknown';
         const devModel  = device.model || device.model_id || '-';
         const isMatter  = p.protocol === 'matter';
+        const isTx      = p.direction === 'TX';
         let analysis;
         try {
-            if (isMatter) {
+            if (isTx && !isMatter) {
+                // Synthetic TX entry — bypass analysePacket which would
+                // resolve the sentinel cluster to 'Basic / Unknown'.
+                analysis = {
+                    cluster_name: p.cluster_name || 'TX Command',
+                    command:      p.decoded?.command_name || 'Unknown',
+                    summary:      (p.decoded?.value !== undefined && p.decoded?.value !== null)
+                        ? `value=${p.decoded.value}` : ''
+                };
+            } else if (isMatter) {
                 analysis = {
                     cluster_name: p.cluster_name || `Cluster ${p.cluster || '?'}`,
                     command:      p.event || p.data?.command_name || 'event',
@@ -653,7 +751,7 @@ function renderDebugPacketTable() {
                     : '<span class="badge bg-success me-1" style="font-size:9px">Zigbee</span>';
                 const dirBadge = p.direction === 'TX'
                     ? '<span class="badge bg-warning me-1" style="font-size:9px">TX</span>'
-                    : '';
+                    : '<span class="badge bg-secondary me-1" style="font-size:9px">RX</span>';
 
                 let rowClass = '';
                 if (isMatter) rowClass = 'table-primary';
@@ -767,8 +865,12 @@ export async function downloadDebugLog() {
  */
 export function clearDebugFilters() {
     document.getElementById('packetImportanceFilter').value = '';
+    const dirEl = document.getElementById('packetDirectionFilter');
+    if (dirEl) dirEl.value = '';
     document.getElementById('packetIeeeFilter').value = '';
     document.getElementById('packetClusterFilter').value = '';
+    const limitEl = document.getElementById('packetLimitFilter');
+    if (limitEl) limitEl.value = '100';
     refreshDebugPackets();
 }
 
