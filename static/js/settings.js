@@ -85,6 +85,7 @@ function renderConfigTab(config) {
     const m = config.mqtt || {};
     const w = config.web || {};
     const l = config.logging || {};
+    const o = config.ota || {};
 
     const el = document.getElementById('configFormBody');
     if (!el) return;
@@ -173,7 +174,213 @@ function renderConfigTab(config) {
         </select>
       </div>
     </div>
+
+    <!-- OTA SECTION -->
+    <h6 class="text-uppercase text-muted fw-bold mb-3 mt-2 small">
+      <i class="fas fa-cloud-arrow-down me-1"></i> OTA Firmware Providers
+    </h6>
+    <p class="text-muted small mb-2">
+      Extra firmware providers consulted by zigpy when checking for updates.
+      The built-in defaults (IKEA, LEDVANCE, Sonoff, Inovelli, etc.) are always
+      active unless explicitly disabled. The local <code>./data/ota_firmware</code>
+      directory is auto-attached at runtime — don't add it here.
+    </p>
+    <div class="row g-3 mb-3">
+      <div class="col-md-3">
+        <label class="form-label small fw-semibold">OTA Enabled</label>
+        <div class="form-check form-switch mt-1">
+          <input class="form-check-input" type="checkbox" id="cfg_ota_enabled"
+                 ${o.enabled !== false ? 'checked' : ''}>
+        </div>
+      </div>
+      <div class="col-md-9">
+        <label class="form-label small fw-semibold">Disable Default Providers</label>
+        <input type="text" class="form-control" id="cfg_ota_disable_defaults"
+               value="${(o.disable_default_providers || []).join(', ')}"
+               placeholder="comma-separated, e.g. ledvance, inovelli">
+        <div class="form-text">Names of zigpy's built-in providers to suppress. Leave blank for none.</div>
+      </div>
+    </div>
+
+    <div class="card border-secondary-subtle mb-2">
+      <div class="card-header py-2 d-flex justify-content-between align-items-center bg-light">
+        <span class="small fw-semibold">
+          <i class="fas fa-list me-1"></i> Extra Providers
+        </span>
+        <button type="button" class="btn btn-outline-primary btn-sm" onclick="addOtaProviderRow()">
+          <i class="fas fa-plus me-1"></i> Add Provider
+        </button>
+      </div>
+      <div class="card-body p-2" id="otaProvidersBody">
+        <!-- rows injected by renderOtaProviderRows() -->
+      </div>
+    </div>
+    <div class="form-text mb-4">
+      Common <code>type</code> values: <code>z2m</code> (Zigbee2MQTT remote index),
+      <code>zigpy</code> (legacy provider name), <code>advanced</code>
+      (local directory — point <code>path</code> at it), <code>salus</code>,
+      <code>thirdreality</code>, <code>sonoff</code>. Each entry is passed
+      verbatim to zigpy.
+    </div>
     `;
+
+    // Now that the OTA section markup is in the DOM, populate the rows.
+    renderOtaProviderRows(o.extra_providers || []);
+}
+
+// ============================================================================
+// OTA PROVIDER ROWS
+// ============================================================================
+
+// Known zigpy provider types. Free-text input is still allowed so future
+// types in newer zigpy versions don't require a UI release.
+const OTA_PROVIDER_TYPES = [
+    'z2m',
+    'zigpy',
+    'advanced',
+    'salus',
+    'sonoff',
+    'thirdreality',
+    'inovelli',
+    'ikea',
+    'ledvance',
+];
+
+function renderOtaProviderRows(providers) {
+    const body = document.getElementById('otaProvidersBody');
+    if (!body) return;
+    ensureOtaTypeDatalist();
+    if (!providers || providers.length === 0) {
+        body.innerHTML = `<div class="text-muted small fst-italic px-2 py-1">
+            No extra providers configured. Click "Add Provider" to add one.
+        </div>`;
+        return;
+    }
+    body.innerHTML = providers.map((p, idx) => otaProviderRowHtml(p, idx)).join('');
+}
+
+function otaProviderRowHtml(p, idx) {
+    const type = (p && p.type) || '';
+    // Known top-level fields we render with dedicated inputs
+    const known = new Set(['type', 'url', 'path']);
+    const url = (p && p.url) || '';
+    const path = (p && p.path) || '';
+    // Anything else (warning, manuf_id, etc.) goes into the JSON extras box
+    const extras = {};
+    if (p && typeof p === 'object') {
+        for (const [k, v] of Object.entries(p)) {
+            if (!known.has(k)) extras[k] = v;
+        }
+    }
+    const extrasJson = Object.keys(extras).length > 0
+        ? JSON.stringify(extras, null, 0)
+        : '';
+
+    // Type input uses a datalist (#otaProviderTypeList) for autocomplete
+    // while still allowing free text for forward-compat with new zigpy types.
+
+    return `
+    <div class="row g-2 align-items-start ota-provider-row mb-2 pb-2 border-bottom"
+         data-ota-idx="${idx}">
+      <div class="col-md-2">
+        <label class="form-label x-small mb-0 fw-semibold">Type</label>
+        <input type="text" class="form-control form-control-sm ota-prov-type"
+               list="otaProviderTypeList"
+               value="${escapeAttr(type)}"
+               placeholder="z2m">
+      </div>
+      <div class="col-md-4">
+        <label class="form-label x-small mb-0 fw-semibold">URL</label>
+        <input type="text" class="form-control form-control-sm ota-prov-url"
+               value="${escapeAttr(url)}"
+               placeholder="(optional, for index-based providers)">
+      </div>
+      <div class="col-md-3">
+        <label class="form-label x-small mb-0 fw-semibold">Path</label>
+        <input type="text" class="form-control form-control-sm ota-prov-path"
+               value="${escapeAttr(path)}"
+               placeholder="(optional, for advanced provider)">
+      </div>
+      <div class="col-md-2">
+        <label class="form-label x-small mb-0 fw-semibold">Extra (JSON)</label>
+        <input type="text" class="form-control form-control-sm font-monospace ota-prov-extras"
+               value="${escapeAttr(extrasJson)}"
+               placeholder='{"manuf_id":4476}'>
+      </div>
+      <div class="col-md-1 d-flex align-items-end">
+        <button type="button"
+                class="btn btn-outline-danger btn-sm w-100"
+                onclick="removeOtaProviderRow(${idx})"
+                title="Remove this provider">
+          <i class="fas fa-trash"></i>
+        </button>
+      </div>
+    </div>
+    `;
+}
+
+function escapeAttr(s) {
+    return String(s ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/"/g, '&quot;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+}
+
+window.addOtaProviderRow = function() {
+    const current = collectOtaProviderRows();
+    current.push({ type: '' });
+    renderOtaProviderRows(current);
+    // Datalist injected on first call
+    ensureOtaTypeDatalist();
+};
+
+window.removeOtaProviderRow = function(idx) {
+    const current = collectOtaProviderRows();
+    current.splice(idx, 1);
+    renderOtaProviderRows(current);
+};
+
+function ensureOtaTypeDatalist() {
+    if (document.getElementById('otaProviderTypeList')) return;
+    const dl = document.createElement('datalist');
+    dl.id = 'otaProviderTypeList';
+    dl.innerHTML = OTA_PROVIDER_TYPES.map(t => `<option value="${t}">`).join('');
+    document.body.appendChild(dl);
+}
+
+function collectOtaProviderRows() {
+    const rows = document.querySelectorAll('#otaProvidersBody .ota-provider-row');
+    const out = [];
+    rows.forEach(row => {
+        const type = row.querySelector('.ota-prov-type')?.value?.trim() || '';
+        const url = row.querySelector('.ota-prov-url')?.value?.trim() || '';
+        const path = row.querySelector('.ota-prov-path')?.value?.trim() || '';
+        const extrasRaw = row.querySelector('.ota-prov-extras')?.value?.trim() || '';
+
+        // Skip wholly-empty rows so a stray click on Add doesn't pollute the YAML
+        if (!type && !url && !path && !extrasRaw) return;
+
+        const entry = {};
+        if (type) entry.type = type;
+        if (url) entry.url = url;
+        if (path) entry.path = path;
+
+        if (extrasRaw) {
+            try {
+                const parsed = JSON.parse(extrasRaw);
+                if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+                    Object.assign(entry, parsed);
+                }
+            } catch (e) {
+                // Surface the parse error inline rather than silently dropping
+                console.warn('OTA provider extras JSON parse failed:', extrasRaw, e);
+                row.querySelector('.ota-prov-extras')?.classList.add('is-invalid');
+            }
+        }
+        out.push(entry);
+    });
+    return out;
 }
 
 // ============================================================================
@@ -868,6 +1075,13 @@ function collectFormValues() {
     const get = id => document.getElementById(id)?.value?.trim() ?? null;
     const getNum = id => { const v = get(id); return v !== null ? Number(v) : null; };
 
+    // Parse the comma-separated "Disable Default Providers" input
+    const disableDefaultsRaw = get('cfg_ota_disable_defaults') || '';
+    const disableDefaults = disableDefaultsRaw
+        .split(',')
+        .map(s => s.trim())
+        .filter(Boolean);
+
     return {
         zigbee: {
             port: get('cfg_port'),
@@ -898,6 +1112,11 @@ function collectFormValues() {
             longitude: parseFloat(document.getElementById('cfg_weather_lon')?.value) || null,
             poll_interval_minutes: Number(document.getElementById('cfg_weather_interval')?.value) || 30,
             mqtt_publish: document.getElementById('cfg_weather_mqtt')?.checked ?? false,
+        },
+        ota: {
+            enabled: document.getElementById('cfg_ota_enabled')?.checked ?? true,
+            extra_providers: collectOtaProviderRows(),
+            disable_default_providers: disableDefaults,
         },
     };
 }

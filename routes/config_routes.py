@@ -16,6 +16,23 @@ from modules.spectrum_monitor import get_history, get_channel_averages, get_chan
 logger = logging.getLogger("routes.config")
 
 
+def _is_auto_local_provider(p: dict) -> bool:
+    if not isinstance(p, dict):
+        return False
+    if p.get("type") != "advanced":
+        return False
+    # The auto-injected one always carries this exact warning prefix
+    warn = (p.get("warning") or "").strip()
+    return warn.startswith("I understand I can *destroy* my devices")
+
+
+def _strip_auto_providers(providers):
+    """Remove the auto-injected local 'advanced' provider from a list."""
+    if not isinstance(providers, list):
+        return []
+    return [p for p in providers if not _is_auto_local_provider(p)]
+
+
 def register_config_routes(app: FastAPI, get_zigbee_service):
     """Register configuration management routes."""
 
@@ -38,6 +55,8 @@ def register_config_routes(app: FastAPI, get_zigbee_service):
                     return "".join(f"{b:02X}" for b in v)
                 return str(v) if v else ""
 
+            ota = cfg.get("ota", {}) or {}
+
             return {
                 "success": True,
                 "config": {
@@ -56,6 +75,22 @@ def register_config_routes(app: FastAPI, get_zigbee_service):
                     "web_ssl": cfg.get("web", {}).get("ssl", {}),
                     "logging": cfg.get("logging", {}),
                     "weather": cfg.get("weather", {}),
+                    "ota": {
+                        "enabled": bool(ota.get("enabled", True)),
+                        # `providers` is the explicit override list (rarely used).
+                        # When unset, zigpy falls back to its own default set.
+                        "providers": ota.get("providers", None),
+                        # `extra_providers` is the additive list, which the UI
+                        # primarily edits. We strip the auto-injected local
+                        # advanced provider so the user only sees ones they
+                        # actually configured.
+                        "extra_providers": _strip_auto_providers(
+                            ota.get("extra_providers", [])
+                        ),
+                        "disable_default_providers": ota.get(
+                            "disable_default_providers", []
+                        ),
+                    },
                 }
             }
         except Exception as e:
@@ -111,6 +146,35 @@ def register_config_routes(app: FastAPI, get_zigbee_service):
                 if z.get("network_key_hex"):
                     h = z["network_key_hex"].replace(" ", "").replace(":", "")
                     zigbee_cfg["network_key"] = [int(h[i:i+2], 16) for i in range(0, len(h), 2)]
+
+            # ---- OTA ----
+            if "ota" in incoming:
+                o = incoming["ota"] or {}
+                ota_cfg = cfg.setdefault("ota", {})
+
+                if "enabled" in o:
+                    ota_cfg["enabled"] = bool(o["enabled"])
+
+                if "extra_providers" in o:
+                    cleaned = _strip_auto_providers(o["extra_providers"] or [])
+                    if cleaned:
+                        ota_cfg["extra_providers"] = cleaned
+                    else:
+                        # Empty list -> remove the key entirely so the YAML
+                        # stays tidy and zigpy uses pure defaults.
+                        ota_cfg.pop("extra_providers", None)
+
+                if "providers" in o:
+                    if o["providers"]:
+                        ota_cfg["providers"] = o["providers"]
+                    else:
+                        ota_cfg.pop("providers", None)
+
+                if "disable_default_providers" in o:
+                    if o["disable_default_providers"]:
+                        ota_cfg["disable_default_providers"] = o["disable_default_providers"]
+                    else:
+                        ota_cfg.pop("disable_default_providers", None)
 
             with open("./config/config.yaml", "w") as f:
                 yaml.dump(cfg, f, default_flow_style=False, sort_keys=False)
