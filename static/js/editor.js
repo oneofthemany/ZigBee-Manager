@@ -83,9 +83,23 @@ function buildEditorHTML() {
                         <i class="fas fa-search"></i>
                     </button>
                 </div>
-                <button class="btn btn-sm btn-outline-success w-100" onclick="window.editorCreateFile()" style="font-size: 11px;">
+                <button class="btn btn-sm btn-outline-success w-100 mb-1" onclick="window.editorCreateFile()" style="font-size: 11px;">
                     <i class="fas fa-plus me-1"></i> New File
                 </button>
+                <div class="d-flex gap-1">
+                    <button class="btn btn-sm btn-outline-secondary flex-grow-1"
+                            onclick="window.editorExpandAllFolders()"
+                            title="Expand all folders"
+                            style="font-size: 10px; padding: 2px 4px;">
+                        <i class="fas fa-angle-double-down me-1"></i>Expand
+                    </button>
+                    <button class="btn btn-sm btn-outline-secondary flex-grow-1"
+                            onclick="window.editorCollapseAllFolders()"
+                            title="Collapse all folders"
+                            style="font-size: 10px; padding: 2px 4px;">
+                        <i class="fas fa-angle-double-up me-1"></i>Collapse
+                    </button>
+                </div>
             </div>
             <!-- File tree -->
             <div id="editorFileTree" class="p-1" style="font-size: 12px;"></div>
@@ -405,11 +419,11 @@ function renderFileTree(tree) {
 
         const dirLabel = dir.path === '.' ? 'PROJECT ROOT' : dir.name.toUpperCase();
         return `<div class="tree-section mb-2">
-            <div class="text-uppercase px-2 py-1" style="font-size:10px;letter-spacing:1px;color:#888;cursor:pointer;"
-                 onclick="this.nextElementSibling.style.display = this.nextElementSibling.style.display === 'none' ? '' : 'none'">
-                <i class="fas fa-chevron-down fa-xs me-1"></i>${dirLabel}
+            <div class="tree-section-header text-uppercase px-2 py-1" style="font-size:10px;letter-spacing:1px;color:#888;cursor:pointer;"
+                 onclick="window.editorToggleSection(this)">
+                <i class="fas fa-chevron-down fa-xs me-1 tree-section-chevron"></i>${dirLabel}
             </div>
-            <div>${children}</div>
+            <div class="tree-section-children">${children}</div>
         </div>`;
     }).join('');
 
@@ -1089,6 +1103,45 @@ window.editorRestoreBackup = async function(backupName, targetPath) {
 // ============================================================================
 // FOLDER TOGGLE
 // ============================================================================
+
+window.editorToggleSection = function(headerEl) {
+    const section = headerEl.parentElement;
+    if (!section) return;
+    const childrenDiv = section.querySelector('.tree-section-children');
+    const chevron = headerEl.querySelector('.tree-section-chevron');
+    if (!childrenDiv) return;
+
+    const isCollapsed = childrenDiv.style.display === 'none';
+    childrenDiv.style.display = isCollapsed ? '' : 'none';
+    if (chevron) {
+        chevron.classList.remove(isCollapsed ? 'fa-chevron-right' : 'fa-chevron-down');
+        chevron.classList.add(isCollapsed ? 'fa-chevron-down' : 'fa-chevron-right');
+    }
+};
+
+window.editorExpandAllFolders = function() {
+    const container = document.getElementById('editorFileTree');
+    if (!container) return;
+    container.querySelectorAll('.tree-section-children').forEach(el => {
+        el.style.display = '';
+    });
+    container.querySelectorAll('.tree-section-chevron').forEach(ic => {
+        ic.classList.remove('fa-chevron-right');
+        ic.classList.add('fa-chevron-down');
+    });
+};
+
+window.editorCollapseAllFolders = function() {
+    const container = document.getElementById('editorFileTree');
+    if (!container) return;
+    container.querySelectorAll('.tree-section-children').forEach(el => {
+        el.style.display = 'none';
+    });
+    container.querySelectorAll('.tree-section-chevron').forEach(ic => {
+        ic.classList.remove('fa-chevron-down');
+        ic.classList.add('fa-chevron-right');
+    });
+};
 
 window.editorToggleFolder = async function(el) {
     const childrenDiv = el.nextElementSibling;
