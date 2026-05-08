@@ -52,6 +52,11 @@ web:
     cert_file: ./data/certs/cert.pem
     key_file: ./data/certs/key.pem
 
+ota:
+  enabled: false
+  extra_providers:
+    - type: # z2m as an example
+
 security:
   network:
     # IPs whose forwarded-for headers we trust. Default: 127.0.0.0/8 only.
