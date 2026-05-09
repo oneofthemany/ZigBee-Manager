@@ -142,6 +142,13 @@ class HeatingAnomalyWatcher:
         insulation = (heating.get("property") or {}).get("insulation", "partial")
         adv = self.advisor_getter()
 
+        outdoor_getter = None
+        try:
+            from modules.telemetry_db import build_outdoor_temp_getter
+            outdoor_getter = build_outdoor_temp_getter(72)
+        except Exception:
+            pass
+
         outdoor = None
         if adv and getattr(adv, "weather", None):
             try:
@@ -150,6 +157,10 @@ class HeatingAnomalyWatcher:
                 pass
         if outdoor is None:
             outdoor = 10.0
+
+        if outdoor_getter is None:
+            _const_outdoor = outdoor
+            outdoor_getter = lambda _ts: _const_outdoor
 
         new_count = 0
         seen_keys = set()

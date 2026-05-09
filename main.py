@@ -285,7 +285,11 @@ heating_controller = HeatingController(
     zigbee_service.send_command(ieee, command, value, endpoint_id=endpoint_id),
     comfort_defaults=CONFIG.get("heating", {}).get("comfort", {}),
     weather_service=weather_service,
-)
+    anomaly_getter=lambda: heating_anomaly_watcher.get_snapshot(),
+    telemetry_query=lambda ieee, attr, hours:
+    __import__("modules.telemetry_db", fromlist=["query_device_state_history"])
+    .query_device_state_history(ieee, attr, hours),
+    )
 
 
 heating_anomaly_watcher = HeatingAnomalyWatcher(

@@ -135,6 +135,11 @@ WX_SUPPRESS_OFF_C = 16.0       # engage when current outdoor ≥ this
 WX_SUPPRESS_ON_C = 14.0        # release when current outdoor <  this
 WX_FORECAST_LOOKAHEAD_H = 6    # hours of forecast to consider
 WX_FORECAST_MIN_C = 12.0       # if forecast min within window < this → never suppress
+# ── Predictive pre-heat (uses thermal_profile) ─────────────────────
+PROFILE_CACHE_TTL_SEC = 1800        # refresh per-room W/K + tau every 30 min
+PREHEAT_SAFETY_MARGIN = 1.15        # start 15% earlier than the model says
+PREHEAT_LOOKAHEAD_MAX_MIN = 240     # don't preheat more than 4h ahead
+PREHEAT_TELEMETRY_HOURS = 72        # window of temperature history to fit
 
 DAY_KEYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
 
@@ -365,7 +370,7 @@ class RoomDecision:
     __slots__ = (
         "room_id", "name", "target_temp", "current_temp", "temp_source",
         "status", "calling_for_heat", "trvs", "sensor_ieee", "sensor_online",
-        "health",
+        "health", "preheat",
     )
 
     def __init__(self, room_id: str, name: str):
@@ -373,14 +378,15 @@ class RoomDecision:
         self.name = name
         self.target_temp: Optional[float] = None
         self.current_temp: Optional[float] = None
-        self.temp_source: str = "none"   # "external" | "trv_mean" | "none"
+        self.temp_source: str = "none"
         self.sensor_ieee: Optional[str] = None
         self.sensor_online: Optional[bool] = None
-        self.status: str = "unknown"     # cold | ontarget | hot | unknown
+        self.status: str = "unknown"
         self.calling_for_heat: bool = False
         self.trvs: List[Dict] = []
         self.health: Dict[str, Any] = {"level": "ok", "reasons": [],
                                        "stale_devices": [], "threshold_minutes": 15}
+        self.preheat: Optional[Dict[str, Any]] = None
 
     def to_dict(self) -> Dict:
         return {
@@ -395,6 +401,7 @@ class RoomDecision:
             "calling_for_heat": self.calling_for_heat,
             "trvs": self.trvs,
             "health": self.health,
+            "preheat": self.preheat,
         }
 
 
@@ -404,7 +411,9 @@ class HeatingController:
 
     def __init__(self, config: dict, device_getter: Callable,
                  command_sender: Callable, comfort_defaults: Optional[dict] = None,
-                 weather_service: Any = None):
+                 weather_service: Any = None,
+                 anomaly_getter: Optional[Callable] = None,
+                 telemetry_query: Optional[Callable] = None):
         """
         Args:
             config: heating config block (will read 'circuits' and 'enabled')
@@ -422,6 +431,13 @@ class HeatingController:
         self._get_devices = device_getter
         self._throttled_send = command_sender
         self._weather = weather_service
+        self._anomaly_getter = anomaly_getter
+        self._telemetry_query = telemetry_query
+        self._insulation = str(
+            (config.get("property") or {}).get("insulation", "partial")
+        )
+        # room_id -> {w_per_k, tau_seconds, radiator_watts, expires_at}
+        self._room_profile_cache: Dict[str, Dict[str, Any]] = {}
 
         defaults = comfort_defaults or {}
         self._default_target = _as_float(defaults.get("target_temp"), 21.0)
@@ -1256,7 +1272,8 @@ class HeatingController:
     def _evaluate_room(self, room: dict, devices: Dict[str, Any],
                        now: datetime) -> RoomDecision:
         decision = RoomDecision(room_id=room["id"], name=room["name"])
-        decision.target_temp = self._effective_target(room, now)
+        base_target = self._effective_target(room, now)
+        decision.target_temp = base_target
 
         # Gather TRV state
         trv_temps = []
@@ -1324,6 +1341,19 @@ class HeatingController:
         else:
             decision.current_temp = None
             decision.temp_source = "none"
+
+        # Predictive pre-heat — bump target if an upcoming schedule slot
+        # needs lead time, based on the cached thermal profile.
+        try:
+            preheat_target, preheat_info = self._maybe_preheat_target(
+                room, decision.current_temp, now
+            )
+            if preheat_info is not None:
+                decision.preheat = preheat_info
+            if preheat_target is not None:
+                decision.target_temp = preheat_target
+        except Exception as e:
+            logger.debug(f"preheat eval failed for {room['id']}: {e}")
 
         # Classify with hysteresis
         if decision.current_temp is None or decision.target_temp is None:
@@ -1534,6 +1564,17 @@ class HeatingController:
         if not sticky:
             return out
 
+        # Pull anomaly snapshot once for this circuit
+        active_anomaly_room_ids: set = set()
+        if self._anomaly_getter is not None:
+            try:
+                snap = self._anomaly_getter() or {}
+                for a in (snap.get("active") or []):
+                    if str(a.get("circuit_id")) == cid:
+                        active_anomaly_room_ids.add(str(a.get("room_id")))
+            except Exception as e:
+                logger.debug(f"anomaly snapshot failed: {e}")
+
         # Sticky says suppress — check one-tick safety overrides
         for d in decisions:
             room = next((r for r in circuit["rooms"] if r["id"] == d.room_id), None)
@@ -1555,10 +1596,227 @@ class HeatingController:
                     f"{d.health.get('level')} — not safe to suppress"
                 )
                 return out
+            if d.room_id in active_anomaly_room_ids:
+                out["active"] = False
+                out["reason"] += (
+                    f"; OVERRIDE: room '{d.name}' has active anomaly — "
+                    f"not safe to suppress"
+                )
+                return out
 
         out["active"] = True
         return out
 
+
+    # ── Predictive pre-heat ────────────────────────────────────────
+    def _next_schedule_slot(
+            self, room: dict, now: datetime
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Find the next schedule slot starting AFTER `now` within the next 24 h.
+        Returns {start_dt, temp, minutes_until} or None.
+        """
+        schedule = room.get("schedule") or []
+        if not schedule:
+            return None
+
+        candidates = []
+        for offset_days in range(0, 2):  # today + tomorrow
+            day_dt = now + (datetime.fromtimestamp(0) - datetime.fromtimestamp(0))
+            day_dt = (now.replace(hour=0, minute=0, second=0, microsecond=0)
+                      + (offset_days * (datetime(2000, 1, 2) - datetime(2000, 1, 1))))
+            day_key = DAY_KEYS[day_dt.weekday()]
+            for slot in schedule:
+                if day_key not in (slot.get("days") or []):
+                    continue
+                start_m = _parse_hhmm(slot.get("start"))
+                if start_m is None:
+                    continue
+                slot_start = day_dt.replace(
+                    hour=start_m // 60, minute=start_m % 60
+                )
+                if slot_start <= now:
+                    continue
+                temp = _as_float(slot.get("temp"))
+                if temp is None:
+                    continue
+                candidates.append((slot_start, temp))
+
+        if not candidates:
+            return None
+        candidates.sort(key=lambda x: x[0])
+        slot_start, temp = candidates[0]
+        minutes_until = (slot_start - now).total_seconds() / 60.0
+        if minutes_until > PREHEAT_LOOKAHEAD_MAX_MIN:
+            return None
+        return {
+            "start_dt": slot_start,
+            "temp": temp,
+            "minutes_until": minutes_until,
+        }
+
+    def _get_room_profile(self, room: dict) -> Optional[Dict[str, Any]]:
+        """
+        Lazily compute and cache w_per_k + tau for a room. Returns None if
+        we don't have enough data (no dimensions, no telemetry, etc.).
+        """
+        rid = room["id"]
+        cached = self._room_profile_cache.get(rid)
+        now_ts = time.time()
+        if cached and cached.get("expires_at", 0) > now_ts:
+            return cached
+
+        dimensions = room.get("dimensions")
+        if not dimensions:
+            return None
+        if self._weather is None or self._telemetry_query is None:
+            return None
+
+        # Build temperature history series for the profile fit
+        sensor_ieee = room.get("temperature_sensor_ieee")
+        if not sensor_ieee:
+            trvs = room.get("trvs") or []
+            if trvs and isinstance(trvs[0], dict):
+                sensor_ieee = trvs[0].get("ieee")
+        if not sensor_ieee:
+            return None
+
+        try:
+            from modules.thermal_profile import compute_profile
+        except Exception as e:
+            logger.debug(f"thermal_profile import failed: {e}")
+            return None
+
+        series: List[Dict[str, Any]] = []
+        try:
+            for attr in ("temperature", "local_temperature",
+                         "current_temperature"):
+                rows = self._telemetry_query(
+                    sensor_ieee, attr, PREHEAT_TELEMETRY_HOURS
+                ) or []
+                if rows:
+                    series = rows
+                    break
+        except Exception as e:
+            logger.debug(f"telemetry_query failed for {sensor_ieee}: {e}")
+
+        # Real outdoor temperature history from telemetry — beats the
+        # previous constant-current-temp proxy for fits across swingy days.
+        outdoor_getter = None
+        try:
+            from modules.telemetry_db import build_outdoor_temp_getter
+            outdoor_getter = build_outdoor_temp_getter(PREHEAT_TELEMETRY_HOURS)
+        except Exception as e:
+            logger.debug(f"build_outdoor_temp_getter failed: {e}")
+
+        # Fallback: if no history yet (fresh install), use current as constant
+        if outdoor_getter is None:
+            outdoor_now = None
+            try:
+                outdoor_now = self._weather.get_outdoor_temperature()
+            except Exception:
+                pass
+            if outdoor_now is None:
+                return None
+            outdoor_getter = lambda _ts: outdoor_now
+
+        try:
+            prof = compute_profile(
+                room_id=rid,
+                dimensions=dimensions,
+                insulation=self._insulation,
+                temperature_series=series or None,
+                outdoor_temp_getter=outdoor_getter,
+            )
+        except Exception as e:
+            logger.debug(f"compute_profile failed for {rid}: {e}")
+            return None
+
+        rad_cfg = room.get("radiator") or {}
+        radiator_watts = _as_float(rad_cfg.get("watts_at_dt50"), None)
+
+        entry = {
+            "w_per_k": prof.blended_w_per_k,
+            "tau_seconds": prof.tau_seconds,
+            "radiator_watts": radiator_watts,
+            "confidence": (
+                "high" if (prof.measured_confidence or 0) >= 0.7
+                else "medium" if (prof.measured_confidence or 0) >= 0.3
+                else "low"
+            ),
+            "expires_at": now_ts + PROFILE_CACHE_TTL_SEC,
+        }
+        self._room_profile_cache[rid] = entry
+        return entry
+
+    def _maybe_preheat_target(
+            self, room: dict, current_temp: Optional[float], now: datetime
+    ) -> Tuple[Optional[float], Optional[Dict[str, Any]]]:
+        """
+        Decide if we should pre-heat for an upcoming schedule slot.
+        Returns (override_target, preheat_info) where override_target is None
+        when no preheat is needed.
+        """
+        if current_temp is None:
+            return None, None
+        upcoming = self._next_schedule_slot(room, now)
+        if not upcoming:
+            return None, None
+
+        upcoming_target = upcoming["temp"]
+        # Already warm enough — nothing to do
+        if current_temp >= upcoming_target:
+            return None, None
+
+        profile = self._get_room_profile(room)
+        if not profile or not profile.get("w_per_k"):
+            return None, {"reason": "no profile"}
+
+        outdoor = None
+        if self._weather is not None:
+            try:
+                outdoor = self._weather.get_outdoor_temperature()
+            except Exception:
+                pass
+        if outdoor is None:
+            return None, {"reason": "no outdoor reading"}
+
+        try:
+            from modules.thermal_profile import compute_preheat
+            est = compute_preheat(
+                room_id=room["id"],
+                from_temp_c=current_temp,
+                to_temp_c=upcoming_target,
+                outdoor_temp_c=outdoor,
+                w_per_k=profile["w_per_k"],
+                tau_seconds=profile.get("tau_seconds"),
+                radiator_watts_effective=profile.get("radiator_watts"),
+                confidence_in=profile.get("confidence", "low"),
+                max_minutes=PREHEAT_LOOKAHEAD_MAX_MIN,
+            )
+        except Exception as e:
+            logger.debug(f"compute_preheat failed for {room['id']}: {e}")
+            return None, {"reason": "compute failed"}
+
+        info = {
+            "upcoming_target": upcoming_target,
+            "upcoming_in_minutes": round(upcoming["minutes_until"], 1),
+            "minutes_needed": est.minutes_needed,
+            "reachable": est.reachable,
+            "confidence": est.confidence,
+            "preheating": False,
+        }
+
+        if not est.reachable or est.minutes_needed is None:
+            return None, info
+
+        # Apply safety margin — start a bit earlier than the model thinks
+        margin_minutes = est.minutes_needed * PREHEAT_SAFETY_MARGIN
+        if margin_minutes >= upcoming["minutes_until"]:
+            info["preheating"] = True
+            return float(upcoming_target), info
+
+        return None, info
 
     # ── Receiver control ───────────────────────────────────────────
     async def _apply_receiver(self, circuit: dict, should_call: bool) -> Dict[str, Any]:

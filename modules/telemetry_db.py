@@ -657,3 +657,56 @@ def close():
         _db.close()
         _db = None
         logger.info("Telemetry database closed")
+
+# ── Outdoor weather history helpers ────────────────────────────────
+
+OUTDOOR_TEMP_IEEE = "__weather__"
+OUTDOOR_TEMP_ATTR = "outdoor_temperature_c"
+
+
+def query_outdoor_temperature_history(hours: int = 72) -> List[Dict]:
+    """Outdoor temperature history (synthetic IEEE)."""
+    return query_device_state_history(OUTDOOR_TEMP_IEEE, OUTDOOR_TEMP_ATTR, hours)
+
+
+def build_outdoor_temp_getter(hours: int = 72):
+    """
+    Return a callable(unix_ts) -> Optional[float] that resolves the closest
+    outdoor temperature reading at-or-before the given timestamp.
+
+    Used by thermal_profile.compute_profile and similar fits — replaces the
+    constant-outdoor proxy that biased fits on swingy days.
+    """
+    rows = query_outdoor_temperature_history(hours)
+    if not rows:
+        return lambda _ts: None
+
+    import bisect
+    from datetime import datetime as _dt
+
+    ts_list: List[float] = []
+    val_list: List[Optional[float]] = []
+    for r in rows:
+        v = r.get("numeric_val")
+        if v is None:
+            continue
+        t = r.get("ts")
+        if isinstance(t, _dt):
+            ts_list.append(t.timestamp())
+        else:
+            try:
+                ts_list.append(float(t))
+            except (TypeError, ValueError):
+                continue
+        val_list.append(float(v))
+
+    if not ts_list:
+        return lambda _ts: None
+
+    def _getter(ts_seconds: float) -> Optional[float]:
+        idx = bisect.bisect_right(ts_list, ts_seconds) - 1
+        if idx < 0:
+            return val_list[0]
+        return val_list[idx]
+
+    return _getter
