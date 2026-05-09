@@ -578,9 +578,6 @@ do_build() {
     log_to_build "Build complete. Image tagged as $new_tag"
     log_to_build "Container swap has NOT happened yet. Swap is a separate action."
 
-    # Clean up the clone
-    rm -rf "$work_dir"
-
     write_status "ready_to_swap" "$target_version" 100 "Image ready — awaiting swap" "" "$started_at"
     return 0
 }
@@ -956,6 +953,11 @@ do_swap() {
     # Strict forward-only; failures here are logged but do not fail the swap
     # (the user has a working system on the new image either way).
     self_heal_helpers "$new_tag" || log "self_heal: returned non-zero (treated as non-fatal)"
+
+    # Clean up the build workspace to save disk space, but preserve the orchestration scripts
+    # that run_container.sh requires for future swaps and rollbacks.
+    log "Swap: Cleaning up clone directory..."
+    find "$APP_DIR" -mindepth 1 -maxdepth 1 ! -name 'build.sh' ! -name 'scripts' -exec rm -rf {} +
 
     write_status "idle" "$target_version" 100 "Upgrade complete" ""
     return 0
