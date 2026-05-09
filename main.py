@@ -284,6 +284,7 @@ heating_controller = HeatingController(
     command_sender=lambda ieee, command, value=None, endpoint_id=None:
     zigbee_service.send_command(ieee, command, value, endpoint_id=endpoint_id),
     comfort_defaults=CONFIG.get("heating", {}).get("comfort", {}),
+    weather_service=weather_service,
 )
 
 

@@ -545,11 +545,19 @@ def register_heating_controller_routes(app: FastAPI, get_controller, get_zigbee_
             cfg = _load_config()
             heating = cfg.get("heating") or {}
             controller_block = heating.get("controller") or {}
+            wx_block = controller_block.get("weather_suppression") or {}
             return {
                 "success": True,
                 "config": {
                     "enabled": bool(controller_block.get("enabled", False)),
                     "dry_run": bool(controller_block.get("dry_run", False)),
+                    "weather_suppression": {
+                        "enabled": bool(wx_block.get("enabled", False)),
+                        "off_threshold_c": float(wx_block.get("off_threshold_c", 16.0)),
+                        "on_threshold_c": float(wx_block.get("on_threshold_c", 14.0)),
+                        "forecast_lookahead_hours": int(wx_block.get("forecast_lookahead_hours", 6)),
+                        "forecast_min_c": float(wx_block.get("forecast_min_c", 12.0)),
+                    },
                     "circuits": _clean_circuits(heating.get("circuits") or []),
                 },
             }
@@ -604,6 +612,36 @@ def register_heating_controller_routes(app: FastAPI, get_controller, get_zigbee_
                 controller_block["enabled"] = bool(incoming["enabled"])
             if "dry_run" in incoming:
                 controller_block["dry_run"] = bool(incoming["dry_run"])
+
+            if "weather_suppression" in incoming and isinstance(
+                    incoming["weather_suppression"], dict
+            ):
+                wx_in = incoming["weather_suppression"]
+                wx_out = controller_block.setdefault("weather_suppression", {})
+                if "enabled" in wx_in:
+                    wx_out["enabled"] = bool(wx_in["enabled"])
+                if "off_threshold_c" in wx_in:
+                    try:
+                        wx_out["off_threshold_c"] = float(wx_in["off_threshold_c"])
+                    except (TypeError, ValueError):
+                        pass
+                if "on_threshold_c" in wx_in:
+                    try:
+                        wx_out["on_threshold_c"] = float(wx_in["on_threshold_c"])
+                    except (TypeError, ValueError):
+                        pass
+                if "forecast_lookahead_hours" in wx_in:
+                    try:
+                        wx_out["forecast_lookahead_hours"] = max(
+                            1, int(wx_in["forecast_lookahead_hours"])
+                        )
+                    except (TypeError, ValueError):
+                        pass
+                if "forecast_min_c" in wx_in:
+                    try:
+                        wx_out["forecast_min_c"] = float(wx_in["forecast_min_c"])
+                    except (TypeError, ValueError):
+                        pass
 
             if "circuits" in incoming:
                 heating["circuits"] = _clean_circuits(incoming["circuits"])

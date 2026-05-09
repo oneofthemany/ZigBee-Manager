@@ -451,6 +451,8 @@ function renderControllerForm(cfg) {
             </div>
         </div>
 
+        ${renderWeatherSuppressionForm(cfg.weather_suppression || {})}
+
         <div class="d-flex justify-content-between align-items-center mb-3">
             <strong>Circuits</strong>
             <button class="btn btn-sm btn-primary" id="btnAddCircuit">
@@ -458,6 +460,61 @@ function renderControllerForm(cfg) {
             </button>
         </div>
         <div id="circuitsList"></div>`;
+}
+
+function renderWeatherSuppressionForm(wx) {
+    const e = wx.enabled === true;
+    const off = (wx.off_threshold_c ?? 16);
+    const on  = (wx.on_threshold_c  ?? 14);
+    const look = (wx.forecast_lookahead_hours ?? 6);
+    const fmin = (wx.forecast_min_c ?? 12);
+    return `
+        <div class="card mb-3">
+            <div class="card-header py-2 d-flex align-items-center justify-content-between">
+                <strong><i class="fas fa-cloud-sun me-1"></i> Weather suppression</strong>
+                <div class="form-check form-switch m-0">
+                    <input class="form-check-input" type="checkbox" id="wxEnabled" ${e ? 'checked' : ''}>
+                    <label class="form-check-label small" for="wxEnabled">Enabled</label>
+                </div>
+            </div>
+            <div class="card-body py-2">
+                <div class="small text-muted mb-2">
+                    Stops calling for heat when it's mild outside. Hysteresis prevents flapping;
+                    forecast lookahead avoids shutting off before a cold evening.
+                </div>
+                <div class="row g-2">
+                    <div class="col-sm-6 col-lg-3">
+                        <label class="form-label small mb-1" for="wxOffC">
+                            Suppress at ≥ (°C)
+                        </label>
+                        <input type="number" step="0.5" class="form-control form-control-sm"
+                               id="wxOffC" value="${off}">
+                    </div>
+                    <div class="col-sm-6 col-lg-3">
+                        <label class="form-label small mb-1" for="wxOnC">
+                            Resume below (°C)
+                        </label>
+                        <input type="number" step="0.5" class="form-control form-control-sm"
+                               id="wxOnC" value="${on}">
+                    </div>
+                    <div class="col-sm-6 col-lg-3">
+                        <label class="form-label small mb-1" for="wxLookahead">
+                            Forecast window (h)
+                        </label>
+                        <input type="number" step="1" min="1" max="48" class="form-control form-control-sm"
+                               id="wxLookahead" value="${look}">
+                    </div>
+                    <div class="col-sm-6 col-lg-3">
+                        <label class="form-label small mb-1" for="wxForecastMinC">
+                            Forecast min floor (°C)
+                        </label>
+                        <input type="number" step="0.5" class="form-control form-control-sm"
+                               id="wxForecastMinC" value="${fmin}">
+                    </div>
+                </div>
+                <div id="wxValidation" class="small text-danger mt-2"></div>
+            </div>
+        </div>`;
 }
 
 function bindControllerForm() {
@@ -1914,9 +1971,31 @@ function renderPreheatSnippet(p, meta) {
 async function saveControllerSettings() {
     const btn = document.getElementById('btnControllerSave');
     const status = document.getElementById('controllerSettingsStatus');
+    const wxOff   = parseFloat(document.getElementById('wxOffC').value);
+    const wxOn    = parseFloat(document.getElementById('wxOnC').value);
+    const wxLook  = parseInt(document.getElementById('wxLookahead').value, 10);
+    const wxFcMin = parseFloat(document.getElementById('wxForecastMinC').value);
+
+    const wxValidationEl = document.getElementById('wxValidation');
+    if (wxValidationEl) wxValidationEl.textContent = '';
+    if (Number.isFinite(wxOff) && Number.isFinite(wxOn) && wxOn >= wxOff) {
+        if (wxValidationEl) {
+            wxValidationEl.textContent =
+                'Resume threshold must be lower than suppress threshold (hysteresis).';
+        }
+        return;
+    }
+
     const payload = {
         enabled: document.getElementById('ctrlEnabled').checked,
         dry_run: document.getElementById('ctrlDryRun').checked,
+        weather_suppression: {
+            enabled: document.getElementById('wxEnabled').checked,
+            off_threshold_c: Number.isFinite(wxOff) ? wxOff : 16,
+            on_threshold_c: Number.isFinite(wxOn) ? wxOn : 14,
+            forecast_lookahead_hours: Number.isFinite(wxLook) ? wxLook : 6,
+            forecast_min_c: Number.isFinite(wxFcMin) ? wxFcMin : 12,
+        },
         circuits: workingCircuits,
     };
 

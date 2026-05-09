@@ -13,22 +13,50 @@ weather:
 heating:
   enabled: true
   property: { type, age, insulation, glazing, floor_area_m2, floors }
-  tariff: { type, unit_rate_p, standing_charge_p, off_peak_*, off_peak_rate_p }
+  tariff: { type, unit_rate_p, standing_charge_p, off_peak_start, off_peak_end, off_peak_rate_p }
   boiler: { type, output_kw, efficiency_percent }
   comfort: { target_temp, night_setback, min_temp, preheat_max_minutes }
-  zones:
-    - id: living_room
-      name: "Living Room"
-      target_temp: 20.5
-      night_setback: 16.5
-      min_temp: 16.0
-      priority: 5
-      devices: ["00:1e:5e",...]
-      schedule:
-        - days: [mon, tue, wed, thu, fri, sat, sun]
-          start: "07:00"
-          end: "22:00"
-          temp: 20.5
+
+  controller:
+    enabled: true
+    dry_run: false
+    weather_suppression:
+      enabled: true
+      off_threshold_c: 16
+      on_threshold_c: 14
+      forecast_lookahead_hours: 6
+      forecast_min_c: 12
+
+  circuits:
+    - id: downstairs
+      name: "Downstairs"
+      receiver_ieee: "00:15:8d"
+      receiver_command: thermostat        # 'thermostat' (Hive SLR1c) or 'switch'
+      receiver_endpoint: 1
+      receiver_call_setpoint: 30.0        # optional
+      receiver_idle_setpoint: 7.0         # optional
+      # weather_suppression: false        # optional per-circuit override
+      rooms:
+        - id: living
+          name: "Living Room"
+          target_temp: 20.5
+          night_setback: 16.5
+          min_temp: 16.0
+          temperature_sensor_ieee: "00:1e:5e"
+          external_temp_mode: advisory    # off | advisory | push
+          external_temp_push_interval_sec: 300
+          freshness_threshold_minutes: 15
+          trvs:
+            - ieee: "54:ef:44:10:00:67:3e:a6"
+              window_detection: true
+              child_lock: false
+              valve_detection: true
+          schedule:
+            - days: [mon, tue, wed, thu, fri, sat, sun]
+              start: "07:00"
+              end:   "22:00"
+              temp:  20.5
+
 
 mqtt:
   base_topic: zigbee_manager

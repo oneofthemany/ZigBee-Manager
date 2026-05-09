@@ -129,6 +129,13 @@ DEFAULT_EXT_TEMP_PUSH_INTERVAL_SEC = 300
 # Min delta before we re-push external temp to a TRV (°C). Saves battery airtime.
 EXT_TEMP_PUSH_MIN_DELTA = 0.3
 
+# ── Weather-based heat suppression ─────────────────────────────────
+# Hysteresis prevents flap when outdoor temp hovers near a single threshold.
+WX_SUPPRESS_OFF_C = 16.0       # engage when current outdoor ≥ this
+WX_SUPPRESS_ON_C = 14.0        # release when current outdoor <  this
+WX_FORECAST_LOOKAHEAD_H = 6    # hours of forecast to consider
+WX_FORECAST_MIN_C = 12.0       # if forecast min within window < this → never suppress
+
 DAY_KEYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
 
 
@@ -396,18 +403,17 @@ class HeatingController:
     """Active control of multi-zone heating with TRV coordination."""
 
     def __init__(self, config: dict, device_getter: Callable,
-                 command_sender: Callable, comfort_defaults: Optional[dict] = None):
+                 command_sender: Callable, comfort_defaults: Optional[dict] = None,
+                 weather_service: Any = None):
         """
         Args:
             config: heating config block (will read 'circuits' and 'enabled')
             device_getter: callable returning {ieee: device}
             command_sender: async callable (ieee, command, value) -> coroutine
-                            e.g. zigbee_service.send_command
             comfort_defaults: optional defaults for night_setback, min_temp, etc.
-                              from heating.comfort
+            weather_service: WeatherService for outdoor-aware suppression
         """
         config = config or {}
-        # Controller is enabled only if both heating.enabled AND heating.controller.enabled
         controller_cfg = config.get("controller") or {}
         self.enabled = bool(config.get("enabled", False)) and \
                        bool(controller_cfg.get("enabled", False))
@@ -415,42 +421,45 @@ class HeatingController:
 
         self._get_devices = device_getter
         self._throttled_send = command_sender
+        self._weather = weather_service
 
         defaults = comfort_defaults or {}
         self._default_target = _as_float(defaults.get("target_temp"), 21.0)
         self._default_setback = _as_float(defaults.get("night_setback"), 17.0)
         self._default_min = _as_float(defaults.get("min_temp"), 16.0)
 
+        # Weather-suppression config (per-circuit override read in _clean_circuits)
+        wx_cfg = controller_cfg.get("weather_suppression") or {}
+        self._wx_enabled = bool(wx_cfg.get("enabled", False))
+        self._wx_off_c = _as_float(wx_cfg.get("off_threshold_c"), WX_SUPPRESS_OFF_C)
+        self._wx_on_c = _as_float(wx_cfg.get("on_threshold_c"), WX_SUPPRESS_ON_C)
+        self._wx_lookahead_h = int(_as_float(
+            wx_cfg.get("forecast_lookahead_hours"), WX_FORECAST_LOOKAHEAD_H
+        ))
+        self._wx_forecast_min_c = _as_float(
+            wx_cfg.get("forecast_min_c"), WX_FORECAST_MIN_C
+        )
+
         self.circuits = self._clean_circuits(config.get("circuits") or [])
 
         # Last-command tracking for cooldown / change detection
-        # ieee -> (command, value, timestamp)
         self._last_command: Dict[str, Tuple[str, Any, float]] = {}
-
         # Last external-temp push tracking:  trv_ieee -> (last_pushed_c, ts)
         self._last_ext_push: Dict[str, Tuple[float, float]] = {}
-
         # Last decision snapshot (for dashboard/API)
         self._last_decision: Dict[str, Any] = {}
         self._last_decision_ts: float = 0
-
         # Applied-on-start flags so we don't spam configuration writes every tick
         self._trv_config_applied: set = set()
+        # Sticky weather-suppression state per circuit_id
+        self._weather_suppressed: Dict[str, bool] = {}
 
         self._task: Optional[asyncio.Task] = None
         self._ext_push_task: Optional[asyncio.Task] = None
 
         self._radio_write_lock = asyncio.Lock()
         self._last_radio_write_ts = 0.0
-        self._min_write_gap = 0.5  # seconds between writes
-
-        # Config lock — held while a tick reads self.circuits, also held by
-        # apply_config() while it mutates them. Ensures a tick that starts
-        # before a hot-reload finishes on the old config (read-snapshot at
-        # tick entry) and the next tick uses the new config. Without this,
-        # a config swap mid-iteration could splice old and new circuit
-        # lists in a single tick's output, which is a hard-to-debug class
-        # of bug we don't want.
+        self._min_write_gap = 0.5
         self._config_lock = asyncio.Lock()
 
         if self.enabled:
@@ -541,6 +550,16 @@ class HeatingController:
             new_enabled = bool(new_config.get("enabled", False)) and \
                           bool(controller_cfg.get("enabled", False))
             new_dry_run = bool(controller_cfg.get("dry_run", False))
+            new_wx_cfg = controller_cfg.get("weather_suppression") or {}
+            new_wx_enabled = bool(new_wx_cfg.get("enabled", self._wx_enabled))
+            new_wx_off_c = _as_float(new_wx_cfg.get("off_threshold_c"), self._wx_off_c)
+            new_wx_on_c = _as_float(new_wx_cfg.get("on_threshold_c"), self._wx_on_c)
+            new_wx_lookahead_h = int(_as_float(
+                new_wx_cfg.get("forecast_lookahead_hours"), self._wx_lookahead_h
+            ))
+            new_wx_forecast_min_c = _as_float(
+                new_wx_cfg.get("forecast_min_c"), self._wx_forecast_min_c
+            )
             new_circuits = self._clean_circuits(new_config.get("circuits") or [])
 
             # ── Diagnostic: what came out of _clean_circuits? ───────
@@ -575,6 +594,16 @@ class HeatingController:
             self.circuits = new_circuits
             self.enabled = new_enabled
             self.dry_run = new_dry_run
+            self._wx_enabled = new_wx_enabled
+            self._wx_off_c = new_wx_off_c
+            self._wx_on_c = new_wx_on_c
+            self._wx_lookahead_h = new_wx_lookahead_h
+            self._wx_forecast_min_c = new_wx_forecast_min_c
+            valid_circuit_ids = {c["id"] for c in new_circuits}
+            self._weather_suppressed = {
+                k: v for k, v in self._weather_suppressed.items()
+                if k in valid_circuit_ids
+            }
 
             # ── Diagnostic: confirm the swap landed ─────────────────
             try:
@@ -827,6 +856,10 @@ class HeatingController:
                 "receiver_command": str(c.get("receiver_command", "switch")).lower(),
                 "receiver_endpoint": c.get("receiver_endpoint"),
                 "rooms": rooms,
+                # None  → use controller-level setting
+                # True  → force enable for this circuit
+                # False → force disable for this circuit
+                "weather_suppression": _as_bool(c.get("weather_suppression"), None),
             })
         return out
 
@@ -1128,8 +1161,19 @@ class HeatingController:
                     any_calling = True
                 room_decisions.append(decision)
 
-            # Circuit-level decision
+            # Circuit-level decision (pre-suppression)
+            any_calling_pre_wx = any_calling
             should_call = any_calling
+
+            # Weather suppression — runs after room eval, before receiver action.
+            wx = self._evaluate_weather_suppression(circuit, room_decisions)
+            if wx["active"] and should_call:
+                logger.info(
+                    f"Circuit '{circuit['name']}': weather-suppressed "
+                    f"(would-have-called=True). {wx['reason']}"
+                )
+                should_call = False
+
             receiver_action = await self._apply_receiver(circuit, should_call)
 
             # TRV decisions — pass any_calling so we can force-close hot rooms
@@ -1174,9 +1218,11 @@ class HeatingController:
                 "id": circuit["id"],
                 "name": circuit["name"],
                 "calling_for_heat": should_call,
+                "any_room_calling": any_calling_pre_wx,
                 "receiver_ieee": circuit["receiver_ieee"],
                 "receiver_action": receiver_action,
                 "receiver_state": recv_state,
+                "weather": wx,
                 "rooms": [d.to_dict() for d in room_decisions],
                 "trv_actions": trv_actions,
             })
@@ -1370,6 +1416,149 @@ class HeatingController:
             return float(room.get("night_setback", self._default_setback))
 
         return float(room.get("target_temp", self._default_target))
+
+    # ── Weather-based suppression ──────────────────────────────────
+    def _forecast_window_min(self, lookahead_h: int) -> Optional[float]:
+        """Min forecast temperature in the next `lookahead_h` hours from now."""
+        if not self._weather:
+            return None
+        try:
+            fc = self._weather.get_forecast() or {}
+        except Exception:
+            return None
+        times = fc.get("times") or []
+        temps = fc.get("temperature_2m") or []
+        if not times or not temps:
+            return None
+
+        now_dt = datetime.now().replace(minute=0, second=0, microsecond=0)
+        start_idx = 0
+        for i, t_str in enumerate(times):
+            try:
+                if datetime.fromisoformat(str(t_str)) >= now_dt:
+                    start_idx = i
+                    break
+            except (ValueError, TypeError):
+                continue
+
+        window = [
+            t for t in temps[start_idx:start_idx + lookahead_h]
+            if isinstance(t, (int, float))
+        ]
+        return min(window) if window else None
+
+    def _evaluate_weather_suppression(
+            self, circuit: dict, decisions: List["RoomDecision"]
+    ) -> Dict[str, Any]:
+        """
+        Decide whether to suppress this circuit's call-for-heat based on outdoor
+        conditions. Sticky hysteresis lives in self._weather_suppressed.
+
+        Safety overrides (one-tick, don't clear sticky state):
+          - any room < its min_temp        → never suppress
+          - any room with health != 'ok'   → never suppress
+          - no outdoor reading             → never suppress (fail-safe)
+        """
+        cid = circuit["id"]
+        per_circuit = circuit.get("weather_suppression")
+        enabled = self._wx_enabled if per_circuit is None else bool(per_circuit)
+
+        out = {
+            "enabled": enabled,
+            "active": False,
+            "sticky": self._weather_suppressed.get(cid, False),
+            "outdoor_current": None,
+            "forecast_min_window": None,
+            "lookahead_hours": self._wx_lookahead_h,
+            "off_threshold_c": self._wx_off_c,
+            "on_threshold_c": self._wx_on_c,
+            "forecast_min_c": self._wx_forecast_min_c,
+            "reason": "",
+        }
+
+        if not enabled or self._weather is None:
+            self._weather_suppressed[cid] = False
+            out["sticky"] = False
+            out["reason"] = "disabled" if not enabled else "no weather service"
+            return out
+
+        try:
+            outdoor = self._weather.get_outdoor_temperature()
+        except Exception as e:
+            logger.debug(f"weather: get_outdoor_temperature failed: {e}")
+            outdoor = None
+
+        forecast_min = self._forecast_window_min(self._wx_lookahead_h)
+        out["outdoor_current"] = outdoor
+        out["forecast_min_window"] = forecast_min
+
+        if outdoor is None:
+            self._weather_suppressed[cid] = False
+            out["sticky"] = False
+            out["reason"] = "no outdoor reading — fail-safe"
+            return out
+
+        sticky = self._weather_suppressed.get(cid, False)
+        if sticky:
+            if outdoor < self._wx_on_c:
+                sticky = False
+                out["reason"] = (
+                    f"outdoor {outdoor:.1f}°C < on_threshold "
+                    f"{self._wx_on_c:.1f}°C — release"
+                )
+            elif forecast_min is not None and forecast_min < self._wx_forecast_min_c:
+                sticky = False
+                out["reason"] = (
+                    f"forecast min {forecast_min:.1f}°C in next "
+                    f"{self._wx_lookahead_h}h < {self._wx_forecast_min_c:.1f}°C — release"
+                )
+            else:
+                fc_str = f"{forecast_min:.1f}°C" if forecast_min is not None else "n/a"
+                out["reason"] = f"outdoor {outdoor:.1f}°C, forecast min {fc_str} — held"
+        else:
+            forecast_clear = (forecast_min is None) or (forecast_min >= self._wx_forecast_min_c)
+            if outdoor >= self._wx_off_c and forecast_clear:
+                sticky = True
+                fc_str = f"{forecast_min:.1f}°C" if forecast_min is not None else "n/a"
+                out["reason"] = (
+                    f"outdoor {outdoor:.1f}°C ≥ off_threshold "
+                    f"{self._wx_off_c:.1f}°C, forecast min {fc_str} — engage"
+                )
+            else:
+                fc_str = f"{forecast_min:.1f}°C" if forecast_min is not None else "n/a"
+                out["reason"] = f"outdoor {outdoor:.1f}°C, forecast min {fc_str} — clear"
+
+        self._weather_suppressed[cid] = sticky
+        out["sticky"] = sticky
+
+        if not sticky:
+            return out
+
+        # Sticky says suppress — check one-tick safety overrides
+        for d in decisions:
+            room = next((r for r in circuit["rooms"] if r["id"] == d.room_id), None)
+            if room is None:
+                continue
+            min_t = _as_float(room.get("min_temp"), self._default_min)
+            if (d.current_temp is not None and min_t is not None
+                    and d.current_temp < min_t):
+                out["active"] = False
+                out["reason"] += (
+                    f"; OVERRIDE: room '{d.name}' at {d.current_temp:.1f}°C "
+                    f"below min_temp {min_t:.1f}°C"
+                )
+                return out
+            if d.health and d.health.get("level") not in (None, "ok"):
+                out["active"] = False
+                out["reason"] += (
+                    f"; OVERRIDE: room '{d.name}' health="
+                    f"{d.health.get('level')} — not safe to suppress"
+                )
+                return out
+
+        out["active"] = True
+        return out
+
 
     # ── Receiver control ───────────────────────────────────────────
     async def _apply_receiver(self, circuit: dict, should_call: bool) -> Dict[str, Any]:
