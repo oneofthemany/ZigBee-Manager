@@ -32,7 +32,7 @@ set -o pipefail
 
 HOST_PORT="${HOST_PORT:-8000}"
 HOST_MATTER_PORT="${HOST_MATTER_PORT:-5580}"
-APP_DIR="${ZMM_APP_DIR:-/opt/.zigbee-matter-manager/upgrade_build}"
+APP_DIR="${ZMM_APP_DIR:-/opt/.zigbee-matter-manager}"
 CONFIG_FILE="${DATA_DIR}/config/config.yaml"
 
 # ── DEVICE RESOLUTION FROM config.yaml ──────────────────────────────────────
