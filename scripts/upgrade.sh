@@ -675,6 +675,123 @@ container_unit_start() {
         log "Supervisor: warn — start failed for $scope $unit"
 }
 
+# ── HELPER SELF-HEAL ─────────────────────────────────────────────────────────
+# Compares the WATCHER_SCHEMA_VERSION baked into the currently-installed
+# systemd unit against the version bundled in the new image. If the new image
+# is strictly newer, copy the four helper scripts (build.sh, upgrade.sh,
+# run_container.sh, install_watcher.sh) out of the new image and re-run
+# install_watcher.sh from the freshly-extracted location. This rewrites the
+# systemd unit, reloads the daemon, and leaves $SCRIPTS_DIR + $APP_DIR/build.sh
+# matching the new image's expectations.
+#
+# Called from do_swap() AFTER a successful swap+healthcheck. Failure here
+# logs a warning but does not fail the upgrade — the user's system is up
+# and running the new image; only the host-side helpers are stale, which
+# blocks future upgrades but doesn't break what they have right now.
+#
+# Strict forward-only: never downgrades helpers.
+self_heal_helpers() {
+    local new_tag="$1"
+
+    # Read the schema version baked into the currently-installed unit. We
+    # check the most likely unit file paths in order of likelihood. Default
+    # 0 if missing — this is correct: a unit without the comment line was
+    # installed by an old install_watcher.sh, so any schema-aware image
+    # should self-heal it.
+    local current_schema=0
+    local unit_candidates=(
+        "/etc/systemd/system/zmm-upgrade.service"
+        "/opt/.config/systemd/user/zmm-upgrade.service"
+        "/etc/systemd/system/zmm-upgrade-poll.service"
+    )
+    local found_unit=""
+    for unit in "${unit_candidates[@]}"; do
+        if [[ -f "$unit" ]]; then
+            found_unit="$unit"
+            local v
+            v=$(grep -oP '^# WATCHER_SCHEMA_VERSION=\K[0-9]+' "$unit" 2>/dev/null | head -1)
+            if [[ -n "$v" ]]; then
+                current_schema="$v"
+            fi
+            break
+        fi
+    done
+
+    if [[ -z "$found_unit" ]]; then
+        log "self_heal: no watcher unit found on disk — skipping (clean install state)"
+        return 0
+    fi
+
+    # Stage a stopped container from the new image so we can copy out files.
+    local stage_name="zmm-self-heal-$$-$RANDOM"
+    if ! "$RUNTIME" create --name "$stage_name" "$new_tag" >/dev/null 2>&1; then
+        log "self_heal: WARN failed to create staging container from $new_tag — skipping"
+        return 0
+    fi
+
+    local stage_dir
+    stage_dir=$(mktemp -d -t zmm-self-heal-XXXXXX) || {
+        log "self_heal: WARN failed to mktemp — skipping"
+        "$RUNTIME" rm -f "$stage_name" >/dev/null 2>&1 || true
+        return 0
+    }
+    # shellcheck disable=SC2064
+    trap "\"$RUNTIME\" rm -f $stage_name >/dev/null 2>&1 || true; rm -rf $stage_dir" RETURN
+
+    # Copy the four helper files out of the staging container.
+    local cp_failed=0
+    "$RUNTIME" cp "$stage_name:/app/scripts/install_watcher.sh" "$stage_dir/install_watcher.sh" 2>/dev/null || cp_failed=1
+    "$RUNTIME" cp "$stage_name:/app/scripts/upgrade.sh"         "$stage_dir/upgrade.sh"         2>/dev/null || cp_failed=1
+    "$RUNTIME" cp "$stage_name:/app/scripts/run_container.sh"   "$stage_dir/run_container.sh"   2>/dev/null || cp_failed=1
+    "$RUNTIME" cp "$stage_name:/app/build.sh"                   "$stage_dir/build.sh"           2>/dev/null || cp_failed=1
+
+    if (( cp_failed )); then
+        log "self_heal: WARN one or more files missing from $new_tag (image may pre-date schema mechanism) — skipping"
+        return 0
+    fi
+
+    # Read the new image's schema version from the freshly-copied file.
+    local new_schema
+    new_schema=$(grep -oP '^WATCHER_SCHEMA_VERSION=\K[0-9]+' "$stage_dir/install_watcher.sh" 2>/dev/null | head -1)
+    if [[ -z "$new_schema" ]]; then
+        log "self_heal: new image $new_tag has no WATCHER_SCHEMA_VERSION constant — skipping"
+        return 0
+    fi
+
+    log "self_heal: current=${current_schema}, new=${new_schema}, unit=${found_unit}"
+
+    # STRICT forward-only comparison.
+    if (( new_schema <= current_schema )); then
+        log "self_heal: nothing to do (new schema is not greater than current)"
+        return 0
+    fi
+
+    log "self_heal: schema bump detected (${current_schema} -> ${new_schema}) — refreshing helpers"
+
+    # Place build.sh at $APP_DIR/build.sh (run_container.sh sources it from there).
+    # Place install_watcher.sh, upgrade.sh, run_container.sh at $APP_DIR/scripts/
+    # so install_watcher.sh's find_script() picks them up when we re-invoke it.
+    mkdir -p "${APP_DIR}/scripts" 2>/dev/null || true
+    install -m 755 "$stage_dir/build.sh"           "${APP_DIR}/build.sh"                     || { log "self_heal: WARN failed to install build.sh"; return 0; }
+    install -m 755 "$stage_dir/install_watcher.sh" "${APP_DIR}/scripts/install_watcher.sh"   || { log "self_heal: WARN failed to install install_watcher.sh"; return 0; }
+    install -m 755 "$stage_dir/upgrade.sh"         "${APP_DIR}/scripts/upgrade.sh"           || { log "self_heal: WARN failed to install upgrade.sh"; return 0; }
+    install -m 755 "$stage_dir/run_container.sh"   "${APP_DIR}/scripts/run_container.sh"     || { log "self_heal: WARN failed to install run_container.sh"; return 0; }
+
+    # Re-run install_watcher.sh from the freshly-installed location. It will
+    # rewrite the systemd unit (including the new WATCHER_SCHEMA_VERSION
+    # comment line), copy the scripts to $SCRIPTS_DIR, daemon-reload, and
+    # restart the watcher.
+    log "self_heal: invoking ${APP_DIR}/scripts/install_watcher.sh"
+    if ZMM_DATA_DIR="$DATA_DIR" ZMM_APP_DIR="$APP_DIR" \
+            bash "${APP_DIR}/scripts/install_watcher.sh" >>"$BUILD_LOG" 2>&1; then
+        log "self_heal: helpers refreshed to schema ${new_schema}"
+    else
+        log "self_heal: WARN install_watcher.sh exited non-zero — see build.log"
+    fi
+
+    return 0
+}
+
 # ── SWAP: stop old container, rename, run new ────────────────────────────────
 # Linear flow:
 #   1. Mask + stop supervisor (so it can't auto-restart the old container)
@@ -834,6 +951,12 @@ do_swap() {
     update_version_state "$target_version" "$current_version" "$new_tag" "$current_image_tag"
     unmask_unit_if_needed
     container_unit_start
+
+    # Self-heal host-side helpers if the new image bumped WATCHER_SCHEMA_VERSION.
+    # Strict forward-only; failures here are logged but do not fail the swap
+    # (the user has a working system on the new image either way).
+    self_heal_helpers "$new_tag" || log "self_heal: returned non-zero (treated as non-fatal)"
+
     write_status "idle" "$target_version" 100 "Upgrade complete" ""
     return 0
 }

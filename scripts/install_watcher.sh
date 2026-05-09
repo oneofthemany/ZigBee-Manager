@@ -13,6 +13,28 @@
 # =============================================================================
 set -euo pipefail
 
+# =============================================================================
+# WATCHER SCHEMA VERSION
+# =============================================================================
+# Single integer, bumped manually whenever a change to install_watcher.sh,
+# upgrade.sh, run_container.sh, or build.sh is incompatible with the
+# previously-installed watcher (e.g. ExecStart path moved, env vars added,
+# arg parsing changed).
+#
+# This value is:
+#   1. Embedded as a comment line into every systemd unit this script writes,
+#      so the host can read it back without invoking anything.
+#   2. Read by upgrade.sh's do_swap() AFTER a successful swap+healthcheck,
+#      compared against the version baked into the new image's
+#      install_watcher.sh, and used to trigger a one-shot self-heal that
+#      refreshes the four host-side helpers and re-installs the watcher.
+#
+# Bump rules:
+#   - Cosmetic changes (comments, log strings, whitespace) -> do NOT bump.
+#   - Behavioural changes that the watcher needs to know about -> bump by 1.
+#   - Never decrement. Self-heal compares `new > cur` strictly.
+WATCHER_SCHEMA_VERSION=1
+
 # Colours
 CYAN='\033[0;36m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; RED='\033[0;31m'
 BOLD='\033[1m'; NC='\033[0m'
@@ -100,7 +122,25 @@ find_script() {
     return 1
 }
 
-for script in upgrade.sh run_container.sh; do
+# Locate build.sh — note it sits at $APP_DIR/build.sh, NOT $APP_DIR/scripts/.
+find_build_sh() {
+    for candidate in \
+        "${SRC_DIR}/../build.sh" \
+        "${APP_DIR}/build.sh" \
+        "./build.sh"; do
+        if [[ -f "$candidate" ]]; then
+            echo "$candidate"
+            return 0
+        fi
+    done
+    return 1
+}
+
+# The watcher unit's ExecStart points at ${SCRIPTS_DIR}/upgrade.sh (and
+# upgrade.sh sources run_container.sh from the same dir). install_watcher.sh
+# itself is also placed here so the self-heal in do_swap can re-invoke it
+# after a podman cp from the new image.
+for script in upgrade.sh run_container.sh install_watcher.sh; do
     if src=$(find_script "$script"); then
         cp "$src" "${SCRIPTS_DIR}/${script}"
         chmod +x "${SCRIPTS_DIR}/${script}"
@@ -111,6 +151,18 @@ for script in upgrade.sh run_container.sh; do
         exit 1
     fi
 done
+
+# build.sh is sourced by run_container.sh from $APP_DIR/build.sh. Keep it in
+# sync with the rest of the helpers — without this, a schema bump that
+# requires new run_container() behaviour would still pick up the OLD build.sh.
+if build_src=$(find_build_sh); then
+    mkdir -p "$APP_DIR"
+    cp "$build_src" "${APP_DIR}/build.sh"
+    chmod +x "${APP_DIR}/build.sh"
+    ok "Installed build.sh -> ${APP_DIR}/build.sh"
+else
+    warn "build.sh not found — run_container.sh sources it at runtime, upgrades may fail."
+fi
 
 # ── Mechanism selection ──────────────────────────────────────────────────────
 # Prefer user systemd (rootless-friendly), fall back to system systemd, then polling.
@@ -138,6 +190,9 @@ install_systemd_user() {
     cat > "$unit_dir/zmm-upgrade.service" <<SERVICE
 [Unit]
 Description=ZMM Upgrade Worker (oneshot)
+# WATCHER_SCHEMA_VERSION=${WATCHER_SCHEMA_VERSION}
+# (read by upgrade.sh's self_heal_helpers; bump install_watcher.sh's
+#  WATCHER_SCHEMA_VERSION constant when changing helper-script behaviour)
 After=default.target
 # If we burn through the start limit, recover automatically after 10 minutes
 StartLimitIntervalSec=600
@@ -198,6 +253,9 @@ install_systemd_system() {
     sudo tee "$unit_dir/zmm-upgrade.service" >/dev/null <<SERVICE
 [Unit]
 Description=ZMM Upgrade Worker (oneshot)
+# WATCHER_SCHEMA_VERSION=${WATCHER_SCHEMA_VERSION}
+# (read by upgrade.sh's self_heal_helpers; bump install_watcher.sh's
+#  WATCHER_SCHEMA_VERSION constant when changing helper-script behaviour)
 After=network-online.target
 StartLimitIntervalSec=600
 StartLimitBurst=20
@@ -265,6 +323,8 @@ POLL
         cat > /etc/systemd/system/zmm-upgrade-poll.service <<SVC
 [Unit]
 Description=ZMM Upgrade Polling Watcher
+# WATCHER_SCHEMA_VERSION=${WATCHER_SCHEMA_VERSION}
+# (read by upgrade.sh's self_heal_helpers)
 After=network-online.target
 
 [Service]
