@@ -8,6 +8,37 @@
 # Uses --network=host for direct Thread/mDNS/IPv6 access.
 # =============================================================================
 
+# =============================================================================
+# OTA HOTFIX: Diff Check & Live Patching
+# Compare newly cloned scripts against running scripts. If a diff exists,
+# invoke install_watcher to update the host orchestrator immediately.
+# =============================================================================
+if [[ "${BASH_SOURCE[0]:-$0}" != "${0}" ]] && [[ -n "${ZMM_DATA_DIR:-}" || -n "${DATA_DIR:-}" ]]; then
+    _SAFE_DIR="${ZMM_DATA_DIR:-${DATA_DIR:-/opt/.zigbee-matter-manager}}/scripts"
+    _SRC_DIR="$(dirname "${BASH_SOURCE[0]}")"
+    _NEEDS_UPDATE=0
+
+    if [[ -d "$_SAFE_DIR" && -d "$_SRC_DIR/scripts" ]]; then
+        # Check standard scripts
+        for _script in upgrade.sh run_container.sh install_watcher.sh; do
+            if ! cmp -s "$_SRC_DIR/scripts/$_script" "$_SAFE_DIR/$_script" 2>/dev/null; then
+                _NEEDS_UPDATE=1
+                break
+            fi
+        done
+        # Check build.sh
+        if [[ -f "$_SRC_DIR/build.sh" ]] && ! cmp -s "$_SRC_DIR/build.sh" "$_SAFE_DIR/build.sh" 2>/dev/null; then
+            _NEEDS_UPDATE=1
+        fi
+
+        if [[ "$_NEEDS_UPDATE" -eq 1 ]]; then
+            echo -e "\033[0;36m\033[1m[INFO]\033[0m  Scripts diff detected. Running install_watcher.sh to patch host orchestrator..."
+            ZMM_DATA_DIR="${ZMM_DATA_DIR:-${DATA_DIR}}" ZMM_APP_DIR="$_SRC_DIR" bash "$_SRC_DIR/scripts/install_watcher.sh" >/dev/null 2>&1 || true
+        fi
+    fi
+fi
+# =============================================================================
+
 CURRENT_USER=$(whoami)
 export XDG_RUNTIME_DIR=/run/user/$(id -u "$CURRENT_USER")
 export DBUS_SESSION_BUS_ADDRESS="unix:path=${XDG_RUNTIME_DIR}/bus"

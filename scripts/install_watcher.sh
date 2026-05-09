@@ -155,11 +155,13 @@ done
 # build.sh is sourced by run_container.sh from $APP_DIR/build.sh. Keep it in
 # sync with the rest of the helpers — without this, a schema bump that
 # requires new run_container() behaviour would still pick up the OLD build.sh.
+# ADDITION: Also copy it to SCRIPTS_DIR to act as a fallback during OTA updates.
 if build_src=$(find_build_sh); then
     mkdir -p "$APP_DIR"
     cp "$build_src" "${APP_DIR}/build.sh"
-    chmod +x "${APP_DIR}/build.sh"
-    ok "Installed build.sh -> ${APP_DIR}/build.sh"
+    cp "$build_src" "${SCRIPTS_DIR}/build.sh"
+    chmod +x "${APP_DIR}/build.sh" "${SCRIPTS_DIR}/build.sh"
+    ok "Installed build.sh -> ${APP_DIR}/build.sh and ${SCRIPTS_DIR}/build.sh"
 else
     warn "build.sh not found — run_container.sh sources it at runtime, upgrades may fail."
 fi

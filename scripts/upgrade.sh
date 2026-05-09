@@ -950,14 +950,12 @@ do_swap() {
     container_unit_start
 
     # Self-heal host-side helpers if the new image bumped WATCHER_SCHEMA_VERSION.
-    # Strict forward-only; failures here are logged but do not fail the swap
-    # (the user has a working system on the new image either way).
     self_heal_helpers "$new_tag" || log "self_heal: returned non-zero (treated as non-fatal)"
 
     # Clean up the build workspace to save disk space, but preserve the orchestration scripts
     # that run_container.sh requires for future swaps and rollbacks.
     log "Swap: Cleaning up clone directory..."
-    find "$APP_DIR" -mindepth 1 -maxdepth 1 ! -name 'build.sh' ! -name 'scripts' -exec rm -rf {} +
+    find "$APP_DIR" -mindepth 1 -maxdepth 1 ! -name 'build.sh' ! -name 'scripts' -exec rm -rf {} + 2>/dev/null || true
 
     write_status "idle" "$target_version" 100 "Upgrade complete" ""
     return 0

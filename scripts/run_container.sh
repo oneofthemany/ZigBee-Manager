@@ -71,8 +71,12 @@ fi
 # ── SOURCE build.sh AND DELEGATE ─────────────────────────────────────────────
 # build.sh exposes run_container(host_port, host_matter_port, image_tag).
 # It reads CONTAINER_NAME, RUNTIME, DATA_DIR, USB_DEVICE from the environment.
-if [[ ! -f "${APP_DIR}/build.sh" ]]; then
-    echo "ERROR: build.sh not found at ${APP_DIR}/build.sh" >&2
+if [[ -f "${APP_DIR}/build.sh" ]]; then
+    BUILD_SH_PATH="${APP_DIR}/build.sh"
+elif [[ -f "${DATA_DIR}/scripts/build.sh" ]]; then
+    BUILD_SH_PATH="${DATA_DIR}/scripts/build.sh"
+else
+    echo "ERROR: build.sh not found at ${APP_DIR}/build.sh or ${DATA_DIR}/scripts/build.sh" >&2
     echo "       Set ZMM_APP_DIR if your install lives elsewhere." >&2
     exit 1
 fi
@@ -80,7 +84,7 @@ fi
 # Re-export anything build.sh's run_container() reads from globals.
 export RUNTIME CONTAINER_NAME DATA_DIR
 
-# shellcheck disable=SC1091
-source "${APP_DIR}/build.sh"
+# shellcheck disable=SC1090
+source "$BUILD_SH_PATH"
 
 run_container "$HOST_PORT" "$HOST_MATTER_PORT" "$IMAGE_TAG"
