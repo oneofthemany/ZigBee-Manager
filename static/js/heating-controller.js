@@ -24,6 +24,7 @@ let controllerSensors = [];
 let controllerContactSensors = [];
 let workingCircuits = [];
 let controllerStatusTimer = null;
+let expandedRoomIds = new Set();
 
 // Tracks last known health level per "circuit_id:room_id" across polls,
 // so we can fire toasts only on transitions (not every 30s while a
@@ -631,7 +632,7 @@ function bindControllerForm() {
                 max_close_minutes: 60,
                 enabled: true,
             });
-            renderCircuits();
+            renderCircuitsList();
         });
     });
 
@@ -642,8 +643,27 @@ function bindControllerForm() {
             const room = workingCircuits[ci].rooms[ri];
             if (!Array.isArray(room.contact_sensors)) return;
             room.contact_sensors.splice(csi, 1);
-            renderCircuits();
+            renderCircuitsList();
         });
+    });
+
+    // Persist room expand/collapse state across re-renders
+    document.querySelectorAll('details.room-card').forEach(el => {
+        el.addEventListener('toggle', () => {
+            const id = el.dataset.roomId;
+            if (!id) return;
+            if (el.open) expandedRoomIds.add(id);
+            else expandedRoomIds.delete(id);
+            // Rotate chevron
+            const chev = el.querySelector('.room-chevron');
+            if (chev) chev.classList.toggle('fa-chevron-down', el.open);
+        });
+        // Set initial chevron state on render
+        const chev = el.querySelector('.room-chevron');
+        if (chev && el.open) {
+            chev.classList.remove('fa-chevron-right');
+            chev.classList.add('fa-chevron-down');
+        }
     });
 
     // Per-field updates
@@ -802,21 +822,60 @@ function renderRoomCard(room, ci, ri) {
             call for heat. Add a TRV or a sensor, or remove the room.
         </div>` : '';
 
+
+    const isOpen = expandedRoomIds.has(room.id);
+    const sensorLabel = sensorIeee
+        ? (controllerSensors.find(s => s.ieee === sensorIeee)?.name || sensorIeee)
+        : null;
+
+    // Header summary — compact info shown when collapsed
+    const headerBadges = [
+        `<span class="badge bg-primary">Target ${Number(room.target_temp).toFixed(1)}°C</span>`,
+        trvCount
+            ? `<span class="badge bg-secondary">${trvCount} TRV${trvCount > 1 ? 's' : ''}</span>`
+            : '',
+        sensorLabel
+            ? `<span class="badge bg-info text-dark"><i class="fas fa-thermometer-half me-1"></i>${escapeHtml(sensorLabel)}</span>`
+            : '',
+        (room.contact_sensors || []).length
+            ? `<span class="badge bg-warning text-dark"><i class="fas fa-door-closed me-1"></i>${room.contact_sensors.length}</span>`
+            : '',
+        room.dimensions && room.dimensions.floor_area_m2
+            ? `<span class="badge bg-success"><i class="fas fa-ruler-combined me-1"></i>${room.dimensions.floor_area_m2}m²</span>`
+            : '',
+        trvCount === 0 && !sensorIeee
+            ? `<span class="badge bg-danger" title="No TRVs or sensor — cannot call for heat"><i class="fas fa-exclamation-triangle"></i></span>`
+            : '',
+    ].filter(Boolean).join(' ');
+
     return `
-        <div class="card mb-2 ms-3" style="border-left: 3px solid var(--bs-info);">
-            <div class="card-body py-2">
-                <div class="d-flex justify-content-between align-items-center mb-2">
-                    <div class="d-flex align-items-center gap-2 flex-grow-1">
+        <details class="card mb-2 ms-3 room-card" data-room-id="${escapeAttr(room.id)}"
+                 data-ci="${ci}" data-ri="${ri}"
+                 style="border-left: 3px solid var(--bs-info);" ${isOpen ? 'open' : ''}>
+            <summary class="card-body py-2 user-select-none" style="cursor:pointer; list-style:none;">
+                <div class="d-flex justify-content-between align-items-center gap-2">
+                    <div class="d-flex align-items-center gap-2 flex-grow-1 flex-wrap">
+                        <i class="fas fa-chevron-right room-chevron text-muted"></i>
                         <i class="fas fa-door-open text-info"></i>
-                        <input type="text" class="form-control form-control-sm room-name"
-                               data-ci="${ci}" data-ri="${ri}"
-                               value="${escapeAttr(room.name)}" placeholder="Room name" style="max-width:200px;">
+                        <strong>${escapeHtml(room.name)}</strong>
                         <small class="text-muted">id: ${escapeHtml(room.id)}</small>
+                        <div class="ms-2 d-flex gap-1 flex-wrap">${headerBadges}</div>
                     </div>
                     <button class="btn btn-sm btn-outline-danger btn-delete-room"
-                            data-ci="${ci}" data-ri="${ri}" title="Delete room">
+                            data-ci="${ci}" data-ri="${ri}" title="Delete room"
+                            onclick="event.stopPropagation();">
                         <i class="fas fa-times"></i>
                     </button>
+                </div>
+            </summary>
+            <div class="card-body pt-0 py-2 border-top">
+                <div class="row g-2 my-2">
+                    <div class="col-md-6">
+                        <label class="form-label small mb-1">Room name</label>
+                        <input type="text" class="form-control form-control-sm room-name"
+                               data-ci="${ci}" data-ri="${ri}"
+                               value="${escapeAttr(room.name)}" placeholder="Room name">
+                    </div>
                 </div>
 
                 <div class="row g-2 mb-2">
@@ -874,7 +933,7 @@ function renderRoomCard(room, ci, ri) {
                 ${renderContactSensorsPanel(room, ci, ri)}
                 ${renderDimensionsPanel(room, ci, ri)}
             </div>
-        </div>`;
+        </details>`;
 }
 // ============================================================================
 // CONTACT SENSORS — optional per-room
