@@ -12,6 +12,7 @@ Endpoints:
   POST /api/heating/controller/trv/settings       — write per-TRV config (window_detection, child_lock, valve_detection)
   POST /api/heating/controller/trv/calibrate      — one-shot start motor calibration
   POST /api/heating/controller/trv/apply-config   — re-apply persistent settings to one TRV
+  GET  /api/heating/controller/contact-sensors    — door/window contact candidates
 """
 import logging
 import os
@@ -379,6 +380,18 @@ def _clean_room(r: dict, existing_ids: Optional[set] = None) -> Optional[dict]:
         "external_temp_push_interval_sec": push_interval,
         "trvs": trvs,
         "schedule": clean_sched,
+        "contact_sensors": [
+            {
+                "ieee": str(cs.get("ieee") or "").strip(),
+                "name": str(cs.get("name") or cs.get("ieee") or ""),
+                "debounce_open_seconds": int(cs.get("debounce_open_seconds", 30) or 30),
+                "require_temp_drop_c": float(cs.get("require_temp_drop_c", 0.5) or 0.5),
+                "max_close_minutes": int(cs.get("max_close_minutes", 60) or 60),
+                "enabled": bool(cs.get("enabled", True)),
+            }
+            for cs in (r.get("contact_sensors") or [])
+            if isinstance(cs, dict) and (cs.get("ieee") or "").strip()
+        ],
     }
     if freshness_min is not None:
         out["freshness_threshold_minutes"] = freshness_min
@@ -546,6 +559,7 @@ def register_heating_controller_routes(app: FastAPI, get_controller, get_zigbee_
             heating = cfg.get("heating") or {}
             controller_block = heating.get("controller") or {}
             wx_block = controller_block.get("weather_suppression") or {}
+            oh_block = controller_block.get("operating_hours") or {}
             return {
                 "success": True,
                 "config": {
@@ -557,6 +571,19 @@ def register_heating_controller_routes(app: FastAPI, get_controller, get_zigbee_
                         "on_threshold_c": float(wx_block.get("on_threshold_c", 14.0)),
                         "forecast_lookahead_hours": int(wx_block.get("forecast_lookahead_hours", 6)),
                         "forecast_min_c": float(wx_block.get("forecast_min_c", 12.0)),
+                    },
+                    "operating_hours": {
+                        "enabled": bool(oh_block.get("enabled", False)),
+                        "weekday": {
+                            "day_start": str((oh_block.get("weekday") or {}).get("day_start", "07:30")),
+                            "day_end":   str((oh_block.get("weekday") or {}).get("day_end", "22:30")),
+                        },
+                        "weekend": {
+                            "day_start": str((oh_block.get("weekend") or {}).get("day_start", "08:30")),
+                            "day_end":   str((oh_block.get("weekend") or {}).get("day_end", "23:00")),
+                        },
+                        "night_setback_offset_c": float(oh_block.get("night_setback_offset_c", -3.0)),
+                        "out_of_hours_action": str(oh_block.get("out_of_hours_action", "setback")).lower(),
                     },
                     "circuits": _clean_circuits(heating.get("circuits") or []),
                 },
@@ -642,6 +669,30 @@ def register_heating_controller_routes(app: FastAPI, get_controller, get_zigbee_
                         wx_out["forecast_min_c"] = float(wx_in["forecast_min_c"])
                     except (TypeError, ValueError):
                         pass
+
+            if "operating_hours" in incoming and isinstance(
+                    incoming["operating_hours"], dict
+            ):
+                oh_in = incoming["operating_hours"]
+                oh_out = controller_block.setdefault("operating_hours", {})
+                if "enabled" in oh_in:
+                    oh_out["enabled"] = bool(oh_in["enabled"])
+                for grp in ("weekday", "weekend"):
+                    if grp in oh_in and isinstance(oh_in[grp], dict):
+                        gout = oh_out.setdefault(grp, {})
+                        for k in ("day_start", "day_end"):
+                            v = oh_in[grp].get(k)
+                            if isinstance(v, str) and len(v) == 5 and v[2] == ":":
+                                gout[k] = v
+                if "night_setback_offset_c" in oh_in:
+                    try:
+                        oh_out["night_setback_offset_c"] = float(oh_in["night_setback_offset_c"])
+                    except (TypeError, ValueError):
+                        pass
+                if "out_of_hours_action" in oh_in:
+                    a = str(oh_in["out_of_hours_action"]).lower()
+                    if a in ("setback", "off", "min_only"):
+                        oh_out["out_of_hours_action"] = a
 
             if "circuits" in incoming:
                 heating["circuits"] = _clean_circuits(incoming["circuits"])
@@ -935,6 +986,57 @@ def register_heating_controller_routes(app: FastAPI, get_controller, get_zigbee_
             }
         except Exception as e:
             logger.error(f"Failed to list controllable devices: {e}", exc_info=True)
+            return {"success": False, "error": str(e)}
+
+    @app.get("/api/heating/controller/contact-sensors")
+    async def list_contact_sensor_candidates():
+        """
+        Return devices that look like door/window contact sensors —
+        anything reporting `is_open` or `contact` in state. Used to
+        populate the room editor dropdown so the user only sees relevant
+        devices rather than the full device list.
+        """
+        try:
+            devices = _devices()
+            sensors = []
+
+            for ieee, dev in devices.items():
+                if isinstance(dev, dict):
+                    state = dev.get("state") or {}
+                    name = dev.get("friendly_name") or dev.get("name") or str(ieee)
+                    manuf = dev.get("manufacturer")
+                    model = dev.get("model")
+                else:
+                    state = getattr(dev, "state", None) or {}
+                    name = getattr(dev, "friendly_name", None) or getattr(dev, "name", None)
+                    if not name:
+                        service = getattr(dev, "service", None)
+                        if service:
+                            name = (getattr(service, "friendly_names", None) or {}).get(str(ieee))
+                    name = name or str(ieee)
+                    manuf = getattr(dev, "manufacturer", None)
+                    model = getattr(dev, "model", None)
+
+                # Must look like a contact sensor — i.e. expose is_open or contact
+                if "is_open" in state:
+                    is_open = bool(state.get("is_open"))
+                elif "contact" in state:
+                    is_open = not bool(state.get("contact"))
+                else:
+                    continue
+
+                sensors.append({
+                    "ieee": str(ieee),
+                    "name": name,
+                    "manufacturer": manuf,
+                    "model": model,
+                    "is_open": is_open,
+                })
+
+            sensors.sort(key=lambda s: s["name"].lower())
+            return {"success": True, "sensors": sensors}
+        except Exception as e:
+            logger.error(f"Failed to list contact sensors: {e}", exc_info=True)
             return {"success": False, "error": str(e)}
 
     @app.get("/api/heating/controller/sensors")

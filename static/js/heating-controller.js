@@ -21,6 +21,7 @@ let controllerState = null;
 let controllerConfig = null;
 let controllerDevices = { receivers: [], thermostats: [] };
 let controllerSensors = [];
+let controllerContactSensors = [];
 let workingCircuits = [];
 let controllerStatusTimer = null;
 
@@ -384,10 +385,11 @@ export async function openControllerSettings() {
     modal.show();
 
     try {
-        const [cfgRes, devRes, sensorRes] = await Promise.all([
+        const [cfgRes, devRes, sensorRes, contactRes] = await Promise.all([
             fetch('/api/heating/controller/config').then(r => r.json()),
             fetch('/api/heating/controller/devices').then(r => r.json()).catch(() => ({ success: false })),
             fetch('/api/heating/controller/sensors').then(r => r.json()).catch(() => ({ success: false })),
+            fetch('/api/heating/controller/contact-sensors').then(r => r.json()).catch(() => ({ success: false })),
         ]);
         if (!cfgRes.success) throw new Error(cfgRes.error || 'Config load failed');
 
@@ -396,6 +398,7 @@ export async function openControllerSettings() {
             ? { receivers: devRes.receivers || [], thermostats: devRes.thermostats || [] }
             : { receivers: [], thermostats: [] };
         controllerSensors = (sensorRes.success ? (sensorRes.sensors || []) : []);
+        controllerContactSensors = (contactRes && contactRes.success ? (contactRes.sensors || []) : []);
         workingCircuits = JSON.parse(JSON.stringify(controllerConfig.circuits || []));
         // Normalise: the backend emits `trvs: [{ieee, ...}]` but this frontend
         // historically read/wrote `trv_ieees: [...]`. Derive/keep both in sync
@@ -409,6 +412,17 @@ export async function openControllerSettings() {
                 // Union (preserve any extras that might only exist in legacy form)
                 const merged = Array.from(new Set([...fromTrvs, ...fromLegacy]));
                 r.trv_ieees = merged;
+                if (!Array.isArray(r.contact_sensors)) r.contact_sensors = [];
+                r.contact_sensors = r.contact_sensors
+                    .filter(cs => cs && cs.ieee)
+                    .map(cs => ({
+                        ieee: cs.ieee,
+                        name: cs.name || cs.ieee,
+                        debounce_open_seconds: cs.debounce_open_seconds ?? 30,
+                        require_temp_drop_c:   cs.require_temp_drop_c   ?? 0.5,
+                        max_close_minutes:     cs.max_close_minutes     ?? 60,
+                        enabled: cs.enabled !== false,
+                    }));
                 // Keep trvs list shape — used by backend and persists per-TRV
                 // settings (window_detection, child_lock, valve_detection)
                 if (!Array.isArray(r.trvs)) r.trvs = [];
@@ -452,6 +466,7 @@ function renderControllerForm(cfg) {
         </div>
 
         ${renderWeatherSuppressionForm(cfg.weather_suppression || {})}
+        ${renderOperatingHoursForm(cfg.operating_hours || {})}
 
         <div class="d-flex justify-content-between align-items-center mb-3">
             <strong>Circuits</strong>
@@ -460,6 +475,71 @@ function renderControllerForm(cfg) {
             </button>
         </div>
         <div id="circuitsList"></div>`;
+}
+
+function renderOperatingHoursForm(oh) {
+    const e = oh.enabled === true;
+    const wk = oh.weekday || {};
+    const we = oh.weekend || {};
+    const action = oh.out_of_hours_action || 'setback';
+    const offset = (oh.night_setback_offset_c ?? -3.0);
+    const opt = (val, label) =>
+        `<option value="${val}" ${action === val ? 'selected' : ''}>${label}</option>`;
+    return `
+        <div class="card mb-3">
+            <div class="card-header py-2 d-flex align-items-center justify-content-between">
+                <strong><i class="fas fa-clock me-1"></i> Operating hours</strong>
+                <div class="form-check form-switch m-0">
+                    <input class="form-check-input" type="checkbox" id="ohEnabled" ${e ? 'checked' : ''}>
+                    <label class="form-check-label small" for="ohEnabled">Enabled</label>
+                </div>
+            </div>
+            <div class="card-body py-2">
+                <div class="small text-muted mb-2">
+                    Defines day vs. night for the controller. Per-room schedule slots still
+                    override these times when active.
+                </div>
+                <div class="row g-2">
+                    <div class="col-md-6">
+                        <label class="form-label small mb-1"><strong>Weekdays</strong> (Mon–Fri)</label>
+                        <div class="d-flex gap-2">
+                            <input type="time" class="form-control form-control-sm" id="ohWeekdayStart"
+                                   value="${wk.day_start || '07:00'}">
+                            <span class="align-self-center small text-muted">→</span>
+                            <input type="time" class="form-control form-control-sm" id="ohWeekdayEnd"
+                                   value="${wk.day_end || '22:00'}">
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label small mb-1"><strong>Weekends</strong> (Sat–Sun)</label>
+                        <div class="d-flex gap-2">
+                            <input type="time" class="form-control form-control-sm" id="ohWeekendStart"
+                                   value="${we.day_start || '08:00'}">
+                            <span class="align-self-center small text-muted">→</span>
+                            <input type="time" class="form-control form-control-sm" id="ohWeekendEnd"
+                                   value="${we.day_end || '23:00'}">
+                        </div>
+                    </div>
+                </div>
+                <div class="row g-2 mt-2">
+                    <div class="col-md-6">
+                        <label class="form-label small mb-1" for="ohAction">Out-of-hours action</label>
+                        <select id="ohAction" class="form-select form-select-sm">
+                            ${opt('setback', 'Setback (lower target)')}
+                            ${opt('min_only', 'Frost-protect only (min temp)')}
+                            ${opt('off', 'Off (no heat call)')}
+                        </select>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label small mb-1" for="ohOffset">
+                            Setback offset (°C, negative = colder)
+                        </label>
+                        <input type="number" step="0.5" class="form-control form-control-sm"
+                               id="ohOffset" value="${offset}">
+                    </div>
+                </div>
+            </div>
+        </div>`;
 }
 
 function renderWeatherSuppressionForm(wx) {
@@ -530,6 +610,57 @@ function bindControllerForm() {
         renderCircuitsList();
     });
     renderCircuitsList();
+    // Add a contact sensor to a room
+    document.querySelectorAll('.btn-cs-add').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const ci = +btn.dataset.ci, ri = +btn.dataset.ri;
+            const select = document.querySelector(
+                `.cs-add-select[data-ci="${ci}"][data-ri="${ri}"]`
+            );
+            const ieee = select?.value;
+            if (!ieee) return;
+            const meta = controllerContactSensors.find(s => s.ieee === ieee);
+            const room = workingCircuits[ci].rooms[ri];
+            room.contact_sensors = room.contact_sensors || [];
+            if (room.contact_sensors.some(cs => cs.ieee === ieee)) return;
+            room.contact_sensors.push({
+                ieee,
+                name: meta?.name || ieee,
+                debounce_open_seconds: 30,
+                require_temp_drop_c: 0.5,
+                max_close_minutes: 60,
+                enabled: true,
+            });
+            renderCircuits();
+        });
+    });
+
+    // Remove a contact sensor
+    document.querySelectorAll('.btn-cs-remove').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const ci = +btn.dataset.ci, ri = +btn.dataset.ri, csi = +btn.dataset.csi;
+            const room = workingCircuits[ci].rooms[ri];
+            if (!Array.isArray(room.contact_sensors)) return;
+            room.contact_sensors.splice(csi, 1);
+            renderCircuits();
+        });
+    });
+
+    // Per-field updates
+    const csUpdate = (selector, key, parser) => {
+        document.querySelectorAll(selector).forEach(el => {
+            el.addEventListener('change', () => {
+                const ci = +el.dataset.ci, ri = +el.dataset.ri, csi = +el.dataset.csi;
+                const cs = workingCircuits[ci]?.rooms[ri]?.contact_sensors?.[csi];
+                if (!cs) return;
+                cs[key] = parser(el);
+            });
+        });
+    };
+    csUpdate('.cs-debounce', 'debounce_open_seconds', el => parseInt(el.value, 10) || 0);
+    csUpdate('.cs-drop',     'require_temp_drop_c',   el => parseFloat(el.value) || 0);
+    csUpdate('.cs-maxclose', 'max_close_minutes',     el => parseInt(el.value, 10) || 1);
+    csUpdate('.cs-enabled',  'enabled',               el => el.checked);
 }
 
 function renderCircuitsList() {
@@ -740,9 +871,123 @@ function renderRoomCard(room, ci, ri) {
                 </label>
                 <div class="list-group mb-2" style="max-height:200px; overflow-y:auto;">${trvCheckboxes}</div>
 
+                ${renderContactSensorsPanel(room, ci, ri)}
                 ${renderDimensionsPanel(room, ci, ri)}
             </div>
         </div>`;
+}
+// ============================================================================
+// CONTACT SENSORS — optional per-room
+// ============================================================================
+function renderContactSensorsPanel(room, ci, ri) {
+    const assigned = room.contact_sensors || [];
+    const assignedIeees = new Set(assigned.map(cs => cs.ieee));
+
+    // Available pool = all known contact sensors NOT already assigned to this room
+    const available = controllerContactSensors.filter(s => !assignedIeees.has(s.ieee));
+
+    const addOptions = [
+        `<option value="">— Select a contact sensor to add —</option>`,
+        ...available.map(s => `
+            <option value="${escapeAttr(s.ieee)}">
+                ${escapeHtml(s.name)} ${s.is_open ? '(open)' : '(closed)'}
+            </option>`),
+    ];
+
+    const rows = assigned.length === 0
+        ? `<div class="text-muted small fst-italic px-2 py-1">
+               No contact sensors assigned. Pick one above to bind it to this room.
+           </div>`
+        : assigned.map((cs, idx) => {
+            // The live device might be offline or unknown — fall back to stored name
+            const live = controllerContactSensors.find(s => s.ieee === cs.ieee);
+            const displayName = live ? live.name : (cs.name || cs.ieee);
+            const liveBadge = live
+                ? `<span class="badge ${live.is_open ? 'bg-warning' : 'bg-secondary'}">
+                     ${live.is_open ? 'OPEN' : 'CLOSED'}
+                   </span>`
+                : `<span class="badge bg-dark">unknown</span>`;
+            return `
+                <div class="border rounded p-2 mb-1" data-cs-ieee="${escapeAttr(cs.ieee)}">
+                    <div class="d-flex justify-content-between align-items-center mb-1">
+                        <div>
+                            <strong>${escapeHtml(displayName)}</strong>
+                            ${liveBadge}
+                            <small class="text-muted ms-1">${escapeHtml(cs.ieee)}</small>
+                        </div>
+                        <button type="button"
+                                class="btn btn-sm btn-outline-danger btn-cs-remove"
+                                data-ci="${ci}" data-ri="${ri}" data-csi="${idx}"
+                                title="Remove this contact sensor from the room">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+                    <div class="row g-2">
+                        <div class="col-md-3">
+                            <label class="form-label small mb-1">Debounce (s)</label>
+                            <input type="number" min="0" step="5"
+                                   class="form-control form-control-sm cs-debounce"
+                                   data-ci="${ci}" data-ri="${ri}" data-csi="${idx}"
+                                   value="${cs.debounce_open_seconds}">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label small mb-1">
+                                Min temp drop (°C)
+                                <i class="fas fa-info-circle text-muted"
+                                   title="Only force-close if room actually cools by this much — handles steam venting"></i>
+                            </label>
+                            <input type="number" min="0" step="0.1"
+                                   class="form-control form-control-sm cs-drop"
+                                   data-ci="${ci}" data-ri="${ri}" data-csi="${idx}"
+                                   value="${cs.require_temp_drop_c}">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label small mb-1">Max close (min)</label>
+                            <input type="number" min="1" step="5"
+                                   class="form-control form-control-sm cs-maxclose"
+                                   data-ci="${ci}" data-ri="${ri}" data-csi="${idx}"
+                                   value="${cs.max_close_minutes}">
+                        </div>
+                        <div class="col-md-3 d-flex align-items-end">
+                            <div class="form-check form-switch m-0">
+                                <input type="checkbox"
+                                       class="form-check-input cs-enabled"
+                                       data-ci="${ci}" data-ri="${ri}" data-csi="${idx}"
+                                       ${cs.enabled !== false ? 'checked' : ''}>
+                                <label class="form-check-label small">Enabled</label>
+                            </div>
+                        </div>
+                    </div>
+                </div>`;
+        }).join('');
+
+    return `
+        <details class="mt-2">
+            <summary class="small fw-bold text-muted user-select-none" style="cursor:pointer;">
+                <i class="fas fa-door-closed me-1"></i>
+                Doors &amp; windows (contact sensors)
+                <span class="badge bg-info">${assigned.length}</span>
+            </summary>
+            <div class="mt-2 ms-2">
+                <div class="small text-muted mb-2">
+                    Bind contact sensors that, when open, should pause heating in this room.
+                    The temp-drop guard prevents brief vents (e.g. steam off the hob) from
+                    killing the radiator.
+                </div>
+                <div class="d-flex gap-2 mb-2">
+                    <select class="form-select form-select-sm cs-add-select"
+                            data-ci="${ci}" data-ri="${ri}">
+                        ${addOptions.join('')}
+                    </select>
+                    <button type="button"
+                            class="btn btn-sm btn-outline-primary btn-cs-add"
+                            data-ci="${ci}" data-ri="${ri}">
+                        <i class="fas fa-plus me-1"></i>Add
+                    </button>
+                </div>
+                ${rows}
+            </div>
+        </details>`;
 }
 
 // ============================================================================
@@ -1995,6 +2240,19 @@ async function saveControllerSettings() {
             on_threshold_c: Number.isFinite(wxOn) ? wxOn : 14,
             forecast_lookahead_hours: Number.isFinite(wxLook) ? wxLook : 6,
             forecast_min_c: Number.isFinite(wxFcMin) ? wxFcMin : 12,
+        },
+        operating_hours: {
+            enabled: document.getElementById('ohEnabled').checked,
+            weekday: {
+                day_start: document.getElementById('ohWeekdayStart').value || '07:30',
+                day_end:   document.getElementById('ohWeekdayEnd').value || '22:30',
+            },
+            weekend: {
+                day_start: document.getElementById('ohWeekendStart').value || '08:30',
+                day_end:   document.getElementById('ohWeekendEnd').value || '23:00',
+            },
+            out_of_hours_action: document.getElementById('ohAction').value,
+            night_setback_offset_c: parseFloat(document.getElementById('ohOffset').value),
         },
         circuits: workingCircuits,
     };

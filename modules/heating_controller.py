@@ -135,6 +135,17 @@ WX_SUPPRESS_OFF_C = 16.0       # engage when current outdoor ≥ this
 WX_SUPPRESS_ON_C = 14.0        # release when current outdoor <  this
 WX_FORECAST_LOOKAHEAD_H = 6    # hours of forecast to consider
 WX_FORECAST_MIN_C = 12.0       # if forecast min within window < this → never suppress
+# ── Adaptive overshoot compensation ────────────────────────────────
+OVERSHOOT_LEARN_ALPHA = 0.3            # EWMA weight on each new observation
+OVERSHOOT_PEAK_DROP_C = 0.1            # peak considered set once temp drops by this
+OVERSHOOT_PEAK_TIMEOUT_SEC = 1200      # 20 min — accept whatever peak we have
+OVERSHOOT_MAX_OFFSET_C = 1.5           # safety cap
+# ── Window/door contact integration ────────────────────────────────
+CONTACT_DEBOUNCE_OPEN_SEC = 30          # ignore brief openings
+CONTACT_REQUIRE_TEMP_DROP_C = 0.5       # only act if room actually cooling
+CONTACT_REQUIRE_DROP_WINDOW_SEC = 600   # within 10 min of opening
+CONTACT_MAX_CLOSE_SEC = 3600            # safety release
+CONTACT_CLOSE_DEBOUNCE_SEC = 5          # avoid flutter on door close
 # ── Predictive pre-heat (uses thermal_profile) ─────────────────────
 PROFILE_CACHE_TTL_SEC = 1800        # refresh per-room W/K + tau every 30 min
 PREHEAT_SAFETY_MARGIN = 1.15        # start 15% earlier than the model says
@@ -370,7 +381,7 @@ class RoomDecision:
     __slots__ = (
         "room_id", "name", "target_temp", "current_temp", "temp_source",
         "status", "calling_for_heat", "trvs", "sensor_ieee", "sensor_online",
-        "health", "preheat",
+        "health", "preheat", "overshoot", "contact",
     )
 
     def __init__(self, room_id: str, name: str):
@@ -387,6 +398,8 @@ class RoomDecision:
         self.health: Dict[str, Any] = {"level": "ok", "reasons": [],
                                        "stale_devices": [], "threshold_minutes": 15}
         self.preheat: Optional[Dict[str, Any]] = None
+        self.overshoot: Optional[Dict[str, Any]] = None
+        self.contact: Optional[Dict[str, Any]] = None
 
     def to_dict(self) -> Dict:
         return {
@@ -402,6 +415,8 @@ class RoomDecision:
             "trvs": self.trvs,
             "health": self.health,
             "preheat": self.preheat,
+            "overshoot": self.overshoot,
+            "contact": self.contact,
         }
 
 
@@ -446,6 +461,7 @@ class HeatingController:
 
         # Weather-suppression config (per-circuit override read in _clean_circuits)
         wx_cfg = controller_cfg.get("weather_suppression") or {}
+
         self._wx_enabled = bool(wx_cfg.get("enabled", False))
         self._wx_off_c = _as_float(wx_cfg.get("off_threshold_c"), WX_SUPPRESS_OFF_C)
         self._wx_on_c = _as_float(wx_cfg.get("on_threshold_c"), WX_SUPPRESS_ON_C)
@@ -455,6 +471,19 @@ class HeatingController:
         self._wx_forecast_min_c = _as_float(
             wx_cfg.get("forecast_min_c"), WX_FORECAST_MIN_C
         )
+        oh_cfg = controller_cfg.get("operating_hours") or {}
+        self._oh_enabled = bool(oh_cfg.get("enabled", False))
+        wk = oh_cfg.get("weekday") or {}
+        we = oh_cfg.get("weekend") or {}
+        self._oh_weekday_start = str(wk.get("day_start", "07:00"))
+        self._oh_weekday_end = str(wk.get("day_end", "22:00"))
+        self._oh_weekend_start = str(we.get("day_start", "08:00"))
+        self._oh_weekend_end = str(we.get("day_end", "23:00"))
+        self._oh_setback_offset = _as_float(
+            oh_cfg.get("night_setback_offset_c"), -3.0
+        )
+        action = str(oh_cfg.get("out_of_hours_action", "setback")).lower()
+        self._oh_action = action if action in ("setback", "off", "min_only") else "setback"
 
         self.circuits = self._clean_circuits(config.get("circuits") or [])
 
@@ -469,6 +498,17 @@ class HeatingController:
         self._trv_config_applied: set = set()
         # Sticky weather-suppression state per circuit_id
         self._weather_suppressed: Dict[str, bool] = {}
+        # Per-room adaptive overshoot state.
+        # Keyed by room_id:
+        #   {learned_offset_c, phase, watch_started_ts, watch_target,
+        #    peak_temp, samples, last_observed_overshoot}
+        self._overshoot: Dict[str, Dict[str, Any]] = {}
+
+        # Per-room window/door open state.
+        # Keyed by room_id:
+        #   {state, sensors_open: set, opened_ts, opened_temp,
+        #    activated_ts, last_closed_ts, observed_drop_c}
+        self._contact: Dict[str, Dict[str, Any]] = {}
 
         self._task: Optional[asyncio.Task] = None
         self._ext_push_task: Optional[asyncio.Task] = None
@@ -576,6 +616,23 @@ class HeatingController:
             new_wx_forecast_min_c = _as_float(
                 new_wx_cfg.get("forecast_min_c"), self._wx_forecast_min_c
             )
+            new_oh_cfg = controller_cfg.get("operating_hours") or {}
+            new_oh_enabled = bool(new_oh_cfg.get("enabled", self._oh_enabled))
+            new_wk = new_oh_cfg.get("weekday") or {}
+            new_we = new_oh_cfg.get("weekend") or {}
+            new_oh_weekday_start = str(new_wk.get("day_start", self._oh_weekday_start))
+            new_oh_weekday_end = str(new_wk.get("day_end", self._oh_weekday_end))
+            new_oh_weekend_start = str(new_we.get("day_start", self._oh_weekend_start))
+            new_oh_weekend_end = str(new_we.get("day_end", self._oh_weekend_end))
+            new_oh_setback_offset = _as_float(
+                new_oh_cfg.get("night_setback_offset_c"), self._oh_setback_offset
+            )
+            new_action_raw = str(
+                new_oh_cfg.get("out_of_hours_action", self._oh_action)
+            ).lower()
+            new_oh_action = new_action_raw if new_action_raw in (
+                "setback", "off", "min_only"
+            ) else self._oh_action
             new_circuits = self._clean_circuits(new_config.get("circuits") or [])
 
             # ── Diagnostic: what came out of _clean_circuits? ───────
@@ -615,7 +672,27 @@ class HeatingController:
             self._wx_on_c = new_wx_on_c
             self._wx_lookahead_h = new_wx_lookahead_h
             self._wx_forecast_min_c = new_wx_forecast_min_c
+            self._oh_enabled = new_oh_enabled
+            self._oh_weekday_start = new_oh_weekday_start
+            self._oh_weekday_end = new_oh_weekday_end
+            self._oh_weekend_start = new_oh_weekend_start
+            self._oh_weekend_end = new_oh_weekend_end
+            self._oh_setback_offset = new_oh_setback_offset
+            self._oh_action = new_oh_action
             valid_circuit_ids = {c["id"] for c in new_circuits}
+            valid_room_ids = {
+                r["id"]
+                for c in new_circuits
+                for r in (c.get("rooms") or [])
+            }
+            self._overshoot = {
+                k: v for k, v in self._overshoot.items()
+                if k in valid_room_ids
+            }
+            self._contact = {
+                k: v for k, v in self._contact.items()
+                if k in valid_room_ids
+            }
             self._weather_suppressed = {
                 k: v for k, v in self._weather_suppressed.items()
                 if k in valid_circuit_ids
@@ -872,10 +949,8 @@ class HeatingController:
                 "receiver_command": str(c.get("receiver_command", "switch")).lower(),
                 "receiver_endpoint": c.get("receiver_endpoint"),
                 "rooms": rooms,
-                # None  → use controller-level setting
-                # True  → force enable for this circuit
-                # False → force disable for this circuit
                 "weather_suppression": _as_bool(c.get("weather_suppression"), None),
+                "operating_hours": _as_bool(c.get("operating_hours"), None),
             })
         return out
 
@@ -890,7 +965,6 @@ class HeatingController:
 
             # Parse TRVs from either the new 'trvs' list (dicts) or legacy 'trv_ieees' list (strings).
             trvs = self._clean_trvs(r)
-
 
             if not trvs and not sensor_ieee:
                 logger.warning(
@@ -940,6 +1014,30 @@ class HeatingController:
                 DEFAULT_EXT_TEMP_PUSH_INTERVAL_SEC
             ) or DEFAULT_EXT_TEMP_PUSH_INTERVAL_SEC)
 
+            # Optional contact sensors that influence heating for this room
+            contact_in = r.get("contact_sensors") or []
+            contact_clean = []
+            for cs in contact_in:
+                if not isinstance(cs, dict):
+                    continue
+                ieee = str(cs.get("ieee") or "").strip()
+                if not ieee:
+                    continue
+                contact_clean.append({
+                    "ieee": ieee,
+                    "name": str(cs.get("name") or ieee),
+                    "debounce_open_seconds": int(_as_float(
+                        cs.get("debounce_open_seconds"), CONTACT_DEBOUNCE_OPEN_SEC
+                    )),
+                    "require_temp_drop_c": _as_float(
+                        cs.get("require_temp_drop_c"), CONTACT_REQUIRE_TEMP_DROP_C
+                    ),
+                    "max_close_minutes": int(_as_float(
+                        cs.get("max_close_minutes"), CONTACT_MAX_CLOSE_SEC // 60
+                    )),
+                    "enabled": _as_bool(cs.get("enabled"), True),
+                })
+
             room_out = {
                 "id": rid,
                 "name": str(r["name"]),
@@ -953,6 +1051,7 @@ class HeatingController:
                 # Keep legacy key populated so older code paths still work.
                 "trv_ieees": [t["ieee"] for t in trvs],
                 "schedule": clean_sched,
+                "contact_sensors": contact_clean,
             }
             # Dimensions are used by Phase 3+ (thermal profile, BTU sizing).
             # Controller itself doesn't need them but preserves them verbatim.
@@ -1172,6 +1271,7 @@ class HeatingController:
             any_calling = False
 
             for room in circuit["rooms"]:
+                room["_oh_enabled_for_circuit"] = circuit.get("operating_hours")
                 decision = self._evaluate_room(room, devices, now)
                 if decision.calling_for_heat:
                     any_calling = True
@@ -1355,11 +1455,48 @@ class HeatingController:
         except Exception as e:
             logger.debug(f"preheat eval failed for {room['id']}: {e}")
 
-        # Classify with hysteresis
+        # ── Adaptive overshoot compensation ────────────────────
+        # Look up prior tick's calling state for this room.
+        prior_calling = False
+        try:
+            for c in (self._last_decision.get("circuits") or []):
+                if c.get("id") != circuit["id"]:
+                    continue
+                for r in (c.get("rooms") or []):
+                    if r.get("room_id") == room["id"]:
+                        prior_calling = bool(r.get("calling_for_heat"))
+                        break
+                break
+        except Exception:
+            pass
+
+        # Compute provisional calling state using fixed COLD_BAND so the
+        # overshoot tracker sees the unmodified cold→ontarget edge.
+        provisional_calling = (
+                decision.current_temp is not None
+                and decision.target_temp is not None
+                and decision.current_temp < decision.target_temp - COLD_BAND
+        )
+
+        learned_offset, overshoot_info = self._track_overshoot(
+            room_id=room["id"],
+            target_temp=decision.target_temp,
+            current_temp=decision.current_temp,
+            was_calling=prior_calling,
+            is_now_calling_pre_offset=provisional_calling,
+            now_ts=time.time(),
+        )
+        decision.overshoot = overshoot_info
+
+        # Effective cutoff widens by learned offset so we stop calling
+        # earlier on rooms that historically overshoot.
+        effective_cold_band = max(COLD_BAND, learned_offset)
+
+        # Classify with adaptive cutoff
         if decision.current_temp is None or decision.target_temp is None:
             decision.status = "unknown"
             decision.calling_for_heat = False
-        elif decision.current_temp < decision.target_temp - COLD_BAND:
+        elif decision.current_temp < decision.target_temp - effective_cold_band:
             decision.status = "cold"
             decision.calling_for_heat = True
         elif decision.current_temp > decision.target_temp + HOT_BAND:
@@ -1367,6 +1504,14 @@ class HeatingController:
             decision.calling_for_heat = False
         else:
             decision.status = "ontarget"
+
+        # ── Door/window contact override ──────────────────────
+        contact = self._evaluate_contact_state(
+            room, devices, decision.current_temp, time.time()
+        )
+        decision.contact = contact
+        if contact["is_active"]:
+            decision.status = "contact_open"
             decision.calling_for_heat = False
 
         # Health check — runs after classification so it can use temp_source.
@@ -1424,11 +1569,44 @@ class HeatingController:
 
         return decision
 
+    WEEKEND_DAYS = ("sat", "sun")
+
+    def _is_within_operating_hours(self, now: datetime) -> Tuple[bool, str]:
+        """
+        Returns (is_day, period_label). period_label is one of
+        "weekday-day", "weekday-night", "weekend-day", "weekend-night".
+        """
+        day = DAY_KEYS[now.weekday()]
+        is_weekend = day in self.WEEKEND_DAYS
+        if is_weekend:
+            start_s, end_s = self._oh_weekend_start, self._oh_weekend_end
+        else:
+            start_s, end_s = self._oh_weekday_start, self._oh_weekday_end
+
+        start_m = _parse_hhmm(start_s)
+        end_m = _parse_hhmm(end_s)
+        now_minutes = now.hour * 60 + now.minute
+
+        if start_m is None or end_m is None:
+            return True, ("weekend-day" if is_weekend else "weekday-day")
+
+        in_day = ((start_m <= now_minutes < end_m) if start_m <= end_m
+                  else (now_minutes >= start_m or now_minutes < end_m))
+        prefix = "weekend" if is_weekend else "weekday"
+        return in_day, f"{prefix}-{'day' if in_day else 'night'}"
+
     def _effective_target(self, room: dict, now: datetime) -> float:
-        """Pick target from active schedule slot, fall back to night setback or default."""
+        """
+        Resolution order (most-specific first):
+          1. Active per-room schedule slot
+          2. Within operating hours → room.target_temp
+          3. Outside operating hours → setback / min_only / off (handled
+             by caller via -inf sentinel for 'off')
+        """
         day = DAY_KEYS[now.weekday()]
         now_minutes = now.hour * 60 + now.minute
 
+        # 1. Schedule slots (most specific)
         for slot in room.get("schedule", []):
             if day not in (slot.get("days") or []):
                 continue
@@ -1436,16 +1614,37 @@ class HeatingController:
             end_m = _parse_hhmm(slot.get("end", "23:59"))
             if start_m is None or end_m is None:
                 continue
-            in_slot = (start_m <= now_minutes < end_m) if start_m <= end_m \
-                else (now_minutes >= start_m or now_minutes < end_m)
+            in_slot = ((start_m <= now_minutes < end_m) if start_m <= end_m
+                       else (now_minutes >= start_m or now_minutes < end_m))
             if in_slot:
                 return float(slot.get("temp", room["target_temp"]))
 
-        # Overnight default setback (22:00 – 06:00)
+        target = float(room.get("target_temp", self._default_target))
+        min_t = float(room.get("min_temp", self._default_min))
+
+        # 2. Operating-hours framework — opt-in per circuit/global
+        oh_circuit = room.get("_oh_enabled_for_circuit", None)
+        oh_active = self._oh_enabled if oh_circuit is None else bool(oh_circuit)
+
+        if oh_active:
+            is_day, _ = self._is_within_operating_hours(now)
+            if is_day:
+                return target
+            # Out-of-hours
+            if self._oh_action == "off":
+                # Sentinel — caller will floor at min_temp and never call for heat
+                return min_t
+            if self._oh_action == "min_only":
+                return min_t
+            # "setback"
+            setback = target + self._oh_setback_offset
+            return max(setback, min_t)
+
+        # 3. Legacy fallback (operating_hours disabled): old 22-06 setback
         if now_minutes >= 22 * 60 or now_minutes < 6 * 60:
             return float(room.get("night_setback", self._default_setback))
 
-        return float(room.get("target_temp", self._default_target))
+        return target
 
     # ── Weather-based suppression ──────────────────────────────────
     def _forecast_window_min(self, lookahead_h: int) -> Optional[float]:
@@ -1476,6 +1675,250 @@ class HeatingController:
             if isinstance(t, (int, float))
         ]
         return min(window) if window else None
+
+    # ── Window/door open detection ─────────────────────────────────
+    def _evaluate_contact_state(
+            self, room: dict, devices: Dict[str, Any],
+            current_temp: Optional[float], now_ts: float
+    ) -> Dict[str, Any]:
+        """
+        Update the window state machine for a room and return a snapshot.
+
+        States:
+          closed       — no configured sensor reports open
+          open_pending — sensor open, debounce or temp-drop not yet met
+          open_active  — force-close TRVs, stop calling for heat
+
+        The temp-drop guard means a brief vent (e.g. steam off the hob)
+        won't kill the radiator: if the room doesn't actually cool, we
+        stay in pending forever (or until the door closes).
+        """
+        rid = room["id"]
+        contact_cfg = room.get("contact_sensors") or []
+        st = self._contact.setdefault(rid, {
+            "state": "closed",
+            "sensors_open": set(),
+            "opened_ts": None,
+            "opened_temp": None,
+            "activated_ts": None,
+            "last_closed_ts": None,
+            "observed_drop_c": None,
+            "reason": "",
+        })
+
+        if not contact_cfg:
+            st["state"] = "closed"
+            st["sensors_open"] = set()
+            return self._contact_snapshot(st)
+
+        # Resolve which configured sensors are currently reporting open
+        open_now = set()
+        active_sensors_meta: List[Dict[str, Any]] = []
+        for cs in contact_cfg:
+            if not cs.get("enabled", True):
+                continue
+            dev = devices.get(cs["ieee"])
+            is_open = False
+            if dev is not None:
+                state = _device_state(dev)
+                # Security handler exposes is_open=True when magnet separated.
+                # Tolerate either key in case other handlers populate "contact".
+                if "is_open" in state:
+                    is_open = bool(state.get("is_open"))
+                elif "contact" in state:
+                    is_open = not bool(state.get("contact"))
+            active_sensors_meta.append({
+                "ieee": cs["ieee"], "name": cs["name"], "is_open": is_open,
+            })
+            if is_open:
+                open_now.add(cs["ieee"])
+
+        st["sensors_open"] = open_now
+        any_open = bool(open_now)
+
+        # Cache resolved config for whichever sensor opened first
+        # (use largest debounce / drop / max-close among open sensors)
+        debounce_s = CONTACT_DEBOUNCE_OPEN_SEC
+        drop_required = CONTACT_REQUIRE_TEMP_DROP_C
+        max_close_s = CONTACT_MAX_CLOSE_SEC
+        if any_open:
+            relevant = [c for c in contact_cfg if c["ieee"] in open_now]
+            if relevant:
+                debounce_s = max(c["debounce_open_seconds"] for c in relevant)
+                drop_required = max(c["require_temp_drop_c"] for c in relevant)
+                max_close_s = max(c["max_close_minutes"] * 60 for c in relevant)
+
+        prev_state = st["state"]
+
+        # ── Transitions ────────────────────────────────────────
+        if prev_state == "closed":
+            if any_open:
+                st["state"] = "open_pending"
+                st["opened_ts"] = now_ts
+                st["opened_temp"] = current_temp
+                st["activated_ts"] = None
+                st["observed_drop_c"] = None
+                st["reason"] = f"sensor opened, debouncing {debounce_s}s"
+
+        elif prev_state == "open_pending":
+            if not any_open:
+                st["state"] = "closed"
+                st["last_closed_ts"] = now_ts
+                st["opened_ts"] = None
+                st["opened_temp"] = None
+                st["reason"] = "sensor closed during debounce"
+            else:
+                elapsed = now_ts - (st["opened_ts"] or now_ts)
+                drop = None
+                if (st["opened_temp"] is not None and current_temp is not None):
+                    drop = st["opened_temp"] - current_temp
+                    st["observed_drop_c"] = round(drop, 2)
+
+                if elapsed < debounce_s:
+                    st["reason"] = (
+                        f"open {int(elapsed)}s/{debounce_s}s — debouncing"
+                    )
+                else:
+                    # Past debounce — temp-drop guard decides escalation
+                    if drop is None:
+                        st["reason"] = "no temperature reading — staying pending"
+                    elif drop >= drop_required:
+                        st["state"] = "open_active"
+                        st["activated_ts"] = now_ts
+                        st["reason"] = (
+                            f"temp drop {drop:.1f}°C ≥ {drop_required:.1f}°C "
+                            f"— force-closing valves"
+                        )
+                    elif elapsed > CONTACT_REQUIRE_DROP_WINDOW_SEC:
+                        st["reason"] = (
+                            f"open {int(elapsed/60)}m, drop {drop:.1f}°C "
+                            f"< {drop_required:.1f}°C — likely steam vent, "
+                            f"holding heat"
+                        )
+                    else:
+                        st["reason"] = (
+                            f"open {int(elapsed)}s, drop {drop:.1f}°C "
+                            f"< {drop_required:.1f}°C — watching"
+                        )
+
+        elif prev_state == "open_active":
+            if not any_open:
+                st["state"] = "closed"
+                st["last_closed_ts"] = now_ts
+                st["opened_ts"] = None
+                st["opened_temp"] = None
+                st["activated_ts"] = None
+                st["reason"] = "sensor closed — resuming normal control"
+            else:
+                active_for = now_ts - (st["activated_ts"] or now_ts)
+                if active_for > max_close_s:
+                    # Safety release — sensor stuck open?
+                    st["state"] = "closed"
+                    st["last_closed_ts"] = now_ts
+                    st["reason"] = (
+                        f"max_close {int(max_close_s/60)}min reached — "
+                        f"safety release; sensor still open"
+                    )
+                else:
+                    st["reason"] = (
+                        f"active {int(active_for/60)}m — valves force-closed"
+                    )
+
+        snap = self._contact_snapshot(st)
+        snap["sensors"] = active_sensors_meta
+        snap["debounce_seconds"] = debounce_s
+        snap["drop_required_c"] = drop_required
+        snap["max_close_minutes"] = int(max_close_s / 60)
+        return snap
+
+    @staticmethod
+    def _contact_snapshot(st: Dict[str, Any]) -> Dict[str, Any]:
+        return {
+            "state": st["state"],
+            "reason": st.get("reason", ""),
+            "opened_ts": st.get("opened_ts"),
+            "activated_ts": st.get("activated_ts"),
+            "observed_drop_c": st.get("observed_drop_c"),
+            "is_active": st["state"] == "open_active",
+        }
+
+    # ── Adaptive overshoot compensation ────────────────────────────
+    def _track_overshoot(
+            self, room_id: str, target_temp: Optional[float],
+            current_temp: Optional[float], was_calling: bool,
+            is_now_calling_pre_offset: bool, now_ts: float
+    ) -> Tuple[float, Dict[str, Any]]:
+        """
+        Run one step of per-room overshoot learning.
+
+        Returns (learned_offset_c, info_dict). The offset is the EWMA of
+        observed overshoots after stopping a call-for-heat cycle. Info is
+        surfaced in the decision dict for the UI.
+        """
+        st = self._overshoot.setdefault(room_id, {
+            "learned_offset_c": 0.0,
+            "phase": "idle",            # idle | watching
+            "watch_started_ts": None,
+            "watch_target": None,
+            "peak_temp": None,
+            "samples": 0,
+            "last_observed_overshoot": None,
+        })
+
+        if current_temp is None or target_temp is None:
+            return st["learned_offset_c"], {
+                "learned_offset_c": st["learned_offset_c"],
+                "phase": st["phase"],
+                "samples": st["samples"],
+                "last_observed_overshoot": st["last_observed_overshoot"],
+            }
+
+        # 1. Trigger watch when we just stopped calling
+        if st["phase"] == "idle" and was_calling and not is_now_calling_pre_offset:
+            st["phase"] = "watching"
+            st["watch_started_ts"] = now_ts
+            st["watch_target"] = target_temp
+            st["peak_temp"] = current_temp
+
+        # 2. Watching: track peak, record on drop or timeout, abandon if calling resumes
+        elif st["phase"] == "watching":
+            if is_now_calling_pre_offset:
+                # Calling resumed before we saw a peak — abandon, no sample
+                st["phase"] = "idle"
+                st["peak_temp"] = None
+                st["watch_target"] = None
+                st["watch_started_ts"] = None
+            else:
+                if current_temp > (st["peak_temp"] or current_temp):
+                    st["peak_temp"] = current_temp
+
+                peak = st["peak_temp"] or current_temp
+                started = st["watch_started_ts"] or now_ts
+                timed_out = (now_ts - started) > OVERSHOOT_PEAK_TIMEOUT_SEC
+                dropped = current_temp <= (peak - OVERSHOOT_PEAK_DROP_C)
+
+                if dropped or timed_out:
+                    observed = max(0.0, peak - (st["watch_target"] or target_temp))
+                    observed = min(observed, OVERSHOOT_MAX_OFFSET_C * 2)  # outlier guard
+                    alpha = OVERSHOOT_LEARN_ALPHA
+                    if st["samples"] == 0:
+                        new_offset = observed
+                    else:
+                        new_offset = (1 - alpha) * st["learned_offset_c"] + alpha * observed
+                    st["learned_offset_c"] = max(0.0, min(new_offset, OVERSHOOT_MAX_OFFSET_C))
+                    st["last_observed_overshoot"] = round(observed, 2)
+                    st["samples"] += 1
+                    st["phase"] = "idle"
+                    st["peak_temp"] = None
+                    st["watch_target"] = None
+                    st["watch_started_ts"] = None
+
+        return st["learned_offset_c"], {
+            "learned_offset_c": round(st["learned_offset_c"], 2),
+            "phase": st["phase"],
+            "samples": st["samples"],
+            "last_observed_overshoot": st["last_observed_overshoot"],
+        }
 
     def _evaluate_weather_suppression(
             self, circuit: dict, decisions: List["RoomDecision"]
@@ -1983,7 +2426,7 @@ class HeatingController:
             # The intended setpoint is floored at MIN_TRV_SETPOINT (5°C for Aqara
             # E1; configurable per-TRV in config.yaml).
             TRV_MIN_SETPOINT = float(trv.get("min_setpoint", 5.0))
-            if decision.status == "hot":
+            if decision.status in ("hot", "contact_open"):
                 reference = room_temp if room_temp is not None else current_temp
                 if reference is None:
                     intended = round(target, 1)
