@@ -327,6 +327,12 @@ def _check_room_health(room: dict, devices: Dict[str, Any],
                     stale.append({"ieee": sensor_ieee, "age_sec": int(age),
                                   "kind": "sensor"})
 
+    # The external sensor is the authoritative reading whenever
+    # decision.temp_source == "external". In that case the TRV's own
+    # internal local_temperature is not driving any control decision and
+    # its DuckDB freshness is not a health signal for this room.
+    using_external = (decision.temp_source == "external")
+
     # ── TRVs ────────────────────────────────────────────────────────
     for t in (room.get("trvs") or []):
         ieee = t.get("ieee") if isinstance(t, dict) else None
@@ -342,22 +348,30 @@ def _check_room_health(room: dict, devices: Dict[str, Any],
             reasons.append(f"TRV {ieee} offline")
             continue
         if trv_dec.get("current_temp") is None:
+            # No reading at all — distinct from "stale". This means the
+            # in-memory device state has no temperature key, which is a
+            # genuine failure even when an external sensor is present
+            # (the TRV is silent altogether, not just slow on local_temperature).
             reasons.append(f"TRV {ieee} reports no temperature")
             continue
-        # Freshness check
-        last_ts = _last_temperature_ts(ieee)
-        if last_ts is None:
-            # No DuckDB history yet — don't flag as critical on its own;
-            # the in-memory state shows a value, and a fresh install hasn't
-            # had time to accumulate rows. Silent pass.
-            continue
-        age = now - last_ts
-        if age > threshold_sec:
-            age_min = int(age / 60)
-            reasons.append(
-                f"TRV {ieee} last reported temperature {age_min} min ago"
-            )
-            stale.append({"ieee": ieee, "age_sec": int(age), "kind": "trv"})
+
+        # Freshness check — skipped when the external sensor is the
+        # authoritative source. See the block comment above.
+        if not using_external:
+            last_ts = _last_temperature_ts(ieee)
+            if last_ts is None:
+                # No DuckDB history yet — don't flag as critical on its own;
+                # the in-memory state shows a value, and a fresh install hasn't
+                # had time to accumulate rows. Silent pass.
+                pass
+            else:
+                age = now - last_ts
+                if age > threshold_sec:
+                    age_min = int(age / 60)
+                    reasons.append(
+                        f"TRV {ieee} last reported temperature {age_min} min ago"
+                    )
+                    stale.append({"ieee": ieee, "age_sec": int(age), "kind": "trv"})
 
         if trv_dec.get("valve_alarm"):
             reasons.append(f"TRV {trv_dec.get('name') or ieee}: valve alarm (stuck/seized)")
