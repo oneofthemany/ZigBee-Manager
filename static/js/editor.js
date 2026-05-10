@@ -385,6 +385,16 @@ function renderFileTree(tree) {
     const container = document.getElementById('editorFileTree');
     if (!container) return;
 
+    // collapse improvement
+    const collapsedSections = new Set();
+    container.querySelectorAll('.tree-section').forEach(section => {
+        const header = section.querySelector('.tree-section-header');
+        const children = section.querySelector('.tree-section-children');
+        if (header && children && children.style.display === 'none') {
+            collapsedSections.add(header.textContent.trim());
+        }
+    });
+
     container.innerHTML = tree.map(dir => {
         const children = (dir.children || []).map(item => {
             if (item.is_dir) {
@@ -434,6 +444,24 @@ function renderFileTree(tree) {
         style.textContent = `.tree-file:hover .editor-tree-del-btn { visibility: visible !important; }
             .tree-file:hover .editor-tree-del-btn:hover { color: #f44747 !important; }`;
         document.head.appendChild(style);
+    }
+
+    // Restore previously collapsed sections so opening a file doesn't
+    // re-expand the tree.
+    if (collapsedSections.size) {
+        container.querySelectorAll('.tree-section').forEach(section => {
+            const header = section.querySelector('.tree-section-header');
+            const children = section.querySelector('.tree-section-children');
+            if (!header || !children) return;
+            if (collapsedSections.has(header.textContent.trim())) {
+                children.style.display = 'none';
+                const chevron = header.querySelector('.tree-section-chevron');
+                if (chevron) {
+                    chevron.classList.remove('fa-chevron-down');
+                    chevron.classList.add('fa-chevron-right');
+                }
+            }
+        });
     }
 }
 
