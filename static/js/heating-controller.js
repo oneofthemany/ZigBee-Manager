@@ -188,6 +188,9 @@ function renderControllerPanel(state) {
             <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
                 <span><i class="fas fa-cogs me-2"></i>Heating Controller ${dryBadge}</span>
                 <div class="btn-group btn-group-sm">
+                    <button class="btn btn-outline-info" id="btn-controller-floorplan" title="Open floor-plan editor">
+                        <i class="fas fa-drafting-compass"></i> Floor plan
+                    </button>
                     <button class="btn btn-outline-secondary" id="btn-controller-tick" title="Run a control tick now">
                         <i class="fas fa-bolt"></i> Tick now
                     </button>
@@ -319,6 +322,15 @@ function renderCircuitStatusCard(c) {
 }
 
 function bindControllerPanel() {
+    document.getElementById('btn-controller-floorplan')?.addEventListener('click', async () => {
+        const { openFloorPlanEditor } = await import('./floor-plan.js');
+        openFloorPlanEditor({
+            devices: controllerDevices,
+            sensors: controllerSensors,
+            contacts: controllerContactSensors,
+            onSave: () => loadControllerStatus(),
+        });
+    });
     document.getElementById('btn-controller-settings')?.addEventListener('click', openControllerSettings);
     document.getElementById('btn-controller-tick')?.addEventListener('click', async () => {
         const btn = document.getElementById('btn-controller-tick');

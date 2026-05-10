@@ -1,0 +1,280 @@
+/* ============================================================
+   ZigBee Matter Manager — Floor-plan editor styles
+   ============================================================
+   The editor's SVG emits CSS classes only — every stroke/fill
+   colour is inherited from CSS variables defined here. Theme
+   switches via `[data-theme="dark"]` on <html> repaint instantly
+   without re-rendering the SVG.
+   ============================================================ */
+
+/* ─────────────────────── design tokens (light) ─────────────────────── */
+:root {
+    --fp-canvas-bg:        #f8fafc;
+    --fp-sidebar-bg:       var(--bs-body-bg, #ffffff);
+    --fp-border:           var(--border-color, #dee2e6);
+    --fp-text:             var(--text-primary, #1f2937);
+    --fp-text-muted:       var(--text-muted, #6b7280);
+
+    --fp-grid-minor:       rgba(148, 163, 184, 0.18);
+    --fp-grid-major:       rgba(148, 163, 184, 0.40);
+
+    --fp-room-fill:        rgba(99, 102, 241, 0.08);
+    --fp-room-stroke:      #6366f1;
+    --fp-room-label:       #475569;
+
+    --fp-wall-external:    #dc2626;
+    --fp-wall-party:       #a855f7;
+    --fp-wall-internal:    #94a3b8;
+    --fp-wall-unknown:     #cbd5e1;
+
+    --fp-window:           #38bdf8;
+    --fp-door:             #f59e0b;
+
+    --fp-radiator-fill:    #ef4444;
+    --fp-radiator-stroke:  #7f1d1d;
+    --fp-radiator-label:   #7f1d1d;
+
+    --fp-sensor-fill:      #22c55e;
+    --fp-sensor-stroke:    #14532d;
+    --fp-sensor-primary:   #ffffff;
+
+    --fp-contact-fill:     #a78bfa;
+    --fp-contact-stroke:   #5b21b6;
+
+    --fp-selection:        #fbbf24;
+    --fp-selection-stroke: #92400e;
+
+    --fp-compass-needle:   #dc2626;
+    --fp-compass-tail:     #94a3b8;
+    --fp-compass-ring:     #94a3b8;
+    --fp-compass-text:     #64748b;
+
+    --fp-preview-stroke:   #475569;
+    --fp-overlay-text:     #475569;
+    --fp-sun-stroke:       rgba(245, 158, 11, 0.7);
+}
+
+/* ─────────────────────── design tokens (dark) ─────────────────────── */
+[data-theme="dark"] {
+    --fp-canvas-bg:        #0f172a;       /* slate-900 */
+    --fp-sidebar-bg:       #1e293b;       /* slate-800 */
+    --fp-border:           #334155;       /* slate-700 */
+    --fp-text:             #e5e7eb;
+    --fp-text-muted:       #94a3b8;
+
+    --fp-grid-minor:       rgba(148, 163, 184, 0.10);
+    --fp-grid-major:       rgba(148, 163, 184, 0.22);
+
+    --fp-room-fill:        rgba(129, 140, 248, 0.10);
+    --fp-room-stroke:      #818cf8;
+    --fp-room-label:       #cbd5e1;
+
+    --fp-wall-external:    #f87171;
+    --fp-wall-party:       #c084fc;
+    --fp-wall-internal:    #94a3b8;
+    --fp-wall-unknown:     #475569;
+
+    --fp-window:           #38bdf8;
+    --fp-door:             #fbbf24;
+
+    --fp-radiator-fill:    #f87171;
+    --fp-radiator-stroke:  #fca5a5;
+    --fp-radiator-label:   #fca5a5;
+
+    --fp-sensor-fill:      #4ade80;
+    --fp-sensor-stroke:    #bbf7d0;
+    --fp-sensor-primary:   #0f172a;
+
+    --fp-contact-fill:     #c4b5fd;
+    --fp-contact-stroke:   #ddd6fe;
+
+    --fp-selection:        #fbbf24;
+    --fp-selection-stroke: #fde68a;
+
+    --fp-compass-needle:   #f87171;
+    --fp-compass-tail:     #475569;
+    --fp-compass-ring:     #475569;
+    --fp-compass-text:     #94a3b8;
+
+    --fp-preview-stroke:   #cbd5e1;
+    --fp-overlay-text:     #cbd5e1;
+    --fp-sun-stroke:       rgba(251, 191, 36, 0.7);
+}
+
+/* ─────────────────────── modal chrome ─────────────────────── */
+#floorPlanModal .modal-content {
+    background: var(--fp-sidebar-bg);
+    color: var(--fp-text);
+}
+
+#floorPlanModal #fpSidebar,
+#floorPlanModal #fpProps {
+    background: var(--fp-sidebar-bg);
+    color: var(--fp-text);
+    border-color: var(--fp-border) !important;
+}
+
+#floorPlanModal #fpCanvasWrap {
+    background: var(--fp-canvas-bg);
+}
+
+#floorPlanModal #fpSidebar .text-muted,
+#floorPlanModal #fpProps .text-muted,
+#floorPlanModal #fpStatus,
+#floorPlanModal #fpSaveStatus,
+#floorPlanModal .form-text {
+    color: var(--fp-text-muted) !important;
+}
+
+#fpToolbar .btn.active {
+    background-color: var(--bs-primary, #0d6efd);
+    color: #fff;
+    border-color: var(--bs-primary, #0d6efd);
+}
+
+#fpCompass { user-select: none; }
+#fpCompass svg { cursor: grab; }
+#fpCompass svg:active { cursor: grabbing; }
+
+#fpImageOpacity { width: 100%; }
+#fpImageFile { font-size: 0.85rem; }
+
+#fpLevelList .list-group-item.active {
+    background-color: var(--bs-primary, #0d6efd);
+    color: #fff;
+    border-color: var(--bs-primary, #0d6efd);
+}
+
+#fpSaveStatus,
+#fpStatus { min-height: 1.1em; }
+
+/* Dark-mode chrome overrides for elements not driven by --fp- vars */
+[data-theme="dark"] #floorPlanModal .modal-header,
+[data-theme="dark"] #floorPlanModal .modal-footer {
+    background: var(--fp-sidebar-bg);
+    border-color: var(--fp-border);
+}
+
+[data-theme="dark"] #floorPlanModal .form-control,
+[data-theme="dark"] #floorPlanModal .form-select {
+    background-color: #0f172a;
+    color: var(--fp-text);
+    border-color: var(--fp-border);
+}
+
+[data-theme="dark"] #floorPlanModal .form-control::placeholder {
+    color: var(--fp-text-muted);
+}
+
+[data-theme="dark"] #floorPlanModal .btn-outline-primary,
+[data-theme="dark"] #floorPlanModal .btn-outline-secondary,
+[data-theme="dark"] #floorPlanModal .btn-outline-info,
+[data-theme="dark"] #floorPlanModal .btn-outline-warning,
+[data-theme="dark"] #floorPlanModal .btn-outline-danger {
+    color: var(--fp-text);
+    border-color: var(--fp-border);
+}
+
+[data-theme="dark"] #floorPlanModal .btn-outline-primary:hover,
+[data-theme="dark"] #floorPlanModal .btn-outline-secondary:hover,
+[data-theme="dark"] #floorPlanModal .btn-outline-info:hover,
+[data-theme="dark"] #floorPlanModal .btn-outline-warning:hover,
+[data-theme="dark"] #floorPlanModal .btn-outline-danger:hover {
+    background-color: var(--fp-border);
+    border-color: var(--fp-text-muted);
+    color: #fff;
+}
+
+[data-theme="dark"] #floorPlanModal .btn-close {
+    filter: invert(1) grayscale(100%) brightness(200%);
+}
+
+[data-theme="dark"] #fpLevelList .list-group-item {
+    background-color: transparent;
+    color: var(--fp-text);
+    border-color: var(--fp-border);
+}
+
+[data-theme="dark"] #fpToolbar .btn.active {
+    background-color: #6366f1;
+    border-color: #6366f1;
+}
+
+/* ─────────────────────── SVG features ─────────────────────── */
+
+.fp-grid-line-minor { stroke: var(--fp-grid-minor); }
+.fp-grid-line-major { stroke: var(--fp-grid-major); }
+
+.fp-compass-ring   { stroke: var(--fp-compass-ring); }
+.fp-compass-label  { fill: var(--fp-compass-text); }
+.fp-compass-needle { fill: var(--fp-compass-needle); }
+.fp-compass-tail   { fill: var(--fp-compass-tail); }
+
+.fp-room {
+    fill: var(--fp-room-fill);
+    stroke: var(--fp-room-stroke);
+}
+.fp-room-label { fill: var(--fp-room-label); }
+
+.fp-wall { fill: none; }
+.fp-wall-external { stroke: var(--fp-wall-external); }
+.fp-wall-party    { stroke: var(--fp-wall-party); }
+.fp-wall-internal { stroke: var(--fp-wall-internal); }
+.fp-wall-unknown  { stroke: var(--fp-wall-unknown); }
+
+.fp-opening { fill: none; }
+.fp-opening-window { stroke: var(--fp-window); }
+.fp-opening-door   { stroke: var(--fp-door); }
+
+.fp-door-pivot { fill: var(--fp-door); }
+
+.fp-radiator {
+    fill: var(--fp-radiator-fill);
+    stroke: var(--fp-radiator-stroke);
+}
+.fp-radiator-label { fill: var(--fp-radiator-label); }
+
+.fp-sensor {
+    fill: var(--fp-sensor-fill);
+    stroke: var(--fp-sensor-stroke);
+}
+.fp-sensor-primary-dot { fill: var(--fp-sensor-primary); }
+
+.fp-contact {
+    fill: var(--fp-contact-fill);
+    stroke: var(--fp-contact-stroke);
+}
+
+/* Selection — overrides the per-shape stroke for any selected element */
+.fp-selected {
+    stroke: var(--fp-selection) !important;
+}
+
+/* Drawing previews */
+.fp-preview { fill: none; stroke: var(--fp-preview-stroke); }
+.fp-preview-wall   { stroke: var(--fp-preview-stroke); }
+.fp-preview-window { stroke: var(--fp-window); }
+.fp-preview-door   { stroke: var(--fp-door); }
+.fp-preview-label  { fill: var(--fp-overlay-text); }
+
+.fp-preview-room {
+    fill: var(--fp-room-fill);
+    stroke: var(--fp-room-stroke);
+}
+.fp-preview-vertex { fill: var(--fp-room-stroke); }
+
+/* Calibration marker */
+.fp-calibration-marker {
+    fill: var(--fp-selection);
+    stroke: var(--fp-selection-stroke);
+}
+
+/* Sun path */
+.fp-sun-path { stroke: var(--fp-sun-stroke); fill: none; }
+
+/* Background image: faint frame in dark mode so a fully-white plan
+   doesn't read as a hole in the canvas. */
+[data-theme="dark"] #fpScene image {
+    outline: 1px dashed var(--fp-border);
+    outline-offset: 0;
+}

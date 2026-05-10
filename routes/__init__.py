@@ -24,6 +24,8 @@ from routes.upgrade_routes import register_upgrade_routes
 from routes.api_docs_routes import register_api_docs_routes
 from routes.auth_routes import register_auth_routes
 from routes.presence_routes import register_presence_routes
+from routes.sun_routes import register_sun_routes
+from routes.floor_plan_routes import register_floor_plan_routes
 
 
 
@@ -49,6 +51,8 @@ __all__ = [
     'register_heating_routes',
     'register_heating_controller_routes',
     'register_presence_routes',
+    'register_sun_routes',
+    'register_floor_plan_routes',
     'register_api_docs_routes',
     'manager',
     'broadcast_event',

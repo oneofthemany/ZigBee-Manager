@@ -181,6 +181,8 @@ try:
         register_heating_routes,
         register_heating_controller_routes,
         register_presence_routes,
+        register_sun_routes,
+        register_floor_plan_routes,
         register_api_docs_routes,
         manager, broadcast_event,
     )
@@ -849,8 +851,10 @@ register_automation_routes(app,
 )
 register_backup_routes(app, get_zigbee_service)
 register_weather_routes(app, lambda: weather_service)
+register_sun_routes(app, lambda: weather_service)
 register_heating_routes(app, lambda: heating_advisor, get_zigbee_service, lambda: heating_anomaly_watcher)
 register_heating_controller_routes(app, lambda: heating_controller, get_zigbee_service)
+register_floor_plan_routes(app, lambda: heating_controller)
 register_api_docs_routes(app)
 register_presence_routes(app, get_presence_manager)
 
