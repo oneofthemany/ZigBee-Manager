@@ -9,6 +9,16 @@ weather:
   poll_interval_minutes: 60
   mqtt_publish: false
 
+background:
+  present: true
+  pixels_per_metre: 47.3      # set by Calibrate tool
+  image_width_px: 2400
+  image_height_px: 1800
+  origin_x_m: 0.0             # where the image's bottom-left lives in model space
+  origin_y_m: 0.0
+  rotation_deg: 0.0
+  opacity: 0.5
+  content_type: image/png
 
 heating:
   enabled: true
