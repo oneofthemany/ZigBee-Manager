@@ -6,9 +6,7 @@ This version uses mixins to keep the core class clean while retaining the identi
 """
 import time
 import logging
-import asyncio
-from typing import Dict, Any, List
-from zigpy.zcl.clusters.general import Basic
+from typing import Dict, Any
 
 from device.state import DeviceStateManagerMixin
 from device.handlers import DeviceHandlerManagerMixin
@@ -49,7 +47,35 @@ class ZigManDevice(
         self.manufacturer = zigpy_dev.manufacturer
         self.model = zigpy_dev.model
 
-        self._hydrate_metadata()
+        # Hydrate from state cache if zigpy DB lost them (sleepy devices, partial interviews)
+        cached = self.service.state_cache.get(self.ieee, {}) if hasattr(self.service, 'state_cache') else {}
+        if not self.manufacturer and cached.get('manufacturer') and cached['manufacturer'] != 'Unknown':
+            self.manufacturer = cached['manufacturer']
+            try: zigpy_dev.manufacturer = self.manufacturer
+            except Exception: pass
+        if not self.model and cached.get('model') and cached['model'] != 'Unknown':
+            self.model = cached['model']
+            try: zigpy_dev.model = self.model
+            except Exception: pass
+
+        if not self.model or not self.manufacturer:
+            for ep_id, ep in zigpy_dev.endpoints.items():
+                if ep_id == 0:
+                    continue
+                basic = (getattr(ep, 'in_clusters', {}) or {}).get(0x0000)
+                if not basic:
+                    continue
+                cache = getattr(basic, '_attr_cache', {}) or {}
+                if not self.model and 0x0005 in cache:
+                    v = cache[0x0005]
+                    self.model = str(getattr(v, 'value', v))
+                    try: zigpy_dev.model = self.model
+                    except Exception: pass
+                if not self.manufacturer and 0x0004 in cache:
+                    v = cache[0x0004]
+                    self.manufacturer = str(getattr(v, 'value', v))
+                    try: zigpy_dev.manufacturer = self.manufacturer
+                    except Exception: pass
 
         # Initialize to 0 so devices appear Offline until they communicate
         self.last_seen = 0
@@ -99,72 +125,6 @@ class ZigManDevice(
                     f"Model: {self.model}, Manufacturer: {self.manufacturer}, "
                     f"Quirk: {self.quirk_name}")
 
-    def _hydrate_metadata(self):
-        """Hydrate from state cache if zigpy DB lost them (sleepy devices, partial interviews)"""
-        cached = self.service.state_cache.get(self.ieee, {}) if hasattr(self.service, 'state_cache') else {}
-        if not self.manufacturer and cached.get('manufacturer') and cached['manufacturer'] != 'Unknown':
-            self.manufacturer = cached['manufacturer']
-            try: self.zigpy_dev.manufacturer = self.manufacturer
-            except Exception: pass
-        if not self.model and cached.get('model') and cached['model'] != 'Unknown':
-            self.model = cached['model']
-            try: self.zigpy_dev.model = self.model
-            except Exception: pass
-
-        if not self.model or not self.manufacturer:
-            for ep_id, ep in self.zigpy_dev.endpoints.items():
-                if ep_id == 0:
-                    continue
-                basic = (getattr(ep, 'in_clusters', {}) or {}).get(0x0000)
-                if not basic:
-                    continue
-                cache = getattr(basic, '_attr_cache', {}) or {}
-                if not self.model and 0x0005 in cache:
-                    v = cache[0x0005]
-                    self.model = str(getattr(v, 'value', v))
-                    try: self.zigpy_dev.model = self.model
-                    except Exception: pass
-                if not self.manufacturer and 0x0004 in cache:
-                    v = cache[0x0004]
-                    self.manufacturer = str(getattr(v, 'value', v))
-                    try: self.zigpy_dev.manufacturer = self.manufacturer
-                    except Exception: pass
-
-    def _schedule_basic_info_query(self):
-        """Schedule a background task to query basic info."""
-        asyncio.create_task(self._query_basic_info())
-
-    async def _query_basic_info(self):
-        """Attempts to query the Basic cluster for manufacturer/model."""
-        try:
-            for ep_id, ep in self.zigpy_dev.endpoints.items():
-                if ep_id == 0: continue
-                in_cl = getattr(ep, 'in_clusters', None) or {}
-                if Basic.cluster_id in in_cl:
-                    # Attr 0x0004=Manuf, 0x0005=Model
-                    results = await ep.basic.read_attributes([0x0004, 0x0005])
-
-                    updates = {}
-                    if 0x0004 in results[0]:
-                        self.manufacturer = results[0][0x0004]
-                        self.zigpy_dev.manufacturer = self.manufacturer
-                        updates["manufacturer"] = str(self.manufacturer)
-
-                    if 0x0005 in results[0]:
-                        self.model = results[0][0x0005]
-                        self.zigpy_dev.model = self.model
-                        updates["model"] = str(self.model)
-
-                    if updates:
-                        logger.info(f"[{self.ieee}] Resolved Info: {self.manufacturer} / {self.model}")
-                        # Re-detect capabilities in case quirks apply now
-                        self.capabilities._detect_capabilities()
-                        # Sanitize state again with new capabilities
-                        self.sanitise_state()
-                        self.emit_event("metadata_updated", updates)
-        except Exception as e:
-            logger.debug(f"[{self.ieee}] Failed basic info query: {e}")
-
     def get_role(self) -> str:
         d = self.zigpy_dev
         if self.service.app.state.node_info.ieee == d.ieee:
@@ -185,29 +145,8 @@ class ZigManDevice(
             "model": str(self.model) if self.model else "Unknown",
             "quirk": self.quirk_name
         }
-
-    def get_binding_preferences(self) -> Dict[str, Dict[int, int]]:
-        """Get device-specific binding endpoint preferences."""
-        model = str(self.zigpy_dev.model or "").upper()
-        if "SLT6" in model: return {'source_endpoints': {0x0201: 9}}
-        if "SLR" in model or "RECEIVER" in model: return {'target_endpoints': {0x0201: 5}}
-        return {}
-
-    def get_device_config_schema(self) -> List[Dict]:
-        schema = []
-        seen = set()
-        for h in self.handlers.values():
-            if h in seen: continue
-            seen.add(h)
-            if hasattr(h, 'get_configuration_options'):
-                opts = h.get_configuration_options()
-                if opts: schema.extend(opts)
-
-        unique = []
-        keys = set()
-        for o in schema:
-            if o['name'] not in keys: unique.append(o); keys.add(o['name'])
-        return unique
+    def emit_event(self, event_type: str, event_data: Dict[str, Any]):
+        self.service._emit_sync("device_event", {"ieee": self.ieee, "event_type": event_type, "data": event_data})
 
     def cleanup(self):
         """Cancel timers and cleanup on device removal."""

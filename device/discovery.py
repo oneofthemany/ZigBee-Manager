@@ -4,9 +4,71 @@ Handles Home Assistant MQTT discovery configurations and payload formatting.
 """
 import json
 import asyncio
+import logging
 from typing import Dict, Any, List
+from zigpy.zcl.clusters.general import Basic
+
+logger = logging.getLogger("device.discovery")
 
 class DeviceDiscoveryProviderMixin:
+
+    def _schedule_basic_info_query(self):
+        """Schedule a background task to query basic info."""
+        asyncio.create_task(self._query_basic_info())
+
+    async def _query_basic_info(self):
+        """Attempts to query the Basic cluster for manufacturer/model."""
+        try:
+            for ep_id, ep in self.zigpy_dev.endpoints.items():
+                if ep_id == 0: continue
+                in_cl = getattr(ep, 'in_clusters', None) or {}
+                if Basic.cluster_id in in_cl:
+                    # Attr 0x0004=Manuf, 0x0005=Model
+                    results = await ep.basic.read_attributes([0x0004, 0x0005])
+
+                    updates = {}
+                    if 0x0004 in results[0]:
+                        self.manufacturer = results[0][0x0004]
+                        self.zigpy_dev.manufacturer = self.manufacturer
+                        updates["manufacturer"] = str(self.manufacturer)
+
+                    if 0x0005 in results[0]:
+                        self.model = results[0][0x0005]
+                        self.zigpy_dev.model = self.model
+                        updates["model"] = str(self.model)
+
+                    if updates:
+                        logger.info(f"[{self.ieee}] Resolved Info: {self.manufacturer} / {self.model}")
+                        # Re-detect capabilities in case quirks apply now
+                        self.capabilities._detect_capabilities()
+                        # Sanitize state again with new capabilities
+                        self.sanitise_state()
+                        self.emit_event("metadata_updated", updates)
+        except Exception as e:
+            logger.debug(f"[{self.ieee}] Failed basic info query: {e}")
+
+    def get_binding_preferences(self) -> Dict[str, Dict[int, int]]:
+        """Get device-specific binding endpoint preferences."""
+        model = str(self.zigpy_dev.model or "").upper()
+        if "SLT6" in model: return {'source_endpoints': {0x0201: 9}}
+        if "SLR" in model or "RECEIVER" in model: return {'target_endpoints': {0x0201: 5}}
+        return {}
+
+    def get_device_config_schema(self) -> List[Dict]:
+        schema = []
+        seen = set()
+        for h in self.handlers.values():
+            if h in seen: continue
+            seen.add(h)
+            if hasattr(h, 'get_configuration_options'):
+                opts = h.get_configuration_options()
+                if opts: schema.extend(opts)
+
+        unique = []
+        keys = set()
+        for o in schema:
+            if o['name'] not in keys: unique.append(o); keys.add(o['name'])
+        return unique
 
     def _publish_json_state(self, changed_data: Dict[str, Any], endpoint_id: int = None):
         """Helper to format and publish state in JSON format."""

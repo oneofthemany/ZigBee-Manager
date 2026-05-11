@@ -168,6 +168,15 @@ class DeviceStateManagerMixin:
             self._pending_configure = False
             asyncio.create_task(self.configure())
 
+    def set_preferred_endpoint(self, attribute: str, endpoint_id: int):
+        """Pin a specific endpoint for an attribute."""
+        self._preferred_endpoints[attribute] = endpoint_id
+        if self.ieee not in self.service.device_settings:
+            self.service.device_settings[self.ieee] = {}
+        self.service.device_settings[self.ieee]['preferred_endpoints'] = self._preferred_endpoints
+        self.service._save_json("./data/device_settings.json", self.service.device_settings)
+        logger.info(f"[{self.ieee}] Pinned {attribute} to Endpoint {endpoint_id}")
+
     def is_available(self) -> bool:
         role = self.get_role()
         if role == "Coordinator": return True

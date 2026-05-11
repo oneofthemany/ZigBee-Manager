@@ -1,1 +1,1 @@
-from .core import ZigManDevice
+from device.core import ZigManDevice
