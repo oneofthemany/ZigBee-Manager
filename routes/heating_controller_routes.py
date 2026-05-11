@@ -21,11 +21,16 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import FastAPI
 
+# Used when switching config_mode → floor_plan with an existing saved plan
+from modules.floor_plan import project_floor_plan_to_circuits
+
 logger = logging.getLogger("routes.heating_controller")
 
 CONFIG_PATH = "./config/config.yaml"
 
 VALID_EXT_MODES = ("off", "advisory", "push")
+
+VALID_CONFIG_MODES = ("floor_plan", "manual")
 
 
 
@@ -552,6 +557,86 @@ def register_heating_controller_routes(app: FastAPI, get_controller, get_zigbee_
         logger.warning(f"Heating controller dry_run set to {ctrl.dry_run} via API")
         return {"success": True, "dry_run": ctrl.dry_run}
 
+    @app.post("/api/heating/controller/config-mode")
+    async def set_controller_config_mode(data: dict):
+        """
+        Set the controller's configuration mode.
+
+        Body: {"mode": "floor_plan" | "manual"}
+
+        Side effects:
+          - mode == 'manual':     strips `floor_plan_ref` from all rooms so
+                                  the manual UI is fully editable. The saved
+                                  floor plan (heating.floor_plan) is kept as
+                                  a backup; switching back re-projects it.
+          - mode == 'floor_plan': if a plan is saved, re-projects it onto
+                                  the circuits so room geometry/devices
+                                  reflect the plan. If no plan is saved, the
+                                  user will draw one in the editor.
+        """
+        mode = data.get("mode")
+        if mode not in VALID_CONFIG_MODES:
+            return {
+                "success": False,
+                "error": f"mode must be one of {list(VALID_CONFIG_MODES)}",
+            }
+        try:
+            cfg = _load_config()
+            heating = cfg.setdefault("heating", {})
+            controller_block = heating.setdefault("controller", {})
+            prev_mode = controller_block.get("config_mode")
+            controller_block["config_mode"] = mode
+
+            warnings: List[str] = []
+            stripped = 0
+            reprojected = False
+
+            if mode == "manual":
+                for c in controller_block.get("circuits") or []:
+                    for r in c.get("rooms") or []:
+                        if isinstance(r, dict) and r.pop("floor_plan_ref", None):
+                            stripped += 1
+
+            elif mode == "floor_plan":
+                plan = heating.get("floor_plan")
+                if plan:
+                    try:
+                        circuits = controller_block.get("circuits") or []
+                        updated, proj_warnings = project_floor_plan_to_circuits(plan, circuits)
+                        controller_block["circuits"] = updated
+                        warnings.extend(proj_warnings)
+                        reprojected = True
+                    except Exception as e:
+                        logger.exception("re-projection on mode switch failed")
+                        warnings.append(f"re-projection failed: {e}")
+
+            _save_config(cfg)
+
+            # Hot-apply to the running controller if possible
+            ctrl = _resolve()
+            if ctrl is not None and hasattr(ctrl, "apply_config"):
+                try:
+                    ctrl.apply_config(controller_block)
+                except Exception as e:
+                    logger.warning(f"controller hot-apply on mode switch failed: {e}")
+                    warnings.append(f"controller hot-apply failed: {e}")
+
+            logger.info(
+                f"Heating controller config_mode set to {mode!r} "
+                f"(was {prev_mode!r}); stripped={stripped} reprojected={reprojected}"
+            )
+            return {
+                "success": True,
+                "mode": mode,
+                "previous_mode": prev_mode,
+                "stripped_floor_plan_refs": stripped,
+                "reprojected": reprojected,
+                "warnings": warnings,
+            }
+        except Exception as e:
+            logger.error(f"Failed to set config_mode: {e}", exc_info=True)
+            return {"success": False, "error": str(e)}
+
     @app.get("/api/heating/controller/config")
     async def get_controller_config():
         try:
@@ -565,6 +650,7 @@ def register_heating_controller_routes(app: FastAPI, get_controller, get_zigbee_
                 "config": {
                     "enabled": bool(controller_block.get("enabled", False)),
                     "dry_run": bool(controller_block.get("dry_run", False)),
+                    "config_mode": controller_block.get("config_mode") or None,
                     "weather_suppression": {
                         "enabled": bool(wx_block.get("enabled", False)),
                         "off_threshold_c": float(wx_block.get("off_threshold_c", 16.0)),
@@ -639,6 +725,13 @@ def register_heating_controller_routes(app: FastAPI, get_controller, get_zigbee_
                 controller_block["enabled"] = bool(incoming["enabled"])
             if "dry_run" in incoming:
                 controller_block["dry_run"] = bool(incoming["dry_run"])
+            if "config_mode" in incoming:
+                cm = incoming.get("config_mode")
+                if cm in VALID_CONFIG_MODES:
+                    controller_block["config_mode"] = cm
+                elif cm is None:
+                    controller_block.pop("config_mode", None)
+                # else: silently ignore garbage rather than failing the whole save
 
             if "weather_suppression" in incoming and isinstance(
                     incoming["weather_suppression"], dict

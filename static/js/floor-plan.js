@@ -263,6 +263,10 @@ function ensureModal() {
             </div>
           </div>
           <div class="modal-footer py-2">
+            <button type="button" class="btn btn-outline-warning btn-sm me-2" id="fpSwitchMode"
+                    title="Switch the heating controller back to manual configuration">
+              <i class="fas fa-list-ul me-1"></i>Switch to manual
+            </button>
             <div id="fpSaveStatus" class="me-auto small text-muted"></div>
             <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
             <button type="button" class="btn btn-primary" id="fpSave"><i class="fas fa-save me-1"></i>Save plan</button>
@@ -276,6 +280,7 @@ function ensureModal() {
 
 function bindModalEvents() {
     document.getElementById('fpSave').addEventListener('click', save);
+    document.getElementById('fpSwitchMode')?.addEventListener('click', switchToManual);
     document.getElementById('fpAddLevel').addEventListener('click', addLevel);
     document.querySelectorAll('#fpToolbar [data-tool]').forEach(b => {
         b.addEventListener('click', () => setTool(b.dataset.tool));
@@ -1909,6 +1914,45 @@ async function save() {
         status.innerHTML = `<span class="text-danger"><i class="fas fa-times-circle me-1"></i>${escapeHtml(e.message)}</span>`;
     } finally {
         btn.disabled = false;
+    }
+}
+
+/**
+ * Switch the heating controller back to manual configuration. Posts the
+ * mode change directly — the backend strips floor_plan_ref from rooms so
+ * the manual UI is fully editable. The saved plan stays on disk as a
+ * backup; the user can switch back later and the plan will be re-applied.
+ */
+async function switchToManual() {
+    const confirmed = confirm(
+        'Switch the heating controller to manual configuration?\n\n'
+        + 'Your floor plan stays saved as a backup. The rooms will become '
+        + 'freely editable in the manual UI. You can switch back later — '
+        + 'the plan will be re-applied to the rooms.'
+    );
+    if (!confirmed) return;
+
+    const status = document.getElementById('fpSaveStatus');
+    status.innerHTML = `<span class="spinner-border spinner-border-sm me-1"></span>Switching…`;
+    try {
+        const r = await fetch('/api/heating/controller/config-mode', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ mode: 'manual' }),
+        }).then(r => r.json());
+        if (!r.success) throw new Error(r.error || 'Switch failed');
+
+        status.innerHTML = `<span class="text-success">Switched to manual.</span>`;
+        // Trigger the editor's onSave callback so the parent page refreshes.
+        if (typeof _onSaveCallback === 'function') {
+            try { await _onSaveCallback(r); } catch (e) { console.error(e); }
+        }
+        setTimeout(() => {
+            const modalEl = document.getElementById('floorPlanModal');
+            if (modalEl) bootstrap.Modal.getOrCreateInstance(modalEl).hide();
+        }, 600);
+    } catch (e) {
+        status.innerHTML = `<span class="text-danger"><i class="fas fa-times-circle me-1"></i>${escapeHtml(e.message)}</span>`;
     }
 }
 

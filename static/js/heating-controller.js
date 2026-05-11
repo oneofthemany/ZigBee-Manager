@@ -19,6 +19,7 @@
 
 let controllerState = null;
 let controllerConfig = null;
+let controllerConfigMode = null;     // 'floor_plan' | 'manual' | null (unset)
 let controllerDevices = { receivers: [], thermostats: [] };
 let controllerSensors = [];
 let controllerContactSensors = [];
@@ -188,16 +189,21 @@ function renderControllerPanel(state) {
             <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
                 <span><i class="fas fa-cogs me-2"></i>Heating Controller ${dryBadge}</span>
                 <div class="btn-group btn-group-sm">
-                    <button class="btn btn-outline-info" id="btn-open-floor-plan" title="Open the floor-plan editor">
-                        <i class="fas fa-drafting-compass"></i> Floor plan
-                    </button>
                     <button class="btn btn-outline-secondary" id="btn-controller-tick" title="Run a control tick now">
                         <i class="fas fa-bolt"></i> Tick now
                     </button>
-                    <button class="btn btn-outline-primary" id="btn-controller-settings" title="Configure circuits and rooms">
+                    <button class="btn btn-outline-primary" id="btn-controller-configure" title="Configure circuits and rooms">
                         <i class="fas fa-cog"></i> Configure
                     </button>
                 </div>
+                <!--
+                  The original two buttons are kept in the DOM (hidden) so the
+                  existing handlers continue to work, and the new Configure
+                  button dispatches to them programmatically by ID. This keeps
+                  the editor-opening code paths untouched.
+                -->
+                <button class="btn d-none" id="btn-open-floor-plan" aria-hidden="true" tabindex="-1"></button>
+                <button class="btn d-none" id="btn-controller-settings" aria-hidden="true" tabindex="-1"></button>
             </div>
             <div class="card-body">
                 <div class="small text-muted mb-2">Last tick: ${ageStr}</div>
@@ -322,45 +328,63 @@ function renderCircuitStatusCard(c) {
 }
 
 function bindControllerPanel() {
-    document.getElementById('btn-controller-settings')?.addEventListener('click', openControllerSettings);
-
-    // "Floor plan" button — primary entry point into the floor-plan editor.
-    // We dynamically import the module (it's large and only used here), and
-    // fetch the device/sensor/contact lists on-demand if they haven't already
-    // been populated by an earlier "Configure" open. This avoids an empty
-    // dropdown experience on first open.
-    document.getElementById('btn-open-floor-plan')?.addEventListener('click', async () => {
-        const btn = document.getElementById('btn-open-floor-plan');
+    // Visible "Configure" button — the single entry point on the panel header.
+    // Decides via the chooser whether to dispatch to the manual settings modal
+    // or the floor-plan editor, then programmatically clicks the matching
+    // (hidden) old-ID button so the existing handlers run unchanged.
+    document.getElementById('btn-controller-configure')?.addEventListener('click', async () => {
+        const btn = document.getElementById('btn-controller-configure');
         const orig = btn.innerHTML;
         btn.disabled = true;
         btn.innerHTML = `<span class="spinner-border spinner-border-sm me-1"></span>Loading…`;
         try {
-            // If "Configure" hasn't been opened yet this session, our caches
-            // are empty. Fetch in parallel so the editor opens with populated
-            // dropdowns regardless of order of operations.
-            const needsLoad = !workingCircuits.length
-                && !controllerSensors.length
-                && !controllerContactSensors.length;
-            if (needsLoad) {
-                const [cfgRes, devRes, sensorRes, contactRes] = await Promise.all([
-                    fetch('/api/heating/controller/config').then(r => r.json()).catch(() => ({ success: false })),
-                    fetch('/api/heating/controller/devices').then(r => r.json()).catch(() => ({ success: false })),
-                    fetch('/api/heating/controller/sensors').then(r => r.json()).catch(() => ({ success: false })),
-                    fetch('/api/heating/controller/contact-sensors').then(r => r.json()).catch(() => ({ success: false })),
-                ]);
-                if (cfgRes.success) {
-                    controllerConfig = cfgRes.config;
-                    workingCircuits = JSON.parse(JSON.stringify(controllerConfig.circuits || []));
-                }
-                if (devRes.success) {
-                    controllerDevices = {
-                        receivers:   devRes.receivers   || [],
-                        thermostats: devRes.thermostats || [],
-                    };
-                }
-                if (sensorRes.success)  controllerSensors        = sensorRes.sensors  || [];
-                if (contactRes.success) controllerContactSensors = contactRes.sensors || [];
+            const mode = await ensureConfigMode(null);
+            if (!mode) return;
+            const targetId = mode === 'floor_plan'
+                ? 'btn-open-floor-plan'
+                : 'btn-controller-settings';
+            document.getElementById(targetId)?.click();
+        } catch (e) {
+            console.error('Configure dispatch failed:', e);
+            fireToast('error', 'Failed', 'Could not open the configuration editor.');
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = orig;
+        }
+    });
+
+    // Hidden legacy buttons — handlers retained so programmatic .click()
+    // from the Configure button still works. NO chooser gate on these any
+    // more; the gate lives on the Configure button. The "Switch mode" links
+    // inside each editor also reach these directly.
+    document.getElementById('btn-controller-settings')?.addEventListener('click', openControllerSettings);
+
+    document.getElementById('btn-open-floor-plan')?.addEventListener('click', async () => {
+        const needsLoad = !workingCircuits.length
+            && !controllerSensors.length
+            && !controllerContactSensors.length;
+        if (needsLoad) {
+            const [cfgRes, devRes, sensorRes, contactRes] = await Promise.all([
+                fetch('/api/heating/controller/config').then(r => r.json()).catch(() => ({ success: false })),
+                fetch('/api/heating/controller/devices').then(r => r.json()).catch(() => ({ success: false })),
+                fetch('/api/heating/controller/sensors').then(r => r.json()).catch(() => ({ success: false })),
+                fetch('/api/heating/controller/contact-sensors').then(r => r.json()).catch(() => ({ success: false })),
+            ]);
+            if (cfgRes.success) {
+                controllerConfig = cfgRes.config;
+                controllerConfigMode = cfgRes.config.config_mode || null;
+                workingCircuits = JSON.parse(JSON.stringify(controllerConfig.circuits || []));
             }
+            if (devRes.success) {
+                controllerDevices = {
+                    receivers:   devRes.receivers   || [],
+                    thermostats: devRes.thermostats || [],
+                };
+            }
+            if (sensorRes.success)  controllerSensors        = sensorRes.sensors  || [];
+            if (contactRes.success) controllerContactSensors = contactRes.sensors || [];
+        }
+        try {
             const mod = await import('./floor-plan.js');
             if (typeof mod.openFloorPlanEditor === 'function') {
                 mod.openFloorPlanEditor({
@@ -371,16 +395,13 @@ function bindControllerPanel() {
                     },
                     sensors:  controllerSensors || [],
                     contacts: controllerContactSensors || [],
-                    onSave: () => loadControllerStatus(),
+                    onSave: onFloorPlanEditorSaved,
                 });
             }
         } catch (e) {
             console.error('Failed to open floor-plan editor:', e);
             fireToast('error', 'Failed to open',
                 'Could not load the floor-plan editor. Check the console for details.');
-        } finally {
-            btn.disabled = false;
-            btn.innerHTML = orig;
         }
     });
 
@@ -409,6 +430,301 @@ function bindControllerPanel() {
     });
 }
 
+/**
+ * Callback invoked when the floor-plan editor reports a save. Two cases
+ * arrive here through the same channel:
+ *   - Regular floor-plan save: response shape from /api/heating/floor-plan
+ *     (no `mode` field). We just invalidate caches and refresh status so
+ *     the new projected room state is visible.
+ *   - "Switch to manual" path: response shape from /api/heating/controller/
+ *     config-mode (has `mode: 'manual'`). The server has flipped the mode
+ *     and stripped floor_plan_ref from rooms; we must update the cached
+ *     `controllerConfigMode` here so the Configure button routes to the
+ *     manual editor on the next click (without a page reload).
+ */
+function onFloorPlanEditorSaved(response) {
+    // Any close-with-save from the editor invalidates our cached config.
+    controllerConfig = null;
+    workingCircuits = [];
+
+    // Pick up any reported mode change so the Configure button dispatches
+    // correctly on the next click.
+    if (response && (response.mode === 'manual' || response.mode === 'floor_plan')) {
+        controllerConfigMode = response.mode;
+    }
+
+    loadControllerStatus();
+}
+
+// ============================================================================
+// CONFIG-MODE CHOOSER
+// ============================================================================
+// First time the user clicks either editor button, we ask them to pick
+// between "floor plan" (preferred, more accurate) and "manual configure".
+// The choice is persisted server-side at heating.controller.config_mode; on
+// subsequent clicks the chooser does not appear. Step 4 will add an explicit
+// "switch mode" UI for changing it later.
+
+/**
+ * Ensure a config mode is set. Returns the mode (string) or null if the
+ * user cancelled the chooser.
+ *
+ * Order of operations:
+ *   1. Use already-cached mode if known
+ *   2. Otherwise fetch the controller config to learn the persisted mode
+ *   3. If still unset, fire the chooser modal
+ */
+async function ensureConfigMode(suggested) {
+    if (controllerConfigMode) return controllerConfigMode;
+
+    // Cache miss — try the server. Cheap if it's also unset; this avoids
+    // a misleading chooser appearance for users who set it in a previous
+    // session but haven't opened the modal in this one.
+    if (controllerConfig === null) {
+        try {
+            const r = await fetch('/api/heating/controller/config').then(r => r.json());
+            if (r.success) {
+                controllerConfig = r.config;
+                controllerConfigMode = r.config.config_mode || null;
+            }
+        } catch { /* swallow; we'll just fall through to the chooser */ }
+    }
+    if (controllerConfigMode) return controllerConfigMode;
+
+    return await chooseConfigMode(suggested);
+}
+
+function ensureModeChooserModal() {
+    if (document.getElementById('heatingModeChooserModal')) return;
+    const html = `
+    <div class="modal fade" id="heatingModeChooserModal" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">
+              <i class="fas fa-stream me-2"></i>How would you like to set up your rooms?
+            </h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <p class="text-muted small mb-3">
+              Pick one. We always recommend the floor plan if you have one — it produces more accurate
+              heat-loss, pre-heat and solar-gain figures. You can change this later.
+            </p>
+            <div class="row g-3">
+              <div class="col-md-6">
+                <div class="card h-100 mode-card" data-mode="floor_plan"
+                     style="cursor:pointer;transition:transform .12s,box-shadow .12s,border-color .12s">
+                  <div class="card-body text-center">
+                    <div class="mb-2"><i class="fas fa-drafting-compass fa-3x text-info"></i></div>
+                    <h5 class="card-title mb-1">Floor plan</h5>
+                    <span class="badge bg-success mb-2">Recommended</span>
+                    <p class="card-text small text-muted mb-2">
+                      Draw or import your floor plan. Uses real wall lengths and window placements
+                      for accurate calculations.
+                    </p>
+                    <ul class="small text-muted text-start mt-2 mb-0 ps-3">
+                      <li>True per-wall heat loss</li>
+                      <li>Sun-aware solar gain</li>
+                      <li>Multi-radiator / multi-sensor rooms</li>
+                      <li>Visual layout you can share</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+              <div class="col-md-6">
+                <div class="card h-100 mode-card" data-mode="manual"
+                     style="cursor:pointer;transition:transform .12s,box-shadow .12s,border-color .12s">
+                  <div class="card-body text-center">
+                    <div class="mb-2"><i class="fas fa-list-ul fa-3x text-secondary"></i></div>
+                    <h5 class="card-title mb-1">Manual configure</h5>
+                    <span class="badge bg-secondary mb-2">No floor plan needed</span>
+                    <p class="card-text small text-muted mb-2">
+                      Enter dimensions and devices in a form. Quick to set up; uses approximate
+                      bounding-box geometry.
+                    </p>
+                    <ul class="small text-muted text-start mt-2 mb-0 ps-3">
+                      <li>Per-room width &times; depth</li>
+                      <li>Wall types (external / party / internal)</li>
+                      <li>Optional windows / doors</li>
+                      <li>One radiator + sensor per room</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <div id="modeChooserStatus" class="me-auto small text-muted"></div>
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <style>
+      #heatingModeChooserModal .mode-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 .35rem 1rem rgba(0,0,0,.10);
+        border-color: var(--bs-primary);
+      }
+      #heatingModeChooserModal .mode-card-suggested {
+        border-color: var(--bs-primary);
+        box-shadow: 0 0 0 .15rem rgba(13,110,253,.18);
+      }
+      [data-theme="dark"] #heatingModeChooserModal .card {
+        background-color: #1e293b;
+        color: #e5e7eb;
+        border-color: #334155;
+      }
+      [data-theme="dark"] #heatingModeChooserModal .mode-card:hover {
+        box-shadow: 0 .35rem 1rem rgba(0,0,0,.50);
+      }
+    </style>`;
+    document.body.insertAdjacentHTML('beforeend', html);
+}
+
+/**
+ * Show the chooser modal and wait for a decision.
+ *
+ * @param {string|null} suggested  'floor_plan' | 'manual' — highlights the
+ *                                  card matching the button the user clicked.
+ *                                  Purely a hint; user can still pick either.
+ * @returns {Promise<string|null>}  the chosen mode, or null if cancelled.
+ */
+async function chooseConfigMode(suggested = null) {
+    ensureModeChooserModal();
+    const modalEl = document.getElementById('heatingModeChooserModal');
+    const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+    const statusEl = modalEl.querySelector('#modeChooserStatus');
+    statusEl.innerHTML = '';
+
+    // Highlight the suggested card so the modal feels less like an interruption.
+    modalEl.querySelectorAll('.mode-card').forEach(c => {
+        c.classList.remove('mode-card-suggested');
+        c.style.pointerEvents = '';
+        if (suggested && c.dataset.mode === suggested) {
+            c.classList.add('mode-card-suggested');
+        }
+    });
+
+    return new Promise((resolve) => {
+        let resolved = false;
+
+        const onCardClick = async (e) => {
+            const card = e.target.closest('.mode-card');
+            if (!card || resolved) return;
+            const mode = card.dataset.mode;
+            if (!mode) return;
+
+            resolved = true;
+            statusEl.innerHTML = `<span class="spinner-border spinner-border-sm me-1"></span>Saving…`;
+            modalEl.querySelectorAll('.mode-card').forEach(c => c.style.pointerEvents = 'none');
+
+            try {
+                const r = await fetch('/api/heating/controller/config-mode', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ mode }),
+                }).then(r => r.json());
+                if (!r.success) throw new Error(r.error || 'Failed to set mode');
+
+                controllerConfigMode = mode;
+                if (controllerConfig) controllerConfig.config_mode = mode;
+
+                statusEl.innerHTML = `<span class="text-success">Saved.</span>`;
+                modal.hide();
+                resolve(mode);
+            } catch (err) {
+                statusEl.innerHTML = `<span class="text-danger"><i class="fas fa-times-circle me-1"></i>${escapeHtml(err.message)}</span>`;
+                modalEl.querySelectorAll('.mode-card').forEach(c => c.style.pointerEvents = '');
+                resolved = false;
+            }
+        };
+
+        const onHidden = () => {
+            modalEl.removeEventListener('click', onCardClick);
+            modalEl.removeEventListener('hidden.bs.modal', onHidden);
+            if (!resolved) resolve(null);
+        };
+
+        modalEl.addEventListener('click', onCardClick);
+        modalEl.addEventListener('hidden.bs.modal', onHidden);
+        modal.show();
+    });
+}
+
+/**
+ * Explicit mode switch from inside an editor (the "Switch mode" link in
+ * each editor's footer). Confirms with the user first because:
+ *   - floor_plan → manual: floor plan stays archived but rooms become
+ *     freely editable; refs are stripped server-side.
+ *   - manual → floor_plan: any saved plan is re-projected onto the rooms,
+ *     locking their geometry/devices to the plan again.
+ *
+ * Closes whichever modal is currently open and reloads the status panel so
+ * the user sees fresh state.
+ */
+async function switchConfigMode(targetMode) {
+    if (targetMode !== 'floor_plan' && targetMode !== 'manual') return;
+    if (controllerConfigMode === targetMode) return;
+
+    const confirmMsg = targetMode === 'manual'
+        ? 'Switch to manual configuration?\n\n'
+          + 'Your floor plan stays saved as a backup, but the rooms will '
+          + 'become freely editable in the manual UI. You can switch back '
+          + 'later — the plan will be re-applied.'
+        : 'Switch to floor-plan configuration?\n\n'
+          + (await hasSavedFloorPlan()
+              ? 'Your saved floor plan will be re-applied to the rooms. '
+                + 'Geometry and device bindings will reflect the plan.'
+              : 'There is no floor plan saved yet. After switching, open '
+                + 'the floor-plan editor to draw one.');
+
+    if (!confirm(confirmMsg)) return;
+
+    try {
+        const r = await fetch('/api/heating/controller/config-mode', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ mode: targetMode }),
+        }).then(r => r.json());
+        if (!r.success) throw new Error(r.error || 'Failed to switch mode');
+
+        controllerConfigMode = targetMode;
+        if (controllerConfig) controllerConfig.config_mode = targetMode;
+
+        // Close any open modals (controller settings, floor plan) so the
+        // user sees fresh state and isn't editing stale data.
+        document.querySelectorAll('.modal.show').forEach(m => {
+            try { bootstrap.Modal.getInstance(m)?.hide(); } catch { /* ignore */ }
+        });
+
+        // Refresh status; cached config is now stale (refs may have been
+        // stripped or re-added server-side).
+        controllerConfig = null;
+        workingCircuits = [];
+        await loadControllerStatus();
+
+        fireToast('success', 'Mode switched',
+            targetMode === 'floor_plan'
+                ? (r.reprojected
+                    ? 'Floor plan re-applied. Open the editor to make changes.'
+                    : 'Mode switched. Open the editor to draw your plan.')
+                : `Now in manual mode. Stripped ${r.stripped_floor_plan_refs || 0} floor-plan references.`);
+    } catch (e) {
+        console.error('Mode switch failed:', e);
+        fireToast('error', 'Switch failed', e.message);
+    }
+}
+
+/** Quick existence check — used to tailor the confirm-dialog wording. */
+async function hasSavedFloorPlan() {
+    try {
+        const r = await fetch('/api/heating/floor-plan').then(r => r.json());
+        return !!(r?.success && r.plan);
+    } catch { return false; }
+}
+
 // ============================================================================
 // SETTINGS MODAL
 // ============================================================================
@@ -428,6 +744,11 @@ function ensureControllerSettingsModal() {
                         </div>
                     </div>
                     <div class="modal-footer">
+                        <button type="button" class="btn btn-outline-warning btn-sm me-2" id="btnControllerSwitchMode"
+                                title="Switch the heating controller to the other configuration mode"
+                                style="display:none">
+                            <i class="fas fa-exchange-alt me-1"></i>Switch to floor plan
+                        </button>
                         <div id="controllerSettingsStatus" class="me-auto small text-muted"></div>
                         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
                         <button type="button" class="btn btn-primary" id="btnControllerSave">
@@ -439,6 +760,7 @@ function ensureControllerSettingsModal() {
         </div>`;
     document.body.insertAdjacentHTML('beforeend', html);
     document.getElementById('btnControllerSave').addEventListener('click', saveControllerSettings);
+    document.getElementById('btnControllerSwitchMode').addEventListener('click', () => switchConfigMode('floor_plan'));
 }
 
 export async function openControllerSettings() {
@@ -456,9 +778,30 @@ export async function openControllerSettings() {
             fetch('/api/heating/controller/sensors').then(r => r.json()).catch(() => ({ success: false })),
             fetch('/api/heating/controller/contact-sensors').then(r => r.json()).catch(() => ({ success: false })),
         ]);
+
         if (!cfgRes.success) throw new Error(cfgRes.error || 'Config load failed');
 
         controllerConfig = cfgRes.config;
+        controllerConfigMode = cfgRes.config.config_mode || null;
+
+        // Surface the "switch mode" button only after we know the current mode.
+        // In manual mode we offer "Switch to floor plan"; the symmetrical
+        // "Switch to manual" lives in the floor-plan editor footer.
+        const switchBtn = document.getElementById('btnControllerSwitchMode');
+        if (switchBtn) {
+            if (controllerConfigMode === 'manual') {
+                switchBtn.style.display = '';
+                switchBtn.innerHTML = `<i class="fas fa-drafting-compass me-1"></i>Switch to floor plan`;
+            } else if (controllerConfigMode === 'floor_plan') {
+                // The modal is reachable in floor_plan mode for behavioural
+                // edits (schedules, target temps). Offer the switch back too.
+                switchBtn.style.display = '';
+                switchBtn.innerHTML = `<i class="fas fa-list-ul me-1"></i>Switch to manual`;
+            } else {
+                switchBtn.style.display = 'none';
+            }
+        }
+
         controllerDevices = devRes.success
             ? { receivers: devRes.receivers || [], thermostats: devRes.thermostats || [] }
             : { receivers: [], thermostats: [] };
@@ -816,6 +1159,33 @@ function renderCircuitCard(circuit, ci) {
 }
 
 function renderRoomCard(room, ci, ri) {
+    // When the room is projected from a floor plan, the sub-blocks listed
+    // below have their bindings/values written by the projection on every
+    // plan save. Editing them in this UI would be silently overwritten on
+    // the next plan save. We disable those blocks and surface a banner
+    // pointing back to the editor.
+    //
+    // Projected blocks:    temperature sensor, TRVs, contact sensors,
+    //                      radiator block (inside dimensions panel),
+    //                      dimensions geometry.
+    // NOT projected:       target/setback/min temp, schedule, external-temp
+    //                      mode, per-contact behavioural toggles (debounce,
+    //                      drop, max-close, enabled), per-TRV toggles
+    //                      (window_detection, child_lock, valve_detection).
+    //                      These remain editable here because the plan
+    //                      doesn't carry that controller behaviour.
+    const projected = !!room.floor_plan_ref;
+    const projectedBlockBanner = (label) => projected ? `
+        <div class="alert alert-info py-1 px-2 mb-2 d-flex justify-content-between align-items-center small">
+            <div>
+                <i class="fas fa-info-circle me-1"></i>
+                <strong>${escapeHtml(label)}</strong> set in the floor plan.
+            </div>
+            <button type="button" class="btn btn-sm btn-outline-primary ms-2 btn-open-floor-plan-from-banner">
+                <i class="fas fa-drafting-compass me-1"></i>Open floor plan
+            </button>
+        </div>` : '';
+
     const usedTrvs = new Set();
     workingCircuits.forEach((c, ci2) => {
         c.rooms.forEach((r, ri2) => {
@@ -910,6 +1280,9 @@ function renderRoomCard(room, ci, ri) {
         trvCount === 0 && !sensorIeee
             ? `<span class="badge bg-danger" title="No TRVs or sensor — cannot call for heat"><i class="fas fa-exclamation-triangle"></i></span>`
             : '',
+        projected
+            ? '<span class="badge bg-info" title="Geometry and device bindings come from the floor plan"><i class="fas fa-drafting-compass me-1"></i>from floor plan</span>'
+            : '',
     ].filter(Boolean).join(' ');
 
     return `
@@ -964,15 +1337,20 @@ function renderRoomCard(room, ci, ri) {
                     <div class="col-md-8">
                         <label class="form-label small mb-1">
                             <i class="fas fa-thermometer-half me-1"></i>Room temperature sensor
+                            ${projected ? '<span class="badge bg-info ms-1">from floor plan</span>' : ''}
                         </label>
+                        <fieldset ${projected ? 'disabled' : ''}>
                         <select class="form-select form-select-sm room-sensor"
                                 data-ci="${ci}" data-ri="${ri}">
                             ${sensorOptions.join('')}
                         </select>
-                        <div class="form-text small">
-                            Pick any device reporting temperature (motion sensor, THP, thermostat, etc.)
-                            to drive call-for-heat for this room.
-                        </div>
+                        </fieldset>
+                        ${projected
+                            ? `<div class="form-text small text-muted">Sensor is bound in the floor plan. <em>External temp mode</em> below is still editable here.</div>`
+                            : `<div class="form-text small">
+                                Pick any device reporting temperature (motion sensor, THP, thermostat, etc.)
+                                to drive call-for-heat for this room.
+                              </div>`}
                     </div>
                     <div class="col-md-4">
                         <label class="form-label small mb-1">External temp mode</label>
@@ -990,11 +1368,15 @@ function renderRoomCard(room, ci, ri) {
 
                 <label class="form-label small mb-1">
                     TRVs <span class="badge bg-secondary">${trvCount}</span>
+                    ${projected ? '<span class="badge bg-info ms-1">from floor plan</span>' : ''}
                     ${trvCount === 0 && sensorIeee ? '<small class="text-muted ms-2">optional for sensor-only rooms</small>' : ''}
                 </label>
+                ${projected ? projectedBlockBanner('TRV assignments') : ''}
+                <fieldset ${projected ? 'disabled' : ''}>
                 <div class="list-group mb-2" style="max-height:200px; overflow-y:auto;">${trvCheckboxes}</div>
+                </fieldset>
 
-                ${renderContactSensorsPanel(room, ci, ri)}
+                ${renderContactSensorsPanel(room, ci, ri, projected)}
                 ${renderDimensionsPanel(room, ci, ri)}
             </div>
         </details>`;
@@ -1002,7 +1384,7 @@ function renderRoomCard(room, ci, ri) {
 // ============================================================================
 // CONTACT SENSORS — optional per-room
 // ============================================================================
-function renderContactSensorsPanel(room, ci, ri) {
+function renderContactSensorsPanel(room, ci, ri, projected) {
     const assigned = room.contact_sensors || [];
     const assignedIeees = new Set(assigned.map(cs => cs.ieee));
 
@@ -1019,7 +1401,9 @@ function renderContactSensorsPanel(room, ci, ri) {
 
     const rows = assigned.length === 0
         ? `<div class="text-muted small fst-italic px-2 py-1">
-               No contact sensors assigned. Pick one above to bind it to this room.
+               ${projected
+                   ? 'No contact sensors bound. Add them in the floor plan.'
+                   : 'No contact sensors assigned. Pick one above to bind it to this room.'}
            </div>`
         : assigned.map((cs, idx) => {
             // The live device might be offline or unknown — fall back to stored name
@@ -1085,30 +1469,46 @@ function renderContactSensorsPanel(room, ci, ri) {
         }).join('');
 
     return `
-        <details class="mt-2">
+        <details class="mt-2" ${projected ? 'open' : ''}>
             <summary class="small fw-bold text-muted user-select-none" style="cursor:pointer;">
                 <i class="fas fa-door-closed me-1"></i>
                 Doors &amp; windows (contact sensors)
                 <span class="badge bg-info">${assigned.length}</span>
+                ${projected ? '<span class="badge bg-info ms-1">from floor plan</span>' : ''}
             </summary>
             <div class="mt-2 ms-2">
-                <div class="small text-muted mb-2">
-                    Bind contact sensors that, when open, should pause heating in this room.
-                    The temp-drop guard prevents brief vents (e.g. steam off the hob) from
-                    killing the radiator.
-                </div>
-                <div class="d-flex gap-2 mb-2">
-                    <select class="form-select form-select-sm cs-add-select"
-                            data-ci="${ci}" data-ri="${ri}">
-                        ${addOptions.join('')}
-                    </select>
-                    <button type="button"
-                            class="btn btn-sm btn-outline-primary btn-cs-add"
-                            data-ci="${ci}" data-ri="${ri}">
-                        <i class="fas fa-plus me-1"></i>Add
-                    </button>
-                </div>
+                ${projected ? `
+                    <div class="alert alert-info py-1 px-2 mb-2 d-flex justify-content-between align-items-center small">
+                        <div>
+                            <i class="fas fa-info-circle me-1"></i>
+                            <strong>Contact sensor bindings</strong> are set in the floor plan
+                            (which sensor goes on which door/window, and the per-sensor
+                            behavioural thresholds).
+                        </div>
+                        <button type="button" class="btn btn-sm btn-outline-primary ms-2 btn-open-floor-plan-from-banner">
+                            <i class="fas fa-drafting-compass me-1"></i>Open floor plan
+                        </button>
+                    </div>` : `
+                    <div class="small text-muted mb-2">
+                        Bind contact sensors that, when open, should pause heating in this room.
+                        The temp-drop guard prevents brief vents (e.g. steam off the hob) from
+                        killing the radiator.
+                    </div>`}
+                <fieldset ${projected ? 'disabled' : ''}>
+                ${projected ? '' : `
+                    <div class="d-flex gap-2 mb-2">
+                        <select class="form-select form-select-sm cs-add-select"
+                                data-ci="${ci}" data-ri="${ri}">
+                            ${addOptions.join('')}
+                        </select>
+                        <button type="button"
+                                class="btn btn-sm btn-outline-primary btn-cs-add"
+                                data-ci="${ci}" data-ri="${ri}">
+                            <i class="fas fa-plus me-1"></i>Add
+                        </button>
+                    </div>`}
                 ${rows}
+                </fieldset>
             </div>
         </details>`;
 }
@@ -1904,12 +2304,12 @@ function bindCircuitCards() {
                     mod.openFloorPlanEditor({
                         circuits: workingCircuits,
                         devices: {
-                            receivers:   controllerDevices.receivers || [],
+                            receivers:   controllerDevices.receivers   || [],
                             thermostats: controllerDevices.thermostats || [],
                         },
                         sensors:  controllerSensors || [],
                         contacts: controllerContactSensors || [],
-                        onSave: () => loadControllerStatus(),
+                        onSave: onFloorPlanEditorSaved,
                     });
                 }
             } catch (e) {
