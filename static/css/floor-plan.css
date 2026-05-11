@@ -263,6 +263,29 @@
 }
 .fp-preview-vertex { fill: var(--fp-room-stroke); }
 
+/* Endpoint drag handle on a selected wall (Drop A) */
+.fp-wall-handle {
+    fill: var(--fp-selection);
+    stroke: var(--fp-selection-stroke);
+    opacity: 0.85;
+}
+.fp-wall-handle:hover {
+    opacity: 1.0;
+    fill: var(--fp-selection-stroke);
+}
+
+/* Slide handle on a selected wall-mounted radiator (Drop B.2). Visually
+   distinct from the wall vertex handles — slightly larger and uses the
+   radiator stroke colour so the user can tell them apart at a glance. */
+.fp-rad-handle {
+    fill: var(--fp-radiator-stroke, #c2410c);
+    stroke: var(--fp-selection-stroke);
+    opacity: 0.85;
+}
+.fp-rad-handle:hover {
+    opacity: 1.0;
+}
+
 /* Calibration marker */
 .fp-calibration-marker {
     fill: var(--fp-selection);

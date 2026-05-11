@@ -507,6 +507,9 @@ def _clean_radiator(raw: Any) -> Optional[dict]:
     length_m = _as_float(raw.get("length_m"))
     if length_m and length_m > 0:
         out["length_m"] = round(_clamp(length_m, 0.1, 10.0), 3)
+    height_m = _as_float(raw.get("height_m"))
+    if height_m and height_m > 0:
+        out["height_m"] = round(_clamp(height_m, 0.05, 3.0), 3)
     flow_c = _as_float(raw.get("flow_temperature_c"))
     if flow_c and 30 <= flow_c <= 90:
         out["flow_temperature_c"] = round(flow_c, 1)
@@ -516,6 +519,11 @@ def _clean_radiator(raw: Any) -> Optional[dict]:
     wall_id = _valid_id(raw.get("wall_id"))
     if wall_id:
         out["wall_id"] = wall_id
+    # Wall-mounted offset from wall start (metres along the wall direction).
+    # Always >= 0; the level-cleaner will additionally clamp it to wall length.
+    offset_m = _as_float(raw.get("offset_m"))
+    if offset_m is not None and offset_m >= 0:
+        out["offset_m"] = round(_clamp(offset_m, 0.0, 1000.0), 3)
     placement = str(raw.get("placement") or "").lower()
     if placement in VALID_RADIATOR_PLACEMENT:
         out["placement"] = placement
@@ -613,25 +621,36 @@ def _clean_level(raw: Any, existing_level_ids: set) -> Optional[dict]:
     # calibration result (pixels-per-metre + origin) and the image dimensions
     # so the editor can render the SVG <image> at the correct world scale.
     bg = raw.get("background")
-    if isinstance(bg, dict) and bg.get("present"):
-        present = _as_bool(bg.get("present"), False)
-        if present:
-            ppm = _as_float(bg.get("pixels_per_metre"))
-            iw = _as_float(bg.get("image_width_px"))
-            ih = _as_float(bg.get("image_height_px"))
-            if ppm and ppm > 0 and iw and iw > 0 and ih and ih > 0:
-                background = {
-                    "present": True,
-                    "pixels_per_metre": round(_clamp(ppm, 1.0, 10000.0), 3),
-                    "image_width_px": int(iw),
-                    "image_height_px": int(ih),
-                    "origin_x_m": round(_as_float(bg.get("origin_x_m"), 0.0) or 0.0, 3),
-                    "origin_y_m": round(_as_float(bg.get("origin_y_m"), 0.0) or 0.0, 3),
-                    "rotation_deg": round(((_as_float(bg.get("rotation_deg"), 0.0) or 0.0) % 360.0), 2),
-                    "opacity": round(_clamp(_as_float(bg.get("opacity"), 0.5) or 0.5, 0.05, 1.0), 2),
-                    "content_type": str(bg.get("content_type") or "image/png"),
-                }
-                out["background"] = background
+    if isinstance(bg, dict) and _as_bool(bg.get("present"), False):
+        ppm = _as_float(bg.get("pixels_per_metre"))
+        iw = _as_float(bg.get("image_width_px"))
+        ih = _as_float(bg.get("image_height_px"))
+        if iw and iw > 0 and ih and ih > 0:
+            if not ppm or ppm <= 0:
+                # Editor's import-time default; user will need to re-run Calibrate.
+                ppm = 50.0
+                logger.warning(
+                    "level %r: background pixels_per_metre missing/invalid; "
+                    "defaulting to 50 px/m — please recalibrate in the editor",
+                    lid,
+                )
+            out["background"] = {
+                "present": True,
+                "pixels_per_metre": round(_clamp(ppm, 1.0, 10000.0), 3),
+                "image_width_px": int(iw),
+                "image_height_px": int(ih),
+                "origin_x_m": round(_as_float(bg.get("origin_x_m"), 0.0) or 0.0, 3),
+                "origin_y_m": round(_as_float(bg.get("origin_y_m"), 0.0) or 0.0, 3),
+                "rotation_deg": round(((_as_float(bg.get("rotation_deg"), 0.0) or 0.0) % 360.0), 2),
+                "opacity": round(_clamp(_as_float(bg.get("opacity"), 0.5) or 0.5, 0.05, 1.0), 2),
+                "content_type": str(bg.get("content_type") or "image/png"),
+            }
+        else:
+            logger.warning(
+                "level %r: background marked present but image dimensions "
+                "missing — block dropped",
+                lid,
+            )
 
     # Rooms first (we need ids to validate everything else)
     room_ids: set = set()
@@ -681,7 +700,12 @@ def _clean_level(raw: Any, existing_level_ids: set) -> Optional[dict]:
     out["openings"] = openings_clean
     valid_opening_ids = opening_ids
 
-    # Radiators
+    # Radiators. Two modes coexist:
+    #   wall-mounted: needs wall_id + offset_m; offset_m clamped to wall length
+    #   freestanding: needs x + y
+    # Determine effective mode here (after walls are cleaned), and strip
+    # fields that don't belong to the chosen mode so the YAML stays tidy.
+    walls_by_id = {w["id"]: w for w in walls_clean}
     rad_ids: set = set()
     rads_clean = []
     for r in raw.get("radiators") or []:
@@ -690,8 +714,28 @@ def _clean_level(raw: Any, existing_level_ids: set) -> Optional[dict]:
             continue
         if cr["room_id"] not in valid_room_ids:
             continue
-        if cr.get("wall_id") and cr["wall_id"] not in valid_wall_ids:
+        # Resolve wall reference and clamp offset to actual wall length.
+        wid = cr.get("wall_id")
+        wall = walls_by_id.get(wid) if wid else None
+        if wid and not wall:
+            # wall_id refers to a wall we don't have — treat as freestanding
             cr.pop("wall_id", None)
+            cr.pop("offset_m", None)
+        if wall:
+            wlen = math.hypot(wall["x2"] - wall["x1"], wall["y2"] - wall["y1"])
+            # Default offset = midpoint of wall if not supplied
+            offset = cr.get("offset_m")
+            if offset is None:
+                offset = wlen / 2.0
+            # Clamp so the radiator fits on the wall. We don't yet know the
+            # length_m here in all cases (defaulted in JS), so the basic
+            # constraint is just "starts inside the wall".
+            cr["offset_m"] = round(_clamp(offset, 0.0, max(0.0, wlen)), 3)
+            # Wall-mounted: drop stale free-coords
+            cr.pop("x", None); cr.pop("y", None)
+        else:
+            # Freestanding: drop wall-only fields
+            cr.pop("offset_m", None)
         if cr["id"] in rad_ids:
             base = cr["id"]; k = 2
             while f"{base}_{k}" in rad_ids:
@@ -935,7 +979,8 @@ def _legacy_radiator_for_room(level_radiators: List[dict], room_id: str,
             f"`radiator` set to the largest ({primary.get('watts_at_dt50')} W)"
         )
     legacy = {"watts_at_dt50": primary.get("watts_at_dt50")}
-    for k in ("flow_temperature_c", "description", "placement", "type", "reflective_panel"):
+    for k in ("flow_temperature_c", "description", "placement", "type", "reflective_panel",
+              "length_m", "height_m"):
         if k in primary:
             legacy[k] = primary[k]
     # Wall: only meaningful for the legacy front/back/left/right scheme; we'd

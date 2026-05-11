@@ -33,6 +33,10 @@ const PIXELS_PER_METRE_DEFAULT = 80;
 let _state = null;         // see resetState()
 let _onSaveCallback = null;
 let _availableDevices = { trvs: [], sensors: [], contacts: [] };
+// Circuits passed in by the caller (heating-controller config). Used purely
+// for display: showing which circuit a radiator's bound room belongs to,
+// in the radiator props panel. Schema: [{ id, name, rooms: [{id, name}] }, ...]
+let _availableCircuits = [];
 
 function resetState(plan) {
     _state = {
@@ -98,6 +102,19 @@ export async function openFloorPlanEditor(opts = {}) {
     } catch {
         initialPlan = newEmptyPlan();
     }
+
+    // Heal orphan images: any level with no `background` block but an image
+    // on disk gets a synthesised metadata block so the user sees their image
+    // and can recalibrate it. This recovers state where the editor previously
+    // failed to persist the metadata (now fixed in save(), but leaving the
+    // recovery path in place as defence-in-depth).
+    let orphansAdopted = 0;
+    for (const lvl of (initialPlan.levels || [])) {
+        if (lvl.background?.present) continue;
+        const adopted = await tryAdoptOrphanImage(lvl);
+        if (adopted) orphansAdopted += 1;
+    }
+
     resetState(initialPlan);
 
     ensureModal();
@@ -105,6 +122,47 @@ export async function openFloorPlanEditor(opts = {}) {
     const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
     modal.show();
     renderAll();
+
+    if (orphansAdopted > 0) {
+        const status = document.getElementById('fpSaveStatus');
+        if (status) {
+            status.innerHTML = `<span class="text-warning"><i class="fas fa-exclamation-triangle me-1"></i>` +
+                `Recovered ${orphansAdopted} orphan image${orphansAdopted === 1 ? '' : 's'} — ` +
+                `please run <strong>Calibrate</strong> for affected levels and Save.</span>`;
+        }
+    }
+}
+
+/**
+ * For a level missing its `background` block, probe the image endpoint and
+ * synthesise metadata if the image bytes exist on the server. Returns true
+ * iff a block was synthesised.
+ */
+async function tryAdoptOrphanImage(lvl) {
+    try {
+        const url = `/api/heating/floor-plan/image/${encodeURIComponent(lvl.id)}`;
+        const resp = await fetch(url, { method: 'GET' });
+        if (!resp.ok) return false;
+        const blob = await resp.blob();
+        if (!blob || blob.size === 0) return false;
+        const dims = await readImageDimensions(blob);
+        const contentType = blob.type || 'image/png';
+        lvl.background = {
+            present: true,
+            pixels_per_metre: 50.0,            // placeholder — user must calibrate
+            image_width_px: dims.width,
+            image_height_px: dims.height,
+            origin_x_m: 0,
+            origin_y_m: 0,
+            rotation_deg: 0,
+            opacity: 0.5,
+            content_type: contentType,
+            _cb: Date.now(),
+        };
+        return true;
+    } catch {
+        return false;
+    }
 }
 
 // ─────────────────────────── modal scaffold ───────────────────────────
@@ -261,10 +319,60 @@ function bindModalEvents() {
     svg.addEventListener('mousemove', onCanvasMouseMove);
     svg.addEventListener('mouseup', onCanvasMouseUp);
     svg.addEventListener('wheel', onCanvasWheel, { passive: false });
-    svg.addEventListener('contextmenu', e => e.preventDefault());
+    // Right-click finishes a wall or room chain (or just suppresses the
+    // browser context menu when nothing is in progress).
+    svg.addEventListener('contextmenu', e => {
+        e.preventDefault();
+        if (_state?.tool === 'wall' && _state.drawBuffer?.points?.length >= 2) {
+            finishWallChain();
+        } else if (_state?.tool === 'room' && _state.drawBuffer?.points?.length >= 3) {
+            finishRoom();
+        }
+    });
+    // Double-click also finishes chains. Useful when the last vertex isn't
+    // close enough to the first for a single click to close.
+    svg.addEventListener('dblclick', e => {
+        if (_state?.tool === 'wall' && _state.drawBuffer?.points?.length >= 2) {
+            e.preventDefault();
+            finishWallChain();
+        } else if (_state?.tool === 'room' && _state.drawBuffer?.points?.length >= 3) {
+            e.preventDefault();
+            finishRoom();
+        }
+    });
+
+    // Keyboard: Enter / Esc handle in-progress chains across the whole modal
+    // so the user doesn't have to keep focus on the canvas.
+    const onKey = (e) => {
+        if (!_state) return;
+        // Ignore when typing in a form field
+        const tag = (e.target?.tagName || '').toLowerCase();
+        if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+        if (e.key === 'Enter') {
+            if (_state.tool === 'wall' && _state.drawBuffer?.points?.length >= 2) {
+                e.preventDefault(); finishWallChain();
+            } else if (_state.tool === 'room' && _state.drawBuffer?.points?.length >= 3) {
+                e.preventDefault(); finishRoom();
+            }
+        } else if (e.key === 'Escape') {
+            if (_state.drawBuffer) { e.preventDefault(); cancelDrawing(); }
+            else if (_state.calibration) { e.preventDefault(); _state.calibration = null; renderOverlay(); }
+        } else if (e.key === 'Backspace' || e.key === 'Delete') {
+            // Backspace removes the last placed vertex of the current chain
+            if ((_state.tool === 'wall' || _state.tool === 'room')
+                && _state.drawBuffer?.points?.length >= 1) {
+                e.preventDefault();
+                _state.drawBuffer.points.pop();
+                if (_state.drawBuffer.points.length === 0) _state.drawBuffer = null;
+                renderOverlay();
+            }
+        }
+    };
+    document.addEventListener('keydown', onKey);
 
     // Cleanup on hide
     document.getElementById('floorPlanModal').addEventListener('hidden.bs.modal', () => {
+        document.removeEventListener('keydown', onKey);
         _state = null;
     });
 }
@@ -441,6 +549,19 @@ function renderScene() {
                 x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}"
                 stroke-width="${sel ? 0.12 : 0.08}" stroke-linecap="square"
                 data-kind="wall" data-id="${w.id}" style="cursor:pointer"/>`);
+        // Endpoint drag handles only on the selected wall, and only when the
+        // current tool is 'select' (otherwise drawing tools take precedence).
+        if (sel && _state.tool === 'select') {
+            parts.push(`
+              <circle class="fp-wall-handle" cx="${a.x}" cy="${a.y}" r="0.16"
+                      stroke-width="0.04" data-kind="wall-handle"
+                      data-id="${w.id}" data-which="1"
+                      style="cursor:grab"/>
+              <circle class="fp-wall-handle" cx="${b.x}" cy="${b.y}" r="0.16"
+                      stroke-width="0.04" data-kind="wall-handle"
+                      data-id="${w.id}" data-which="2"
+                      style="cursor:grab"/>`);
+        }
     }
 
     // Openings — drawn ON the wall they belong to
@@ -466,18 +587,86 @@ function renderScene() {
         }
     }
 
-    // Radiators
+    // Radiators — plan view. Two render modes:
+    //   wall-mounted: drawn as a thin strip ALONG the host wall (fixed
+    //     0.1 m depth in plan view — `height_m` is the radiator's PHYSICAL
+    //     height, used for sizing/heat calcs, not its plan-view footprint).
+    //     The strip is offset perpendicular toward the bound room centroid
+    //     so it sits on the room-side face of the wall.
+    //   freestanding: drawn as a length × 0.1 m axis-aligned strip at (x, y).
+    //     Used for towel rails, columns, underfloor zones, or anywhere the
+    //     user explicitly placed away from a wall.
+    const RAD_PLAN_DEPTH_M = 0.10;   // fixed plan-view strip depth
     for (const r of lvl.radiators) {
         const sel = isSelected('radiator', r.id);
-        const p = modelToSvg({ x: r.x ?? 0, y: r.y ?? 0 });
         const len = r.length_m || 0.6;
-        parts.push(`
-          <g data-kind="radiator" data-id="${r.id}" style="cursor:pointer">
-            <rect class="fp-radiator ${sel ? 'fp-selected' : ''}"
-                  x="${p.x - len / 2}" y="${p.y - 0.07}" width="${len}" height="0.14"
-                  stroke-width="${sel ? 0.04 : 0.02}"/>
-            <text class="fp-radiator-label" x="${p.x}" y="${p.y + 0.25}" font-size="0.14" text-anchor="middle">${Math.round(r.watts_at_dt50 || 0)}W</text>
-          </g>`);
+        const hgt = RAD_PLAN_DEPTH_M;   // plan-view depth — NOT r.height_m
+        const wall = r.wall_id ? lvl.walls.find(w => w.id === r.wall_id) : null;
+
+        if (wall) {
+            // Wall-mounted geometry
+            const wlen = Math.hypot(wall.x2 - wall.x1, wall.y2 - wall.y1) || 1;
+            const ux = (wall.x2 - wall.x1) / wlen, uy = (wall.y2 - wall.y1) / wlen;
+            // Clamp offset so the radiator's CENTRE stays on the wall (length
+            // can overhang slightly if wall is shorter than radiator)
+            const t0 = Math.max(0, Math.min(wlen - len, (r.offset_m ?? wlen / 2)));
+            // Perpendicular direction: rotate (ux, uy) 90° → (-uy, ux). We
+            // pick the side facing the bound room's centroid. If no room
+            // bound, default to the +90 side.
+            let nx = -uy, ny = ux;
+            const room = r.room_id ? (lvl.rooms || []).find(rm => rm.id === r.room_id) : null;
+            if (room) {
+                const c = polygonCentroid(room.polygon);
+                const wallMidX = (wall.x1 + wall.x2) / 2;
+                const wallMidY = (wall.y1 + wall.y2) / 2;
+                // Dot product of (centroid - wallMid) with (nx, ny). Positive
+                // means the chosen normal already points toward the room.
+                const dot = (c.x - wallMidX) * nx + (c.y - wallMidY) * ny;
+                if (dot < 0) { nx = -nx; ny = -ny; }
+            }
+            // Four corners of the radiator rectangle, in MODEL coords.
+            const ax = wall.x1 + ux * t0,         ay = wall.y1 + uy * t0;
+            const bx = ax + ux * len,             by = ay + uy * len;
+            const cx = bx + nx * hgt,             cy = by + ny * hgt;
+            const dx = ax + nx * hgt,             dy = ay + ny * hgt;
+            // Convert to SVG coords (flip y)
+            const A = modelToSvg({ x: ax, y: ay });
+            const B = modelToSvg({ x: bx, y: by });
+            const C = modelToSvg({ x: cx, y: cy });
+            const D = modelToSvg({ x: dx, y: dy });
+            // Label centre = average of midpoints of AB and CD
+            const labelMx = (A.x + B.x + C.x + D.x) / 4;
+            const labelMy = (A.y + B.y + C.y + D.y) / 4;
+            parts.push(`
+              <g data-kind="radiator" data-id="${r.id}" style="cursor:pointer">
+                <polygon class="fp-radiator ${sel ? 'fp-selected' : ''}"
+                         points="${A.x},${A.y} ${B.x},${B.y} ${C.x},${C.y} ${D.x},${D.y}"
+                         stroke-width="${sel ? 0.04 : 0.02}"/>
+                <text class="fp-radiator-label" x="${labelMx}" y="${labelMy + 0.05}"
+                      font-size="0.14" text-anchor="middle">${Math.round(r.watts_at_dt50 || 0)}W</text>
+              </g>`);
+            // Slide handle: midpoint of the wall-side edge (A→B), only when
+            // selected with the Select tool. Drag to slide along the wall.
+            if (sel && _state.tool === 'select') {
+                const handleMx = (A.x + B.x) / 2;
+                const handleMy = (A.y + B.y) / 2;
+                parts.push(`
+                  <circle class="fp-rad-handle" cx="${handleMx}" cy="${handleMy}" r="0.18"
+                          stroke-width="0.04" data-kind="rad-handle" data-id="${r.id}"
+                          style="cursor:ew-resize"/>`);
+            }
+        } else {
+            // Freestanding geometry — axis-aligned strip at (x, y)
+            const p = modelToSvg({ x: r.x ?? 0, y: r.y ?? 0 });
+            parts.push(`
+              <g data-kind="radiator" data-id="${r.id}" style="cursor:pointer">
+                <rect class="fp-radiator ${sel ? 'fp-selected' : ''}"
+                      x="${p.x - len / 2}" y="${p.y - hgt / 2}" width="${len}" height="${hgt}"
+                      stroke-width="${sel ? 0.04 : 0.02}"/>
+                <text class="fp-radiator-label" x="${p.x}" y="${p.y + hgt / 2 + 0.22}"
+                      font-size="0.14" text-anchor="middle">${Math.round(r.watts_at_dt50 || 0)}W</text>
+              </g>`);
+        }
     }
 
     // Sensors
@@ -514,8 +703,34 @@ function renderScene() {
 
     scene.innerHTML = parts.join('');
 
-    // Click bindings
+    // Click bindings.
+    // Wall-handle elements get special treatment: mousedown starts a drag,
+    // not a selection (the wall is already selected when handles are visible).
+    scene.querySelectorAll('[data-kind="wall-handle"]').forEach(el => {
+        el.addEventListener('mousedown', e => {
+            if (_state.tool !== 'select') return;
+            e.stopPropagation();
+            const wall = currentLevel().walls.find(w => w.id === el.dataset.id);
+            if (!wall) return;
+            _wallDrag = { wallId: wall.id, which: parseInt(el.dataset.which, 10) };
+        });
+    });
+
+    // Radiator slide handle — drag along the host wall to change offset_m.
+    scene.querySelectorAll('[data-kind="rad-handle"]').forEach(el => {
+        el.addEventListener('mousedown', e => {
+            if (_state.tool !== 'select') return;
+            e.stopPropagation();
+            const rad = currentLevel().radiators.find(r => r.id === el.dataset.id);
+            if (!rad || !rad.wall_id) return;
+            _radDrag = { radId: rad.id };
+        });
+    });
+
+    // Regular selection on every other interactive element.
     scene.querySelectorAll('[data-kind][data-id]').forEach(el => {
+        if (el.dataset.kind === 'wall-handle') return;
+        if (el.dataset.kind === 'rad-handle') return;
         el.addEventListener('mousedown', e => {
             if (_state.tool !== 'select') return;
             e.stopPropagation();
@@ -535,7 +750,9 @@ function renderOverlay() {
         ov.setAttribute('transform',
             `translate(${_state.pan.x}, ${_state.pan.y}) scale(${m2px}, ${m2px})`);
         const db = _state.drawBuffer;
-        if ((_state.tool === 'wall' || _state.tool === 'window' || _state.tool === 'door') && db.start && db.cur) {
+
+        // Window/door: single-segment drag (start → cur) along a host wall
+        if ((_state.tool === 'window' || _state.tool === 'door') && db.start && db.cur) {
             const a = modelToSvg(db.start);
             const b = modelToSvg(db.cur);
             html += `<line class="fp-preview fp-preview-${_state.tool}"
@@ -545,15 +762,36 @@ function renderOverlay() {
             const len = Math.hypot(dx, dy);
             const mid = modelToSvg({ x: (db.start.x + db.cur.x) / 2, y: (db.start.y + db.cur.y) / 2 });
             html += `<text class="fp-preview-label" x="${mid.x}" y="${mid.y - 0.15}" font-size="0.15" text-anchor="middle">${len.toFixed(2)} m</text>`;
-        } else if (_state.tool === 'room' && db.points) {
-            const pts = db.points.map(p => modelToSvg(p)).map(p => `${p.x},${p.y}`).join(' ');
+        }
+
+        // Wall (chain mode) and Room (polygon) share the same preview
+        // shape: a polyline through committed vertices plus a rubber-band
+        // segment to the cursor, with dots at every vertex.
+        else if ((_state.tool === 'wall' || _state.tool === 'room') && db.points) {
+            const ptsSvg = db.points.map(modelToSvg);
             const mouseSvg = db.cur ? modelToSvg(db.cur) : null;
-            html += `<polyline class="fp-preview-room"
-                              points="${pts}${mouseSvg ? ` ${mouseSvg.x},${mouseSvg.y}` : ''}"
-                              stroke-width="0.04" stroke-dasharray="0.1 0.05"/>`;
-            for (const p of db.points) {
-                const sp = modelToSvg(p);
-                html += `<circle class="fp-preview-vertex" cx="${sp.x}" cy="${sp.y}" r="0.06"/>`;
+            const polyPts = ptsSvg.map(p => `${p.x},${p.y}`).join(' ')
+                + (mouseSvg ? ` ${mouseSvg.x},${mouseSvg.y}` : '');
+            const cls = _state.tool === 'room' ? 'fp-preview-room' : 'fp-preview fp-preview-wall';
+            html += `<polyline class="${cls}"
+                              points="${polyPts}"
+                              stroke-width="0.06" stroke-dasharray="0.1 0.05"
+                              fill="none"/>`;
+            // Vertex dots — committed vertices are solid; first one slightly
+            // bigger to invite "click here to close"
+            for (let i = 0; i < ptsSvg.length; i++) {
+                const sp = ptsSvg[i];
+                const r = (i === 0 && _state.tool === 'wall' && db.points.length >= 2) ? 0.12 : 0.07;
+                html += `<circle class="fp-preview-vertex" cx="${sp.x}" cy="${sp.y}" r="${r}"/>`;
+            }
+            // Live length label on the rubber-band segment for walls
+            if (_state.tool === 'wall' && mouseSvg && db.points.length > 0) {
+                const last = db.points[db.points.length - 1];
+                const dx = db.cur.x - last.x, dy = db.cur.y - last.y;
+                const len = Math.hypot(dx, dy);
+                const mid = modelToSvg({ x: (last.x + db.cur.x) / 2, y: (last.y + db.cur.y) / 2 });
+                html += `<text class="fp-preview-label" x="${mid.x}" y="${mid.y - 0.15}"
+                               font-size="0.18" text-anchor="middle">${len.toFixed(2)} m</text>`;
             }
         }
     }
@@ -563,8 +801,37 @@ function renderOverlay() {
         const m2px = _state.zoom;
         ov.setAttribute('transform',
             `translate(${_state.pan.x}, ${_state.pan.y}) scale(${m2px}, ${m2px})`);
-        const p1 = modelToSvg(_state.calibration.p1);
-        html += `<circle class="fp-calibration-marker" cx="${p1.x}" cy="${p1.y}" r="0.12" stroke-width="0.04"/>`;
+        const cal = _state.calibration;
+        const p1svg = modelToSvg(cal.p1);
+        // Crosshair-style marker: ring + centre dot for clear targeting.
+        html += `<circle class="fp-calibration-marker" cx="${p1svg.x}" cy="${p1svg.y}"
+                         r="0.25" stroke-width="0.06" fill="none"/>`;
+        html += `<circle class="fp-calibration-marker" cx="${p1svg.x}" cy="${p1svg.y}"
+                         r="0.06" stroke-width="0"/>`;
+        html += `<text class="fp-preview-label" x="${p1svg.x}" y="${p1svg.y - 0.35}"
+                       font-size="0.18" text-anchor="middle">A</text>`;
+
+        // Live rubber-band to cursor (or to the locked p2 if click 2 just landed)
+        const target = cal.p2 || cal.cur;
+        if (target) {
+            const p2svg = modelToSvg(target);
+            html += `<line class="fp-preview fp-preview-wall"
+                          x1="${p1svg.x}" y1="${p1svg.y}"
+                          x2="${p2svg.x}" y2="${p2svg.y}"
+                          stroke-width="0.06" stroke-dasharray="0.15 0.08"/>`;
+            const dx = target.x - cal.p1.x, dy = target.y - cal.p1.y;
+            const d  = Math.hypot(dx, dy);
+            const mid = modelToSvg({ x: (cal.p1.x + target.x) / 2, y: (cal.p1.y + target.y) / 2 });
+            html += `<text class="fp-preview-label" x="${mid.x}" y="${mid.y - 0.2}"
+                           font-size="0.18" text-anchor="middle">${d.toFixed(2)} m drawn</text>`;
+            // Second marker at current/locked endpoint
+            html += `<circle class="fp-calibration-marker" cx="${p2svg.x}" cy="${p2svg.y}"
+                             r="0.25" stroke-width="0.06" fill="none"/>`;
+            html += `<circle class="fp-calibration-marker" cx="${p2svg.x}" cy="${p2svg.y}"
+                             r="0.06" stroke-width="0"/>`;
+            html += `<text class="fp-preview-label" x="${p2svg.x}" y="${p2svg.y - 0.35}"
+                           font-size="0.18" text-anchor="middle">B</text>`;
+        }
     }
 
     // Sun overlay
@@ -602,6 +869,17 @@ function setTool(tool) {
 let _isPanning = false;
 let _panStart = null;
 
+// Wall vertex drag state — set when the user grabs an endpoint handle on
+// a selected wall. `which` is 1 or 2 (which endpoint of the wall). The
+// drag updates `wall.x{which}/y{which}` live; mouse-up commits with snap.
+let _wallDrag = null;
+
+// Radiator drag state — set when the user grabs the slide handle on a
+// selected wall-mounted radiator. Drag projects the cursor onto the host
+// wall and updates `radiator.offset_m` live, clamped so the radiator stays
+// on the wall.
+let _radDrag = null;
+
 function onCanvasMouseDown(e) {
     if (e.button === 1 || (e.button === 0 && e.shiftKey)) {
         _isPanning = true;
@@ -614,7 +892,30 @@ function onCanvasMouseDown(e) {
     const lvl = currentLevel();
 
     if (_state.tool === 'wall') {
-        _state.drawBuffer = { start: m, cur: m };
+        // Chain mode: each click drops a vertex; consecutive vertices form a
+        // wall. Click the first vertex again (or press Enter / Esc / right-
+        // click) to finish the chain.
+        const snapped = snapToExistingEndpoint(lvl, m) || m;
+        if (!_state.drawBuffer || !_state.drawBuffer.points) {
+            _state.drawBuffer = { points: [snapped], cur: snapped };
+        } else {
+            const pts = _state.drawBuffer.points;
+            const first = pts[0];
+            const last = pts[pts.length - 1];
+            // Click on first point closes the chain
+            if (pts.length >= 2 && Math.hypot(snapped.x - first.x, snapped.y - first.y) < 0.2) {
+                pts.push(first);
+                finishWallChain();
+                return;
+            }
+            // Reject zero-length segment
+            if (Math.hypot(snapped.x - last.x, snapped.y - last.y) < 0.2) {
+                toast('warn', 'Too short', 'Move further before clicking.');
+                return;
+            }
+            pts.push(snapped);
+        }
+        renderOverlay();
     } else if (_state.tool === 'window' || _state.tool === 'door') {
         // Find nearest wall to start point; constrain to it
         const w = nearestWall(lvl, m);
@@ -637,24 +938,37 @@ function onCanvasMouseDown(e) {
     } else if (_state.tool === 'radiator' || _state.tool === 'sensor') {
         addPointFeature(_state.tool, m);
     } else if (_state.tool === 'contact') {
-        // Contact picks the nearest opening
+        // If the click is near a window/door, auto-bind to that opening.
+        // Otherwise place an unbound contact and let the user pick the
+        // opening from a dropdown in the property panel.
         const op = nearestOpening(lvl, m);
+        addContact(op || null);
         if (!op) {
-            toast('warn', 'No opening', 'Click closer to a window or door.'); return;
+            toast('info', 'No opening', 'Contact placed; choose a window/door in the panel.');
         }
-        addContact(op);
     } else if (_state.tool === 'calibrate') {
         if (!_state.calibration) {
-            _state.calibration = { p1: m };
+            _state.calibration = { p1: m, cur: m };
             toast('info', 'Calibration', 'Click the second known point.');
+            renderOverlay();
         } else {
             const p1 = _state.calibration.p1;
             const p2 = m;
             const drawnDist = Math.hypot(p2.x - p1.x, p2.y - p1.y);
-            _state.calibration = null;
-            promptCalibrationDistance(p1, p2, drawnDist);
+            // Show BOTH points before the prompt, so the user sees their
+            // second click registered. The prompt blocks the event loop, so
+            // we render synchronously first, then yield to let the browser
+            // paint, then open the prompt.
+            _state.calibration = { p1, p2, cur: p2 };
+            renderOverlay();
+            // requestAnimationFrame to ensure the second marker is painted
+            // before the modal prompt blocks rendering on some browsers.
+            requestAnimationFrame(() => {
+                _state.calibration = null;
+                promptCalibrationDistance(p1, p2, drawnDist);
+                renderOverlay();
+            });
         }
-        renderOverlay();
     } else if (_state.tool === 'select') {
         // Empty-canvas click clears selection
         _state.selection = null;
@@ -669,10 +983,58 @@ function onCanvasMouseMove(e) {
         renderScene(); renderOverlay();
         return;
     }
+    // Wall-handle drag: live update the endpoint as the user moves. Snap to
+    // grid by default; if a nearby OTHER wall's endpoint is in range, prefer
+    // that (so dragging an endpoint can reattach to a neighbour cleanly).
+    if (_wallDrag) {
+        const lvl = currentLevel();
+        const w = lvl.walls.find(x => x.id === _wallDrag.wallId);
+        if (w) {
+            const m = snapPt(clientToSvgModel(e));
+            const snapped = snapToOtherWallEndpoint(lvl, w.id, m) || m;
+            if (_wallDrag.which === 1) { w.x1 = snapped.x; w.y1 = snapped.y; }
+            else                       { w.x2 = snapped.x; w.y2 = snapped.y; }
+            renderScene(); renderProps();
+        }
+        return;
+    }
+    // Radiator slide drag: project cursor onto the host wall, compute the
+    // offset that keeps the radiator's visual centre under the cursor, clamp
+    // so it stays on the wall, write back to offset_m.
+    if (_radDrag) {
+        const lvl = currentLevel();
+        const r = lvl.radiators.find(x => x.id === _radDrag.radId);
+        const w = r?.wall_id ? lvl.walls.find(wl => wl.id === r.wall_id) : null;
+        if (r && w) {
+            const m = clientToSvgModel(e);   // no grid-snap; smooth drag
+            const proj = projectPointOntoSegment(m, w);
+            const wlen = Math.hypot(w.x2 - w.x1, w.y2 - w.y1) || 1;
+            const len = r.length_m || 0.6;
+            // proj.t is the cursor's position along the wall (in metres from
+            // wall.start). We want the radiator CENTRE under the cursor:
+            //   offset_m = proj.t - len/2
+            let offset = proj.t - len / 2;
+            // Clamp so the radiator stays on the wall. If wall is shorter
+            // than the radiator, pin offset to 0 — render code is forgiving.
+            const maxOffset = Math.max(0, wlen - len);
+            offset = Math.max(0, Math.min(maxOffset, offset));
+            r.offset_m = Math.round(offset * 1000) / 1000;
+            renderScene(); renderProps();
+        }
+        return;
+    }
+    // Calibration tool tracks cursor between the two clicks for live feedback.
+    if (_state.tool === 'calibrate' && _state.calibration && _state.calibration.p1) {
+        _state.calibration.cur = snapPt(clientToSvgModel(e));
+        renderOverlay();
+        return;
+    }
     if (!_state.drawBuffer) return;
     const m = snapPt(clientToSvgModel(e));
     if (_state.tool === 'wall') {
-        _state.drawBuffer.cur = m;
+        // Snap to nearby existing endpoints during chain drawing
+        const lvl = currentLevel();
+        _state.drawBuffer.cur = snapToExistingEndpoint(lvl, m) || m;
     } else if (_state.tool === 'window' || _state.tool === 'door') {
         const proj = projectPointOntoSegment(m, _state.drawBuffer.wall);
         _state.drawBuffer.cur = proj.point;
@@ -685,18 +1047,16 @@ function onCanvasMouseMove(e) {
 
 function onCanvasMouseUp(e) {
     if (_isPanning) { _isPanning = false; _panStart = null; renderToolbar(); return; }
+    if (_wallDrag) { _wallDrag = null; renderScene(); renderProps(); return; }
+    if (_radDrag)  { _radDrag = null;  renderScene(); renderProps(); return; }
     if (!_state.drawBuffer) return;
     const lvl = currentLevel();
 
     if (_state.tool === 'wall') {
-        const a = _state.drawBuffer.start, b = _state.drawBuffer.cur;
-        if (Math.hypot(b.x - a.x, b.y - a.y) >= 0.2) {
-            const id = genId('w');
-            lvl.walls.push({ id, x1: a.x, y1: a.y, x2: b.x, y2: b.y, type: 'unknown' });
-            _state.selection = { kind: 'wall', id };
-        }
-        _state.drawBuffer = null;
-        renderScene(); renderOverlay(); renderProps();
+        // Chain mode commits walls in onCanvasMouseDown, not on mouse-up.
+        // Nothing to do here. (Kept as a no-op so the mouseup still fires
+        // for clean event handling.)
+        return;
     } else if (_state.tool === 'window' || _state.tool === 'door') {
         const wall = _state.drawBuffer.wall;
         const t1 = _state.drawBuffer.startT;
@@ -774,6 +1134,48 @@ function nearestOpening(lvl, p) {
     return bestD < 0.6 ? best : null;
 }
 
+/**
+ * If `p` is within ~0.25 m of an existing wall endpoint (or an in-progress
+ * chain vertex), return that endpoint snapped exactly. Otherwise null. This
+ * makes chains close cleanly and adjacent walls share endpoints exactly.
+ */
+function snapToExistingEndpoint(lvl, p) {
+    const SNAP_R = 0.25;
+    let best = null, bestD = SNAP_R;
+    for (const w of (lvl.walls || [])) {
+        for (const ep of [{ x: w.x1, y: w.y1 }, { x: w.x2, y: w.y2 }]) {
+            const d = Math.hypot(p.x - ep.x, p.y - ep.y);
+            if (d < bestD) { bestD = d; best = ep; }
+        }
+    }
+    // Also snap to vertices already placed in the current chain
+    if (_state?.drawBuffer?.points) {
+        for (const ep of _state.drawBuffer.points) {
+            const d = Math.hypot(p.x - ep.x, p.y - ep.y);
+            if (d < bestD) { bestD = d; best = ep; }
+        }
+    }
+    return best ? { x: best.x, y: best.y } : null;
+}
+
+/**
+ * Snap-to-endpoint variant for drag operations: like snapToExistingEndpoint
+ * but excludes the wall being dragged (so an endpoint can't snap to itself
+ * or to its other end on the same wall).
+ */
+function snapToOtherWallEndpoint(lvl, excludeWallId, p) {
+    const SNAP_R = 0.25;
+    let best = null, bestD = SNAP_R;
+    for (const w of (lvl.walls || [])) {
+        if (w.id === excludeWallId) continue;
+        for (const ep of [{ x: w.x1, y: w.y1 }, { x: w.x2, y: w.y2 }]) {
+            const d = Math.hypot(p.x - ep.x, p.y - ep.y);
+            if (d < bestD) { bestD = d; best = ep; }
+        }
+    }
+    return best ? { x: best.x, y: best.y } : null;
+}
+
 function polygonCentroid(poly) {
     if (!poly || poly.length < 3) {
         return poly && poly[0] ? { x: poly[0][0], y: poly[0][1] } : { x: 0, y: 0 };
@@ -802,6 +1204,21 @@ function polygonToPath(poly) {
     }).join(' ') + ' Z';
 }
 
+/**
+ * Find which circuit a room belongs to, by room id. Used for read-only
+ * circuit-context display on the radiator props panel. Returns null when
+ * the room isn't in any known circuit or no circuits were passed in.
+ */
+function findCircuitForRoom(roomId) {
+    if (!roomId || !_availableCircuits.length) return null;
+    for (const c of _availableCircuits) {
+        for (const rm of (c.rooms || [])) {
+            if (rm.id === roomId) return c;
+        }
+    }
+    return null;
+}
+
 // ─────────────────────────── feature creators ───────────────────────────
 
 function finishRoom() {
@@ -821,37 +1238,115 @@ function finishRoom() {
     renderScene(); renderOverlay(); renderProps();
 }
 
+/**
+ * Commit the in-progress wall chain. Each consecutive pair of vertices
+ * becomes one wall with type `unknown` (the user classifies in the props
+ * panel afterwards — supports the "draw layout first, classify later"
+ * workflow). Segments shorter than 0.2 m are skipped.
+ */
+function finishWallChain() {
+    const lvl = currentLevel();
+    const pts = _state.drawBuffer?.points || [];
+    if (pts.length < 2) {
+        _state.drawBuffer = null; renderOverlay(); return;
+    }
+    const newIds = [];
+    for (let i = 0; i < pts.length - 1; i++) {
+        const a = pts[i], b = pts[i + 1];
+        if (Math.hypot(b.x - a.x, b.y - a.y) < 0.2) continue;
+        const id = genId('w');
+        lvl.walls.push({ id, x1: a.x, y1: a.y, x2: b.x, y2: b.y, type: 'unknown' });
+        newIds.push(id);
+    }
+    _state.drawBuffer = null;
+    if (newIds.length > 0) {
+        // Select the first new wall so the user can classify it immediately.
+        _state.selection = { kind: 'wall', id: newIds[0] };
+        toast('success', 'Walls added',
+            `${newIds.length} wall${newIds.length === 1 ? '' : 's'} drawn — classify in the panel.`);
+    }
+    renderScene(); renderOverlay(); renderProps();
+}
+
+/** Cancel an in-progress chain without committing anything. */
+function cancelDrawing() {
+    if (!_state.drawBuffer) return;
+    _state.drawBuffer = null;
+    renderOverlay();
+}
+
 function addPointFeature(tool, m) {
     const lvl = currentLevel();
-    // Find which room this falls in (by bounding box and ray-cast)
-    const room = lvl.rooms.find(r => pointInPolygon(m, r.polygon));
-    if (!room) {
-        toast('warn', 'Place inside a room', 'Drop the marker inside a room polygon.');
-        return;
-    }
+    // If the click lands inside a room polygon, auto-bind to that room as a
+    // convenience. Otherwise leave room_id empty — the user binds via the
+    // property panel. This mirrors the manual flow where a radiator can be
+    // assigned to a room without a drawn floor-plan polygon yet.
+    const room = (lvl.rooms || []).find(r => pointInPolygon(m, r.polygon));
+    const room_id = room ? room.id : '';
     if (tool === 'radiator') {
+        // Wall-snap behaviour: if the click is close to a wall (within 0.5 m
+        // perpendicular distance), create a wall-mounted radiator. Otherwise
+        // create a freestanding one at the click position. The user can
+        // convert between modes later via the property panel.
+        const RAD_WALL_SNAP_M = 0.5;
+        const snap = nearestWallWithProjection(lvl, m, RAD_WALL_SNAP_M);
         const id = genId('rad');
-        lvl.radiators.push({
-            id, room_id: room.id, x: m.x, y: m.y,
-            watts_at_dt50: 1000, length_m: 0.6,
-        });
+        if (snap) {
+            // Wall-mounted: store wall_id + offset_m. No x/y — render computes
+            // the on-wall point from (wall, offset_m, room centroid for side).
+            lvl.radiators.push({
+                id, room_id,
+                wall_id: snap.wall.id,
+                offset_m: snap.offset_m,
+                watts_at_dt50: 1000, length_m: 0.6, height_m: 0.6,
+            });
+        } else {
+            // Freestanding: store x/y as before.
+            lvl.radiators.push({
+                id, room_id, x: m.x, y: m.y,
+                watts_at_dt50: 1000, length_m: 0.6, height_m: 0.6,
+            });
+        }
         _state.selection = { kind: 'radiator', id };
     } else if (tool === 'sensor') {
         const id = genId('sens');
         lvl.sensors.push({
-            id, room_id: room.id, ieee: '', kind: 'temp_sensor',
+            id, room_id, ieee: '', kind: 'temp_sensor',
             x: m.x, y: m.y, height_m: 1.5, primary: false,
         });
         _state.selection = { kind: 'sensor', id };
     }
+    if (!room) {
+        toast('info', 'No room', 'Marker placed; pick a room in the panel on the right.');
+    }
     renderScene(); renderProps();
+}
+
+/**
+ * Find the wall whose projected distance from `p` is smallest, returning the
+ * projection details if within `maxDist` metres. Returns null otherwise.
+ *   { wall, offset_m, projected: {x,y}, perpDist }
+ */
+function nearestWallWithProjection(lvl, p, maxDist) {
+    let best = null, bestD = maxDist;
+    for (const w of (lvl.walls || [])) {
+        const proj = projectPointOntoSegment(p, w);
+        const d = Math.hypot(p.x - proj.point.x, p.y - proj.point.y);
+        if (d < bestD) {
+            bestD = d;
+            best = { wall: w, offset_m: proj.t, projected: proj.point, perpDist: d };
+        }
+    }
+    return best;
 }
 
 function addContact(opening) {
     const lvl = currentLevel();
     const id = genId('con');
     lvl.contacts.push({
-        id, opening_id: opening.id, ieee: '',
+        id,
+        opening_id: opening ? opening.id : '',
+        ieee: '',
         debounce_open_seconds: 30,
         require_temp_drop_c: 0.5,
         max_close_minutes: 60,
@@ -913,7 +1408,12 @@ function renderLevelProps(lvl) {
         <input type="number" step="0.1" class="form-control form-control-sm" data-prop="level.floor_above_ground_m" value="${lvl.floor_above_ground_m || 0}"/></div>
       ${_state.plan.levels.length > 1 ? `<button class="btn btn-sm btn-outline-danger w-100 mt-2" id="fpDeleteLevel"><i class="fas fa-trash me-1"></i>Delete level</button>` : ''}
       <hr/>
-      <div class="text-muted small">Tip: hold Shift+drag (or middle-mouse) to pan. Wheel to zoom.</div>`;
+      <div class="text-muted small">
+        <div><strong>Pan/zoom:</strong> Shift+drag (or middle-mouse) to pan, wheel to zoom.</div>
+        <div class="mt-1"><strong>Walls:</strong> click to start a chain, click again to add each vertex. Press <kbd>Enter</kbd> or right-click or double-click to finish, <kbd>Esc</kbd> to cancel, <kbd>Backspace</kbd> to undo last vertex. Click on the first vertex to close back into it.</div>
+        <div class="mt-1"><strong>Rooms:</strong> click to drop polygon vertices; close by clicking the first one (need 3+).</div>
+        <div class="mt-1"><strong>Radiator/Sensor:</strong> place anywhere; pick the room from the panel. <strong>Contact:</strong> place near a window/door (or anywhere) and pick the opening from the panel.</div>
+      </div>`;
 }
 
 function renderWallProps(w) {
@@ -986,17 +1486,92 @@ function renderRadiatorProps(r) {
     const trvOpts = ['<option value="">— No TRV (fixed valve) —</option>']
       .concat(_availableDevices.trvs.map(t =>
         `<option value="${t.ieee}" ${r.trv_ieee === t.ieee ? 'selected' : ''} ${trvUsed.has(t.ieee) ? 'disabled' : ''}>${escapeHtml(t.name || t.ieee)}${trvUsed.has(t.ieee) ? ' (used)' : ''}</option>`)).join('');
-    const roomOpts = lvl.rooms.map(rm =>
-        `<option value="${rm.id}" ${r.room_id === rm.id ? 'selected' : ''}>${escapeHtml(rm.name || rm.id)}</option>`).join('');
+    const roomOpts = ['<option value="">— Select room —</option>']
+      .concat(lvl.rooms.map(rm =>
+        `<option value="${rm.id}" ${r.room_id === rm.id ? 'selected' : ''}>${escapeHtml(rm.name || rm.id)}</option>`)).join('');
+
+    // Circuit context — derived from `room_id` via the caller-provided
+    // circuits list. Read-only: circuit membership is set in the heating-
+    // controller config, not here, because it's a behavioural binding (which
+    // receiver fires for this room), not a geometric one. We just show it
+    // so the user knows what controller behaviour this radiator triggers.
+    const circuit = r.room_id ? findCircuitForRoom(r.room_id) : null;
+    const circuitInfo = circuit
+        ? `<div class="mb-2 small text-muted">
+             <i class="fas fa-stream me-1"></i>Heats on circuit
+             <strong>${escapeHtml(circuit.name || circuit.id)}</strong>
+             ${circuit.receiver_ieee
+               ? `<span class="text-muted" title="${escapeHtml(circuit.receiver_ieee)}"> · receiver <code>${escapeHtml(circuit.receiver_ieee.slice(-8))}</code></span>`
+               : '<span class="text-warning ms-1">(no receiver assigned)</span>'}
+           </div>`
+        : (_availableCircuits.length && r.room_id
+            ? `<div class="mb-2 small text-warning">
+                 <i class="fas fa-exclamation-triangle me-1"></i>
+                 Room <code>${escapeHtml(r.room_id)}</code> isn't in any circuit yet.
+                 Add it in the heating controller settings.
+               </div>`
+            : '');
+
+    // Mounting section: tells the user whether this radiator is wall-mounted
+    // or freestanding, and offers a single button to convert. Wall ID is
+    // shown read-only because it's set geometrically (drag/place); changing
+    // it through a dropdown without geometric feedback is error-prone.
+    const wall = r.wall_id ? lvl.walls.find(w => w.id === r.wall_id) : null;
+    const wallLen = wall ? Math.hypot(wall.x2 - wall.x1, wall.y2 - wall.y1) : 0;
+    const mountSection = wall
+        ? `<div class="mb-2 p-2 border rounded bg-light">
+             <div class="small text-muted text-uppercase mb-1">Mounting</div>
+             <div class="small mb-1">
+               <i class="fas fa-link me-1"></i>
+               Wall-mounted on <code>${escapeHtml(r.wall_id)}</code>
+               <span class="text-muted">(${wallLen.toFixed(2)} m long)</span>
+             </div>
+             <div class="row g-2">
+               <div class="col-12">
+                 <label class="form-label small">Offset from wall start (m)</label>
+                 <input type="number" step="0.05" min="0" max="${wallLen.toFixed(2)}"
+                        class="form-control form-control-sm"
+                        data-prop="radiator.offset_m"
+                        value="${(r.offset_m ?? 0).toFixed(2)}"/>
+               </div>
+             </div>
+             <button class="btn btn-sm btn-outline-secondary w-100 mt-2" data-action="rad-to-freestanding">
+               <i class="fas fa-arrows-alt me-1"></i>Convert to freestanding
+             </button>
+           </div>`
+        : `<div class="mb-2 p-2 border rounded bg-light">
+             <div class="small text-muted text-uppercase mb-1">Mounting</div>
+             <div class="small mb-2">
+               <i class="fas fa-arrows-alt me-1"></i>Freestanding at
+               <code>(${(r.x ?? 0).toFixed(2)}, ${(r.y ?? 0).toFixed(2)})</code>
+             </div>
+             ${(lvl.walls || []).length > 0 ? `
+               <button class="btn btn-sm btn-outline-secondary w-100" data-action="rad-snap-to-wall">
+                 <i class="fas fa-link me-1"></i>Snap to nearest wall
+               </button>` : `
+               <div class="form-text small text-muted">No walls on this level to snap to.</div>`}
+           </div>`;
+
     return `
       <div class="text-muted small text-uppercase mb-2">Radiator</div>
       <div class="mb-2"><label class="form-label small">Room</label>
-        <select class="form-select form-select-sm" data-prop="radiator.room_id">${roomOpts}</select></div>
+        <select class="form-select form-select-sm" data-prop="radiator.room_id">${roomOpts}</select>
+        ${lvl.rooms.length === 0 ? '<div class="form-text small text-warning">No rooms drawn on this level — draw one with the Room tool, then return here.</div>' : ''}
+      </div>
+      ${circuitInfo}
+      ${mountSection}
       <div class="row g-2 mb-2">
         <div class="col-6"><label class="form-label small">Watts @ ΔT50</label>
           <input type="number" class="form-control form-control-sm" data-prop="radiator.watts_at_dt50" value="${r.watts_at_dt50 || 0}"/></div>
         <div class="col-6"><label class="form-label small">Length (m)</label>
-          <input type="number" step="0.1" class="form-control form-control-sm" data-prop="radiator.length_m" value="${r.length_m || 0.6}"/></div>
+          <input type="number" step="0.1" min="0.1" max="10" class="form-control form-control-sm" data-prop="radiator.length_m" value="${r.length_m || 0.6}"/></div>
+      </div>
+      <div class="row g-2 mb-2">
+        <div class="col-6"><label class="form-label small" title="Physical panel height — used for sizing calcs, not shown on plan view">Panel height (m)</label>
+          <input type="number" step="0.05" min="0.05" max="3" class="form-control form-control-sm" data-prop="radiator.height_m" value="${r.height_m || 0.6}"/></div>
+        <div class="col-6"><label class="form-label small">Approx. surface area</label>
+          <input type="text" class="form-control form-control-sm" readonly
+                 value="${((r.length_m || 0.6) * (r.height_m || 0.6)).toFixed(2)} m²"/></div>
       </div>
       <div class="mb-2"><label class="form-label small">Type</label>
         <select class="form-select form-select-sm" data-prop="radiator.type">
@@ -1015,8 +1590,9 @@ function renderRadiatorProps(r) {
 function renderSensorProps(s) {
     if (!s) return '';
     const lvl = currentLevel();
-    const roomOpts = lvl.rooms.map(rm =>
-        `<option value="${rm.id}" ${s.room_id === rm.id ? 'selected' : ''}>${escapeHtml(rm.name || rm.id)}</option>`).join('');
+    const roomOpts = ['<option value="">— Select room —</option>']
+      .concat(lvl.rooms.map(rm =>
+        `<option value="${rm.id}" ${s.room_id === rm.id ? 'selected' : ''}>${escapeHtml(rm.name || rm.id)}</option>`)).join('');
     const ieeeUsed = new Set(lvl.sensors.filter(x => x.id !== s.id && x.ieee).map(x => x.ieee));
     const sensorOpts = ['<option value="">— Select device —</option>']
       .concat(_availableDevices.sensors.map(d =>
@@ -1024,7 +1600,9 @@ function renderSensorProps(s) {
     return `
       <div class="text-muted small text-uppercase mb-2">Temperature sensor</div>
       <div class="mb-2"><label class="form-label small">Room</label>
-        <select class="form-select form-select-sm" data-prop="sensor.room_id">${roomOpts}</select></div>
+        <select class="form-select form-select-sm" data-prop="sensor.room_id">${roomOpts}</select>
+        ${lvl.rooms.length === 0 ? '<div class="form-text small text-warning">No rooms drawn on this level — draw one with the Room tool, then return here.</div>' : ''}
+      </div>
       <div class="mb-2"><label class="form-label small">Device</label>
         <select class="form-select form-select-sm" data-prop="sensor.ieee">${sensorOpts}</select></div>
       <div class="mb-2"><label class="form-label small">Kind</label>
@@ -1043,14 +1621,30 @@ function renderSensorProps(s) {
 function renderContactProps(c) {
     if (!c) return '';
     const lvl = currentLevel();
-    const op = lvl.openings.find(o => o.id === c.opening_id);
     const ieeeUsed = new Set(lvl.contacts.filter(x => x.id !== c.id && x.ieee).map(x => x.ieee));
     const contactOpts = ['<option value="">— Select device —</option>']
       .concat(_availableDevices.contacts.map(d =>
         `<option value="${d.ieee}" ${c.ieee === d.ieee ? 'selected' : ''} ${ieeeUsed.has(d.ieee) ? 'disabled' : ''}>${escapeHtml(d.name || d.ieee)}</option>`)).join('');
+
+    // Build the opening picker. Each entry shows kind + room (if known) so
+    // similarly-named openings can be told apart.
+    const openingUsed = new Set(lvl.contacts.filter(x => x.id !== c.id && x.opening_id).map(x => x.opening_id));
+    const roomById = new Map((lvl.rooms || []).map(r => [r.id, r]));
+    const openingOpts = ['<option value="">— Select opening —</option>']
+      .concat((lvl.openings || []).map(o => {
+        const room = o.room_id ? roomById.get(o.room_id) : null;
+        const roomLabel = room ? ` · ${escapeHtml(room.name || room.id)}` : '';
+        const used = openingUsed.has(o.id) ? ' (used)' : '';
+        const w = (o.width_m || 0).toFixed(2);
+        return `<option value="${o.id}" ${c.opening_id === o.id ? 'selected' : ''} ${openingUsed.has(o.id) ? 'disabled' : ''}>${o.kind} (${w} m)${roomLabel}${used}</option>`;
+      })).join('');
+
     return `
       <div class="text-muted small text-uppercase mb-2">Contact sensor</div>
-      <div class="mb-2 small text-muted">On opening: <strong>${op ? `${op.kind} ${escapeHtml(op.id)}` : '?'}</strong></div>
+      <div class="mb-2"><label class="form-label small">Bound to opening</label>
+        <select class="form-select form-select-sm" data-prop="contact.opening_id">${openingOpts}</select>
+        ${(lvl.openings || []).length === 0 ? '<div class="form-text small text-warning">No windows or doors on this level yet — draw some first.</div>' : ''}
+      </div>
       <div class="mb-2"><label class="form-label small">Device</label>
         <select class="form-select form-select-sm" data-prop="contact.ieee">${contactOpts}</select></div>
       <div class="row g-2 mb-2">
@@ -1127,6 +1721,44 @@ function bindPropsHandlers() {
     root.querySelector('[data-action="delete-radiator"]')?.addEventListener('click', () => deleteSelected('radiators'));
     root.querySelector('[data-action="delete-sensor"]')?.addEventListener('click', () => deleteSelected('sensors'));
     root.querySelector('[data-action="delete-contact"]')?.addEventListener('click', () => deleteSelected('contacts'));
+
+    // Radiator mounting-mode conversions
+    root.querySelector('[data-action="rad-to-freestanding"]')?.addEventListener('click', () => {
+        const lvl = currentLevel();
+        const r = lvl.radiators.find(x => x.id === sel.id);
+        if (!r || !r.wall_id) return;
+        const wall = lvl.walls.find(w => w.id === r.wall_id);
+        // Compute the radiator's current ON-WALL centre point and write it
+        // as x/y so the freestanding render lands in the same place.
+        if (wall) {
+            const wlen = Math.hypot(wall.x2 - wall.x1, wall.y2 - wall.y1) || 1;
+            const ux = (wall.x2 - wall.x1) / wlen, uy = (wall.y2 - wall.y1) / wlen;
+            const len = r.length_m || 0.6;
+            const t = (r.offset_m ?? wlen / 2) + len / 2;
+            r.x = wall.x1 + ux * t;
+            r.y = wall.y1 + uy * t;
+        } else if (r.x == null || r.y == null) {
+            r.x = 0; r.y = 0;
+        }
+        delete r.wall_id;
+        delete r.offset_m;
+        renderScene(); renderProps();
+    });
+    root.querySelector('[data-action="rad-snap-to-wall"]')?.addEventListener('click', () => {
+        const lvl = currentLevel();
+        const r = lvl.radiators.find(x => x.id === sel.id);
+        if (!r) return;
+        const p = { x: r.x ?? 0, y: r.y ?? 0 };
+        const snap = nearestWallWithProjection(lvl, p, 100);  // any distance — this is explicit user intent
+        if (!snap) {
+            toast('warn', 'No walls', 'No walls available on this level.');
+            return;
+        }
+        r.wall_id = snap.wall.id;
+        r.offset_m = snap.offset_m;
+        delete r.x; delete r.y;
+        renderScene(); renderProps();
+    });
 }
 
 function deleteSelected(arrKey) {
@@ -1243,13 +1875,21 @@ async function save() {
             version: FP_VERSION,
             north_offset_deg: _state.plan.north_offset_deg,
             scale_pixels_per_metre: _state.plan.scale_pixels_per_metre,
-            levels: _state.plan.levels.map(l => ({
-                id: l.id, name: l.name, index: l.index,
-                ceiling_height_m: l.ceiling_height_m,
-                floor_above_ground_m: l.floor_above_ground_m,
-                walls: l.walls, openings: l.openings, rooms: l.rooms,
-                radiators: l.radiators, sensors: l.sensors, contacts: l.contacts,
-            })),
+            levels: _state.plan.levels.map(l => {
+                const out = {
+                    id: l.id, name: l.name, index: l.index,
+                    ceiling_height_m: l.ceiling_height_m,
+                    floor_above_ground_m: l.floor_above_ground_m,
+                    walls: l.walls, openings: l.openings, rooms: l.rooms,
+                    radiators: l.radiators, sensors: l.sensors, contacts: l.contacts,
+                };
+                if (l.background?.present) {
+                    // Strip view-only fields (cache-buster) before sending
+                    const { _cb, ...bg } = l.background;
+                    out.background = bg;
+                }
+                return out;
+            }),
         };
         const r = await fetch('/api/heating/floor-plan', {
             method: 'POST',
@@ -1397,7 +2037,11 @@ function promptCalibrationDistance(p1, p2, drawnDist) {
         toast('warn', 'Too short', 'Pick two distinct points.');
         return;
     }
-    const ans = prompt('Real-world distance between the two points (metres):', '1.0');
+    const ans = prompt(
+        `You drew a line measuring ${drawnDist.toFixed(2)} m at the current scale.\n\n` +
+        `What is its real-world length (metres)?`,
+        drawnDist.toFixed(2),
+    );
     if (ans == null) return;
     const realM = parseFloat(ans);
     if (!Number.isFinite(realM) || realM <= 0) {
@@ -1408,6 +2052,17 @@ function promptCalibrationDistance(p1, p2, drawnDist) {
     // Re-scale the image so that drawnDist (currently in current model metres)
     // equals realM. New ppm = old_ppm * (drawnDist / realM).
     const oldPpm = lvl.background.pixels_per_metre;
+    if (!Number.isFinite(oldPpm) || oldPpm <= 0) {
+        // Stale/invalid state — recover with a sane default rather than
+        // propagating NaN/0 through the calibration math.
+        lvl.background.pixels_per_metre = 50.0;
+        toast('warn', 'Recovered scale',
+            'Image had no valid scale; reset to 50 px/m. Calibrating now…');
+        renderScene();
+        // Re-enter calibration with the recovered ppm
+        promptCalibrationDistance(p1, p2, drawnDist);
+        return;
+    }
     const newPpm = oldPpm * (drawnDist / realM);
     if (!Number.isFinite(newPpm) || newPpm <= 0) {
         toast('warn', 'Invalid', 'Calibration produced an invalid scale.');

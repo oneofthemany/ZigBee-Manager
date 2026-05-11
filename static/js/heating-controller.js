@@ -188,7 +188,7 @@ function renderControllerPanel(state) {
             <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
                 <span><i class="fas fa-cogs me-2"></i>Heating Controller ${dryBadge}</span>
                 <div class="btn-group btn-group-sm">
-                    <button class="btn btn-outline-info" id="btn-controller-floorplan" title="Open floor-plan editor">
+                    <button class="btn btn-outline-info" id="btn-open-floor-plan" title="Open the floor-plan editor">
                         <i class="fas fa-drafting-compass"></i> Floor plan
                     </button>
                     <button class="btn btn-outline-secondary" id="btn-controller-tick" title="Run a control tick now">
@@ -322,16 +322,68 @@ function renderCircuitStatusCard(c) {
 }
 
 function bindControllerPanel() {
-    document.getElementById('btn-controller-floorplan')?.addEventListener('click', async () => {
-        const { openFloorPlanEditor } = await import('./floor-plan.js');
-        openFloorPlanEditor({
-            devices: controllerDevices,
-            sensors: controllerSensors,
-            contacts: controllerContactSensors,
-            onSave: () => loadControllerStatus(),
-        });
-    });
     document.getElementById('btn-controller-settings')?.addEventListener('click', openControllerSettings);
+
+    // "Floor plan" button — primary entry point into the floor-plan editor.
+    // We dynamically import the module (it's large and only used here), and
+    // fetch the device/sensor/contact lists on-demand if they haven't already
+    // been populated by an earlier "Configure" open. This avoids an empty
+    // dropdown experience on first open.
+    document.getElementById('btn-open-floor-plan')?.addEventListener('click', async () => {
+        const btn = document.getElementById('btn-open-floor-plan');
+        const orig = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = `<span class="spinner-border spinner-border-sm me-1"></span>Loading…`;
+        try {
+            // If "Configure" hasn't been opened yet this session, our caches
+            // are empty. Fetch in parallel so the editor opens with populated
+            // dropdowns regardless of order of operations.
+            const needsLoad = !workingCircuits.length
+                && !controllerSensors.length
+                && !controllerContactSensors.length;
+            if (needsLoad) {
+                const [cfgRes, devRes, sensorRes, contactRes] = await Promise.all([
+                    fetch('/api/heating/controller/config').then(r => r.json()).catch(() => ({ success: false })),
+                    fetch('/api/heating/controller/devices').then(r => r.json()).catch(() => ({ success: false })),
+                    fetch('/api/heating/controller/sensors').then(r => r.json()).catch(() => ({ success: false })),
+                    fetch('/api/heating/controller/contact-sensors').then(r => r.json()).catch(() => ({ success: false })),
+                ]);
+                if (cfgRes.success) {
+                    controllerConfig = cfgRes.config;
+                    workingCircuits = JSON.parse(JSON.stringify(controllerConfig.circuits || []));
+                }
+                if (devRes.success) {
+                    controllerDevices = {
+                        receivers:   devRes.receivers   || [],
+                        thermostats: devRes.thermostats || [],
+                    };
+                }
+                if (sensorRes.success)  controllerSensors        = sensorRes.sensors  || [];
+                if (contactRes.success) controllerContactSensors = contactRes.sensors || [];
+            }
+            const mod = await import('./floor-plan.js');
+            if (typeof mod.openFloorPlanEditor === 'function') {
+                mod.openFloorPlanEditor({
+                    circuits: workingCircuits,
+                    devices: {
+                        receivers:   controllerDevices.receivers   || [],
+                        thermostats: controllerDevices.thermostats || [],
+                    },
+                    sensors:  controllerSensors || [],
+                    contacts: controllerContactSensors || [],
+                    onSave: () => loadControllerStatus(),
+                });
+            }
+        } catch (e) {
+            console.error('Failed to open floor-plan editor:', e);
+            fireToast('error', 'Failed to open',
+                'Could not load the floor-plan editor. Check the console for details.');
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = orig;
+        }
+    });
+
     document.getElementById('btn-controller-tick')?.addEventListener('click', async () => {
         const btn = document.getElementById('btn-controller-tick');
         const orig = btn.innerHTML;
@@ -1157,18 +1209,39 @@ function renderDimensionsPanel(room, ci, ri) {
     const radWatts = rad.watts_at_dt50 ?? '';
     const radBtu = radWatts ? Math.round(radWatts / 0.2931) : '';
 
+    // When the room is projected from a floor plan, the dimensions block is
+    // an auto-generated cache of plan geometry. Editing it here would be
+    // overwritten on the next floor-plan save. Show a banner that flags this
+    // and offers a button to open the floor-plan editor.
+    const projected = !!room.floor_plan_ref;
+    const projectedBanner = projected ? `
+        <div class="alert alert-info py-2 px-3 mb-2 d-flex justify-content-between align-items-center small">
+            <div>
+                <i class="fas fa-info-circle me-1"></i>
+                <strong>Projected from floor plan</strong> — these values are
+                generated from your floor plan geometry. Edit there for accuracy.
+            </div>
+            <button type="button" class="btn btn-sm btn-outline-primary ms-2 btn-open-floor-plan-from-banner">
+                <i class="fas fa-drafting-compass me-1"></i>Open floor plan
+            </button>
+        </div>` : '';
+
     return `
         <div class="border-top pt-2 mt-2">
             <a class="small text-decoration-none" data-bs-toggle="collapse" href="#${collapseId}" role="button">
                 <i class="fas fa-ruler-combined me-1"></i>Room layout & radiator ${badgeHtml}
+                ${projected ? '<span class="badge bg-info ms-1">from floor plan</span>' : ''}
                 <i class="fas fa-caret-down ms-1"></i>
             </a>
             <div class="collapse ${hasContent ? 'show' : ''}" id="${collapseId}">
                 <div class="pt-2">
+                    ${projectedBanner}
                     <div class="small text-muted mb-2">
-                        Enter room width (X) and depth (Y) in metres.
-                        Wall areas and per-wall loss are computed automatically.
+                        ${projected
+                            ? 'Read-only — edit in the floor plan editor to update these values.'
+                            : 'Enter room width (X) and depth (Y) in metres. Wall areas and per-wall loss are computed automatically.'}
                     </div>
+                    <fieldset ${projected ? 'disabled' : ''}>
                     <div class="row g-2 mb-3">
                         <div class="col-md-3">
                             <label class="form-label small mb-1">Width (X) m</label>
@@ -1314,6 +1387,7 @@ function renderDimensionsPanel(room, ci, ri) {
                             </select>
                         </div>
                     </div>
+                    </fieldset>
                 </div>
             </div>
             <!-- Tips panel sits OUTSIDE the collapse so they're always visible -->
@@ -1806,6 +1880,42 @@ function bindCircuitCards() {
                 out.innerHTML = `<div class="text-danger">Request failed: ${escapeHtml(e.message)}</div>`;
             } finally {
                 btn.disabled = false;
+            }
+        });
+    });
+
+    // "Open floor plan" buttons inside the projected-data banners. Use a
+    // dynamic import so this page doesn't have to statically depend on the
+    // floor-plan module — the file is large and only relevant when the user
+    // clicks here.
+    //
+    // Pass the full device context so the editor's dropdowns can populate:
+    //   - devices.thermostats → TRV picker on radiator panels
+    //   - sensors             → device picker on temperature-sensor panels
+    //   - contacts            → device picker on contact-sensor panels
+    //   - circuits            → circuit-name display on radiator panels
+    // The defensive empty-array fallbacks ensure a fresh page that hasn't
+    // populated everything yet still opens the editor cleanly.
+    document.querySelectorAll('.btn-open-floor-plan-from-banner').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            try {
+                const mod = await import('./floor-plan.js');
+                if (typeof mod.openFloorPlanEditor === 'function') {
+                    mod.openFloorPlanEditor({
+                        circuits: workingCircuits,
+                        devices: {
+                            receivers:   controllerDevices.receivers || [],
+                            thermostats: controllerDevices.thermostats || [],
+                        },
+                        sensors:  controllerSensors || [],
+                        contacts: controllerContactSensors || [],
+                        onSave: () => loadControllerStatus(),
+                    });
+                }
+            } catch (e) {
+                console.error('Failed to load floor-plan editor:', e);
+                fireToast('warning', 'Unavailable',
+                    'Floor-plan editor is not loaded on this page.');
             }
         });
     });
