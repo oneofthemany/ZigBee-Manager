@@ -49,8 +49,10 @@ VALID_DOOR_TYPES = ("external", "internal")
 VALID_CEILING_TYPES = ("insulated", "uninsulated", "flat_roof", "unknown")
 VALID_WALLS = ("front", "back", "left", "right")
 VALID_RADIATOR_TYPES = ("single_panel", "double_panel_single_conv",
-                        "double_panel_double_conv", "column", "towel_rail",
-                        "unknown")
+                        "double_panel_double_conv", "triple_panel",
+                        "column", "towel_rail", "underfloor", "unknown")
+
+VALID_SENSOR_KINDS = ("temp_sensor", "thermostat", "room_stat")
 VALID_RADIATOR_PLACEMENT = ("under_window", "external_wall",
                             "internal_wall", "unknown")
 
@@ -71,6 +73,89 @@ def _clean_window(w: dict) -> Optional[dict]:
         orient = "unknown"
     return {"area_m2": round(area, 2), "glazing": glazing, "orientation": orient}
 
+def _clean_radiator_dict(rd: Any) -> Optional[dict]:
+    """
+    Normalise one radiator dict. Accepts both manual-config shape (with
+    legacy `wall` slot) and floor-plan-projected shape (with `wall_id`,
+    `offset_m`, free `x`/`y`, `length_m`, `trv_ieee`). Returns ``None`` if
+    no positive wattage can be derived.
+    """
+    if not isinstance(rd, dict):
+        return None
+    watts = _as_float(rd.get("watts_at_dt50"))
+    btu_hr = _as_float(rd.get("btu_hr_at_dt50"))
+    if not watts and btu_hr and btu_hr > 0:
+        watts = btu_hr * 0.2931
+    if not watts or watts <= 0:
+        return None
+
+    cleaned: Dict[str, Any] = {"watts_at_dt50": round(watts, 0)}
+
+    flow_c = _as_float(rd.get("flow_temperature_c"))
+    if flow_c and 30 <= flow_c <= 90:
+        cleaned["flow_temperature_c"] = round(flow_c, 1)
+
+    desc = rd.get("description")
+    if desc:
+        cleaned["description"] = str(desc)[:100]
+
+    wall = str(rd.get("wall") or "").lower()
+    if wall in VALID_WALLS:
+        cleaned["wall"] = wall
+
+    placement = str(rd.get("placement") or "").lower()
+    if placement in VALID_RADIATOR_PLACEMENT:
+        cleaned["placement"] = placement
+
+    has_reflector = _as_bool(rd.get("reflective_panel"), None)
+    if has_reflector is not None:
+        cleaned["reflective_panel"] = has_reflector
+
+    rtype = str(rd.get("type") or "").lower()
+    if rtype in VALID_RADIATOR_TYPES:
+        cleaned["type"] = rtype
+
+    # Floor-plan-only fields (preserved verbatim for the editor + future
+    # thermal_profile use; legacy reader code paths simply ignore them).
+    for k in ("id", "room_id", "wall_id", "offset_m",
+              "x", "y", "length_m", "height_m", "trv_ieee"):
+        v = rd.get(k)
+        if v is not None:
+            cleaned[k] = v
+
+    return cleaned
+
+
+def _clean_sensor_dict(s: Any) -> Optional[dict]:
+    """
+    Normalise one temperature-sensor dict. Returns ``None`` if no IEEE.
+    """
+    if not isinstance(s, dict):
+        return None
+    ieee = str(s.get("ieee") or "").strip()
+    if not ieee:
+        return None
+
+    out: Dict[str, Any] = {"ieee": ieee}
+
+    kind = str(s.get("kind") or "temp_sensor").lower()
+    out["kind"] = kind if kind in VALID_SENSOR_KINDS else "temp_sensor"
+
+    primary = _as_bool(s.get("primary"), None)
+    if primary is not None:
+        out["primary"] = primary
+
+    h = _as_float(s.get("height_m"))
+    if h is not None and 0 <= h <= 10:
+        out["height_m"] = round(h, 2)
+
+    # Floor-plan coords (optional)
+    for k in ("id", "room_id", "x", "y"):
+        v = s.get(k)
+        if v is not None:
+            out[k] = v
+
+    return out
 
 def _clean_door(d: dict) -> Optional[dict]:
     if not isinstance(d, dict):
@@ -308,9 +393,27 @@ def _clean_room(r: dict, existing_ids: Optional[set] = None) -> Optional[dict]:
             "temp": _as_float(slot.get("temp"), 20.0),
         })
 
-    sensor_ieee = r.get("temperature_sensor_ieee")
-    sensor_ieee = str(sensor_ieee).strip() if sensor_ieee else ""
-    sensor_ieee = sensor_ieee or None
+    # ── Temperature sensors (canonical: plural; derive legacy single) ──
+    sensors_clean: List[dict] = []
+    if "temperature_sensor_ieee" in r:
+        legacy = r.get("temperature_sensor_ieee")
+        if isinstance(legacy, str):
+            legacy = legacy.strip()
+            if legacy:
+                sensors_clean = [{"ieee": legacy, "kind": "temp_sensor", "primary": True}]
+    elif isinstance(r.get("temperature_sensors"), list):
+        for s in r["temperature_sensors"]:
+            c = _clean_sensor_dict(s)
+            if c:
+                sensors_clean.append(c)
+        # Ensure exactly one primary (first listed if none flagged)
+        if sensors_clean and not any(s.get("primary") for s in sensors_clean):
+            sensors_clean[0]["primary"] = True
+
+    primary_sensor = next((s for s in sensors_clean if s.get("primary")), None)
+    if primary_sensor is None and sensors_clean:
+        primary_sensor = sensors_clean[0]
+    sensor_ieee = primary_sensor["ieee"] if primary_sensor else None
 
     mode = str(r.get("external_temp_mode", "advisory" if sensor_ieee else "off")).lower()
     if mode not in VALID_EXT_MODES:
@@ -332,47 +435,17 @@ def _clean_room(r: dict, existing_ids: Optional[set] = None) -> Optional[dict]:
 
     dimensions = _clean_dimensions(r.get("dimensions"))
 
-    # Radiator info
-    rad_raw = r.get("radiator") or {}
-    radiator = None
-    if isinstance(rad_raw, dict):
-        # Accept watts OR btu_hr — convert BTU to W if only BTU supplied
-        watts = _as_float(rad_raw.get("watts_at_dt50"))
-        btu_hr = _as_float(rad_raw.get("btu_hr_at_dt50"))
-        if not watts and btu_hr and btu_hr > 0:
-            watts = btu_hr * 0.2931
-
-        if watts and watts > 0:
-            radiator = {"watts_at_dt50": round(watts, 0)}
-
-            flow_c = _as_float(rad_raw.get("flow_temperature_c"))
-            if flow_c and 30 <= flow_c <= 90:
-                radiator["flow_temperature_c"] = round(flow_c, 1)
-
-            desc = rad_raw.get("description")
-            if desc:
-                radiator["description"] = str(desc)[:100]
-
-            # Placement on a wall (optional) — ties to dimensions.walls.
-            wall = str(rad_raw.get("wall") or "").lower()
-            if wall in VALID_WALLS:
-                radiator["wall"] = wall
-
-            # Positioning within the room ('under_window' etc.) — this is
-            # what drives the efficiency flag.
-            placement = str(rad_raw.get("placement") or "").lower()
-            if placement in VALID_RADIATOR_PLACEMENT:
-                radiator["placement"] = placement
-
-            # Reflective panel behind the radiator — boosts output by 5-10%.
-            has_reflector = _as_bool(rad_raw.get("reflective_panel"), None)
-            if has_reflector is not None:
-                radiator["reflective_panel"] = has_reflector
-
-            # Type (affects heat output curve — informational only for now)
-            rtype = str(rad_raw.get("type") or "").lower()
-            if rtype in VALID_RADIATOR_TYPES:
-                radiator["type"] = rtype
+    # ── Radiators (canonical: plural list; derive legacy single) ────────
+    radiators_clean: List[dict] = []
+    if "radiator" in r:
+        single = _clean_radiator_dict(r.get("radiator"))
+        if single:
+            radiators_clean = [single]
+    elif isinstance(r.get("radiators"), list):
+        for rd in r["radiators"]:
+            c = _clean_radiator_dict(rd)
+            if c:
+                radiators_clean.append(c)
 
     out = {
         "id": rid,
@@ -403,8 +476,38 @@ def _clean_room(r: dict, existing_ids: Optional[set] = None) -> Optional[dict]:
     if dimensions is not None:
         out["dimensions"] = dimensions
 
-    if radiator is not None:
-        out["radiator"] = radiator
+    # Emit plural list (canonical) AND derive legacy single from the
+    # largest-watts radiator for the benefit of existing readers in
+    # heating_controller.py, radiator_sizing.py, heating_routes.py, etc.
+    if radiators_clean:
+        out["radiators"] = radiators_clean
+        primary_rad = max(
+            radiators_clean,
+            key=lambda x: float(x.get("watts_at_dt50") or 0),
+        )
+        # Strip plural-only fields when emitting the legacy single, so the
+        # `radiator` block keeps its historical shape.
+        legacy_only_keys = {
+            "watts_at_dt50", "flow_temperature_c", "description",
+            "wall", "placement", "reflective_panel", "type",
+        }
+        out["radiator"] = {k: v for k, v in primary_rad.items()
+                           if k in legacy_only_keys}
+
+    # Emit the plural sensor list too. Legacy single is already on `out`
+    # via the `temperature_sensor_ieee` field below — no extra work here.
+    if sensors_clean:
+        out["temperature_sensors"] = sensors_clean
+
+    # Preserve floor_plan_ref so projected rooms keep their plan linkage
+    # across save round-trips.
+    fp_ref = r.get("floor_plan_ref")
+    if isinstance(fp_ref, dict):
+        out["floor_plan_ref"] = {
+            "level_id": str(fp_ref.get("level_id") or ""),
+            "room_id":  str(fp_ref.get("room_id")  or ""),
+        }
+
     return out
 
 
@@ -450,6 +553,10 @@ def _clean_circuits(circuits: list) -> List[dict]:
             out.append(cleaned)
             seen.add(cleaned["id"])
     return out
+
+def normalise_circuits(circuits: list) -> List[dict]:
+    """Canonicalise a circuits list — same rules as POST /controller/config."""
+    return _clean_circuits(circuits)
 
 
 def _find_trv_in_config(cfg: Dict[str, Any], ieee: str):
@@ -594,8 +701,13 @@ def register_heating_controller_routes(app: FastAPI, get_controller, get_zigbee_
             if mode == "manual":
                 for c in controller_block.get("circuits") or []:
                     for r in c.get("rooms") or []:
-                        if isinstance(r, dict) and r.pop("floor_plan_ref", None):
+                        if not isinstance(r, dict):
+                            continue
+                        # Strip plan linkage so the manual UI isn't locked
+                        if r.pop("floor_plan_ref", None):
                             stripped += 1
+                        r.pop("radiators", None)
+                        r.pop("temperature_sensors", None)
 
             elif mode == "floor_plan":
                 plan = heating.get("floor_plan")

@@ -813,6 +813,43 @@ export async function openControllerSettings() {
         // so either source of the saved config lights up the checkboxes.
         for (const c of workingCircuits) {
             for (const r of (c.rooms || [])) {
+                // ── Multi-radiator normalisation ─────────────────────
+                // Lift legacy `room.radiator` (single) into the plural
+                // `room.radiators` list so the UI renders one card per
+                // radiator. The legacy key is deleted from the working
+                // state so the save payload sends plural only — otherwise
+                // the backend's precedence rule would treat the legacy
+                // single as authoritative and silently overwrite the
+                // plural on every save (see _clean_room).
+                if (!Array.isArray(r.radiators)) r.radiators = [];
+                if (r.radiator && typeof r.radiator === 'object'
+                    && r.radiators.length === 0
+                    && Number(r.radiator.watts_at_dt50) > 0) {
+                    r.radiators.push({...r.radiator});
+                }
+                delete r.radiator;
+                // ── Multi-sensor normalisation ───────────────────────
+                // Lift legacy `room.temperature_sensor_ieee` (single
+                // string) into the plural `room.temperature_sensors`
+                // list, marking it primary. The legacy key is deleted
+                // so the save payload sends plural only — same precedence
+                // reasoning as the radiator case.
+                if (!Array.isArray(r.temperature_sensors)) r.temperature_sensors = [];
+                if (typeof r.temperature_sensor_ieee === 'string'
+                    && r.temperature_sensor_ieee
+                    && r.temperature_sensors.length === 0) {
+                    r.temperature_sensors.push({
+                        ieee: r.temperature_sensor_ieee,
+                        kind: 'temp_sensor',
+                        primary: true,
+                    });
+                }
+                delete r.temperature_sensor_ieee;
+                // Guarantee exactly one primary when the room has any sensors
+                if (r.temperature_sensors.length > 0
+                    && !r.temperature_sensors.some(s => s.primary)) {
+                    r.temperature_sensors[0].primary = true;
+                }
                 const fromTrvs = Array.isArray(r.trvs)
                     ? r.trvs.map(t => t && t.ieee).filter(Boolean)
                     : [];
@@ -1212,33 +1249,13 @@ function renderRoomCard(room, ci, ri) {
         : `<div class="list-group-item small text-muted">No available TRVs.</div>`;
 
     // Room temperature sensor dropdown — any device reporting a temperature
-    // (motion sensors, THP, contact sensors with temp, etc.)
-    const sensorIeee = room.temperature_sensor_ieee || '';
-    const sensorOptions = [
-        `<option value="">— None (use TRV readings) —</option>`,
-        ...controllerSensors
-            .filter(s => s.ieee !== sensorIeee)   // selected one added below
-            .map(s => {
-                const kindLabel = s.is_thermostat ? ' · thermostat' : '';
-                return `<option value="${escapeAttr(s.ieee)}">
-                    ${escapeHtml(s.name)} (${Number(s.temperature).toFixed(1)}°C${kindLabel})
-                </option>`;
-            }),
-    ];
-    // Make sure currently-selected sensor is present in the list even if
-    // it's temporarily unavailable/offline
-    if (sensorIeee && !controllerSensors.some(s => s.ieee === sensorIeee)) {
-        sensorOptions.push(`<option value="${escapeAttr(sensorIeee)}" selected>
-            ${escapeHtml(sensorIeee)} (offline)
-        </option>`);
-    } else if (sensorIeee) {
-        const sel = controllerSensors.find(s => s.ieee === sensorIeee);
-        if (sel) {
-            sensorOptions.splice(1, 0, `<option value="${escapeAttr(sel.ieee)}" selected>
-                ${escapeHtml(sel.name)} (${Number(sel.temperature).toFixed(1)}°C)
-            </option>`);
-        }
-    }
+    // Multi-sensor: the canonical store is `room.temperature_sensors` (a
+    // list with one `primary: true` entry). The legacy
+    // `room.temperature_sensor_ieee` is stripped at modal-open time and
+    // re-derived server-side from the primary on save.
+    const sensors = Array.isArray(room.temperature_sensors)
+        ? room.temperature_sensors : [];
+    const sensorIeee = primarySensorIeee(room);
 
     const extMode = room.external_temp_mode || (sensorIeee ? 'advisory' : 'off');
     const trvCount = (room.trv_ieees || []).length;
@@ -1261,6 +1278,7 @@ function renderRoomCard(room, ci, ri) {
     const sensorLabel = sensorIeee
         ? (controllerSensors.find(s => s.ieee === sensorIeee)?.name || sensorIeee)
         : null;
+    const extraSensorCount = Math.max(0, (sensors.length - (sensorIeee ? 1 : 0)));
 
     // Header summary — compact info shown when collapsed
     const headerBadges = [
@@ -1268,8 +1286,11 @@ function renderRoomCard(room, ci, ri) {
         trvCount
             ? `<span class="badge bg-secondary">${trvCount} TRV${trvCount > 1 ? 's' : ''}</span>`
             : '',
+        (room.radiators || []).length > 1
+            ? `<span class="badge bg-danger"><i class="fas fa-fire me-1"></i>${room.radiators.length} rads</span>`
+            : '',
         sensorLabel
-            ? `<span class="badge bg-info text-dark"><i class="fas fa-thermometer-half me-1"></i>${escapeHtml(sensorLabel)}</span>`
+            ? `<span class="badge bg-info text-dark"><i class="fas fa-thermometer-half me-1"></i>${escapeHtml(sensorLabel)}${extraSensorCount > 0 ? ` +${extraSensorCount}` : ''}</span>`
             : '',
         (room.contact_sensors || []).length
             ? `<span class="badge bg-warning text-dark"><i class="fas fa-door-closed me-1"></i>${room.contact_sensors.length}</span>`
@@ -1335,21 +1356,33 @@ function renderRoomCard(room, ci, ri) {
 
                 <div class="row g-2 mb-2">
                     <div class="col-md-8">
-                        <label class="form-label small mb-1">
-                            <i class="fas fa-thermometer-half me-1"></i>Room temperature sensor
-                            ${projected ? '<span class="badge bg-info ms-1">from floor plan</span>' : ''}
+                        <label class="form-label small mb-1 d-flex justify-content-between align-items-center">
+                            <span>
+                                Temperature sensors
+                                <span class="badge bg-secondary ms-1">${sensors.length}</span>
+                                ${projected ? '<span class="badge bg-info ms-1">from floor plan</span>' : ''}
+                            </span>
+                            ${projected ? '' : `
+                                <button type="button" class="btn btn-sm btn-outline-primary btn-sens-add"
+                                        data-ci="${ci}" data-ri="${ri}">
+                                    <i class="fas fa-plus me-1"></i>Add sensor
+                                </button>`}
                         </label>
                         <fieldset ${projected ? 'disabled' : ''}>
-                        <select class="form-select form-select-sm room-sensor"
-                                data-ci="${ci}" data-ri="${ri}">
-                            ${sensorOptions.join('')}
-                        </select>
+                        ${sensors.length === 0
+                            ? `<div class="small text-muted fst-italic mb-1">
+                                 No sensors — call-for-heat will be driven by TRV readings only.
+                                 ${projected ? '' : 'Click <strong>Add sensor</strong> to bind a device.'}
+                               </div>`
+                            : sensors.map((s, sidx) =>
+                                renderOneSensorCard(s, ci, ri, sidx, projected, room)
+                              ).join('')}
                         </fieldset>
                         ${projected
-                            ? `<div class="form-text small text-muted">Sensor is bound in the floor plan. <em>External temp mode</em> below is still editable here.</div>`
+                            ? `<div class="form-text small text-muted">Sensors are bound in the floor plan. <em>External temp mode</em> here is still editable.</div>`
                             : `<div class="form-text small">
-                                Pick any device reporting temperature (motion sensor, THP, thermostat, etc.)
-                                to drive call-for-heat for this room.
+                                Each sensor can be a motion sensor, THP, thermostat, etc. — anything reporting temperature.
+                                One must be marked <strong>primary</strong>; that one drives call-for-heat decisions.
                               </div>`}
                     </div>
                     <div class="col-md-4">
@@ -1524,8 +1557,10 @@ function renderDimensionsPanel(room, ci, ri) {
     };
     const windows = dim.windows || [];
     const doors = dim.doors || [];
-    const rad = room.radiator || {};
-    const hasContent = !!(dim.width_m || dim.depth_m || windows.length || doors.length);
+    const radiators = Array.isArray(room.radiators) ? room.radiators : [];
+    const hasContent = !!(dim.width_m || dim.depth_m
+                          || windows.length || doors.length
+                          || radiators.length);
     const badgeHtml = hasContent
         ? `<span class="badge bg-success ms-1">set</span>`
         : `<span class="badge bg-secondary ms-1">not set</span>`;
@@ -1603,11 +1638,6 @@ function renderDimensionsPanel(room, ci, ri) {
                 </button>
             </div>
         </div>`).join('');
-
-    // Radiator block — unit toggle (W or BTU/hr)
-    const radUnit = rad._unit_pref || 'W';   // UI-only; not persisted
-    const radWatts = rad.watts_at_dt50 ?? '';
-    const radBtu = radWatts ? Math.round(radWatts / 0.2931) : '';
 
     // When the room is projected from a floor plan, the dimensions block is
     // an auto-generated cache of plan geometry. Editing it here would be
@@ -1725,73 +1755,201 @@ function renderDimensionsPanel(room, ci, ri) {
 
                     <hr class="my-3">
 
-                    <div class="small mb-2"><strong><i class="fas fa-fire me-1"></i>Radiator</strong></div>
-                    <div class="row g-2 mb-2 align-items-start">
-                        <div class="col-md-3">
-                            <label class="form-label small mb-1">Capacity</label>
-                            <div class="input-group input-group-sm">
-                                <input type="number" step="10" min="0" class="form-control rad-capacity"
-                                       data-ci="${ci}" data-ri="${ri}"
-                                       value="${radUnit === 'BTU' ? radBtu : radWatts}">
-                                <select class="form-select form-select-sm rad-unit"
-                                        data-ci="${ci}" data-ri="${ri}" style="max-width:90px;">
-                                    <option value="W"   ${radUnit === 'W'   ? 'selected' : ''}>W</option>
-                                    <option value="BTU" ${radUnit === 'BTU' ? 'selected' : ''}>BTU/hr</option>
-                                </select>
-                            </div>
-                            <div class="form-text small">Rated at ΔT50</div>
-                        </div>
-                        <div class="col-md-3">
-                            <label class="form-label small mb-1">Type</label>
-                            <select class="form-select form-select-sm rad-type"
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <strong class="small">
+                            <i class="fas fa-fire me-1"></i>Radiators
+                            <span class="badge bg-secondary ms-1">${radiators.length}</span>
+                            ${projected ? '<span class="badge bg-info ms-1">from floor plan</span>' : ''}
+                        </strong>
+                        ${projected ? '' : `
+                            <button type="button" class="btn btn-sm btn-outline-primary btn-rad-add"
                                     data-ci="${ci}" data-ri="${ri}">
-                                ${['unknown', 'single_panel', 'double_panel_single_conv',
-                                   'double_panel_double_conv', 'column', 'towel_rail'].map(t =>
-                                    `<option value="${t}" ${(rad.type || 'unknown') === t ? 'selected' : ''}>${t.replace(/_/g, ' ')}</option>`
-                                ).join('')}
-                            </select>
-                        </div>
-                        <div class="col-md-3">
-                            <label class="form-label small mb-1">Wall</label>
-                            <select class="form-select form-select-sm rad-wall"
-                                    data-ci="${ci}" data-ri="${ri}">
-                                ${wallOptions(rad.wall)}
-                            </select>
-                        </div>
-                        <div class="col-md-3">
-                            <label class="form-label small mb-1">Placement</label>
-                            <select class="form-select form-select-sm rad-placement"
-                                    data-ci="${ci}" data-ri="${ri}">
-                                <option value="unknown"        ${!rad.placement || rad.placement === 'unknown' ? 'selected' : ''}>— unknown —</option>
-                                <option value="under_window"   ${rad.placement === 'under_window' ? 'selected' : ''}>Under window ⚠</option>
-                                <option value="external_wall"  ${rad.placement === 'external_wall' ? 'selected' : ''}>On external wall</option>
-                                <option value="internal_wall"  ${rad.placement === 'internal_wall' ? 'selected' : ''}>On internal wall</option>
-                            </select>
-                        </div>
+                                <i class="fas fa-plus me-1"></i>Add radiator
+                            </button>`}
                     </div>
-                    <div class="row g-2 mb-2">
-                        <div class="col-md-8">
-                            <label class="form-label small mb-1">Description (optional)</label>
-                            <input type="text" class="form-control form-control-sm rad-desc"
-                                   data-ci="${ci}" data-ri="${ri}"
-                                   value="${escapeAttr(rad.description || '')}"
-                                   placeholder="e.g. Type 22 600×1000">
-                        </div>
-                        <div class="col-md-4">
-                            <label class="form-label small mb-1">Reflective panel?</label>
-                            <select class="form-select form-select-sm rad-reflector"
-                                    data-ci="${ci}" data-ri="${ri}">
-                                <option value="unknown" ${rad.reflective_panel === undefined ? 'selected' : ''}>— unknown —</option>
-                                <option value="true"    ${rad.reflective_panel === true ? 'selected' : ''}>Yes (boosts efficiency ~5%)</option>
-                                <option value="false"   ${rad.reflective_panel === false ? 'selected' : ''}>No</option>
-                            </select>
-                        </div>
-                    </div>
+                    ${radiators.length === 0
+                        ? `<div class="small text-muted fst-italic">No radiators on this room.${projected ? '' : ' Click <strong>Add radiator</strong> to set capacity for heat-loss sizing.'}</div>`
+                        : radiators.map((rd, ridx) => renderOneRadiatorCard(rd, ci, ri, ridx, projected)).join('')}
                     </fieldset>
                 </div>
             </div>
             <!-- Tips panel sits OUTSIDE the collapse so they're always visible -->
             <div id="tips-c${ci}-r${ri}" class="mt-2"></div>
+        </div>`;
+}
+
+/**
+ * One radiator's edit card, used inside the dimensions panel.
+ * Same field set as the previous single-radiator block, indexed by `ridx`
+ * so handlers can target the right entry in `room.radiators[]`.
+ *
+ * The wall-options helper is duplicated here (rather than passed in) so
+ * this renderer is self-contained — keeps the call site short.
+ */
+function renderOneRadiatorCard(rad, ci, ri, ridx, projected) {
+    const radUnit = rad._unit_pref || 'W';   // UI-only; not persisted
+    const radWatts = rad.watts_at_dt50 ?? '';
+    const radBtu = radWatts ? Math.round(radWatts / 0.2931) : '';
+    const summary = radWatts
+        ? `${Math.round(radWatts)} W${rad.placement ? ' · ' + rad.placement.replace(/_/g, ' ') : ''}`
+        : 'not configured';
+
+    const wallOpts = ['', 'front', 'back', 'left', 'right'].map(w => {
+        const label = w
+            ? w.charAt(0).toUpperCase() + w.slice(1)
+            : '— choose wall —';
+        return `<option value="${w}" ${rad.wall === w || (!rad.wall && !w) ? 'selected' : ''}>${label}</option>`;
+    }).join('');
+
+    const typeOpts = ['unknown', 'single_panel', 'double_panel_single_conv',
+                      'double_panel_double_conv', 'triple_panel', 'column',
+                      'towel_rail', 'underfloor'].map(t =>
+        `<option value="${t}" ${(rad.type || 'unknown') === t ? 'selected' : ''}>${t.replace(/_/g, ' ')}</option>`
+    ).join('');
+
+    return `
+        <div class="card mb-2 rad-card">
+            <div class="card-header py-1 px-2 d-flex justify-content-between align-items-center">
+                <span class="small">
+                    <i class="fas fa-fire text-danger me-1"></i>
+                    <strong>Radiator ${ridx + 1}</strong>
+                    <span class="text-muted ms-2">${escapeHtml(summary)}</span>
+                </span>
+                ${projected ? '' : `
+                    <button type="button" class="btn btn-sm btn-outline-danger btn-rad-remove"
+                            data-ci="${ci}" data-ri="${ri}" data-ridx="${ridx}"
+                            title="Remove this radiator">
+                        <i class="fas fa-times"></i>
+                    </button>`}
+            </div>
+            <div class="card-body py-2 px-2">
+                <div class="row g-2 mb-2 align-items-start">
+                    <div class="col-md-3">
+                        <label class="form-label small mb-1">Capacity</label>
+                        <div class="input-group input-group-sm">
+                            <input type="number" step="10" min="0" class="form-control rad-capacity"
+                                   data-ci="${ci}" data-ri="${ri}" data-ridx="${ridx}"
+                                   value="${radUnit === 'BTU' ? radBtu : radWatts}">
+                            <select class="form-select form-select-sm rad-unit"
+                                    data-ci="${ci}" data-ri="${ri}" data-ridx="${ridx}"
+                                    style="max-width:90px;">
+                                <option value="W"   ${radUnit === 'W'   ? 'selected' : ''}>W</option>
+                                <option value="BTU" ${radUnit === 'BTU' ? 'selected' : ''}>BTU/hr</option>
+                            </select>
+                        </div>
+                        <div class="form-text small">Rated at ΔT50</div>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label small mb-1">Type</label>
+                        <select class="form-select form-select-sm rad-type"
+                                data-ci="${ci}" data-ri="${ri}" data-ridx="${ridx}">
+                            ${typeOpts}
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label small mb-1">Wall</label>
+                        <select class="form-select form-select-sm rad-wall"
+                                data-ci="${ci}" data-ri="${ri}" data-ridx="${ridx}">
+                            ${wallOpts}
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label small mb-1">Placement</label>
+                        <select class="form-select form-select-sm rad-placement"
+                                data-ci="${ci}" data-ri="${ri}" data-ridx="${ridx}">
+                            <option value="unknown"        ${!rad.placement || rad.placement === 'unknown' ? 'selected' : ''}>— unknown —</option>
+                            <option value="under_window"   ${rad.placement === 'under_window' ? 'selected' : ''}>Under window ⚠</option>
+                            <option value="external_wall"  ${rad.placement === 'external_wall' ? 'selected' : ''}>On external wall</option>
+                            <option value="internal_wall"  ${rad.placement === 'internal_wall' ? 'selected' : ''}>On internal wall</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="row g-2 mb-1">
+                    <div class="col-md-8">
+                        <label class="form-label small mb-1">Description (optional)</label>
+                        <input type="text" class="form-control form-control-sm rad-desc"
+                               data-ci="${ci}" data-ri="${ri}" data-ridx="${ridx}"
+                               value="${escapeAttr(rad.description || '')}"
+                               placeholder="e.g. Type 22 600×1000">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label small mb-1">Reflective panel?</label>
+                        <select class="form-select form-select-sm rad-reflector"
+                                data-ci="${ci}" data-ri="${ri}" data-ridx="${ridx}">
+                            <option value="unknown" ${rad.reflective_panel === undefined ? 'selected' : ''}>— unknown —</option>
+                            <option value="true"    ${rad.reflective_panel === true ? 'selected' : ''}>Yes (boosts efficiency ~5%)</option>
+                            <option value="false"   ${rad.reflective_panel === false ? 'selected' : ''}>No</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+        </div>`;
+}
+
+/**
+ * One sensor's edit card. Compact single-row layout (device · kind · height
+ * · primary toggle · remove). Designed to read densely so multi-sensor
+ * rooms don't dominate the modal vertically.
+ *
+ * The "primary" star is a button rather than a radio:
+ *   - filled, disabled-look on the current primary
+ *   - outlined, clickable on the others — clicking promotes
+ * This avoids the radio-name-scoping gotcha when many rooms share the modal.
+ */
+function renderOneSensorCard(s, ci, ri, sidx, projected, room) {
+    const optionsHtml = renderSensorOptions(s.ieee || '', room, sidx);
+    const heightVal = (s.height_m != null && !Number.isNaN(s.height_m))
+        ? s.height_m : 1.5;
+    const isPrimary = !!s.primary;
+    const kindOpts = ['temp_sensor', 'thermostat', 'room_stat'].map(k =>
+        `<option value="${k}" ${(s.kind || 'temp_sensor') === k ? 'selected' : ''}>${k.replace(/_/g, ' ')}</option>`
+    ).join('');
+
+    return `
+        <div class="card mb-2 sens-card">
+            <div class="card-body py-2 px-2">
+                <div class="row g-2 align-items-end">
+                    <div class="col-md-5">
+                        <label class="form-label small mb-1">Device</label>
+                        <select class="form-select form-select-sm sens-device"
+                                data-ci="${ci}" data-ri="${ri}" data-sidx="${sidx}">
+                            ${optionsHtml}
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label small mb-1">Kind</label>
+                        <select class="form-select form-select-sm sens-kind"
+                                data-ci="${ci}" data-ri="${ri}" data-sidx="${sidx}">
+                            ${kindOpts}
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label small mb-1" title="Mounting height — improves accuracy when warm-air stratifies">Height (m)</label>
+                        <input type="number" step="0.05" min="0" max="5"
+                               class="form-control form-control-sm sens-height"
+                               data-ci="${ci}" data-ri="${ri}" data-sidx="${sidx}"
+                               value="${heightVal}">
+                    </div>
+                    <div class="col-md-2 d-flex gap-1 justify-content-end">
+                        ${isPrimary
+                            ? `<button type="button" class="btn btn-sm btn-warning"
+                                       disabled title="Primary sensor for this room">
+                                 <i class="fas fa-star"></i> Primary
+                               </button>`
+                            : `<button type="button" class="btn btn-sm btn-outline-warning sens-make-primary"
+                                       data-ci="${ci}" data-ri="${ri}" data-sidx="${sidx}"
+                                       title="Make this the primary sensor">
+                                 <i class="far fa-star"></i>
+                               </button>`}
+                        ${projected ? '' : `
+                            <button type="button" class="btn btn-sm btn-outline-danger btn-sens-remove"
+                                    data-ci="${ci}" data-ri="${ri}" data-sidx="${sidx}"
+                                    title="Remove this sensor">
+                                <i class="fas fa-times"></i>
+                            </button>`}
+                    </div>
+                </div>
+            </div>
         </div>`;
 }
 
@@ -1886,26 +2044,111 @@ function bindCircuitCards() {
             renderCircuitsList();
         });
     });
-    // Room sensor selection
-    document.querySelectorAll('.room-sensor').forEach(el => {
+    // ── Temperature-sensor bindings (multi-sensor aware) ────────────
+    // Every handler reads data-sidx to target the right entry in
+    // room.temperature_sensors[]. Adding a sensor where there were none
+    // defaults the external-temp mode to 'advisory'; removing the last
+    // sensor coerces it back to 'off' (matching previous single-sensor
+    // behaviour). Primary is enforced by setPrimarySensor.
+
+    document.querySelectorAll('.sens-device').forEach(el => {
         el.addEventListener('change', e => {
-            const ci = +e.target.dataset.ci, ri = +e.target.dataset.ri;
+            const ci = +e.target.dataset.ci, ri = +e.target.dataset.ri, sidx = +e.target.dataset.sidx;
+            const sensor = getSensorAt(ci, ri, sidx);
             const room = workingCircuits[ci].rooms[ri];
-            room.temperature_sensor_ieee = e.target.value || null;
-            // Sensible default: when a sensor gets picked, default mode to
-            // 'advisory'; when it's cleared, mode must be 'off'.
-            if (!room.temperature_sensor_ieee) {
+            const newIeee = e.target.value || '';
+            sensor.ieee = newIeee || undefined;
+            if (!sensor.ieee) delete sensor.ieee;
+
+            // Auto-detect kind from controllerSensors metadata when the user
+            // picks a device flagged as a thermostat — saves a click.
+            if (newIeee) {
+                const meta = controllerSensors.find(s => s.ieee === newIeee);
+                if (meta && meta.is_thermostat && (!sensor.kind || sensor.kind === 'temp_sensor')) {
+                    sensor.kind = 'thermostat';
+                }
+            }
+
+            // Maintain ext-mode coherence: ensure there's at least one
+            // sensor with a real IEEE before allowing non-'off' modes.
+            const anyConfigured = (room.temperature_sensors || []).some(s => s && s.ieee);
+            if (!anyConfigured) {
                 room.external_temp_mode = 'off';
             } else if (!room.external_temp_mode || room.external_temp_mode === 'off') {
                 room.external_temp_mode = 'advisory';
             }
-            renderCircuitsList();  // re-render so ext-mode enabled state updates
+            renderCircuitsList();
         });
     });
-    document.querySelectorAll('.room-ext-mode').forEach(el => {
+
+    document.querySelectorAll('.sens-kind').forEach(el => {
         el.addEventListener('change', e => {
-            const ci = +e.target.dataset.ci, ri = +e.target.dataset.ri;
-            workingCircuits[ci].rooms[ri].external_temp_mode = e.target.value;
+            const ci = +e.target.dataset.ci, ri = +e.target.dataset.ri, sidx = +e.target.dataset.sidx;
+            getSensorAt(ci, ri, sidx).kind = e.target.value;
+        });
+    });
+
+    document.querySelectorAll('.sens-height').forEach(el => {
+        el.addEventListener('change', e => {
+            const ci = +e.target.dataset.ci, ri = +e.target.dataset.ri, sidx = +e.target.dataset.sidx;
+            const sensor = getSensorAt(ci, ri, sidx);
+            const v = parseNum(e.target.value);
+            if (v == null || v < 0 || v > 5) {
+                delete sensor.height_m;
+            } else {
+                sensor.height_m = Math.round(v * 100) / 100;
+            }
+        });
+    });
+
+    document.querySelectorAll('.sens-make-primary').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const ci = +btn.dataset.ci, ri = +btn.dataset.ri, sidx = +btn.dataset.sidx;
+            if (setPrimarySensor(ci, ri, sidx)) renderCircuitsList();
+        });
+    });
+
+    document.querySelectorAll('.btn-sens-add').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const ci = +btn.dataset.ci, ri = +btn.dataset.ri;
+            const room = workingCircuits[ci].rooms[ri];
+            if (!Array.isArray(room.temperature_sensors)) room.temperature_sensors = [];
+            const wasEmpty = room.temperature_sensors.length === 0;
+            // New entries default to non-primary; the existing primary keeps
+            // its role until the user explicitly promotes. If this is the
+            // FIRST sensor in the room, mark it primary so a one-sensor room
+            // is immediately usable.
+            room.temperature_sensors.push({
+                kind: 'temp_sensor',
+                height_m: 1.5,
+                ...(wasEmpty ? { primary: true } : {}),
+            });
+            // Coming from zero: default ext mode to 'advisory' so the user
+            // sees a working sensor immediately on pick.
+            if (wasEmpty && (!room.external_temp_mode || room.external_temp_mode === 'off')) {
+                room.external_temp_mode = 'advisory';
+            }
+            renderCircuitsList();
+        });
+    });
+
+    document.querySelectorAll('.btn-sens-remove').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const ci = +btn.dataset.ci, ri = +btn.dataset.ri, sidx = +btn.dataset.sidx;
+            const room = workingCircuits[ci].rooms[ri];
+            if (!Array.isArray(room.temperature_sensors)) return;
+            const wasPrimary = !!room.temperature_sensors[sidx]?.primary;
+            room.temperature_sensors.splice(sidx, 1);
+            // Auto-promote next entry if the primary was just removed.
+            if (wasPrimary && room.temperature_sensors.length > 0
+                && !room.temperature_sensors.some(s => s.primary)) {
+                room.temperature_sensors[0].primary = true;
+            }
+            // Last sensor gone → force ext-mode off (matches old behaviour).
+            if (room.temperature_sensors.length === 0) {
+                room.external_temp_mode = 'off';
+            }
+            renderCircuitsList();
         });
     });
 
@@ -1931,10 +2174,10 @@ function bindCircuitCards() {
         if (!d.doors) d.doors = [];
         return d;
     }
-    function getRad(ci, ri) {
-        const room = workingCircuits[ci].rooms[ri];
-        if (!room.radiator) room.radiator = {};
-        return room.radiator;
+
+    function getRad(ci, ri, ridx) {
+        if (ridx == null) ridx = 0;
+        return getRadiatorAt(ci, ri, ridx);
     }
     const parseNum = s => { const v = parseFloat(s); return isNaN(v) ? null : v; };
 
@@ -2062,67 +2305,105 @@ function bindCircuitCards() {
         });
     });
 
-    // Radiator bindings
+    // ── Radiator bindings (multi-radiator aware) ────────────────────
+    // Every handler reads data-ridx to target the right entry in
+    // room.radiators[]. Removing a radiator with empty/zero watts is a
+    // hard delete (no zombie entries). The Add / Remove buttons trigger
+    // a full re-render so badges/summaries stay in sync.
+
     document.querySelectorAll('.rad-capacity').forEach(el => {
         el.addEventListener('change', e => {
-            const ci = +e.target.dataset.ci, ri = +e.target.dataset.ri;
-            const rad = getRad(ci, ri);
+            const ci = +e.target.dataset.ci, ri = +e.target.dataset.ri, ridx = +e.target.dataset.ridx;
+            const rad = getRadiatorAt(ci, ri, ridx);
             const v = parseNum(e.target.value);
             if (v == null || v <= 0) {
                 delete rad.watts_at_dt50;
             } else {
                 const unitSel = document.querySelector(
-                    `.rad-unit[data-ci="${ci}"][data-ri="${ri}"]`);
+                    `.rad-unit[data-ci="${ci}"][data-ri="${ri}"][data-ridx="${ridx}"]`);
                 const unit = unitSel ? unitSel.value : 'W';
                 rad.watts_at_dt50 = unit === 'BTU' ? Math.round(v * 0.2931) : Math.round(v);
                 rad._unit_pref = unit;
             }
+            refreshTipsFor(ci, ri);
         });
     });
+
     document.querySelectorAll('.rad-unit').forEach(el => {
         el.addEventListener('change', e => {
-            const ci = +e.target.dataset.ci, ri = +e.target.dataset.ri;
-            const rad = getRad(ci, ri);
-            rad._unit_pref = e.target.value;
-            // Re-render so the capacity number flips to the new unit
-            renderCircuitsList();
+            const ci = +e.target.dataset.ci, ri = +e.target.dataset.ri, ridx = +e.target.dataset.ridx;
+            getRadiatorAt(ci, ri, ridx)._unit_pref = e.target.value;
+            renderCircuitsList();   // re-render so the capacity number flips
         });
     });
+
     document.querySelectorAll('.rad-type').forEach(el => {
         el.addEventListener('change', e => {
-            getRad(+e.target.dataset.ci, +e.target.dataset.ri).type = e.target.value;
-            refreshTipsFor(+e.target.dataset.ci, +e.target.dataset.ri);
+            const ci = +e.target.dataset.ci, ri = +e.target.dataset.ri, ridx = +e.target.dataset.ridx;
+            getRadiatorAt(ci, ri, ridx).type = e.target.value;
+            refreshTipsFor(ci, ri);
         });
     });
+
     document.querySelectorAll('.rad-wall').forEach(el => {
         el.addEventListener('change', e => {
-            getRad(+e.target.dataset.ci, +e.target.dataset.ri).wall = e.target.value || undefined;
-            refreshTipsFor(+e.target.dataset.ci, +e.target.dataset.ri);
+            const ci = +e.target.dataset.ci, ri = +e.target.dataset.ri, ridx = +e.target.dataset.ridx;
+            const rad = getRadiatorAt(ci, ri, ridx);
+            if (e.target.value) rad.wall = e.target.value; else delete rad.wall;
+            refreshTipsFor(ci, ri);
         });
     });
+
     document.querySelectorAll('.rad-placement').forEach(el => {
         el.addEventListener('change', e => {
-            getRad(+e.target.dataset.ci, +e.target.dataset.ri).placement =
-                e.target.value === 'unknown' ? undefined : e.target.value;
-            refreshTipsFor(+e.target.dataset.ci, +e.target.dataset.ri);
+            const ci = +e.target.dataset.ci, ri = +e.target.dataset.ri, ridx = +e.target.dataset.ridx;
+            const rad = getRadiatorAt(ci, ri, ridx);
+            const v = e.target.value;
+            if (!v || v === 'unknown') delete rad.placement;
+            else rad.placement = v;
+            refreshTipsFor(ci, ri);
         });
     });
+
     document.querySelectorAll('.rad-desc').forEach(el => {
         el.addEventListener('change', e => {
+            const ci = +e.target.dataset.ci, ri = +e.target.dataset.ri, ridx = +e.target.dataset.ridx;
+            const rad = getRadiatorAt(ci, ri, ridx);
             const v = e.target.value.trim();
-            const rad = getRad(+e.target.dataset.ci, +e.target.dataset.ri);
-            if (v) rad.description = v.slice(0, 100);
-            else delete rad.description;
+            if (v) rad.description = v.slice(0, 100); else delete rad.description;
         });
     });
+
     document.querySelectorAll('.rad-reflector').forEach(el => {
         el.addEventListener('change', e => {
-            const rad = getRad(+e.target.dataset.ci, +e.target.dataset.ri);
+            const ci = +e.target.dataset.ci, ri = +e.target.dataset.ri, ridx = +e.target.dataset.ridx;
+            const rad = getRadiatorAt(ci, ri, ridx);
             const v = e.target.value;
             if (v === 'true') rad.reflective_panel = true;
             else if (v === 'false') rad.reflective_panel = false;
             else delete rad.reflective_panel;
-            refreshTipsFor(+e.target.dataset.ci, +e.target.dataset.ri);
+            refreshTipsFor(ci, ri);
+        });
+    });
+
+    // Add / remove radiator
+    document.querySelectorAll('.btn-rad-add').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const ci = +btn.dataset.ci, ri = +btn.dataset.ri;
+            const room = workingCircuits[ci].rooms[ri];
+            if (!Array.isArray(room.radiators)) room.radiators = [];
+            room.radiators.push({});
+            renderCircuitsList();
+        });
+    });
+
+    document.querySelectorAll('.btn-rad-remove').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const ci = +btn.dataset.ci, ri = +btn.dataset.ri, ridx = +btn.dataset.ridx;
+            const room = workingCircuits[ci].rooms[ri];
+            if (!Array.isArray(room.radiators)) return;
+            room.radiators.splice(ridx, 1);
+            renderCircuitsList();
         });
     });
 
@@ -2325,7 +2606,10 @@ function bindCircuitCards() {
 
 function renderTipsInline(room) {
     const dim = room.dimensions || {};
-    const rad = room.radiator || {};
+    // Manual UI now writes the plural `room.radiators` and deletes the
+    // legacy `room.radiator` from working state. Tips read the primary
+    // (largest-watts) radiator as the representative one.
+    const rad = primaryRadiator(room) || {};
     const tips = [];
 
     // ---- Data-completeness nudges (always available, even without rules firing) ----
@@ -2338,11 +2622,14 @@ function renderTipsInline(room) {
         });
     }
     if (!rad.watts_at_dt50) {
+        const count = (room.radiators || []).length;
         tips.push({
             sev: 'info',
             icon: 'fire',
-            title: 'No radiator configured',
-            detail: 'Enter the radiator capacity (stamped on the unit, usually in W or BTU/hr) to check it\'s sized correctly for this room.',
+            title: count === 0 ? 'No radiator configured' : 'Radiator capacity not set',
+            detail: count === 0
+                ? 'Click "Add radiator" in the room layout panel and enter its capacity (stamped on the unit, in W or BTU/hr).'
+                : 'One of the radiators in this room is missing its capacity. Heat-loss sizing won\'t be reliable until every radiator has a wattage.',
         });
     } else if (!rad.placement) {
         tips.push({
@@ -2944,3 +3231,112 @@ function escapeHtml(s) {
     return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 function escapeAttr(s) { return escapeHtml(s); }
+
+/**
+ * Pick the "primary" radiator for a room — largest by watts. Used by tips
+ * and header summaries that need one representative radiator. Returns null
+ * when the room has no radiators with a positive wattage.
+ */
+function primaryRadiator(room) {
+    const list = (room.radiators || []).filter(r => Number(r.watts_at_dt50) > 0);
+    if (!list.length) return null;
+    return list.reduce(
+        (best, r) => Number(r.watts_at_dt50) > Number(best.watts_at_dt50) ? r : best
+    );
+}
+
+/** Get-or-create a radiator at a specific index, ensuring the plural list exists. */
+function getRadiatorAt(ci, ri, ridx) {
+    const room = workingCircuits[ci].rooms[ri];
+    if (!Array.isArray(room.radiators)) room.radiators = [];
+    while (room.radiators.length <= ridx) room.radiators.push({});
+    return room.radiators[ridx];
+}
+
+/**
+ * Primary temperature sensor for a room — the one marked `primary: true`,
+ * or the first listed if none flagged. Drives the legacy
+ * `temperature_sensor_ieee` derivation server-side and is what the
+ * controller reads for room temperature.
+ */
+function primarySensor(room) {
+    const list = (room.temperature_sensors || []).filter(s => s && s.ieee);
+    if (!list.length) return null;
+    return list.find(s => s.primary) || list[0];
+}
+
+function primarySensorIeee(room) {
+    const p = primarySensor(room);
+    return p ? p.ieee : '';
+}
+
+/** Get-or-create a sensor entry at a specific index. */
+function getSensorAt(ci, ri, sidx) {
+    const room = workingCircuits[ci].rooms[ri];
+    if (!Array.isArray(room.temperature_sensors)) room.temperature_sensors = [];
+    while (room.temperature_sensors.length <= sidx) {
+        room.temperature_sensors.push({});
+    }
+    return room.temperature_sensors[sidx];
+}
+
+/**
+ * Promote the sensor at sidx to primary, demoting all others in the room.
+ * Returns true if anything actually changed (used to decide whether to
+ * re-render).
+ */
+function setPrimarySensor(ci, ri, sidx) {
+    const room = workingCircuits[ci].rooms[ri];
+    const list = room.temperature_sensors || [];
+    let changed = false;
+    list.forEach((s, i) => {
+        const shouldBePrimary = (i === sidx);
+        if (!!s.primary !== shouldBePrimary) {
+            changed = true;
+            if (shouldBePrimary) s.primary = true; else delete s.primary;
+        }
+    });
+    return changed;
+}
+
+/**
+ * Build the `<option>` list for one sensor card's device dropdown.
+ *  - currentIeee  : currently-selected ieee for this card (or '')
+ *  - room         : the room (to exclude sensors already picked by other cards)
+ *  - excludeSidx  : which card index to exclude from the "already picked"
+ *                   check (i.e. don't filter out our own current choice)
+ *
+ * Preserves today's offline-sensor handling — if a saved IEEE no longer
+ * appears in `controllerSensors`, it's still shown with an "(offline)"
+ * label so the user can see what's bound and clear it intentionally.
+ */
+function renderSensorOptions(currentIeee, room, excludeSidx) {
+    currentIeee = currentIeee || '';
+    const usedByOthers = new Set(
+        (room.temperature_sensors || [])
+            .map((s, i) => (i !== excludeSidx && s && s.ieee) ? s.ieee : null)
+            .filter(Boolean)
+    );
+
+    const opts = [`<option value="">— Select device —</option>`];
+    let currentInList = false;
+    for (const s of controllerSensors) {
+        const disabled = usedByOthers.has(s.ieee) ? ' disabled' : '';
+        const selected = s.ieee === currentIeee ? ' selected' : '';
+        if (selected) currentInList = true;
+        const kindLabel = s.is_thermostat ? ' · thermostat' : '';
+        opts.push(
+            `<option value="${escapeAttr(s.ieee)}"${selected}${disabled}>` +
+            `${escapeHtml(s.name)} (${Number(s.temperature).toFixed(1)}°C${kindLabel})` +
+            `</option>`
+        );
+    }
+    // Offline sensor (saved IEEE not currently in the device list)
+    if (currentIeee && !currentInList) {
+        opts.push(
+            `<option value="${escapeAttr(currentIeee)}" selected>` +
+            `${escapeHtml(currentIeee)} (offline)</option>`
+        );
+    }
+    return opts.join('');
+}
