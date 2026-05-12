@@ -8,6 +8,22 @@ from typing import Dict, Any
 
 from handlers.base import HANDLER_REGISTRY, ClusterHandler
 
+# fire and populate the HANDLER_REGISTRY. Without them, no devices will work!
+from handlers.security import *
+from handlers.basic import *
+from handlers.switches import *
+from handlers.power import *
+from handlers.hvac import *
+from handlers.sensors import *
+from handlers.tuya import *
+from handlers.blinds import *
+from handlers.aqara import *
+from handlers.lightlink import *
+from handlers.lighting import *
+from handlers.diagnostics import *
+from handlers.generic import *
+from handlers.poll_control import *
+
 logger = logging.getLogger("device.handlers")
 
 SKIP_GENERIC_CLUSTERS = {

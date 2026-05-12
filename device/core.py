@@ -77,6 +77,16 @@ class ZigManDevice(
                     try: zigpy_dev.manufacturer = self.manufacturer
                     except Exception: pass
 
+        # Inject manufacturer/model into state for HA discovery
+        if self.manufacturer:
+            self.state["manufacturer"] = str(self.manufacturer)
+        else:
+            self.state["manufacturer"] = "Unknown"
+        if self.model:
+            self.state["model"] = str(self.model)
+        else:
+            self.state["model"] = "Unknown"
+
         # Initialize to 0 so devices appear Offline until they communicate
         self.last_seen = 0
 

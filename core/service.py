@@ -81,6 +81,7 @@ from core.naming import NamingMixin
 
 from core.command_router import CommandRouterMixin
 from core.lifecycle import DeviceLifecycleMixin
+
 class ZigbeeService(
     ConfigBuilderMixin,
     MQTTHandlerMixin,
@@ -258,9 +259,6 @@ class ZigbeeService(
             if duration > 1.5:
                 logger.warning(f"Event loop blocked for {duration:.2f}s (should be ~1.0s)")
 
-
-
-
     # =========================================================================
     # EVENT EMISSION
     # =========================================================================
@@ -341,7 +339,6 @@ class ZigbeeService(
                 logger.error(f"MultiPAN startup error: {e}")
                 self.multipan = None
 
-
         radio_type = probe_result["radio_type"]
         logger.info(
             f"✅ Detected radio: {radio_type} @ "
@@ -377,10 +374,6 @@ class ZigbeeService(
         for attempt in range(12):
             try:
                 # MultiPAN: zigbeed doesn't support EZSP readCounters.
-                # The watchdog is spawned INSIDE ControllerApplication.new()
-                # during startup(), so cancelling it after new() returns is
-                # a race — the first watchdog tick can fire before we cancel.
-                # Fix: monkey-patch _watchdog_feed to a no-op BEFORE new().
                 _original_watchdog_feed = None
                 if self.multipan and self.multipan.is_running:
                     _original_watchdog_feed = getattr(
@@ -400,8 +393,7 @@ class ZigbeeService(
                     config=conf, auto_form=True, start_radio=True
                 )
 
-                # MultiPAN: also cancel the watchdog task and restore the
-                # original method (in case it's needed for non-MultiPAN later)
+                # MultiPAN: also cancel the watchdog task and restore the original method
                 if self.multipan and self.multipan.is_running:
                     if hasattr(self.app, '_watchdog_task') and self.app._watchdog_task:
                         self.app._watchdog_task.cancel()
@@ -566,7 +558,6 @@ class ZigbeeService(
             logger.info("Zigbee network stopped")
 
         # Stop MultiPAN stack AFTER bellows has disconnected
-        # (reverse order: otbr → socat → zigbeed → cpcd)
         if self.multipan and self.multipan.is_running:
             await self.multipan.stop()
             self.multipan = None
@@ -812,10 +803,6 @@ class ZigbeeService(
         ieee = str(sender.ieee)
 
         # 1. DEBUGGER + FLOW ANALYZER
-        # Always call capture_packet — its always-on flow accounting branch
-        # runs unconditionally; the expensive packet decoding/buffering is
-        # gated internally by debugger.enabled. This ensures /api/debug/flow
-        # has accurate data even when full debug capture is off.
         try:
             debugger = get_debugger()
             if debugger:
@@ -879,8 +866,6 @@ class ZigbeeService(
             logger.debug(f"[{ieee}] Zone LQI capture error: {e}")
 
         # 5. CONTACT SENSOR FALLBACK
-        # zigpy may not dispatch OnOff Report Attributes on output clusters
-        # to handlers correctly — handle directly from raw message
         try:
             if cluster == 0x0006 and ieee in self.devices:
                 zdev = self.devices[ieee]
@@ -912,10 +897,7 @@ class ZigbeeService(
         except Exception as e:
             logger.debug(f"[{ieee}] Contact sensor fallback error: {e}")
 
-
         # 6. GENERIC REPORT ATTRIBUTES DISPATCHER
-        # zigpy cluster dispatch doesn't reliably reach handlers for
-        # Report Attributes — parse raw ZCL and dispatch to handlers directly
         try:
             if ieee in self.devices and message and len(message) >= 7:
                 frame_control = message[0]
@@ -1037,16 +1019,6 @@ class ZigbeeService(
 
         except Exception:
             return None, -1
-    # =========================================================================
-    # DEVICE UPDATE HANDLING
-    # =========================================================================
-
-
-
-    # =========================================================================
-    # MQTT COMMAND HANDLER
-    # =========================================================================
-
 
     # =========================================================================
     # DEVICE OPERATIONS
@@ -1100,7 +1072,6 @@ class ZigbeeService(
 
         except Exception as e:
             logger.error(f"[{ieee}] Failed to announce: {e}")
-
 
     async def rename_device(self, ieee, name):
         self.friendly_names[ieee] = name
@@ -1757,13 +1728,21 @@ class ZigbeeService(
     # =========================================================================
 
     async def permit_join(self, duration=240, ieee=None):
+        logger.info(f"Permit join requested: duration={duration}, target={ieee or 'all'}")
+
+        # CRITICAL FIX: Safe guard against uninitialized app state when calling API
+        if not self.app:
+            error_msg = "Zigbee network is not yet started or initialized."
+            logger.warning(f"permit_join failed: {error_msg}")
+            return {"success": False, "error": error_msg}
+
         if duration == 0:
             self.pairing_expiration = 0
             self._permit_join_via = None
             try:
                 await self.app.permit(0)
             except Exception as e:
-                logger.warning(f"permit(0) failed: {e}")
+                logger.warning(f"permit(0) failed: {e}", exc_info=True)
             self._emit_sync("pairing_status", {"enabled": False, "remaining": 0})
             return {"success": True, "enabled": False}
 
@@ -1779,6 +1758,8 @@ class ZigbeeService(
                 self._emit_sync("pairing_status", {"enabled": True, "remaining": duration})
                 return {"success": True, "duration": duration, "target": ieee}
             except Exception as e:
+                # Add verbose logging instead of silently swallowing the error!
+                logger.error(f"permit_join for targeted IEEE {ieee} failed: {e}", exc_info=True)
                 return {"success": False, "error": str(e)}
         else:
             self._permit_join_via = None
@@ -1787,6 +1768,8 @@ class ZigbeeService(
                 self._emit_sync("pairing_status", {"enabled": True, "remaining": duration})
                 return {"success": True, "duration": duration, "target": "all"}
             except Exception as e:
+                # Add verbose logging instead of silently swallowing the error!
+                logger.error(f"permit_join for all devices failed: {e}", exc_info=True)
                 return {"success": False, "error": str(e)}
 
     def get_pairing_status(self):

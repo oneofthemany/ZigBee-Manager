@@ -171,17 +171,64 @@ class DeviceLifecycleMixin:
 
                 # SLT thermostat joined via SLR receiver
                 if "SLT" in new_model and ("SLR" in via_model or "RECEIVER" in via_model):
-                    if not hasattr(self, 'device_settings'):
-                        self.device_settings = {}
-
                     self.device_settings.setdefault(via_ieee, {})["paired_thermostat"] = ieee
                     self.device_settings.setdefault(ieee, {})["paired_receiver"] = via_ieee
-
-                    # Fix: Use dynamic path for settings instead of hardcoded string
-                    settings_path = getattr(self, 'device_settings_path', "./data/device_settings.json")
-                    self._save_json(settings_path, self.device_settings)
-
+                    self._save_json("./data/device_settings.json", self.device_settings)
                     logger.info(f"🔗 Auto-paired thermostat [{ieee}] ↔ receiver [{via_ieee}]")
+                    # Schedule the radio-level bind + report-config
+                    asyncio.create_task(
+                        self._setup_hive_thermostat_binding(slt_ieee=ieee, slr_ieee=via_ieee)
+                    )
+
+                # SLR receiver joined via SLT thermostat (reverse)
+                elif ("SLR" in new_model or "RECEIVER" in new_model) and "SLT" in via_model:
+                    self.device_settings.setdefault(ieee, {})["paired_thermostat"] = via_ieee
+                    self.device_settings.setdefault(via_ieee, {})["paired_receiver"] = ieee
+                    self._save_json("./data/device_settings.json", self.device_settings)
+                    logger.info(f"🔗 Auto-paired receiver [{ieee}] ↔ thermostat [{via_ieee}]")
+                    asyncio.create_task(
+                        self._setup_hive_thermostat_binding(slt_ieee=via_ieee, slr_ieee=ieee)
+                    )
+
+        asyncio.create_task(self._async_device_initialized(ieee))
+        self._rebuild_name_maps()
+        self._emit_sync("device_initialized", {"ieee": ieee})
+
+        # Refresh interview status — transitions to "interviewed"
+        try:
+            self.interview_status.emit_for(ieee)
+        except Exception as _e:
+            logger.debug(f"[{ieee}] interview_status.emit_for failed: {_e}")
+
+    async def _async_device_initialized(self, ieee: str):
+        """Configure device after initialization."""
+        if ieee not in self.devices:
+            return
+        try:
+            zdev = self.devices[ieee]
+
+            self._emit_sync("join_progress", {"ieee": ieee, "stage": "configuring"})
+            await zdev.configure()
+            logger.info(f"[{ieee}] Device configured successfully")
+            self._emit_sync("join_progress", {"ieee": ieee, "stage": "polling"})
+
+            await zdev.poll()
+            self._emit_sync("join_progress", {"ieee": ieee, "stage": "ready"})
+
+            if self.mqtt:
+                await self.announce_device(ieee)
+
+            # Cache topology (endpoints + clusters) — zero device traffic,
+            # reads already-interviewed state from zigpy.
+            try:
+                from modules.zigbee_cache import record_topology
+                record_topology(zdev.zigpy_dev)
+            except Exception as e:
+                logger.warning(f"[{ieee}] Topology cache failed: {e}")
+
+        except Exception as e:
+            logger.warning(f"[{ieee}] Device configuration failed: {e}")
+            self._emit_sync("join_progress", {"ieee": ieee, "stage": "error", "error": str(e)})
 
     def device_left(self, device: zigpy.device.Device):
         ieee = str(device.ieee)

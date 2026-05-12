@@ -43,7 +43,8 @@ class DeviceDiscoveryProviderMixin:
                         self.capabilities._detect_capabilities()
                         # Sanitize state again with new capabilities
                         self.sanitise_state()
-                        self.emit_event("metadata_updated", updates)
+                        # Push into state cache + MQTT
+                        self.update_state(updates)
         except Exception as e:
             logger.debug(f"[{self.ieee}] Failed basic info query: {e}")
 
