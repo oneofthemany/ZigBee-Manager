@@ -550,7 +550,15 @@ class HeatingController:
         action = str(oh_cfg.get("out_of_hours_action", "setback")).lower()
         self._oh_action = action if action in ("setback", "off", "min_only") else "setback"
 
-        self.circuits = self._clean_circuits(config.get("circuits") or [])
+        # Resolve circuits based on config_mode:
+        #   floor_plan → use heating.controller.circuits (populated by project_floor_plan_to_circuits)
+        #   manual / unset → use heating.circuits (the manually-configured list)
+        config_mode = controller_cfg.get("config_mode") or "manual"
+        if config_mode == "floor_plan":
+            raw_circuits = controller_cfg.get("circuits") or config.get("circuits") or []
+        else:
+            raw_circuits = config.get("circuits") or controller_cfg.get("circuits") or []
+        self.circuits = self._clean_circuits(raw_circuits)
 
         # Last-command tracking for cooldown / change detection
         self._last_command: Dict[str, Tuple[str, Any, float]] = {}
@@ -638,7 +646,7 @@ class HeatingController:
         """
         # Cache the floor plan alongside the cleaned circuits so the
         # thermal-profile path can reach it without another _load_config()
-        self._floor_plan_cache = (controller_block or {}).get("_floor_plan_for_thermal")
+        self._floor_plan_cache = (new_config or {}).get("_floor_plan_for_thermal")
 
         async with self._config_lock:
             new_config = new_config or {}
@@ -702,7 +710,27 @@ class HeatingController:
             new_oh_action = new_action_raw if new_action_raw in (
                 "setback", "off", "min_only"
             ) else self._oh_action
-            new_circuits = self._clean_circuits(new_config.get("circuits") or [])
+            # Resolve circuits based on config_mode (same logic as __init__):
+            #   floor_plan → prefer heating.controller.circuits (the projected list)
+            #   manual / unset → prefer heating.circuits (manually configured)
+            new_config_mode = (new_config.get("controller") or {}).get("config_mode") \
+                              or new_config.get("config_mode") or "manual"
+            if new_config_mode == "floor_plan":
+                # new_config may be the full heating block (has 'controller') or
+                # just the controller block (has 'circuits' directly)
+                ctrl_block = new_config.get("controller") or {}
+                raw_new_circuits = (
+                    ctrl_block.get("circuits")
+                    or new_config.get("circuits")
+                    or []
+                )
+            else:
+                raw_new_circuits = (
+                    new_config.get("circuits")
+                    or (new_config.get("controller") or {}).get("circuits")
+                    or []
+                )
+            new_circuits = self._clean_circuits(raw_new_circuits)
 
             # ── Diagnostic: what came out of _clean_circuits? ───────
             try:

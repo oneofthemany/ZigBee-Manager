@@ -61,6 +61,7 @@ function newEmptyPlan() {
         version: FP_VERSION,
         north_offset_deg: 0,
         scale_pixels_per_metre: PIXELS_PER_METRE_DEFAULT,
+        circuits: [],
         levels: [{
             id: 'ground',
             name: 'Ground floor',
@@ -92,7 +93,9 @@ export async function openFloorPlanEditor(opts = {}) {
         trvs: opts.devices?.thermostats || [],
         sensors: opts.sensors || [],
         contacts: opts.contacts || [],
+        receivers: opts.devices?.receivers || opts.receivers || [],
     };
+    _availableCircuits = opts.circuits || [];
     _onSaveCallback = opts.onSave || null;
 
     let initialPlan;
@@ -116,6 +119,8 @@ export async function openFloorPlanEditor(opts = {}) {
     }
 
     resetState(initialPlan);
+    // Ensure plan always has a circuits array (backward compat with older saves)
+    if (!Array.isArray(_state.plan.circuits)) _state.plan.circuits = [];
 
     ensureModal();
     const modalEl = document.getElementById('floorPlanModal');
@@ -185,6 +190,13 @@ function ensureModal() {
                 <div class="small text-muted text-uppercase mb-1">Levels</div>
                 <div id="fpLevelList" class="list-group list-group-flush small"></div>
                 <button class="btn btn-sm btn-outline-secondary w-100 mt-2" id="fpAddLevel"><i class="fas fa-plus me-1"></i>Add level</button>
+              </div>
+              <div class="mb-3" id="fpCircuitSection">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                  <div class="small text-muted text-uppercase">Circuits</div>
+                  <button class="btn btn-sm btn-outline-success py-0 px-1" id="fpAddCircuit" title="Add circuit"><i class="fas fa-plus"></i></button>
+                </div>
+                <div id="fpCircuitList" class="mb-1"></div>
               </div>
               <div class="mb-3">
                 <div class="small text-muted text-uppercase mb-1">Tools</div>
@@ -282,6 +294,7 @@ function bindModalEvents() {
     document.getElementById('fpSave').addEventListener('click', save);
     document.getElementById('fpSwitchMode')?.addEventListener('click', switchToManual);
     document.getElementById('fpAddLevel').addEventListener('click', addLevel);
+    document.getElementById('fpAddCircuit').addEventListener('click', addCircuit);
     document.querySelectorAll('#fpToolbar [data-tool]').forEach(b => {
         b.addEventListener('click', () => setTool(b.dataset.tool));
     });
@@ -386,6 +399,7 @@ function bindModalEvents() {
 
 function renderAll() {
     renderLevelList();
+    renderCircuitList();
     renderToolbar();
     renderCompass();
     renderScene();
@@ -530,17 +544,44 @@ function renderScene() {
     }
 
     // Rooms (under shapes but over the image)
+    // Build circuit colour palette for rooms
+    const CIRCUIT_COLOURS = [
+        'rgba(59,130,246,0.18)',   // blue
+        'rgba(16,185,129,0.18)',   // green
+        'rgba(245,158,11,0.18)',   // amber
+        'rgba(239,68,68,0.18)',    // red
+        'rgba(139,92,246,0.18)',   // violet
+        'rgba(236,72,153,0.18)',   // pink
+        'rgba(20,184,166,0.18)',   // teal
+        'rgba(249,115,22,0.18)',   // orange
+    ];
+    const circuitColourMap = {};
+    (_state.plan.circuits || []).forEach((c, i) => {
+        circuitColourMap[c.id] = CIRCUIT_COLOURS[i % CIRCUIT_COLOURS.length];
+    });
+
     for (const r of lvl.rooms) {
         const sel = isSelected('room', r.id);
         const path = polygonToPath(r.polygon);
+        const fillColour = r.circuit_id && circuitColourMap[r.circuit_id]
+            ? circuitColourMap[r.circuit_id]
+            : 'rgba(100,116,139,0.08)';
         parts.push(`
           <path class="fp-room ${sel ? 'fp-selected' : ''}" d="${path}"
+                fill="${fillColour}"
                 stroke-width="${sel ? 0.05 : 0.025}" stroke-dasharray="0.1 0.1"
                 data-kind="room" data-id="${r.id}" pointer-events="visiblePainted"/>`);
         const c = polygonCentroid(r.polygon);
         const sc = modelToSvg(c);
+        const circuitName = r.circuit_id
+            ? ((_state.plan.circuits || []).find(x => x.id === r.circuit_id)?.name || r.circuit_id)
+            : null;
         parts.push(`<text class="fp-room-label" x="${sc.x}" y="${sc.y}" font-size="0.18" text-anchor="middle"
                     pointer-events="none">${escapeHtml(r.name || r.id)}</text>`);
+        if (circuitName) {
+            parts.push(`<text class="fp-room-label" x="${sc.x}" y="${sc.y + 0.22}" font-size="0.13" text-anchor="middle"
+                        fill="#64748b" pointer-events="none">${escapeHtml(circuitName)}</text>`);
+        }
     }
 
     // Walls
@@ -1209,22 +1250,126 @@ function polygonToPath(poly) {
     }).join(' ') + ' Z';
 }
 
-/**
- * Find which circuit a room belongs to, by room id. Used for read-only
- * circuit-context display on the radiator props panel. Returns null when
- * the room isn't in any known circuit or no circuits were passed in.
- */
-function findCircuitForRoom(roomId) {
-    if (!roomId || !_availableCircuits.length) return null;
-    for (const c of _availableCircuits) {
-        for (const rm of (c.rooms || [])) {
-            if (rm.id === roomId) return c;
-        }
+// ─────────────────────── circuit management ───────────────────────────
+
+const CIRCUIT_BADGE_COLOURS = [
+    '#3b82f6','#10b981','#f59e0b','#ef4444','#8b5cf6','#ec4899','#14b8a6','#f97316'
+];
+
+function renderCircuitList() {
+    const wrap = document.getElementById('fpCircuitList');
+    if (!wrap) return;
+    const circuits = _state.plan.circuits || [];
+    if (!circuits.length) {
+        wrap.innerHTML = '<div class="text-muted small fst-italic">No circuits yet.</div>';
+        return;
     }
-    return null;
+    // Count rooms per circuit across all levels
+    const roomCounts = {};
+    (_state.plan.levels || []).forEach(lvl => {
+        (lvl.rooms || []).forEach(r => {
+            if (r.circuit_id) roomCounts[r.circuit_id] = (roomCounts[r.circuit_id] || 0) + 1;
+        });
+    });
+    wrap.innerHTML = circuits.map((c, i) => {
+        const colour = CIRCUIT_BADGE_COLOURS[i % CIRCUIT_BADGE_COLOURS.length];
+        const cnt = roomCounts[c.id] || 0;
+        return `<div class="d-flex align-items-center gap-1 mb-1" data-circuit-id="${c.id}">
+          <span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${colour};flex-shrink:0"></span>
+          <span class="small flex-grow-1 text-truncate" title="${escapeHtml(c.id)}">${escapeHtml(c.name)}<span class="text-muted ms-1">(${cnt})</span></span>
+          <button class="btn btn-sm btn-link p-0 text-primary" data-action="edit-circuit" data-circuit-id="${c.id}" title="Edit"><i class="fas fa-pencil-alt fa-xs"></i></button>
+          <button class="btn btn-sm btn-link p-0 text-danger" data-action="delete-circuit" data-circuit-id="${c.id}" title="Delete"><i class="fas fa-trash fa-xs"></i></button>
+        </div>`;
+    }).join('');
+
+    wrap.querySelectorAll('[data-action="edit-circuit"]').forEach(btn => {
+        btn.addEventListener('click', () => editCircuit(btn.dataset.circuitId));
+    });
+    wrap.querySelectorAll('[data-action="delete-circuit"]').forEach(btn => {
+        btn.addEventListener('click', () => deleteCircuit(btn.dataset.circuitId));
+    });
+}
+
+function addCircuit() {
+    const name = prompt('Circuit name (e.g. "Living"):');
+    if (!name || !name.trim()) return;
+    const id = 'circuit_' + Math.random().toString(36).slice(2, 8);
+    _state.plan.circuits = _state.plan.circuits || [];
+    _state.plan.circuits.push({ id, name: name.trim(), receiver_command: 'thermostat' });
+    renderCircuitList();
+    renderScene();
+    editCircuit(id);
+}
+
+function editCircuit(circuitId) {
+    const c = (_state.plan.circuits || []).find(x => x.id === circuitId);
+    if (!c) return;
+
+    // Filter out receivers already assigned to *other* circuits
+    const usedRecv = new Set((_state.plan.circuits || [])
+        .filter(x => x.id !== circuitId && x.receiver_ieee)
+        .map(x => x.receiver_ieee));
+
+    const receivers = _availableDevices.receivers || [];
+    const receiverOpts = ['<option value="">— No receiver —</option>']
+        .concat(receivers
+            .filter(r => !usedRecv.has(r.ieee) || r.ieee === c.receiver_ieee)
+            .map(r => {
+                const modeStr = r.system_mode ? ` [${r.system_mode}]` : '';
+                return `<option value="${escapeAttr(r.ieee)}" ${c.receiver_ieee === r.ieee ? 'selected' : ''}>
+                    ${escapeHtml(r.name)}${modeStr} (${escapeHtml(r.ieee.slice(-8))})
+                </option>`;
+            })
+        ).join('');
+
+    const propsDiv = document.getElementById('fpProps');
+    propsDiv.innerHTML = `
+      <div class="text-muted small text-uppercase mb-2">Circuit</div>
+      <div class="mb-2"><label class="form-label small">Name</label>
+        <input class="form-control form-control-sm" id="fpCircuitName" value="${escapeAttr(c.name)}"/></div>
+      <div class="mb-2"><label class="form-label small">Boiler receiver</label>
+        <select class="form-select form-select-sm" id="fpCircuitReceiver">${receiverOpts}</select>
+        ${receivers.length === 0 ? '<div class="form-text small text-warning"><i class="fas fa-info-circle me-1"></i>No receivers found. Configure them in the Heating Controller, then reopen the floor plan editor.</div>' : ''}
+      </div>
+      <div class="mb-2"><label class="form-label small">Receiver command</label>
+        <select class="form-select form-select-sm" id="fpCircuitCmd">
+          <option value="thermostat" ${c.receiver_command === 'thermostat' ? 'selected' : ''}>thermostat</option>
+          <option value="switch" ${c.receiver_command === 'switch' ? 'selected' : ''}>switch</option>
+        </select></div>
+      <div class="small text-muted mb-2">ID: <code>${escapeHtml(c.id)}</code></div>
+      <div class="small text-info"><i class="fas fa-info-circle me-1"></i>Assign rooms to this circuit via the room properties panel.</div>`;
+
+    const update = () => {
+        c.name = document.getElementById('fpCircuitName').value.trim() || c.name;
+        const recVal = document.getElementById('fpCircuitReceiver').value;
+        if (recVal) c.receiver_ieee = recVal; else delete c.receiver_ieee;
+        c.receiver_command = document.getElementById('fpCircuitCmd').value;
+        renderCircuitList();
+        renderScene();
+    };
+    propsDiv.querySelectorAll('input, select').forEach(el => el.addEventListener('change', update));
+}
+
+function deleteCircuit(circuitId) {
+    const c = (_state.plan.circuits || []).find(x => x.id === circuitId);
+    if (!c) return;
+    const assigned = (_state.plan.levels || []).reduce((n, lvl) =>
+        n + (lvl.rooms || []).filter(r => r.circuit_id === circuitId).length, 0);
+    const msg = assigned > 0
+        ? `Delete circuit "${c.name}"?\n\n${assigned} room(s) will become unassigned.`
+        : `Delete circuit "${c.name}"?`;
+    if (!confirm(msg)) return;
+    _state.plan.circuits = (_state.plan.circuits || []).filter(x => x.id !== circuitId);
+    // Unassign rooms across all levels
+    (_state.plan.levels || []).forEach(lvl => {
+        (lvl.rooms || []).forEach(r => { if (r.circuit_id === circuitId) delete r.circuit_id; });
+    });
+    renderCircuitList();
+    renderScene();
 }
 
 // ─────────────────────────── feature creators ───────────────────────────
+
 
 function finishRoom() {
     const lvl = currentLevel();
@@ -1330,7 +1475,7 @@ function addPointFeature(tool, m) {
 /**
  * Find the wall whose projected distance from `p` is smallest, returning the
  * projection details if within `maxDist` metres. Returns null otherwise.
- *   { wall, offset_m, projected: {x,y}, perpDist }
+ * { wall, offset_m, projected: {x,y}, perpDist }
  */
 function nearestWallWithProjection(lvl, p, maxDist) {
     let best = null, bestD = maxDist;
@@ -1465,10 +1610,20 @@ function renderOpeningProps(o) {
 
 function renderRoomProps(r) {
     if (!r) return '';
+    const planCircuits = _state.plan.circuits || [];
+    const circuitOpts = ['<option value="">— Unassigned —</option>']
+        .concat(planCircuits.map(c =>
+            `<option value="${c.id}" ${r.circuit_id === c.id ? 'selected' : ''}>${escapeHtml(c.name)}</option>`
+        )).join('');
+    const circuitSection = planCircuits.length > 0
+        ? `<div class="mb-2"><label class="form-label small">Circuit</label>
+             <select class="form-select form-select-sm" data-prop="room.circuit_id">${circuitOpts}</select></div>`
+        : `<div class="mb-2 small text-muted fst-italic"><i class="fas fa-info-circle me-1"></i>Add a circuit in the sidebar to assign this room.</div>`;
     return `
       <div class="text-muted small text-uppercase mb-2">Room</div>
       <div class="mb-2"><label class="form-label small">Name</label>
         <input class="form-control form-control-sm" data-prop="room.name" value="${escapeAttr(r.name || '')}"/></div>
+      ${circuitSection}
       <div class="mb-2"><label class="form-label small">Floor type</label>
         <select class="form-select form-select-sm" data-prop="room.floor_type">
           <option value="">—</option>
@@ -1479,7 +1634,7 @@ function renderRoomProps(r) {
         <select class="form-select form-select-sm" data-prop="room.ceiling_type">
           <option value="">—</option>
           ${['insulated','uninsulated','flat_roof','unknown']
-            .map(c => `<option value="${c}" ${r.ceiling_type === c ? 'selected' : ''}>${c}</option>`).join('')}
+            .map(ct => `<option value="${ct}" ${r.ceiling_type === ct ? 'selected' : ''}>${ct}</option>`).join('')}
         </select></div>
       <button class="btn btn-sm btn-outline-danger w-100" data-action="delete-room"><i class="fas fa-trash me-1"></i>Delete room</button>`;
 }
@@ -1716,6 +1871,10 @@ function bindPropsHandlers() {
             if (scope === 'sensor' && key === 'primary' && val) {
                 lvl.sensors.forEach(s2 => { if (s2.id !== sel.id && s2.room_id === target.room_id) s2.primary = false; });
             }
+            // Circuit assignment: refresh sidebar room count
+            if (scope === 'room' && key === 'circuit_id') {
+                renderCircuitList();
+            }
             renderScene();
         });
     });
@@ -1880,6 +2039,15 @@ async function save() {
             version: FP_VERSION,
             north_offset_deg: _state.plan.north_offset_deg,
             scale_pixels_per_metre: _state.plan.scale_pixels_per_metre,
+            // Plan-level circuit definitions — MUST be sent so the backend
+            // can persist them and use plan-native projection mode.
+            circuits: (_state.plan.circuits || []).map(c => ({
+                id: c.id,
+                name: c.name,
+                ...(c.receiver_ieee   ? { receiver_ieee:     c.receiver_ieee }   : {}),
+                ...(c.receiver_command? { receiver_command:  c.receiver_command } : {}),
+                ...(c.receiver_endpoint != null ? { receiver_endpoint: c.receiver_endpoint } : {}),
+            })),
             levels: _state.plan.levels.map(l => {
                 const out = {
                     id: l.id, name: l.name, index: l.index,

@@ -65,6 +65,7 @@ let configCache = null;
 let schemaCache = null;
 let thermostatsCache = [];
 let workingZones = [];   // zones being edited in the modal
+let sessionAnomalies = new Map(); // Accumulates anomaly history while the tab is open
 
 const REFRESH_MS = 20_000;
 
@@ -157,10 +158,11 @@ export async function loadHeatingDashboard({ silent = false } = {}) {
         // Refresh runtime + controller overlay BEFORE rendering so the devices
         // table uses the controller's live truth for receivers and up-to-date
         // 24h on-time percentages.
+        let anomaliesJson = null;
         await Promise.all([
             loadHeatingRuntime(),
             loadControllerOverlay(),
-            loadHeatingAnomalies(),
+            fetch('/api/heating/anomalies').then(r => r.json()).then(j => anomaliesJson = j).catch(() => null),
         ]);
         // Pull the controller config to expose the per-room list to the
         // Efficiency card (per-room thermal profile buttons).
@@ -214,6 +216,9 @@ export async function loadHeatingDashboard({ silent = false } = {}) {
             const newPanel = document.getElementById('heatingControllerPanel');
             if (newPanel) newPanel.innerHTML = prevHTML;
         }
+
+        renderHeatingAnomalies(anomaliesJson);
+
         bindDashboardControls(json.data);
         bindTopBarControls();
         loadHeatingHistory();
@@ -344,18 +349,22 @@ function renderDashboard(d) {
         </div>`;
 }
 
-async function loadHeatingAnomalies() {
+function renderHeatingAnomalies(json) {
     const container = document.getElementById('heatingAnomaliesPanel');
     if (!container) return;
     try {
-        const res = await fetch('/api/heating/anomalies');
-        const json = await res.json();
-        if (!json.success) { container.innerHTML = ''; return; }
+        if (!json || !json.success) { container.innerHTML = ''; return; }
         const data = json.data || {};
         const active = data.active || [];
-        const recent = (data.recently_resolved || []).slice(0, 3);
+        const recent = data.recently_resolved || [];
 
-        if (!active.length && !recent.length) {
+        // Accumulate history so transient anomalies can be reviewed later
+        active.forEach(a => sessionAnomalies.set(`${a.circuit_id}_${a.room_id}_${a.detected_at}`, { ...a, _status: 'active' }));
+        recent.forEach(r => sessionAnomalies.set(`${r.circuit_id}_${r.room_id}_${r.detected_at}`, { ...r, _status: 'resolved' }));
+
+        const displayRecent = recent.slice(0, 3);
+
+        if (!active.length && !displayRecent.length && sessionAnomalies.size === 0) {
             container.innerHTML = '';   // hide the section entirely when quiet
             return;
         }
@@ -387,28 +396,35 @@ async function loadHeatingAnomalies() {
                 </button>
             </div>`).join('');
 
-        const recentHtml = recent.map(r => `
+        const recentHtml = displayRecent.map(r => `
             <div class="small text-muted mb-1">
                 ${kindIcon(r.kind)}
                 <em>Resolved:</em> ${escapeHtml(r.circuit_name)} › ${escapeHtml(r.room_name)}
                 <span class="text-muted">— ${escapeHtml(r.message)}</span>
             </div>`).join('');
 
+        const historyBtn = sessionAnomalies.size > 0
+            ? `<button class="btn btn-sm btn-outline-secondary ms-3" id="btn-anomaly-history"><i class="fas fa-history me-1"></i>History (${sessionAnomalies.size})</button>`
+            : '';
+
         container.innerHTML = `
             <div class="card">
                 <div class="card-header d-flex justify-content-between align-items-center">
-                    <span><i class="fas fa-exclamation-triangle me-2"></i>Anomalies
-                        <span class="badge bg-${active.length ? 'danger' : 'secondary'} ms-1">${active.length}</span>
-                    </span>
-                    <small class="text-muted">
+                    <div class="d-flex align-items-center">
+                        <span><i class="fas fa-exclamation-triangle me-2"></i>Anomalies
+                            <span class="badge bg-${active.length ? 'danger' : 'secondary'} ms-1">${active.length}</span>
+                        </span>
+                        ${historyBtn}
+                    </div>
+                    <small class="text-muted d-none d-sm-inline">
                         ${data.last_scan_age_seconds != null
                             ? `scanned ${Math.round(data.last_scan_age_seconds)}s ago`
                             : 'idle'}
                     </small>
                 </div>
                 <div class="card-body">
-                    ${activeHtml || '<div class="small text-muted mb-2">No active anomalies.</div>'}
-                    ${recent.length ? `<hr class="my-2"><strong class="small">Recently resolved</strong>${recentHtml}` : ''}
+                    ${activeHtml || '<div class="small text-muted mb-2">No active anomalies right now.</div>'}
+                    ${displayRecent.length ? `<hr class="my-2"><strong class="small">Recently resolved</strong>${recentHtml}` : ''}
                 </div>
             </div>`;
 
@@ -420,9 +436,91 @@ async function loadHeatingAnomalies() {
                     btn.dataset.circuitName, btn.dataset.roomName
                 )
             ));
+
+        document.getElementById('btn-anomaly-history')?.addEventListener('click', openAnomalyHistoryModal);
     } catch (e) {
         container.innerHTML = '';
     }
+}
+
+function ensureAnomalyHistoryModal() {
+    if (document.getElementById('anomalyHistoryModal')) return;
+    const html = `
+        <div class="modal fade" id="anomalyHistoryModal" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog modal-lg modal-dialog-scrollable">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title"><i class="fas fa-history me-2"></i>Anomaly History</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body p-0" id="anomalyHistoryBody">
+                    </div>
+                </div>
+            </div>
+        </div>`;
+    document.body.insertAdjacentHTML('beforeend', html);
+}
+
+function openAnomalyHistoryModal() {
+    ensureAnomalyHistoryModal();
+    const modalEl = document.getElementById('anomalyHistoryModal');
+    const bodyEl = document.getElementById('anomalyHistoryBody');
+    const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+
+    const list = Array.from(sessionAnomalies.values()).sort((a, b) => b.detected_at - a.detected_at);
+
+    if (list.length === 0) {
+        bodyEl.innerHTML = `<div class="p-4 text-center text-muted">No anomaly history in this session.</div>`;
+    } else {
+        const formatTsFull = ts => ts ? new Date(ts * 1000).toLocaleString(undefined, {
+            month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
+        }) : '';
+
+        const items = list.map(a => {
+            const isResolved = a._status === 'resolved' || a.resolved_at;
+            const statusBadge = isResolved
+                ? '<span class="badge bg-success ms-1">Resolved</span>'
+                : '<span class="badge bg-danger ms-1">Active</span>';
+            const timeStr = formatTsFull(a.detected_at);
+            const resStr = a.resolved_at ? ` · Resolved ${formatTsFull(a.resolved_at)}` : '';
+
+            return `
+                <div class="list-group-item">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div>
+                            <strong>${escapeHtml(a.circuit_name)} › ${escapeHtml(a.room_name)}</strong>
+                            ${statusBadge}
+                            <div class="small text-muted mt-1">Detected: ${timeStr}${resStr}</div>
+                            <div class="small mt-1">${escapeHtml(a.message)}</div>
+                        </div>
+                        <div class="text-end">
+                            <span class="badge ${a.severity === 'critical' ? 'bg-danger' : 'bg-warning text-dark'}">${a.severity}</span>
+                            <div class="mt-2">
+                                <button class="btn btn-sm btn-outline-secondary btn-room-thermal-link"
+                                        data-circuit-id="${escapeAttr(a.circuit_id)}"
+                                        data-room-id="${escapeAttr(a.room_id)}"
+                                        data-circuit-name="${escapeAttr(a.circuit_name || '')}"
+                                        data-room-name="${escapeAttr(a.room_name || '')}">
+                                    <i class="fas fa-thermometer-half"></i> Profile
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>`;
+        }).join('');
+        bodyEl.innerHTML = `<div class="list-group list-group-flush">${items}</div>`;
+
+        bodyEl.querySelectorAll('.btn-room-thermal-link').forEach(btn => {
+            btn.addEventListener('click', () => {
+                modal.hide();
+                openRoomThermalModal(
+                    btn.dataset.circuitId, btn.dataset.roomId,
+                    btn.dataset.circuitName, btn.dataset.roomName
+                );
+            });
+        });
+    }
+    modal.show();
 }
 
 function renderEpcCard(epc, prop) {

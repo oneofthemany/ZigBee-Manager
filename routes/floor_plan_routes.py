@@ -121,10 +121,19 @@ def register_floor_plan_routes(app: FastAPI, get_controller=None):
         cfg = _load_config()
         heating = cfg.setdefault("heating", {})
         controller = heating.setdefault("controller", {})
-        circuits = controller.get("circuits") or []
+
+        # When the plan has its own circuit definitions, derive circuits
+        # purely from the plan (plan-native mode). Otherwise fall back to
+        # reconciling against the existing controller circuit list.
+        if cleaned.get("circuits"):
+            existing_circuits = controller.get("circuits") or []
+        else:
+            existing_circuits = controller.get("circuits") or []
 
         try:
-            updated_circuits, warnings = project_floor_plan_to_circuits(cleaned, circuits)
+            updated_circuits, warnings = project_floor_plan_to_circuits(
+                cleaned, existing_circuits
+            )
             from routes.heating_controller_routes import normalise_circuits
             updated_circuits = normalise_circuits(updated_circuits)
         except Exception as e:
@@ -133,6 +142,8 @@ def register_floor_plan_routes(app: FastAPI, get_controller=None):
 
         heating["floor_plan"] = cleaned
         controller["circuits"] = updated_circuits
+        # Ensure the controller knows it is in floor-plan mode
+        controller.setdefault("config_mode", "floor_plan")
 
         try:
             _save_config(cfg)
@@ -144,9 +155,11 @@ def register_floor_plan_routes(app: FastAPI, get_controller=None):
         if ctrl is not None:
             try:
                 if hasattr(ctrl, "apply_config"):
-                    controller["_floor_plan_for_thermal"] = cleaned
-                    ctrl.apply_config(controller)
-                    controller.pop("_floor_plan_for_thermal", None)
+                    # Pass the full heating block so apply_config resolves
+                    # circuits with mode-awareness (floor_plan -> controller.circuits)
+                    heating["_floor_plan_for_thermal"] = cleaned
+                    await ctrl.apply_config(heating)
+                    heating.pop("_floor_plan_for_thermal", None)
                 elif hasattr(ctrl, "circuits"):
                     ctrl.circuits = updated_circuits
                     ctrl._floor_plan_cache = cleaned

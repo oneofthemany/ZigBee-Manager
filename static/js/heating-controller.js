@@ -1301,6 +1301,12 @@ function renderRoomCard(room, ci, ri) {
         : null;
     const extraSensorCount = Math.max(0, (sensors.length - (sensorIeee ? 1 : 0)));
 
+    const pSensor = sensors.find(s => s.ieee === sensorIeee);
+    const pHeight = pSensor ? pSensor.height_m : null;
+    const heightBadge = (pHeight != null && Math.abs(pHeight - 1.5) >= 0.05)
+        ? `<span class="badge bg-warning text-dark" title="Sensor height (${pHeight}m) adjusts target for stratification"><i class="fas fa-arrows-alt-v me-1"></i>${pHeight}m</span>`
+        : '';
+
     // Header summary — compact info shown when collapsed
     const headerBadges = [
         `<span class="badge bg-primary">Target ${Number(room.target_temp).toFixed(1)}°C</span>`,
@@ -1313,6 +1319,7 @@ function renderRoomCard(room, ci, ri) {
         sensorLabel
             ? `<span class="badge bg-info text-dark"><i class="fas fa-thermometer-half me-1"></i>${escapeHtml(sensorLabel)}${extraSensorCount > 0 ? ` +${extraSensorCount}` : ''}</span>`
             : '',
+        heightBadge,
         (room.contact_sensors || []).length
             ? `<span class="badge bg-warning text-dark"><i class="fas fa-door-closed me-1"></i>${room.contact_sensors.length}</span>`
             : '',
