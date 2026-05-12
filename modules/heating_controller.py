@@ -80,6 +80,12 @@ import time
 from datetime import datetime
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
+from modules.thermal_profile import (
+    correct_sensor_reading,
+    stratification_offset_c,
+    STRATIFICATION_MAX_PLAUSIBLE_HEIGHT_M,
+)
+
 # Telemetry persistence for tick decisions. Lazy import inside _tick would
 # also work; top-level is fine because telemetry_db has no heavy deps.
 try:
@@ -218,6 +224,44 @@ def _pick_temperature(state: Dict[str, Any]) -> Optional[float]:
             return f
     return None
 
+def _primary_sensor_height_m(room: Dict[str, Any]) -> Optional[float]:
+    """
+    Resolve the mounting height of the room's primary temperature sensor,
+    in metres. Used by the stratification-correction logic.
+
+    Lookup precedence (to handle every schema state cleanly):
+
+      1. ``room.temperature_sensors`` — the canonical plural list (step 2).
+         Walk it for the entry marked ``primary: true``; if none flagged,
+         use the first entry. This is the only path that ever returns a
+         non-None value after a manual-mode round-trip through _clean_room.
+
+      2. No fallback to anything else — manual config without the plural
+         list (legacy state) simply has no height info, so correction is
+         a no-op. The user can add height by editing the room in the
+         multi-sensor UI (step 3b).
+
+    Returns None when:
+      - the room has no sensor list (legacy single-only state),
+      - the primary sensor has no ``height_m``,
+      - the value is implausible (outside 0–5 m).
+    """
+    sensors = room.get("temperature_sensors")
+    if not isinstance(sensors, list) or not sensors:
+        return None
+    primary = next((s for s in sensors if isinstance(s, dict) and s.get("primary")), None)
+    if primary is None:
+        primary = next((s for s in sensors if isinstance(s, dict)), None)
+    if not primary:
+        return None
+    h = primary.get("height_m")
+    try:
+        h = float(h) if h is not None else None
+    except (TypeError, ValueError):
+        return None
+    if h is None or h < 0.0 or h > STRATIFICATION_MAX_PLAUSIBLE_HEIGHT_M:
+        return None
+    return h
 
 # ── Per-attribute freshness ────────────────────────────────────────
 # Per-tick cache of "when did this IEEE last report a temperature?" so a
@@ -396,6 +440,7 @@ class RoomDecision:
         "room_id", "name", "target_temp", "current_temp", "temp_source",
         "status", "calling_for_heat", "trvs", "sensor_ieee", "sensor_online",
         "health", "preheat", "overshoot", "contact",
+        "current_temp_raw", "sensor_height_m", "stratification_offset_c",
     )
 
     def __init__(self, room_id: str, name: str):
@@ -403,6 +448,9 @@ class RoomDecision:
         self.name = name
         self.target_temp: Optional[float] = None
         self.current_temp: Optional[float] = None
+        self.current_temp_raw: Optional[float] = None       # what the sensor actually said
+        self.sensor_height_m: Optional[float] = None        # mount height used for correction
+        self.stratification_offset_c: float = 0.0           # what we added to raw to get current_temp
         self.temp_source: str = "none"
         self.sensor_ieee: Optional[str] = None
         self.sensor_online: Optional[bool] = None
@@ -431,6 +479,9 @@ class RoomDecision:
             "preheat": self.preheat,
             "overshoot": self.overshoot,
             "contact": self.contact,
+            "current_temp_raw": self.current_temp_raw,
+            "sensor_height_m": self.sensor_height_m,
+            "stratification_offset_c": self.stratification_offset_c,
         }
 
 
@@ -585,6 +636,10 @@ class HeatingController:
         The diff is the audit trail — both the user-facing toast and the
         log line are built from it, so they're guaranteed to match.
         """
+        # Cache the floor plan alongside the cleaned circuits so the
+        # thermal-profile path can reach it without another _load_config()
+        self._floor_plan_cache = (controller_block or {}).get("_floor_plan_for_thermal")
+
         async with self._config_lock:
             new_config = new_config or {}
 
@@ -967,6 +1022,14 @@ class HeatingController:
                 "operating_hours": _as_bool(c.get("operating_hours"), None),
             })
         return out
+
+    def _config_floor_plan(self) -> Optional[Dict[str, Any]]:
+        """
+        Return the currently-applied floor plan (if any) from the cached
+        controller config. Used by thermal_profile to enable the plan-aware
+        heat-loss path on projected rooms.
+        """
+        return getattr(self, "_floor_plan_cache", None)
 
     def _clean_rooms(self, rooms: list) -> List[Dict]:
         if not isinstance(rooms, list):
@@ -1446,15 +1509,37 @@ class HeatingController:
             else:
                 decision.sensor_online = False
 
+        # ── Apply stratification correction to the chosen reading ─────
+        # Only the external sensor path has a configurable mounting height
+        # — TRVs sit near the floor by their nature, but their readings
+        # already factor in convective bias from their proximity to the
+        # radiator, so a separate height correction would be misleading.
+        # If the chosen source is "external" and the primary sensor has a
+        # height set, we shift the reported reading toward the 1.5 m
+        # comfort-zone reference.
+        sensor_height_m = _primary_sensor_height_m(room)
+        decision.sensor_height_m = sensor_height_m
+
         if ext_temp is not None:
-            decision.current_temp = round(ext_temp, 1)
+            corrected = correct_sensor_reading(ext_temp, sensor_height_m)
+            decision.current_temp_raw = round(ext_temp, 1)
+            decision.current_temp = corrected if corrected is not None else round(ext_temp, 1)
             decision.temp_source = "external"
+            decision.stratification_offset_c = (
+                round(decision.current_temp - decision.current_temp_raw, 2)
+                if corrected is not None else 0.0
+            )
         elif trv_temps:
-            decision.current_temp = round(sum(trv_temps) / len(trv_temps), 1)
+            mean = sum(trv_temps) / len(trv_temps)
+            decision.current_temp = round(mean, 1)
+            decision.current_temp_raw = decision.current_temp
             decision.temp_source = "trv_mean"
+            decision.stratification_offset_c = 0.0
         else:
             decision.current_temp = None
+            decision.current_temp_raw = None
             decision.temp_source = "none"
+            decision.stratification_offset_c = 0.0
 
         # Predictive pre-heat — bump target if an upcoming schedule slot
         # needs lead time, based on the cached thermal profile.
@@ -2178,12 +2263,15 @@ class HeatingController:
             outdoor_getter = lambda _ts: outdoor_now
 
         try:
-            prof = compute_profile(
-                room_id=rid,
+            profile = compute_profile(
+                room_id=room_id,
                 dimensions=dimensions,
-                insulation=self._insulation,
-                temperature_series=series or None,
+                insulation=insulation,
+                temperature_series=temp_series,
                 outdoor_temp_getter=outdoor_getter,
+                heating_state_getter=heating_state_getter,
+                floor_plan=heating.get("floor_plan"),
+                floor_plan_ref=found_room.get("floor_plan_ref"),
             )
         except Exception as e:
             logger.debug(f"compute_profile failed for {rid}: {e}")

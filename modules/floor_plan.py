@@ -965,6 +965,155 @@ def project_level_to_room_dimensions(
     return out
 
 
+def per_wall_breakdown_for_room(
+        level: dict, room: dict, north_offset_deg: float = 0.0,
+) -> Optional[Dict[str, Any]]:
+    """
+    Detailed geometry for one room in plan coordinates.
+
+    Returns a dict the thermal-profile static calculator can use directly
+    instead of the 4-bin `width × depth × height` approximation:
+
+        {
+            "floor_area_m2":    float,                # true polygon area
+            "ceiling_height_m": float,                # from level
+            "walls": [
+                {
+                    "length_m":      float,
+                    "height_m":      float,           # = ceiling_height_m
+                    "type":          'external' | 'party' | 'internal' | 'unknown',
+                    "compass":       'N' | 'NE' | ... | 'NW',  # outward normal
+                    "openings_area_m2": float,        # windows + doors on this wall
+                },
+                ...
+            ],
+            "windows": [{"area_m2", "glazing", "compass", "on_external"}],
+            "doors":   [{"area_m2", "type", "on_external"}],
+            "floor_type":   str | None,
+            "ceiling_type": str | None,
+        }
+
+    The crucial wins over ``project_level_to_room_dimensions``:
+      - true polygon floor area (L-shaped rooms compute correctly)
+      - per-wall lengths (N polygon edges rather than 4 fold-buckets)
+      - per-opening external/internal decision based on the *host wall's*
+        actual type rather than a folded bin
+      - per-opening compass orientation preserved (needed by step 6+ for
+        solar gain timing)
+
+    Returns ``None`` if the room polygon is degenerate or has no walls.
+    """
+    poly = [tuple(p) for p in (room.get("polygon") or [])
+            if isinstance(p, (list, tuple)) and len(p) >= 2]
+    if len(poly) < 3:
+        return None
+
+    ceiling_h = float(level.get("ceiling_height_m") or DEFAULT_CEILING_HEIGHT_M)
+    centroid = polygon_centroid(poly)
+
+    # All walls bordering this room (collinear-edge match)
+    room_walls = find_walls_for_room(level, room)
+    if not room_walls:
+        return None
+
+    # Map wall_id -> the host wall's inferred type + bearing, so openings
+    # can be classified by their actual host rather than a folded bin.
+    wall_meta: Dict[str, Dict[str, Any]] = {}
+    walls_out: List[Dict[str, Any]] = []
+
+    for w in room_walls:
+        x1, y1, x2, y2 = _wall_xy_endpoints(w)
+        length_m = segment_length_m(x1, y1, x2, y2)
+        if length_m < 0.05:
+            continue
+        nx, ny = _outward_normal_unit(x1, y1, x2, y2, centroid[0], centroid[1])
+        bearing = normal_to_compass_bearing_deg(nx, ny, north_offset_deg)
+        explicit = str(w.get("type") or "").lower()
+        wtype = infer_wall_type(level, w,
+                                explicit if explicit in VALID_WALL_TYPES else None)
+        wall_meta[w["id"]] = {"type": wtype, "compass": bearing_to_compass8(bearing),
+                              "length_m": length_m}
+        walls_out.append({
+            "id": w["id"],
+            "length_m": round(length_m, 3),
+            "height_m": round(_clamp(ceiling_h, 1.5, 5.0), 2),
+            "type": wtype,
+            "compass": bearing_to_compass8(bearing),
+            "openings_area_m2": 0.0,   # filled in below
+        })
+
+    # Walk openings; tag each with the host wall's type + compass, then
+    # accumulate their area against the corresponding wall record.
+    windows_out: List[Dict[str, Any]] = []
+    doors_out:   List[Dict[str, Any]] = []
+    for op in level.get("openings", []) or []:
+        host = wall_meta.get(op.get("wall_id"))
+        if not host:
+            continue
+        width = float(op.get("width_m") or 0.0)
+        height = float(op.get("height_m") or 0.0)
+        if width <= 0 or height <= 0:
+            continue
+        area = round(width * height, 3)
+        on_external = host["type"] == "external"
+
+        # Bump the host wall's openings_area_m2
+        for w in walls_out:
+            if w["id"] == op.get("wall_id"):
+                w["openings_area_m2"] = round(w["openings_area_m2"] + area, 3)
+                break
+
+        if op.get("kind") == "window":
+            windows_out.append({
+                "area_m2": area,
+                "glazing": op.get("glazing", "double"),
+                "compass": host["compass"],
+                "on_external": on_external,
+            })
+        else:
+            doors_out.append({
+                "area_m2": area,
+                "type": op.get("door_type", "internal"),
+                "on_external": on_external,
+            })
+
+    out: Dict[str, Any] = {
+        "floor_area_m2": round(polygon_area_m2(poly), 3),
+        "ceiling_height_m": round(_clamp(ceiling_h, 1.5, 5.0), 2),
+        "walls": walls_out,
+        "windows": windows_out,
+        "doors": doors_out,
+    }
+    ft = room.get("floor_type")
+    if ft in VALID_FLOOR_TYPES:
+        out["floor_type"] = ft
+    ct = room.get("ceiling_type")
+    if ct in VALID_CEILING_TYPES:
+        out["ceiling_type"] = ct
+    return out
+
+
+def per_wall_breakdown_from_plan(
+        floor_plan: dict, level_id: str, room_id: str,
+) -> Optional[Dict[str, Any]]:
+    """
+    Convenience: locate the level+room by id and call per_wall_breakdown_for_room.
+
+    Returns ``None`` if either the level or the room isn't found, the plan
+    is malformed, or the room geometry is degenerate.
+    """
+    if not isinstance(floor_plan, dict):
+        return None
+    north = float(floor_plan.get("north_offset_deg") or 0.0)
+    for level in floor_plan.get("levels") or []:
+        if level.get("id") != level_id:
+            continue
+        for room in level.get("rooms") or []:
+            if room.get("id") == room_id:
+                return per_wall_breakdown_for_room(level, room, north)
+        break
+    return None
+
 def _legacy_radiator_for_room(level_radiators: List[dict], room_id: str,
                               warnings: List[str]) -> Optional[dict]:
     """Pick the largest-watts radiator for the legacy single-radiator field."""

@@ -1102,6 +1102,19 @@ def register_heating_routes(app: FastAPI, get_heating_advisor, get_zigbee_servic
                     logger.warning(f"diagnostics: telemetry fetch failed: {e}")
 
             telemetry_section = _summarise_telemetry(temp_series, telemetry_attr_used)
+            # Expose the stratification correction in diagnostics so the
+            # user can see what was applied to their sensor reading.
+            from modules.thermal_profile import (
+                correct_sensor_reading, stratification_offset_c,
+            )
+            sensors_list = found_room.get("temperature_sensors") or []
+            primary = next((s for s in sensors_list if isinstance(s, dict) and s.get("primary")), None) \
+                      or next((s for s in sensors_list if isinstance(s, dict)), None)
+            sensor_height_m = (primary or {}).get("height_m") if primary else None
+            telemetry_section["sensor_height_m"] = sensor_height_m
+            telemetry_section["stratification_offset_c"] = round(
+                stratification_offset_c(sensor_height_m), 2
+            )
 
             # ── Stage 2: Ticks (heating-state gate data) ──────────────
             tick_rows = []
@@ -1150,6 +1163,8 @@ def register_heating_routes(app: FastAPI, get_heating_advisor, get_zigbee_servic
                 temperature_series=temp_series,
                 outdoor_temp_getter=outdoor_getter,
                 heating_state_getter=heating_state_getter,
+                floor_plan=heating.get("floor_plan"),
+                floor_plan_ref=found_room.get("floor_plan_ref"),
             )
 
             # ── Verdict ───────────────────────────────────────────────
@@ -1265,6 +1280,8 @@ def register_heating_routes(app: FastAPI, get_heating_advisor, get_zigbee_servic
                 insulation=insulation,
                 temperature_series=temp_series,
                 outdoor_temp_getter=outdoor_temp_getter,
+                floor_plan=heating.get("floor_plan"),
+                floor_plan_ref=found_room.get("floor_plan_ref"),
             )
 
             return {
@@ -1359,10 +1376,15 @@ def register_heating_routes(app: FastAPI, get_heating_advisor, get_zigbee_servic
                 insulation=insulation,
                 temperature_series=temp_series,
                 outdoor_temp_getter=outdoor_getter,
+                floor_plan=heating.get("floor_plan"),
+                floor_plan_ref=found_room.get("floor_plan_ref"),
             )
 
-            # Now the sizing calc
-            target = float(found_room.get("target_temp") or 21.0)
+            # NB: `target` is in comfort-zone (1.5 m reference) units — the
+            # frame the user types into. The `from_temp` returned by
+            # _live_temp is corrected to the same frame above, so the
+            # delta is apples-to-apples.
+            target = float(target_temp or found_room.get("target_temp") or 21.0)
             design_out = float(boiler.get("design_outdoor_c", -3.0))
             flow_c = float(boiler.get("flow_temperature_c", 70.0))
 
@@ -1479,6 +1501,8 @@ def register_heating_routes(app: FastAPI, get_heating_advisor, get_zigbee_servic
                 insulation=insulation,
                 temperature_series=temp_series,
                 outdoor_temp_getter=outdoor_getter,
+                floor_plan=heating.get("floor_plan"),
+                floor_plan_ref=found_room.get("floor_plan_ref"),
             )
 
             # Live current room temp
@@ -1506,7 +1530,34 @@ def register_heating_routes(app: FastAPI, get_heating_advisor, get_zigbee_servic
                         return f
                 return None
 
-            from_temp = _live_temp(sensor_ieee)
+            from_temp_raw = _live_temp(sensor_ieee)
+            # Correct for sensor mounting height so the preheat target
+            # comparison is in the same comfort-zone frame the user
+            # configures their `target_temp` in.
+            from modules.thermal_profile import (
+                correct_sensor_reading,
+                STRATIFICATION_MAX_PLAUSIBLE_HEIGHT_M as _STRAT_MAX,
+            )
+
+            def _height_from_room(rm):
+                lst = rm.get("temperature_sensors")
+                if not isinstance(lst, list) or not lst:
+                    return None
+                primary = next((s for s in lst if isinstance(s, dict) and s.get("primary")), None) \
+                          or next((s for s in lst if isinstance(s, dict)), None)
+                if not primary:
+                    return None
+                h = primary.get("height_m")
+                try:
+                    h = float(h) if h is not None else None
+                except (TypeError, ValueError):
+                    return None
+                if h is None or h < 0.0 or h > _STRAT_MAX:
+                    return None
+                return h
+
+            sensor_height_m = _height_from_room(found_room)
+            from_temp = correct_sensor_reading(from_temp_raw, sensor_height_m)
             if from_temp is None:
                 for t in (found_room.get("trvs") or []):
                     if isinstance(t, dict):
@@ -1590,6 +1641,12 @@ def register_heating_routes(app: FastAPI, get_heating_advisor, get_zigbee_servic
                     "flow_temperature_c": flow_c,
                     "design_outdoor_c": float(boiler.get("design_outdoor_c", -3.0)),
                     "live_current_temp_c": from_temp,
+                    "live_current_temp_raw_c": from_temp_raw,
+                    "sensor_height_m": sensor_height_m,
+                    "stratification_offset_c": (
+                        round(from_temp - from_temp_raw, 2)
+                        if (from_temp is not None and from_temp_raw is not None) else 0.0
+                    ),
                     "live_outdoor_temp_c": current_outdoor,
                 },
             }

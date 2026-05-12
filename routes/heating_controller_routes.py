@@ -616,7 +616,9 @@ def register_heating_controller_routes(app: FastAPI, get_controller, get_zigbee_
             ctrl = _resolve()
             if ctrl is not None and hasattr(ctrl, "apply_config"):
                 try:
+                    controller_block["_floor_plan_for_thermal"] = heating.get("floor_plan")
                     ctrl.apply_config(controller_block)
+                    controller_block.pop("_floor_plan_for_thermal", None)
                 except Exception as e:
                     logger.warning(f"controller hot-apply on mode switch failed: {e}")
                     warnings.append(f"controller hot-apply failed: {e}")

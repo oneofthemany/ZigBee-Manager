@@ -142,9 +142,12 @@ def register_floor_plan_routes(app: FastAPI, get_controller=None):
         if ctrl is not None:
             try:
                 if hasattr(ctrl, "apply_config"):
+                    controller["_floor_plan_for_thermal"] = cleaned
                     ctrl.apply_config(controller)
+                    controller.pop("_floor_plan_for_thermal", None)
                 elif hasattr(ctrl, "circuits"):
                     ctrl.circuits = updated_circuits
+                    ctrl._floor_plan_cache = cleaned
             except Exception as e:
                 logger.warning(f"controller hot-apply failed: {e}")
                 warnings.append(f"controller hot-apply failed: {e}")
