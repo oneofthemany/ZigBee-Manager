@@ -1,0 +1,1 @@
+from device.core import ZigManDevice

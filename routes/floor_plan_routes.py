@@ -125,6 +125,8 @@ def register_floor_plan_routes(app: FastAPI, get_controller=None):
 
         try:
             updated_circuits, warnings = project_floor_plan_to_circuits(cleaned, circuits)
+            from routes.heating_controller_routes import normalise_circuits
+            updated_circuits = normalise_circuits(updated_circuits)
         except Exception as e:
             logger.exception("floor plan projection failed")
             return {"success": False, "error": f"projection failed: {e}"}

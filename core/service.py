@@ -77,6 +77,10 @@ except Exception as e:
     logging.warning(f"Failed to load ZHA Quirks: {e}")
 
 
+from core.naming import NamingMixin
+
+from core.command_router import CommandRouterMixin
+from core.lifecycle import DeviceLifecycleMixin
 class ZigbeeService(
     ConfigBuilderMixin,
     MQTTHandlerMixin,
@@ -84,6 +88,9 @@ class ZigbeeService(
     BanningMixin,
     DatabaseMixin,
     TabsMixin,
+    DeviceLifecycleMixin,
+    CommandRouterMixin,
+    NamingMixin,
 ):
     """
     Core Zigbee service implementing zigpy's listener interface.
@@ -251,38 +258,8 @@ class ZigbeeService(
             if duration > 1.5:
                 logger.warning(f"Event loop blocked for {duration:.2f}s (should be ~1.0s)")
 
-    def get_safe_name(self, ieee):
-        name = self.friendly_names.get(ieee, ieee)
-        return re.sub(r'[+#/]', '-', name)
 
-    def _rebuild_name_maps(self):
-        self._name_to_ieee.clear()
-        self._node_id_to_ieee.clear()
-        for ieee in self.devices:
-            safe_name = self.get_safe_name(ieee)
-            self._name_to_ieee[safe_name] = ieee
-            self._name_to_ieee[safe_name.lower()] = ieee
-            node_id = ieee.replace(":", "")
-            self._node_id_to_ieee[node_id] = ieee
-            self._node_id_to_ieee[node_id.lower()] = ieee
 
-    def _resolve_device_identifier(self, identifier: str) -> Optional[str]:
-        """Resolve a device name/node_id/ieee to an IEEE address."""
-        if identifier in self.devices:
-            return identifier
-        if identifier in self._name_to_ieee:
-            return self._name_to_ieee[identifier]
-        if identifier in self._node_id_to_ieee:
-            return self._node_id_to_ieee[identifier]
-        lower_id = identifier.lower()
-        if lower_id in self._name_to_ieee:
-            return self._name_to_ieee[lower_id]
-        if lower_id in self._node_id_to_ieee:
-            return self._node_id_to_ieee[lower_id]
-        for name, ieee in self._name_to_ieee.items():
-            if lower_id in name.lower():
-                return ieee
-        return None
 
     # =========================================================================
     # EVENT EMISSION
@@ -598,210 +575,10 @@ class ZigbeeService(
     # ZIGPY LISTENER INTERFACE
     # =========================================================================
 
-    def raw_device_initialized(self, device: zigpy.device.Device):
-        logger.debug(f"Raw device initialized: {device.ieee}")
 
-    def device_joined(self, device: zigpy.device.Device):
-        """Called when a device joins the network."""
-        ieee = str(device.ieee)
 
-        if self.ban_manager.is_banned(ieee):
-            logger.warning(f"🚫 BLOCKED: Banned device {ieee} attempted to join")
-            self._emit_sync("log", {
-                "level": "WARNING", "message": f"Blocked banned device: {ieee}",
-                "ieee": ieee, "category": "security"
-            })
-            asyncio.create_task(self._kick_banned_device(device))
-            return
 
-        if ieee in self.devices:
-            logger.error(f"[{ieee}] Duplicate join event - ignoring")
-            return
 
-        logger.info(f"Device joined: {ieee}")
-        self.devices[ieee] = ZigManDevice(self, device)
-        self.devices[ieee].last_seen = int(time.time() * 1000)
-
-        self.join_history.insert(0, {
-            "join_timestamp": time.time() * 1000,
-            "ieee_address": ieee,
-            "manufacturer": str(device.manufacturer) if device.manufacturer else "Unknown",
-            "model": str(device.model) if device.model else "Unknown",
-        })
-
-        self._rebuild_name_maps()
-
-        name = self.friendly_names.get(ieee, "Unknown")
-        self._emit_sync("log", {"level": "INFO", "message": f"[{ieee}] ({name}) Device Joined",
-                                "ieee": ieee, "device_name": name, "category": "connection"})
-        self._emit_sync("device_joined", {"ieee": ieee})
-
-        # Track join time for interview status
-        try:
-            self.interview_status.on_device_joined(ieee)
-        except Exception as _e:
-            logger.debug(f"[{ieee}] interview_status.on_device_joined failed: {_e}")
-        asyncio.create_task(self._delayed_handler_init(ieee))
-
-    async def _delayed_handler_init(self, ieee: str):
-        """
-        Wait for zigpy to finish interviewing the device, then build handlers.
-        """
-        # Poll config: check every 3s for up to 180s (60 attempts)
-        POLL_INTERVAL = 3.0
-        MAX_WAIT_SECONDS = 180
-        attempts = int(MAX_WAIT_SECONDS / POLL_INTERVAL)
-
-        # Initial short wait so the node descriptor reply has a chance to land
-        await asyncio.sleep(2)
-
-        for attempt in range(attempts):
-            if ieee not in self.devices:
-                return
-
-            dev = self.devices[ieee]
-            zigpy_dev = dev.zigpy_dev
-
-            endpoint_count = len([ep for ep in zigpy_dev.endpoints.keys() if ep != 0])
-            handler_count = len(dev.handlers)
-
-            # Success path: endpoints discovered and handlers not yet built
-            if endpoint_count > 0 and handler_count == 0:
-                logger.info(
-                    f"[{ieee}] Endpoints discovered after ~{2 + attempt * POLL_INTERVAL:.0f}s "
-                    f"({endpoint_count} endpoints) - building handlers"
-                )
-                logger.info(
-                    f"[{ieee}] Zigpy status: is_initialized={zigpy_dev.is_initialized}, "
-                    f"status={zigpy_dev.status}, endpoints={list(zigpy_dev.endpoints.keys())}"
-                )
-                dev._identify_handlers()
-                dev.capabilities._detect_capabilities()
-                await self.announce_device(ieee)
-                await self._async_device_initialized(ieee)
-                return
-
-            # Already fully initialised by device_initialized() path - nothing to do
-            if handler_count > 0:
-                logger.debug(f"[{ieee}] Handlers already built ({handler_count}) - nothing to do")
-                return
-
-            # Log progress every ~30s so it's visible what we're waiting for
-            if attempt > 0 and attempt % 10 == 0:
-                logger.info(
-                    f"[{ieee}] Still waiting for endpoint discovery "
-                    f"(attempt {attempt}/{attempts}, "
-                    f"is_initialized={zigpy_dev.is_initialized}, "
-                    f"endpoints={list(zigpy_dev.endpoints.keys())})"
-                )
-
-            await asyncio.sleep(POLL_INTERVAL)
-
-        # Timeout - log final state so we know where it got stuck
-        if ieee in self.devices:
-            dev = self.devices[ieee]
-            zigpy_dev = dev.zigpy_dev
-            logger.warning(
-                f"[{ieee}] No endpoints discovered after {MAX_WAIT_SECONDS}s "
-                f"(is_initialized={zigpy_dev.is_initialized}, "
-                f"status={zigpy_dev.status}, "
-                f"endpoints={list(zigpy_dev.endpoints.keys())}). "
-                f"Device may be sleeping - handlers will be built when zigpy "
-                f"fires device_initialized."
-            )
-
-    def device_initialized(self, device: zigpy.device.Device):
-        """Called when a device is fully initialised."""
-        ieee = str(device.ieee)
-        logger.info(f"Device initialised: {ieee}")
-
-        if ieee in self.devices:
-            # Refresh in place — preserves listeners/state across re-inits
-            wrapper = self.devices[ieee]
-            wrapper.zigpy_dev = device
-            wrapper._identify_handlers()
-            wrapper.capabilities._detect_capabilities()
-            wrapper.last_seen = int(time.time() * 1000)
-        else:
-            self.devices[ieee] = ZigManDevice(self, device)
-            self.devices[ieee].last_seen = int(time.time() * 1000)
-            if ieee in self.state_cache:
-                self.devices[ieee].restore_state(self.state_cache[ieee])
-
-        # --- Auto-pair Hive thermostat ↔ receiver ---
-        # Model is now known at this point (unlike device_joined where it's None)
-        if self._permit_join_via:
-            new_model = str(device.model or "").upper()
-            via_ieee = self._permit_join_via
-
-            if via_ieee in self.devices:
-                via_model = str(self.devices[via_ieee].zigpy_dev.model or "").upper()
-
-                # SLT thermostat joined via SLR receiver
-                if "SLT" in new_model and ("SLR" in via_model or "RECEIVER" in via_model):
-                    self.device_settings.setdefault(via_ieee, {})["paired_thermostat"] = ieee
-                    self.device_settings.setdefault(ieee, {})["paired_receiver"] = via_ieee
-                    self._save_json("./data/device_settings.json", self.device_settings)
-                    logger.info(
-                        f"🔗 Auto-paired thermostat [{ieee}] ↔ receiver [{via_ieee}]"
-                    )
-                    # Schedule the radio-level bind + report-config so the SLT
-                    # actually transmits temperature reports to the SLR.
-                    asyncio.create_task(
-                        self._setup_hive_thermostat_binding(slt_ieee=ieee, slr_ieee=via_ieee)
-                    )
-
-                # SLR receiver joined via SLT thermostat (reverse)
-                elif ("SLR" in new_model or "RECEIVER" in new_model) and "SLT" in via_model:
-                    self.device_settings.setdefault(ieee, {})["paired_thermostat"] = via_ieee
-                    self.device_settings.setdefault(via_ieee, {})["paired_receiver"] = ieee
-                    self._save_json("./data/device_settings.json", self.device_settings)
-                    logger.info(
-                        f"🔗 Auto-paired receiver [{ieee}] ↔ thermostat [{via_ieee}]"
-                    )
-                    asyncio.create_task(
-                        self._setup_hive_thermostat_binding(slt_ieee=via_ieee, slr_ieee=ieee)
-                    )
-
-        asyncio.create_task(self._async_device_initialized(ieee))
-        self._rebuild_name_maps()
-        self._emit_sync("device_initialized", {"ieee": ieee})
-
-        # Refresh interview status — transitions to "interviewed"
-        try:
-            self.interview_status.emit_for(ieee)
-        except Exception as _e:
-            logger.debug(f"[{ieee}] interview_status.emit_for failed: {_e}")
-
-    async def _async_device_initialized(self, ieee: str):
-        """Configure device after initialization."""
-        if ieee not in self.devices:
-            return
-        try:
-            zdev = self.devices[ieee]
-
-            self._emit_sync("join_progress", {"ieee": ieee, "stage": "configuring"})
-            await zdev.configure()
-            logger.info(f"[{ieee}] Device configured successfully")
-            self._emit_sync("join_progress", {"ieee": ieee, "stage": "polling"})
-
-            await zdev.poll()
-            self._emit_sync("join_progress", {"ieee": ieee, "stage": "ready"})
-
-            if self.mqtt:
-                await self.announce_device(ieee)
-
-            # Cache topology (endpoints + clusters) — zero device traffic,
-            # reads already-interviewed state from zigpy.
-            try:
-                from modules.zigbee_cache import record_topology
-                record_topology(zdev.zigpy_dev)
-            except Exception as e:
-                logger.warning(f"[{ieee}] Topology cache failed: {e}")
-
-        except Exception as e:
-            logger.warning(f"[{ieee}] Device configuration failed: {e}")
-            self._emit_sync("join_progress", {"ieee": ieee, "stage": "error", "error": str(e)})
 
     # =========================================================================
     # HIVE SLT → SLR TEMPERATURE BINDING
@@ -1007,44 +784,7 @@ class ZigbeeService(
             }
         return await self._setup_hive_thermostat_binding(slt_ieee, slr_ieee)
 
-    def device_left(self, device: zigpy.device.Device):
-        ieee = str(device.ieee)
-        logger.info(f"Device left: {ieee}")
-        if ieee in self.devices:
-            self.devices[ieee]._available = False
-            self.handle_device_update(self.devices[ieee], {"available": False})
-        self.polling_scheduler.disable_for_device(ieee)
 
-        name = self.friendly_names.get(ieee, "Unknown")
-        self._emit_sync("log", {"level": "WARNING",
-                                "message": f"[{ieee}] ({name}) Device Left - marked offline",
-                                "ieee": ieee, "device_name": name, "category": "connection"})
-
-    def device_removed(self, device: zigpy.device.Device):
-        ieee = str(device.ieee)
-        logger.info(f"Device removed: {ieee}")
-
-        if ieee in self.devices:
-            self.devices[ieee].cleanup()
-            del self.devices[ieee]
-
-        try:
-            self.interview_status.on_device_removed(ieee)
-        except Exception:
-            pass
-
-        if ieee in self.state_cache:
-            del self.state_cache[ieee]
-            self._save_state_cache()
-
-        self.polling_scheduler.disable_for_device(ieee)
-        self._rebuild_name_maps()
-
-        name = self.friendly_names.get(ieee, "Unknown")
-        msg = f"[{ieee}] ({name}) Device Removed"
-        self._emit_sync("log", {"level": "INFO", "message": msg, "ieee": ieee,
-                                "device_name": name, "category": "connection"})
-        self._emit_sync("device_left", {"ieee": ieee})
 
     # Stub listener methods required by zigpy
     def device_relays_updated(self, device: zigpy.device.Device, relays):
@@ -1301,241 +1041,12 @@ class ZigbeeService(
     # DEVICE UPDATE HANDLING
     # =========================================================================
 
-    def handle_device_update(self, zha_device, changed_data, full_state=None,
-                             qos: Optional[int] = None, endpoint_id: Optional[int] = None):
-        """Called by ZigManDevice when state changes."""
-        ieee = zha_device.ieee
 
-        # >>> Instant Universal Automation Trigger <<<
-        # Fire automation immediately before any debouncing/sleeping occurs
-        if hasattr(self, 'automation') and changed_data:
-            try:
-                loop = asyncio.get_running_loop()
-                loop.create_task(self.automation.evaluate(ieee, changed_data))
-            except Exception as e:
-                logger.error(f"[{ieee}] Instant automation trigger failed: {e}")
-
-
-        # >>> Telemetry history recording <
-        # Persist attribute changes to DuckDB for History tab / trend charts.
-        # Covers both reports and poll() results (both funnel through here).
-        if getattr(self, 'telemetry_collector', None) and changed_data:
-            try:
-                self.telemetry_collector.record_state_change(ieee, changed_data)
-            except Exception as e:
-                logger.debug(f"[{ieee}] Telemetry record failed: {e}")
-
-        # Cancel any pending debounced update for this device
-        if ieee in self._update_debounce_tasks:
-            self._update_debounce_tasks[ieee].cancel()
-
-        # Schedule debounced update
-        self._update_debounce_tasks[ieee] = asyncio.create_task(
-            self._debounced_device_update(zha_device, changed_data, full_state, qos, endpoint_id)
-        )
-
-    async def _debounced_device_update(self, zha_device, changed_data, full_state, qos, endpoint_id):
-        """Actual update logic with debounce."""
-        try:
-            await asyncio.sleep(0.05)
-        except asyncio.CancelledError:
-            return
-
-        ieee = zha_device.ieee
-        if not changed_data:
-            return
-
-        device_caps = zha_device.capabilities
-
-        # Build safe MQTT payload (delta-only)
-        safe_mqtt_payload = sanitise_device_state(changed_data.copy())
-        safe_mqtt_payload['available'] = zha_device.is_available()
-        safe_mqtt_payload['lqi'] = getattr(zha_device.zigpy_dev, 'lqi', 0) or 0
-
-        # Contact sensor HA value transforms
-        # Convert contact_N booleans to is_open/is_closed for HA
-        contact_keys = [k for k in safe_mqtt_payload.keys() if k.startswith('contact_') and k.split('_')[-1].isdigit()]
-        for ck in contact_keys:
-            ep_suffix = ck.split('_')[-1]
-            contact_val = safe_mqtt_payload[ck]
-            if isinstance(contact_val, bool):
-                # contact=True means closed, False means open (Zigbee convention)
-                ha_val = contact_val  # True=closed
-                open_key = f"is_open_{ep_suffix}"
-                closed_key = f"is_closed_{ep_suffix}"
-                safe_mqtt_payload[open_key] = not ha_val
-                safe_mqtt_payload[closed_key] = ha_val
-
-        # Also handle top-level 'contact' key
-        if 'contact' in safe_mqtt_payload and isinstance(safe_mqtt_payload['contact'], bool):
-            ha_val = safe_mqtt_payload['contact']
-            safe_mqtt_payload['is_open'] = not ha_val
-            safe_mqtt_payload['is_closed'] = ha_val
-
-        # Remove internal keys
-        keys_to_remove = [k for k in list(safe_mqtt_payload.keys())
-                          if k.endswith('_raw') or k.startswith('attr_')]
-        if not device_caps.has_capability('motion_sensor'):
-            keys_to_remove.extend(['occupancy', 'motion', 'presence'])
-        for key in keys_to_remove:
-            safe_mqtt_payload.pop(key, None)
-
-        # Fix multi-endpoint state
-        endpoint_state_keys = [k for k in safe_mqtt_payload.keys()
-                               if k.startswith('state_') and k[6:].isdigit()]
-        if endpoint_state_keys and endpoint_id is not None:
-            endpoint_state_key = f"state_{endpoint_id}"
-            if endpoint_state_key in safe_mqtt_payload:
-                safe_mqtt_payload['state'] = safe_mqtt_payload[endpoint_state_key]
-                safe_mqtt_payload['on'] = safe_mqtt_payload.get(f"on_{endpoint_id}", False)
-
-        if 'state' in safe_mqtt_payload and isinstance(safe_mqtt_payload['state'], (int, float)):
-            del safe_mqtt_payload['state']
-            if endpoint_state_keys:
-                first_ep_key = sorted(endpoint_state_keys)[0]
-                safe_mqtt_payload['state'] = safe_mqtt_payload[first_ep_key]
-
-        # Update cache
-        if ieee not in self.state_cache:
-            self.state_cache[ieee] = {}
-
-        cache_update = changed_data.copy()
-        cache_update['available'] = zha_device.is_available()
-        cache_update['lqi'] = getattr(zha_device.zigpy_dev, 'lqi', 0) or 0
-        self.state_cache[ieee].update(sanitise_device_state(cache_update))
-        self._cache_dirty = True
-
-        # Emit to WebSocket (only changed data)
-        self._emit_sync("device_updated", {"ieee": ieee, "data": safe_mqtt_payload})
-
-        # Publish to MQTT (delta-only)
-        if self.mqtt:
-            safe_name = self.get_safe_name(ieee)
-            mqtt_qos = qos
-            asyncio.create_task(
-                self.mqtt.publish(safe_name, json.dumps(safe_mqtt_payload),
-                                  ieee=ieee, qos=mqtt_qos, retain=True)
-            )
-
-        # Log changed attributes
-        friendly_name = self.friendly_names.get(ieee, "Unknown")
-        for k, v in changed_data.items():
-            if k != 'last_seen':
-                ep_str = f"[EP{endpoint_id}]" if endpoint_id is not None else ""
-                msg = f"[{ieee}] ({friendly_name}) {ep_str} {k}={v}"
-                log_payload = {
-                    "level": "INFO", "message": msg, "ieee": ieee,
-                    "device_name": friendly_name, "category": "attribute_update",
-                    "attribute": k, "value": v, "endpoint_id": endpoint_id
-                }
-                safe_log_payload = prepare_for_json(log_payload)
-                self._emit_sync("log", safe_log_payload)
-
-        # Schedule debounced cache save
-        self._schedule_save()
 
     # =========================================================================
     # MQTT COMMAND HANDLER
     # =========================================================================
 
-    async def handle_mqtt_command(self, device_identifier: str, data: Dict[str, Any],
-                                  component: Optional[str] = None,
-                                  object_id: Optional[str] = None):
-        """Handle incoming MQTT command from Home Assistant."""
-        if not getattr(self, '_accepting_commands', True):
-            logger.warning(f"Ignoring command during startup: {device_identifier} {data}")
-            return
-
-        ieee = self._resolve_device_identifier(device_identifier)
-        if not ieee or ieee not in self.devices:
-            logger.warning(f"MQTT command for unknown device: {device_identifier}")
-            return
-
-        device = self.devices[ieee]
-        logger.info(f"[{ieee}] MQTT command: {data}")
-
-        try:
-            # Extract endpoint from object_id (e.g., "light_11" -> 11)
-            endpoint = None
-            if object_id:
-                match = re.search(r'_(\d+)$', object_id)
-                endpoint = int(match.group(1)) if match else None
-
-            if endpoint is None and device.capabilities.has_capability('light'):
-                for ep_id in device.zigpy_dev.endpoints:
-                    if ep_id == 0:
-                        continue
-                    ep = device.zigpy_dev.endpoints[ep_id]
-                    if 0x0008 in ep.in_clusters or 0x0006 in ep.in_clusters:
-                        endpoint = ep_id
-                        break
-
-            optimistic_state = {}
-
-            state = data.get('state')
-            brightness = data.get('brightness')
-            color_temp = data.get('color_temp')
-            color = data.get('color')
-
-            if state:
-                cmd = 'on' if str(state).upper() == 'ON' else 'off'
-                result = await device.send_command(cmd, endpoint_id=endpoint, data=data)
-                if result:
-                    optimistic_state['state'] = state.upper() if isinstance(state, str) else ('ON' if state else 'OFF')
-                    optimistic_state['on'] = (cmd == 'on')
-
-            if brightness is not None:
-                pct = int(brightness / 2.54)
-                result = await device.send_command('brightness', pct, endpoint_id=endpoint)
-                if result:
-                    optimistic_state['brightness'] = int(brightness)
-                    optimistic_state['level'] = pct
-                    if brightness > 0:
-                        optimistic_state['state'] = 'ON'
-                        optimistic_state['on'] = True
-
-            if color_temp is not None:
-                try:
-                    kelvin = int(1000000 / color_temp)
-                    result = await device.send_command('color_temp', kelvin, endpoint_id=endpoint)
-                    if result:
-                        optimistic_state['color_temp'] = int(color_temp)
-                except ZeroDivisionError:
-                    pass
-
-            if color and 'x' in color and 'y' in color:
-                result = await device.send_command('xy_color', (color['x'], color['y']), endpoint_id=endpoint)
-                if result:
-                    optimistic_state['color'] = color
-
-            # Handle cover/position/tilt
-            position = data.get('position')
-            tilt = data.get('tilt')
-            if position is not None:
-                await device.send_command('position', position, endpoint_id=endpoint)
-            if tilt is not None:
-                await device.send_command('tilt', tilt, endpoint_id=endpoint)
-
-            # Handle thermostat
-            temperature = data.get('temperature')
-            if temperature is not None:
-                await device.send_command('temperature', temperature, endpoint_id=endpoint)
-
-            mode = data.get('mode') or data.get('preset_mode')
-            if mode is not None:
-                await device.send_command('mode', mode, endpoint_id=endpoint)
-
-            # Optimistic update
-            if optimistic_state:
-                self.handle_device_update(device, optimistic_state, endpoint_id=endpoint)
-
-        except NcpFailure as e:
-            logger.error(f"[{ieee}] NCP Failure during MQTT command: {e}")
-            if hasattr(self, 'resilience'):
-                await self.resilience.handle_ncp_failure(e)
-        except Exception as e:
-            logger.error(f"[{ieee}] MQTT command failed: {e}")
-            traceback.print_exc()
 
     # =========================================================================
     # DEVICE OPERATIONS
@@ -1590,28 +1101,6 @@ class ZigbeeService(
         except Exception as e:
             logger.error(f"[{ieee}] Failed to announce: {e}")
 
-    async def send_command(self, ieee: str, command: str, value=None, endpoint_id=None):
-        if ieee not in self.devices:
-            return {"success": False, "error": "Device not found"}
-        try:
-            device = self.devices[ieee]
-            result = await device.send_command(command, value, endpoint_id)
-            if result is False:
-                # Provide a friendlier error if the device wasn't ready yet,
-                # so the heating controller's retry logic can distinguish
-                # "transient initialisation" from "actual protocol failure".
-                if not getattr(device, 'handlers', None):
-                    return {"success": False, "error": "Device initialising"}
-                return {"success": False, "error": "Device rejected command"}
-            return {"success": True, "result": result}
-        except NcpFailure as e:
-            logger.error(f"[{ieee}] NCP Failure during command: {e}")
-            if hasattr(self, 'resilience'):
-                await self.resilience.handle_ncp_failure(e)
-            return {"success": False, "error": f"NCP Failure: {e}"}
-        except Exception as e:
-            logger.error(f"[{ieee}] Command failed: {e}")
-            return {"success": False, "error": str(e)}
 
     async def rename_device(self, ieee, name):
         self.friendly_names[ieee] = name

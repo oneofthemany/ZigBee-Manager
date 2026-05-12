@@ -1130,12 +1130,17 @@ class HeatingController:
                 "schedule": clean_sched,
                 "contact_sensors": contact_clean,
             }
-            # Dimensions are used by Phase 3+ (thermal profile, BTU sizing).
-            # Controller itself doesn't need them but preserves them verbatim.
+
             if isinstance(r.get("dimensions"), dict):
                 room_out["dimensions"] = r["dimensions"]
             if isinstance(r.get("radiator"), dict):
                 room_out["radiator"] = r["radiator"]
+            if isinstance(r.get("radiators"), list):
+                room_out["radiators"] = r["radiators"]
+            if isinstance(r.get("temperature_sensors"), list):
+                room_out["temperature_sensors"] = r["temperature_sensors"]
+            if isinstance(r.get("floor_plan_ref"), dict):
+                room_out["floor_plan_ref"] = r["floor_plan_ref"]
             out.append(room_out)
         return out
 
