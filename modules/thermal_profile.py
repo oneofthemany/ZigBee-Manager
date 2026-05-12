@@ -41,6 +41,80 @@ AIR_CP_J_KG_K = 1005             # specific heat of air
 # thermal-model literature (see CIBSE TM41).
 ROOM_THERMAL_MASS_FACTOR = 3.0
 
+# ── Sensor stratification correction ─────────────────────────────────
+# Warm air stratifies upward in heated rooms. A sensor mounted high reads
+# warmer than the comfort zone; a sensor near the floor reads cooler. The
+# correction below is the standard rule of thumb from CIBSE Guide A:
+#   ~0.5 °C per metre above the reference height (a heated room's vertical
+#   temperature gradient under typical convective heating).
+#
+# Reference height = 1.5 m — standing breathing zone, the default mounting
+# height for residential thermostats and what target temperatures implicitly
+# refer to. A sensor exactly at 1.5 m receives no correction.
+#
+# The correction is additive on the *delta from reference*:
+#   correction_c = -GRADIENT * (sensor_height_m - REFERENCE_HEIGHT_M)
+# Subtract from raw reading to get comfort-zone temperature.
+#
+# We don't gate this on "is heating active" because:
+#   (a) average gradient over a heating season is dominated by heated time
+#   (b) when heating is off, the gradient self-decays and the correction is
+#       small in absolute terms (well under sensor noise)
+#   (c) gating would require coupling temperature reads to controller state
+STRATIFICATION_REFERENCE_HEIGHT_M = 1.5
+STRATIFICATION_GRADIENT_C_PER_M   = 0.5
+# Above 5 m or below 0 m we treat the value as configured wrong and skip.
+STRATIFICATION_MAX_PLAUSIBLE_HEIGHT_M = 5.0
+
+
+def stratification_offset_c(
+        sensor_height_m: Optional[float],
+        reference_height_m: float = STRATIFICATION_REFERENCE_HEIGHT_M,
+        gradient_c_per_m: float = STRATIFICATION_GRADIENT_C_PER_M,
+) -> float:
+    """
+    Return the additive offset to apply to a raw reading to get the
+    comfort-zone temperature.
+
+    > corrected = raw + stratification_offset_c(height)
+
+    Examples (with default reference 1.5 m, gradient 0.5 °C/m):
+        height 1.5 → 0.0   (no correction)
+        height 2.2 → -0.35 (sensor reads 0.35 °C high)
+        height 0.5 → +0.50 (sensor reads 0.5 °C low)
+
+    Returns 0 when height is unknown/None or implausible — fail-safe to
+    "no correction" rather than a guess.
+    """
+    if sensor_height_m is None:
+        return 0.0
+    try:
+        h = float(sensor_height_m)
+    except (TypeError, ValueError):
+        return 0.0
+    if h < 0.0 or h > STRATIFICATION_MAX_PLAUSIBLE_HEIGHT_M:
+        return 0.0
+    return -gradient_c_per_m * (h - reference_height_m)
+
+
+def correct_sensor_reading(
+        raw_c: Optional[float],
+        sensor_height_m: Optional[float],
+        reference_height_m: float = STRATIFICATION_REFERENCE_HEIGHT_M,
+        gradient_c_per_m: float = STRATIFICATION_GRADIENT_C_PER_M,
+) -> Optional[float]:
+    """
+    Convenience: apply ``stratification_offset_c`` to a reading. Returns the
+    raw value unchanged when it's ``None``, the height is unknown, or the
+    height is implausible. Rounded to 0.1 °C to avoid spurious precision.
+    """
+    if raw_c is None:
+        return None
+    offset = stratification_offset_c(sensor_height_m, reference_height_m, gradient_c_per_m)
+    if offset == 0.0:
+        return raw_c
+    return round(raw_c + offset, 1)
+
 # ── U-value tables (W / m² / K) ───────────────────────────────────────
 # Keyed by insulation level. Values from SAP Appendix S + CIBSE Guide A.
 # The "party_wall_u" is 0 for heated-neighbour party walls (the normal
@@ -165,12 +239,29 @@ class ThermalProfile:
 # STATIC CALCULATION
 # ──────────────────────────────────────────────────────────────────────
 
-def compute_static(dimensions: Dict[str, Any], insulation: str = "partial") -> Tuple[Optional[float], StaticBreakdown, List[str]]:
+def compute_static(
+        dimensions: Dict[str, Any],
+        insulation: str = "partial",
+        floor_plan: Optional[Dict[str, Any]] = None,
+        floor_plan_ref: Optional[Dict[str, Any]] = None,
+) -> Tuple[Optional[float], StaticBreakdown, List[str]]:
     """
-    Per-wall heat loss. Each wall can be external / party / internal, so we
-    compute gross area from X×H or Y×H depending on orientation, subtract
-    windows and doors attributed to that wall, then apply the appropriate
-    U-value.
+    Per-wall heat loss. Two code paths share one result shape:
+
+    * **Plan-aware path** (preferred when ``floor_plan`` + ``floor_plan_ref``
+      are supplied): uses true polygon geometry. Each polygon edge becomes
+      one wall; each opening uses its host wall's actual type, not a folded
+      bin. Gives correct results for L-shaped rooms, rooms with more than 4
+      walls, and walls of unequal length.
+
+    * **Legacy bbox path** (when no plan is supplied, or the room has no
+      ``floor_plan_ref``): the existing X × depth × H approximation, folded
+      into 4 walls (front/back/left/right). Kept verbatim for manual-mode
+      rooms — same behaviour as before this patch.
+
+    The plan-aware path falls back to the bbox path automatically if the
+    plan lookup fails (missing level/room, degenerate polygon, etc.) and
+    appends a warning so the user can see why precision dropped.
     """
     warnings: List[str] = []
     bd = StaticBreakdown()
@@ -179,6 +270,28 @@ def compute_static(dimensions: Dict[str, Any], insulation: str = "partial") -> T
 
     u_table = U_VALUES.get(insulation) or U_VALUES["partial"]
 
+    # ── Try the plan-aware path first when possible ────────────────────
+    plan_geom = None
+    if isinstance(floor_plan, dict) and isinstance(floor_plan_ref, dict):
+        lvl_id = floor_plan_ref.get("level_id")
+        rm_id = floor_plan_ref.get("room_id")
+        if lvl_id and rm_id:
+            try:
+                from modules.floor_plan import per_wall_breakdown_from_plan
+                plan_geom = per_wall_breakdown_from_plan(floor_plan, lvl_id, rm_id)
+                if plan_geom is None:
+                    warnings.append(
+                        f"floor_plan_ref present but room {rm_id!r} not found "
+                        f"in level {lvl_id!r}; falling back to legacy dimensions"
+                    )
+            except Exception as e:
+                warnings.append(f"plan geometry lookup failed: {e}; using legacy dimensions")
+                plan_geom = None
+
+    if plan_geom is not None:
+        return _compute_static_from_plan(plan_geom, u_table, insulation, warnings, bd)
+
+    # ── Legacy bbox path (unchanged behaviour) ─────────────────────────
     x_m = float(dimensions.get("width_m") or 0.0)
     y_m = float(dimensions.get("depth_m") or 0.0)
     h_m = float(dimensions.get("ceiling_height_m") or 2.4)
@@ -253,6 +366,95 @@ def compute_static(dimensions: Dict[str, Any], insulation: str = "partial") -> T
         return None, bd, warnings
     return round(total, 1), bd, warnings
 
+def _compute_static_from_plan(
+        plan_geom: Dict[str, Any],
+        u_table: Dict[str, Any],
+        insulation: str,
+        warnings: List[str],
+        bd: StaticBreakdown,
+) -> Tuple[Optional[float], StaticBreakdown, List[str]]:
+    """
+    Plan-aware static heat loss. Same StaticBreakdown buckets as the legacy
+    path so downstream code (sizing UI, diagnostics, reports) sees an
+    identical result shape — only the *numbers* improve.
+
+    Key behavioural differences vs the bbox path:
+      * Each polygon wall contributes its true length, not a folded bin
+      * Wall type comes from auto-inference (1 room = external, 2 = party,
+        with explicit overrides honoured) — see ``infer_wall_type`` in
+        floor_plan.py
+      * Openings deduct from their host wall's *actual* area, even when
+        the room has more than 4 walls or unequal wall lengths
+      * Each opening's external/internal classification uses its host
+        wall's type, not the folded bin
+    """
+    floor_area = float(plan_geom.get("floor_area_m2") or 0.0)
+    h_m = float(plan_geom.get("ceiling_height_m") or 2.4)
+
+    # ── Walls ───────────────────────────────────────────────────────────
+    for w in plan_geom.get("walls", []):
+        length = float(w.get("length_m") or 0.0)
+        height = float(w.get("height_m") or h_m)
+        gross_a = length * height
+        if gross_a <= 0:
+            continue
+        opening_a = float(w.get("openings_area_m2") or 0.0)
+        if opening_a > gross_a:
+            warnings.append(
+                f"openings ({opening_a:.2f} m²) exceed wall area "
+                f"({gross_a:.2f} m²) on a {w.get('compass','?')}-facing wall"
+            )
+            opening_a = gross_a
+        net_a = max(0.0, gross_a - opening_a)
+        wtype = w.get("type", "external")
+        if wtype == "external":
+            bd.walls_external += net_a * u_table["wall_ext"]
+        elif wtype == "party":
+            bd.walls_party += net_a * u_table["wall_party"]
+        # internal / unknown → loss-free (matches legacy treatment)
+
+    # ── Windows ─────────────────────────────────────────────────────────
+    # Only windows whose host wall is external contribute. The plan-aware
+    # path classified this per-opening; the bbox path would have folded the
+    # wall first and then asked "is the *bin* external?", which can be
+    # wrong for L-shaped rooms where two edges fall in the same bin.
+    for w in plan_geom.get("windows", []):
+        if not w.get("on_external"):
+            continue
+        area = float(w.get("area_m2") or 0.0)
+        glazing = str(w.get("glazing", "double")).lower()
+        u = u_table["window"].get(glazing, u_table["window"]["double"])
+        bd.windows += area * u
+
+    # ── Doors ───────────────────────────────────────────────────────────
+    for dr in plan_geom.get("doors", []):
+        if not dr.get("on_external"):
+            continue
+        if dr.get("type") != "external":
+            continue
+        area = float(dr.get("area_m2") or 0.0)
+        bd.doors += area * u_table["door_ext"]
+
+    # ── Floor / ceiling (same as legacy path) ───────────────────────────
+    floor_type = str(plan_geom.get("floor_type") or "unknown").lower()
+    bd.floor = floor_area * u_table["floor"].get(
+        floor_type, u_table["floor"]["unknown"]
+    )
+    ceiling_type = str(plan_geom.get("ceiling_type") or "unknown").lower()
+    bd.ceiling = floor_area * u_table["ceiling"].get(
+        ceiling_type, u_table["ceiling"]["unknown"]
+    )
+
+    # ── Ventilation (same formula as legacy) ────────────────────────────
+    volume_m3 = floor_area * h_m
+    ach = ACH_BY_INSULATION.get(insulation, 1.0)
+    bd.ventilation = AIR_DENSITY_KG_M3 * AIR_CP_J_KG_K * volume_m3 * (ach / 3600.0)
+
+    total = bd.total
+    if total <= 0:
+        warnings.append("plan-aware static calculation produced zero — check polygon geometry")
+        return None, bd, warnings
+    return round(total, 1), bd, warnings
 
 # ──────────────────────────────────────────────────────────────────────
 # LEARNED (FROM TELEMETRY)
@@ -507,8 +709,18 @@ def compute_profile(
         outdoor_temp_getter=None,
         blend_weight_measured: float = 0.7,
         heating_state_getter=None,
+        floor_plan: Optional[Dict[str, Any]] = None,
+        floor_plan_ref: Optional[Dict[str, Any]] = None,
 ) -> ThermalProfile:
-    """Top-level orchestrator. Static + learned + blend."""
+    """
+    Top-level orchestrator. Static + learned + blend.
+
+    When ``floor_plan`` + ``floor_plan_ref`` are supplied, ``compute_static``
+    uses the room's real polygon geometry instead of the bbox approximation.
+    The measured (telemetry-based) leg of the calculation is unchanged: it
+    only needs floor area and ceiling height, both of which come out of
+    ``dimensions`` either way (plan-projected or manual).
+    """
     prof = ThermalProfile(room_id=room_id)
 
     if not dimensions:
@@ -518,8 +730,12 @@ def compute_profile(
     floor_area = float(dimensions.get("floor_area_m2") or 0.0)
     ceiling_h = float(dimensions.get("ceiling_height_m") or 2.4)
 
-    # Static
-    static_total, bd, static_warnings = compute_static(dimensions, insulation)
+    # Static — plan-aware when references are supplied; otherwise bbox
+    static_total, bd, static_warnings = compute_static(
+        dimensions, insulation,
+        floor_plan=floor_plan,
+        floor_plan_ref=floor_plan_ref,
+    )
     prof.static_w_per_k = static_total
     prof.static_breakdown = bd
     prof.warnings.extend(static_warnings)
@@ -578,6 +794,18 @@ class PreheatEstimate:
     confidence: str                         # "high" | "medium" | "low" | "none"
     warnings: List[str] = field(default_factory=list)
 
+    # ── Solar gain fields (populated when solar data is available) ────
+    solar_gain_w: Optional[float] = None
+    """Average solar heat gain [W] over the preheat window. None = not computed."""
+
+    minutes_saved_by_solar: Optional[float] = None
+    """How many minutes shorter preheat is due to solar gain. None = not computed."""
+
+    solar_confidence: str = "none"
+    """Confidence in the solar component: 'high' (measured GHI + orientation),
+    'medium' (measured GHI, no orientation — diffuse only), 'low' (clear-sky
+    model, no measured data), 'none' (no solar data available)."""
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             "room_id": self.room_id,
@@ -592,6 +820,9 @@ class PreheatEstimate:
             "reachable": self.reachable,
             "confidence": self.confidence,
             "warnings": self.warnings,
+            "solar_gain_w": self.solar_gain_w,
+            "minutes_saved_by_solar": self.minutes_saved_by_solar,
+            "solar_confidence": self.solar_confidence,
         }
 
 
@@ -605,6 +836,9 @@ def compute_preheat(
         radiator_watts_effective: Optional[float],
         confidence_in: str = "medium",
         max_minutes: int = 240,
+        solar_gain_w: Optional[float] = None,
+        solar_has_orientation: bool = False,
+        solar_shortwave_measured: bool = False,
 ) -> PreheatEstimate:
     """
     Predict minutes needed to heat from_temp → to_temp given steady-state physics.
@@ -616,6 +850,15 @@ def compute_preheat(
           installed radiator. If None, we fall back to using the target
           (with-margin) output from Phase 4 sizing, which is the "ideal"
           installation. Returns lower confidence in that case.
+      solar_gain_w: average solar heat gain [W] over the expected preheat
+          window, from ``solar_gain.solar_gain_window().average_watts``.
+          Treated as additional heating power — reduces minutes_needed.
+          Pass None (default) to skip solar adjustment (backward compat).
+      solar_has_orientation: True if at least one window had a facing_deg —
+          affects solar_confidence reported on the estimate.
+      solar_shortwave_measured: True if shortwave_radiation came from the
+          weather service rather than the clear-sky model — affects
+          solar_confidence.
     """
     est = PreheatEstimate(
         room_id=room_id,
@@ -654,6 +897,39 @@ def compute_preheat(
         est.warnings.append("using default tau of 3h (no measured data)")
         confidence_in = "low"
 
+    # ── Solar gain adjustment ─────────────────────────────────────────
+    # Solar gain reduces the net load on the radiator, lowering the time
+    # to reach target. We model it by boosting the effective radiator output
+    # by the average solar watts over the preheat window.
+    #
+    # Physics: T_steady = T_outdoor + (Q_rad + Q_solar) / W_per_K
+    # The radiator and sun together push the room to a higher steady state,
+    # so it reaches the target faster. The τ doesn't change (it's a property
+    # of the room fabric, not the heat source).
+    #
+    # We also compute minutes_saved = minutes_without_solar − minutes_with_solar
+    # so the UI can say "pre-heat: 45 min (solar saving ~10 min)".
+    effective_radiator_w = radiator_watts_effective  # may be None
+    if solar_gain_w is not None and solar_gain_w > 0.0:
+        est.solar_gain_w = round(solar_gain_w, 1)
+        # Determine solar confidence
+        if solar_shortwave_measured and solar_has_orientation:
+            est.solar_confidence = "high"
+        elif solar_shortwave_measured:
+            est.solar_confidence = "medium"   # diffuse only — no beam direction
+        else:
+            est.solar_confidence = "low"      # clear-sky fallback model
+        if solar_gain_w > 0.5 * (radiator_watts_effective or 0):
+            est.warnings.append(
+                f"solar gain ({solar_gain_w:.0f} W) is >50% of radiator output — "
+                f"preheat estimate depends heavily on forecast accuracy."
+            )
+
+        if effective_radiator_w is not None and effective_radiator_w > 0:
+            effective_radiator_w = effective_radiator_w + solar_gain_w
+        # If radiator_watts_effective was None we can't sensibly add solar
+        # (the steady-state calc below handles None separately).
+
     if radiator_watts_effective is None or radiator_watts_effective <= 0:
         est.warnings.append(
             "no radiator capacity configured — pre-heat assumes the radiator "
@@ -665,7 +941,7 @@ def compute_preheat(
         est.steady_state_temp_c = round(steady, 1)
         confidence_in = "low"
     else:
-        steady = outdoor_temp_c + (radiator_watts_effective / w_per_k)
+        steady = outdoor_temp_c + (effective_radiator_w / w_per_k)
         est.steady_state_temp_c = round(steady, 1)
 
     if steady <= to_temp_c + 0.1:
@@ -697,6 +973,19 @@ def compute_preheat(
             f"clamped. Check radiator sizing or flow temp."
         )
         minutes = max_minutes
+
+    # ── Compute minutes_saved_by_solar ────────────────────────────────
+    if solar_gain_w is not None and solar_gain_w > 0.0 and radiator_watts_effective:
+        # Re-run without solar to get the baseline, then diff.
+        steady_no_solar = outdoor_temp_c + (radiator_watts_effective / w_per_k)
+        if steady_no_solar > to_temp_c + 0.1:
+            num_ns = steady_no_solar - to_temp_c
+            den_ns = steady_no_solar - from_temp_c
+            if den_ns > 0:
+                t_no_solar = -tau_seconds * _math.log(num_ns / den_ns)
+                mins_no_solar = min(max_minutes, t_no_solar / 60.0)
+                saved = mins_no_solar - minutes
+                est.minutes_saved_by_solar = round(max(0.0, saved), 1)
 
     est.minutes_needed = round(minutes, 0)
     est.reachable = True

@@ -69,6 +69,55 @@ class WeatherService:
             return self._current.get("temperature_2m")
         return None
 
+    def get_solar_irradiance(self) -> Optional[float]:
+        """
+        Current global horizontal irradiance [W/m²] from Open-Meteo
+        ``shortwave_radiation``. Returns None if not yet fetched.
+
+        Pass directly to ``solar_gain.solar_gain_now()`` as ``shortwave_wm2``.
+        Zero at night; None means no data yet (treat as unknown, not zero).
+        """
+        if self._current:
+            return self._current.get("shortwave_radiation")
+        return None
+
+    def get_cloud_fraction(self) -> Optional[float]:
+        """
+        Current cloud cover as a fraction 0.0–1.0 (Open-Meteo reports 0–100 %).
+        Returns None if not yet fetched.
+
+        Pass to ``solar_gain`` functions as ``cloud_fraction``.
+        """
+        if self._current:
+            cc = self._current.get("cloud_cover")
+            if cc is not None:
+                return float(cc) / 100.0
+        return None
+
+    def get_hourly_solar(self) -> Optional[dict]:
+        """
+        Hourly shortwave_radiation and cloud_cover arrays from the forecast,
+        aligned with ``forecast["times"]``.
+
+        Returns a dict with keys:
+            ``times``               — ISO-8601 strings, one per hour
+            ``shortwave_radiation`` — W/m² per hour
+            ``cloud_fraction``      — 0.0–1.0 per hour (converted from %)
+
+        Returns None if the forecast hasn't been fetched yet.
+        Pass to ``solar_gain.solar_gain_forecast()`` as
+        ``hourly_shortwave_wm2`` / ``hourly_cloud_fraction``.
+        """
+        if not self._forecast:
+            return None
+        raw_cc = self._forecast.get("cloud_cover") or []
+        return {
+            "times": self._forecast.get("times", []),
+            "shortwave_radiation": self._forecast.get("shortwave_radiation", []),
+            "cloud_fraction": [float(v) / 100.0 if v is not None else 0.0
+                               for v in raw_cc],
+        }
+
     # ------------------------------------------------------------------
     # Lifecycle
     # ------------------------------------------------------------------
@@ -123,11 +172,14 @@ class WeatherService:
                     "wind_speed_10m",
                     "precipitation",
                     "cloud_cover",
+                    "shortwave_radiation",
                 ]),
                 "hourly": ",".join([
                     "temperature_2m",
                     "precipitation_probability",
                     "weather_code",
+                    "shortwave_radiation",
+                    "cloud_cover",
                 ]),
                 "forecast_days": 3,
                 "wind_speed_unit": "mph",
@@ -161,6 +213,8 @@ class WeatherService:
                 "temperature_2m": hourly.get("temperature_2m", []),
                 "precipitation_probability": hourly.get("precipitation_probability", []),
                 "weather_code": hourly.get("weather_code", []),
+                "shortwave_radiation": hourly.get("shortwave_radiation", []),
+                "cloud_cover": hourly.get("cloud_cover", []),
                 "fetched_at": time.time(),
             }
 
@@ -224,13 +278,14 @@ class WeatherService:
         }
 
         sensors = [
-            ("temperature",       "temperature_2m",              "Temperature",       "temperature",        "°C",   "measurement"),
-            ("humidity",          "relative_humidity_2m",        "Humidity",          "humidity",           "%",    "measurement"),
-            ("apparent_temp",     "apparent_temperature",        "Feels Like",        "temperature",        "°C",   "measurement"),
-            ("wind_speed",        "wind_speed_10m",              "Wind Speed",        "wind_speed",         "mph",  "measurement"),
-            ("precipitation",     "precipitation",               "Precipitation",     "precipitation",      "mm",   "measurement"),
-            ("cloud_cover",       "cloud_cover",                 "Cloud Cover",       None,                 "%",    "measurement"),
-            ("weather_condition", "weather_description",         "Conditions",        "enum",               None,   None),
+            ("temperature",       "temperature_2m",              "Temperature",       "temperature",        "°C",    "measurement"),
+            ("humidity",          "relative_humidity_2m",        "Humidity",          "humidity",           "%",     "measurement"),
+            ("apparent_temp",     "apparent_temperature",        "Feels Like",        "temperature",        "°C",    "measurement"),
+            ("wind_speed",        "wind_speed_10m",              "Wind Speed",        "wind_speed",         "mph",   "measurement"),
+            ("precipitation",     "precipitation",               "Precipitation",     "precipitation",      "mm",    "measurement"),
+            ("cloud_cover",       "cloud_cover",                 "Cloud Cover",       None,                 "%",     "measurement"),
+            ("shortwave_rad",     "shortwave_radiation",         "Solar Irradiance",  "irradiance",         "W/m²",  "measurement"),
+            ("weather_condition", "weather_description",         "Conditions",        "enum",               None,    None),
         ]
 
         configs = []

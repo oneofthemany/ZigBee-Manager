@@ -80,6 +80,12 @@ import time
 from datetime import datetime
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
+from modules.thermal_profile import (
+    correct_sensor_reading,
+    stratification_offset_c,
+    STRATIFICATION_MAX_PLAUSIBLE_HEIGHT_M,
+)
+
 # Telemetry persistence for tick decisions. Lazy import inside _tick would
 # also work; top-level is fine because telemetry_db has no heavy deps.
 try:
@@ -218,6 +224,44 @@ def _pick_temperature(state: Dict[str, Any]) -> Optional[float]:
             return f
     return None
 
+def _primary_sensor_height_m(room: Dict[str, Any]) -> Optional[float]:
+    """
+    Resolve the mounting height of the room's primary temperature sensor,
+    in metres. Used by the stratification-correction logic.
+
+    Lookup precedence (to handle every schema state cleanly):
+
+      1. ``room.temperature_sensors`` — the canonical plural list (step 2).
+         Walk it for the entry marked ``primary: true``; if none flagged,
+         use the first entry. This is the only path that ever returns a
+         non-None value after a manual-mode round-trip through _clean_room.
+
+      2. No fallback to anything else — manual config without the plural
+         list (legacy state) simply has no height info, so correction is
+         a no-op. The user can add height by editing the room in the
+         multi-sensor UI (step 3b).
+
+    Returns None when:
+      - the room has no sensor list (legacy single-only state),
+      - the primary sensor has no ``height_m``,
+      - the value is implausible (outside 0–5 m).
+    """
+    sensors = room.get("temperature_sensors")
+    if not isinstance(sensors, list) or not sensors:
+        return None
+    primary = next((s for s in sensors if isinstance(s, dict) and s.get("primary")), None)
+    if primary is None:
+        primary = next((s for s in sensors if isinstance(s, dict)), None)
+    if not primary:
+        return None
+    h = primary.get("height_m")
+    try:
+        h = float(h) if h is not None else None
+    except (TypeError, ValueError):
+        return None
+    if h is None or h < 0.0 or h > STRATIFICATION_MAX_PLAUSIBLE_HEIGHT_M:
+        return None
+    return h
 
 # ── Per-attribute freshness ────────────────────────────────────────
 # Per-tick cache of "when did this IEEE last report a temperature?" so a
@@ -396,6 +440,7 @@ class RoomDecision:
         "room_id", "name", "target_temp", "current_temp", "temp_source",
         "status", "calling_for_heat", "trvs", "sensor_ieee", "sensor_online",
         "health", "preheat", "overshoot", "contact",
+        "current_temp_raw", "sensor_height_m", "stratification_offset_c",
     )
 
     def __init__(self, room_id: str, name: str):
@@ -403,6 +448,9 @@ class RoomDecision:
         self.name = name
         self.target_temp: Optional[float] = None
         self.current_temp: Optional[float] = None
+        self.current_temp_raw: Optional[float] = None       # what the sensor actually said
+        self.sensor_height_m: Optional[float] = None        # mount height used for correction
+        self.stratification_offset_c: float = 0.0           # what we added to raw to get current_temp
         self.temp_source: str = "none"
         self.sensor_ieee: Optional[str] = None
         self.sensor_online: Optional[bool] = None
@@ -431,6 +479,9 @@ class RoomDecision:
             "preheat": self.preheat,
             "overshoot": self.overshoot,
             "contact": self.contact,
+            "current_temp_raw": self.current_temp_raw,
+            "sensor_height_m": self.sensor_height_m,
+            "stratification_offset_c": self.stratification_offset_c,
         }
 
 
@@ -499,7 +550,15 @@ class HeatingController:
         action = str(oh_cfg.get("out_of_hours_action", "setback")).lower()
         self._oh_action = action if action in ("setback", "off", "min_only") else "setback"
 
-        self.circuits = self._clean_circuits(config.get("circuits") or [])
+        # Resolve circuits based on config_mode:
+        #   floor_plan → use heating.controller.circuits (populated by project_floor_plan_to_circuits)
+        #   manual / unset → use heating.circuits (the manually-configured list)
+        config_mode = controller_cfg.get("config_mode") or "manual"
+        if config_mode == "floor_plan":
+            raw_circuits = controller_cfg.get("circuits") or config.get("circuits") or []
+        else:
+            raw_circuits = config.get("circuits") or controller_cfg.get("circuits") or []
+        self.circuits = self._clean_circuits(raw_circuits)
 
         # Last-command tracking for cooldown / change detection
         self._last_command: Dict[str, Tuple[str, Any, float]] = {}
@@ -585,6 +644,10 @@ class HeatingController:
         The diff is the audit trail — both the user-facing toast and the
         log line are built from it, so they're guaranteed to match.
         """
+        # Cache the floor plan alongside the cleaned circuits so the
+        # thermal-profile path can reach it without another _load_config()
+        self._floor_plan_cache = (new_config or {}).get("_floor_plan_for_thermal")
+
         async with self._config_lock:
             new_config = new_config or {}
 
@@ -647,7 +710,27 @@ class HeatingController:
             new_oh_action = new_action_raw if new_action_raw in (
                 "setback", "off", "min_only"
             ) else self._oh_action
-            new_circuits = self._clean_circuits(new_config.get("circuits") or [])
+            # Resolve circuits based on config_mode (same logic as __init__):
+            #   floor_plan → prefer heating.controller.circuits (the projected list)
+            #   manual / unset → prefer heating.circuits (manually configured)
+            new_config_mode = (new_config.get("controller") or {}).get("config_mode") \
+                              or new_config.get("config_mode") or "manual"
+            if new_config_mode == "floor_plan":
+                # new_config may be the full heating block (has 'controller') or
+                # just the controller block (has 'circuits' directly)
+                ctrl_block = new_config.get("controller") or {}
+                raw_new_circuits = (
+                    ctrl_block.get("circuits")
+                    or new_config.get("circuits")
+                    or []
+                )
+            else:
+                raw_new_circuits = (
+                    new_config.get("circuits")
+                    or (new_config.get("controller") or {}).get("circuits")
+                    or []
+                )
+            new_circuits = self._clean_circuits(raw_new_circuits)
 
             # ── Diagnostic: what came out of _clean_circuits? ───────
             try:
@@ -967,6 +1050,14 @@ class HeatingController:
                 "operating_hours": _as_bool(c.get("operating_hours"), None),
             })
         return out
+
+    def _config_floor_plan(self) -> Optional[Dict[str, Any]]:
+        """
+        Return the currently-applied floor plan (if any) from the cached
+        controller config. Used by thermal_profile to enable the plan-aware
+        heat-loss path on projected rooms.
+        """
+        return getattr(self, "_floor_plan_cache", None)
 
     def _clean_rooms(self, rooms: list) -> List[Dict]:
         if not isinstance(rooms, list):
@@ -1451,15 +1542,37 @@ class HeatingController:
             else:
                 decision.sensor_online = False
 
+        # ── Apply stratification correction to the chosen reading ─────
+        # Only the external sensor path has a configurable mounting height
+        # — TRVs sit near the floor by their nature, but their readings
+        # already factor in convective bias from their proximity to the
+        # radiator, so a separate height correction would be misleading.
+        # If the chosen source is "external" and the primary sensor has a
+        # height set, we shift the reported reading toward the 1.5 m
+        # comfort-zone reference.
+        sensor_height_m = _primary_sensor_height_m(room)
+        decision.sensor_height_m = sensor_height_m
+
         if ext_temp is not None:
-            decision.current_temp = round(ext_temp, 1)
+            corrected = correct_sensor_reading(ext_temp, sensor_height_m)
+            decision.current_temp_raw = round(ext_temp, 1)
+            decision.current_temp = corrected if corrected is not None else round(ext_temp, 1)
             decision.temp_source = "external"
+            decision.stratification_offset_c = (
+                round(decision.current_temp - decision.current_temp_raw, 2)
+                if corrected is not None else 0.0
+            )
         elif trv_temps:
-            decision.current_temp = round(sum(trv_temps) / len(trv_temps), 1)
+            mean = sum(trv_temps) / len(trv_temps)
+            decision.current_temp = round(mean, 1)
+            decision.current_temp_raw = decision.current_temp
             decision.temp_source = "trv_mean"
+            decision.stratification_offset_c = 0.0
         else:
             decision.current_temp = None
+            decision.current_temp_raw = None
             decision.temp_source = "none"
+            decision.stratification_offset_c = 0.0
 
         # Predictive pre-heat — bump target if an upcoming schedule slot
         # needs lead time, based on the cached thermal profile.
@@ -1518,6 +1631,43 @@ class HeatingController:
         elif decision.current_temp < decision.target_temp - effective_cold_band:
             decision.status = "cold"
             decision.calling_for_heat = True
+
+            # ── Solar suppression check ───────────────────────────────
+            # If solar gain alone can cover most of the temperature deficit,
+            # suppress the heat call for this tick. The boiler stays off and
+            # we re-evaluate on the next tick. Conservative: only suppresses
+            # when solar can cover SOLAR_SUPPRESS_FRACTION of the deficit so
+            # a cloud passing over doesn't strand a cold room for long.
+            if self._weather is not None:
+                try:
+                    _solar_profile = self._get_room_profile(room)
+                    _w_per_k = (_solar_profile or {}).get("w_per_k")
+                    if _w_per_k:
+                        from modules.solar_gain import should_suppress_heat_call
+                        lat = getattr(self._weather, "latitude", None)
+                        lon = getattr(self._weather, "longitude", None)
+                        if lat is not None and lon is not None:
+                            suppress, solar_w = should_suppress_heat_call(
+                                room_config=room,
+                                lat=lat,
+                                lon=lon,
+                                current_temp_c=decision.current_temp,
+                                target_temp_c=decision.target_temp,
+                                w_per_k=_w_per_k,
+                                shortwave_wm2=self._weather.get_solar_irradiance(),
+                                cloud_fraction=self._weather.get_cloud_fraction() or 0.0,
+                            )
+                            if suppress and solar_w > 0:
+                                logger.info(
+                                    f"Room '{decision.name}': solar suppressing heat call "
+                                    f"(solar={solar_w:.0f}W, deficit="
+                                    f"{decision.target_temp - decision.current_temp:.1f}°C)"
+                                )
+                                decision.status = "solar_suppressed"
+                                decision.calling_for_heat = False
+                except Exception as ss_err:
+                    logger.debug(f"solar suppression check failed for {room['id']}: {ss_err}")
+
         elif decision.current_temp > decision.target_temp + HOT_BAND:
             decision.status = "hot"
             decision.calling_for_heat = False
@@ -2183,12 +2333,15 @@ class HeatingController:
             outdoor_getter = lambda _ts: outdoor_now
 
         try:
-            prof = compute_profile(
-                room_id=rid,
+            profile = compute_profile(
+                room_id=room_id,
                 dimensions=dimensions,
-                insulation=self._insulation,
-                temperature_series=series or None,
+                insulation=insulation,
+                temperature_series=temp_series,
                 outdoor_temp_getter=outdoor_getter,
+                heating_state_getter=heating_state_getter,
+                floor_plan=heating.get("floor_plan"),
+                floor_plan_ref=found_room.get("floor_plan_ref"),
             )
         except Exception as e:
             logger.debug(f"compute_profile failed for {rid}: {e}")
@@ -2245,6 +2398,35 @@ class HeatingController:
 
         try:
             from modules.thermal_profile import compute_preheat
+            from modules.solar_gain import solar_gain_window
+
+            # Solar gain over the expected preheat window — reduces lead time
+            # on sunny mornings. Requires weather service; degrades to no-solar
+            # if unavailable or room has no window geometry.
+            solar_gain_w: Optional[float] = None
+            solar_has_orientation = False
+            solar_shortwave_measured = False
+            if self._weather is not None:
+                try:
+                    shortwave = self._weather.get_solar_irradiance()
+                    cloud_frac = self._weather.get_cloud_fraction() or 0.0
+                    lat = getattr(self._weather, "latitude", None)
+                    lon = getattr(self._weather, "longitude", None)
+                    if lat is not None and lon is not None:
+                        sgw = solar_gain_window(
+                            room_config=room,
+                            lat=lat,
+                            lon=lon,
+                            duration_minutes=int(upcoming["minutes_until"]),
+                            shortwave_wm2=shortwave,
+                            cloud_fraction=cloud_frac,
+                        )
+                        solar_gain_w = sgw.average_watts
+                        solar_has_orientation = sgw.has_orientation_data
+                        solar_shortwave_measured = shortwave is not None
+                except Exception as sg_err:
+                    logger.debug(f"solar_gain_window failed for {room['id']}: {sg_err}")
+
             est = compute_preheat(
                 room_id=room["id"],
                 from_temp_c=current_temp,
@@ -2255,6 +2437,9 @@ class HeatingController:
                 radiator_watts_effective=profile.get("radiator_watts"),
                 confidence_in=profile.get("confidence", "low"),
                 max_minutes=PREHEAT_LOOKAHEAD_MAX_MIN,
+                solar_gain_w=solar_gain_w,
+                solar_has_orientation=solar_has_orientation,
+                solar_shortwave_measured=solar_shortwave_measured,
             )
         except Exception as e:
             logger.debug(f"compute_preheat failed for {room['id']}: {e}")
@@ -2267,6 +2452,9 @@ class HeatingController:
             "reachable": est.reachable,
             "confidence": est.confidence,
             "preheating": False,
+            "solar_gain_w": est.solar_gain_w,
+            "minutes_saved_by_solar": est.minutes_saved_by_solar,
+            "solar_confidence": est.solar_confidence,
         }
 
         if not est.reachable or est.minutes_needed is None:

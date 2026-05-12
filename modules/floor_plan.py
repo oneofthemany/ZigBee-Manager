@@ -591,6 +591,43 @@ def _clean_contact(raw: Any) -> Optional[dict]:
     return out
 
 
+def _clean_plan_circuit(raw: Any, existing_ids: set) -> Optional[dict]:
+    """
+    Clean a plan-level circuit definition.
+
+    These are stored in ``floor_plan.circuits`` and define which boiler
+    receiver fires for rooms assigned to this circuit.  They are purely
+    descriptive at the plan level; the actual controller circuit block is
+    derived from them during projection.
+    """
+    if not isinstance(raw, dict):
+        return None
+    cid = _valid_id(raw.get("id")) or _slugify(raw.get("name") or raw.get("id") or "")
+    if not cid:
+        return None
+    base = cid; n = 2
+    while cid in existing_ids:
+        cid = f"{base}_{n}"; n += 1
+    existing_ids.add(cid)
+
+    out: Dict[str, Any] = {
+        "id": cid,
+        "name": str(raw.get("name") or cid).strip()[:80],
+    }
+    ieee = raw.get("receiver_ieee")
+    if isinstance(ieee, str) and ieee.strip():
+        out["receiver_ieee"] = ieee.strip().lower()
+    cmd = str(raw.get("receiver_command") or "thermostat").lower()
+    if cmd in ("thermostat", "switch", "on_off"):
+        out["receiver_command"] = cmd
+    else:
+        out["receiver_command"] = "thermostat"
+    ep = raw.get("receiver_endpoint")
+    if ep is not None:
+        out["receiver_endpoint"] = ep
+    return out
+
+
 def _clean_level(raw: Any, existing_level_ids: set) -> Optional[dict]:
     if not isinstance(raw, dict):
         return None
@@ -812,12 +849,26 @@ def clean_floor_plan(raw: Any) -> Optional[dict]:
     if not levels:
         return None
 
-    return {
+    # Plan-level circuit definitions (optional).  These let the floor plan
+    # editor be the single place where circuits are configured when
+    # config_mode = floor_plan.
+    circuits_raw = raw.get("circuits") or []
+    seen_circuit_ids: set = set()
+    plan_circuits: List[dict] = []
+    for c in circuits_raw:
+        cc = _clean_plan_circuit(c, seen_circuit_ids)
+        if cc:
+            plan_circuits.append(cc)
+
+    result: Dict[str, Any] = {
         "version": SCHEMA_VERSION,
         "north_offset_deg": round(north, 2),
         "scale_pixels_per_metre": round(scale_pxm, 2),
         "levels": levels,
     }
+    if plan_circuits:
+        result["circuits"] = plan_circuits
+    return result
 
 
 # ───────────────────────────── projection ────────────────────────────────
@@ -965,6 +1016,155 @@ def project_level_to_room_dimensions(
     return out
 
 
+def per_wall_breakdown_for_room(
+        level: dict, room: dict, north_offset_deg: float = 0.0,
+) -> Optional[Dict[str, Any]]:
+    """
+    Detailed geometry for one room in plan coordinates.
+
+    Returns a dict the thermal-profile static calculator can use directly
+    instead of the 4-bin `width × depth × height` approximation:
+
+        {
+            "floor_area_m2":    float,                # true polygon area
+            "ceiling_height_m": float,                # from level
+            "walls": [
+                {
+                    "length_m":      float,
+                    "height_m":      float,           # = ceiling_height_m
+                    "type":          'external' | 'party' | 'internal' | 'unknown',
+                    "compass":       'N' | 'NE' | ... | 'NW',  # outward normal
+                    "openings_area_m2": float,        # windows + doors on this wall
+                },
+                ...
+            ],
+            "windows": [{"area_m2", "glazing", "compass", "on_external"}],
+            "doors":   [{"area_m2", "type", "on_external"}],
+            "floor_type":   str | None,
+            "ceiling_type": str | None,
+        }
+
+    The crucial wins over ``project_level_to_room_dimensions``:
+      - true polygon floor area (L-shaped rooms compute correctly)
+      - per-wall lengths (N polygon edges rather than 4 fold-buckets)
+      - per-opening external/internal decision based on the *host wall's*
+        actual type rather than a folded bin
+      - per-opening compass orientation preserved (needed by step 6+ for
+        solar gain timing)
+
+    Returns ``None`` if the room polygon is degenerate or has no walls.
+    """
+    poly = [tuple(p) for p in (room.get("polygon") or [])
+            if isinstance(p, (list, tuple)) and len(p) >= 2]
+    if len(poly) < 3:
+        return None
+
+    ceiling_h = float(level.get("ceiling_height_m") or DEFAULT_CEILING_HEIGHT_M)
+    centroid = polygon_centroid(poly)
+
+    # All walls bordering this room (collinear-edge match)
+    room_walls = find_walls_for_room(level, room)
+    if not room_walls:
+        return None
+
+    # Map wall_id -> the host wall's inferred type + bearing, so openings
+    # can be classified by their actual host rather than a folded bin.
+    wall_meta: Dict[str, Dict[str, Any]] = {}
+    walls_out: List[Dict[str, Any]] = []
+
+    for w in room_walls:
+        x1, y1, x2, y2 = _wall_xy_endpoints(w)
+        length_m = segment_length_m(x1, y1, x2, y2)
+        if length_m < 0.05:
+            continue
+        nx, ny = _outward_normal_unit(x1, y1, x2, y2, centroid[0], centroid[1])
+        bearing = normal_to_compass_bearing_deg(nx, ny, north_offset_deg)
+        explicit = str(w.get("type") or "").lower()
+        wtype = infer_wall_type(level, w,
+                                explicit if explicit in VALID_WALL_TYPES else None)
+        wall_meta[w["id"]] = {"type": wtype, "compass": bearing_to_compass8(bearing),
+                              "length_m": length_m}
+        walls_out.append({
+            "id": w["id"],
+            "length_m": round(length_m, 3),
+            "height_m": round(_clamp(ceiling_h, 1.5, 5.0), 2),
+            "type": wtype,
+            "compass": bearing_to_compass8(bearing),
+            "openings_area_m2": 0.0,   # filled in below
+        })
+
+    # Walk openings; tag each with the host wall's type + compass, then
+    # accumulate their area against the corresponding wall record.
+    windows_out: List[Dict[str, Any]] = []
+    doors_out:   List[Dict[str, Any]] = []
+    for op in level.get("openings", []) or []:
+        host = wall_meta.get(op.get("wall_id"))
+        if not host:
+            continue
+        width = float(op.get("width_m") or 0.0)
+        height = float(op.get("height_m") or 0.0)
+        if width <= 0 or height <= 0:
+            continue
+        area = round(width * height, 3)
+        on_external = host["type"] == "external"
+
+        # Bump the host wall's openings_area_m2
+        for w in walls_out:
+            if w["id"] == op.get("wall_id"):
+                w["openings_area_m2"] = round(w["openings_area_m2"] + area, 3)
+                break
+
+        if op.get("kind") == "window":
+            windows_out.append({
+                "area_m2": area,
+                "glazing": op.get("glazing", "double"),
+                "compass": host["compass"],
+                "on_external": on_external,
+            })
+        else:
+            doors_out.append({
+                "area_m2": area,
+                "type": op.get("door_type", "internal"),
+                "on_external": on_external,
+            })
+
+    out: Dict[str, Any] = {
+        "floor_area_m2": round(polygon_area_m2(poly), 3),
+        "ceiling_height_m": round(_clamp(ceiling_h, 1.5, 5.0), 2),
+        "walls": walls_out,
+        "windows": windows_out,
+        "doors": doors_out,
+    }
+    ft = room.get("floor_type")
+    if ft in VALID_FLOOR_TYPES:
+        out["floor_type"] = ft
+    ct = room.get("ceiling_type")
+    if ct in VALID_CEILING_TYPES:
+        out["ceiling_type"] = ct
+    return out
+
+
+def per_wall_breakdown_from_plan(
+        floor_plan: dict, level_id: str, room_id: str,
+) -> Optional[Dict[str, Any]]:
+    """
+    Convenience: locate the level+room by id and call per_wall_breakdown_for_room.
+
+    Returns ``None`` if either the level or the room isn't found, the plan
+    is malformed, or the room geometry is degenerate.
+    """
+    if not isinstance(floor_plan, dict):
+        return None
+    north = float(floor_plan.get("north_offset_deg") or 0.0)
+    for level in floor_plan.get("levels") or []:
+        if level.get("id") != level_id:
+            continue
+        for room in level.get("rooms") or []:
+            if room.get("id") == room_id:
+                return per_wall_breakdown_for_room(level, room, north)
+        break
+    return None
+
 def _legacy_radiator_for_room(level_radiators: List[dict], room_id: str,
                               warnings: List[str]) -> Optional[dict]:
     """Pick the largest-watts radiator for the legacy single-radiator field."""
@@ -1040,24 +1240,23 @@ def project_floor_plan_to_circuits(
         floor_plan: dict, circuits: List[dict],
 ) -> Tuple[List[dict], List[str]]:
     """
-    Apply a cleaned floor_plan to a cleaned circuits list (one returned by
-    ``_clean_circuits`` in ``heating_controller_routes.py``).
+    Apply a cleaned floor_plan to produce a controller-ready circuits list.
 
-    For each room matched by ``id`` (then by case-insensitive name) to a
-    floor-plan room, this overwrites:
+    Two modes:
 
-        room["dimensions"]
-        room["radiator"]                   # legacy single (largest watts)
-        room["radiators"]                  # NEW plural with TRV bindings
-        room["temperature_sensor_ieee"]    # legacy single (primary)
-        room["temperature_sensors"]        # NEW plural with heights
-        room["contact_sensors"]            # opening-bound list
-        room["trvs"]                       # derived from radiators[].trv_ieee
+    **Plan-native mode** (new): used when ``floor_plan["circuits"]`` is
+    non-empty.  Derives circuits entirely from the plan — each plan circuit
+    becomes a controller circuit, and each plan room with a matching
+    ``circuit_id`` is projected into that circuit.  The passed-in
+    ``circuits`` list is used only to carry over per-room settings that
+    can't be derived from the plan (target_temp, night_setback, min_temp,
+    schedules) and are otherwise defaulted.
 
-    Returns ``(updated_circuits, warnings)``. The original ``circuits`` list
-    is not mutated; a deep-ish copy is returned.
+    **Legacy / reconcile mode** (original): used when ``floor_plan["circuits"]``
+    is absent.  Walks the existing ``circuits`` list and overwrites per-room
+    geometry/sensor/radiator/contact data from the matching plan room.
 
-    Rooms not present in the floor plan are returned unchanged.
+    Returns ``(updated_circuits, warnings)``.
     """
     if not isinstance(floor_plan, dict):
         return circuits, ["floor_plan empty/invalid; nothing projected"]
@@ -1066,9 +1265,9 @@ def project_floor_plan_to_circuits(
     levels = floor_plan.get("levels") or []
     warnings: List[str] = []
 
-    # Build a lookup: room_id (or lowercase name) -> (level, room)
-    room_index: Dict[str, Tuple[dict, dict]] = {}
-    name_index: Dict[str, Tuple[dict, dict]] = {}
+    # Build room lookup for both modes
+    room_index: Dict[str, Tuple[dict, dict]] = {}   # plan_room_id -> (level, room)
+    name_index: Dict[str, Tuple[dict, dict]] = {}   # lower_name -> (level, room)
     for level in levels:
         for room in level.get("rooms", []) or []:
             room_index[room["id"]] = (level, room)
@@ -1076,13 +1275,113 @@ def project_floor_plan_to_circuits(
             if nm:
                 name_index.setdefault(nm, (level, room))
 
-    # Pre-compute per-level dimensions to avoid re-doing per room
+    # Pre-compute per-level dimensions
     dims_by_level: Dict[str, Dict[str, dict]] = {}
     for level in levels:
         dims_by_level[level["id"]] = project_level_to_room_dimensions(level, north)
 
-    # Walk circuits → rooms
-    out_circuits: List[dict] = []
+    # ── Helper: project one plan room onto a controller room dict ──────
+    def _project_room(fp_room: dict, level: dict,
+                      base_room: Optional[dict] = None) -> dict:
+        """Build a controller room dict from a floor-plan room + level."""
+        r2: Dict[str, Any] = dict(base_room) if base_room else {}
+        r2["id"] = fp_room["id"]
+        r2["name"] = fp_room.get("name") or fp_room["id"]
+
+        level_id = level["id"]
+        dim = dims_by_level.get(level_id, {}).get(fp_room["id"])
+        if dim is not None:
+            r2["dimensions"] = dim
+
+        level_radiators = level.get("radiators") or []
+        level_sensors   = level.get("sensors") or []
+
+        rich_rads = [rd for rd in level_radiators if rd.get("room_id") == fp_room["id"]]
+        r2["radiators"] = rich_rads
+        legacy_rad = _legacy_radiator_for_room(level_radiators, fp_room["id"], warnings)
+        if legacy_rad:
+            r2["radiator"] = legacy_rad
+
+        sensors_in_room = [s for s in level_sensors if s.get("room_id") == fp_room["id"]]
+        r2["temperature_sensors"] = sensors_in_room
+        primary_ieee = _legacy_primary_sensor_ieee(level_sensors, fp_room["id"])
+        if primary_ieee:
+            r2["temperature_sensor_ieee"] = primary_ieee
+
+        r2["contact_sensors"] = _contacts_for_room(level, fp_room["id"])
+        r2["trvs"] = _trvs_for_room(level_radiators, fp_room["id"]) or r2.get("trvs", [])
+        r2["floor_plan_ref"] = {"level_id": level_id, "room_id": fp_room["id"]}
+        return r2
+
+    # ── Plan-native mode ───────────────────────────────────────────────
+    plan_circuits = floor_plan.get("circuits") or []
+    if plan_circuits:
+        # Build a lookup of existing controller rooms keyed by plan room id
+        # so we can carry over user-set fields (target_temp etc.).
+        existing_room_by_plan_id: Dict[str, dict] = {}
+        for c in circuits:
+            for r in (c.get("rooms") or []):
+                ref = (r.get("floor_plan_ref") or {})
+                pid = ref.get("room_id") or r.get("id")
+                if pid:
+                    existing_room_by_plan_id[pid] = r
+
+        # Group plan rooms by circuit_id
+        rooms_by_circuit: Dict[str, List[Tuple[dict, dict]]] = {}
+        unassigned: List[str] = []
+        for level in levels:
+            for fp_room in level.get("rooms", []) or []:
+                cid = fp_room.get("circuit_id")
+                if cid:
+                    rooms_by_circuit.setdefault(cid, []).append((fp_room, level))
+                else:
+                    unassigned.append(fp_room.get("name") or fp_room["id"])
+
+        if unassigned:
+            warnings.append(
+                f"{len(unassigned)} room(s) not assigned to any circuit: "
+                + ", ".join(unassigned[:10])
+                + (" …" if len(unassigned) > 10 else "")
+            )
+
+        out_circuits: List[dict] = []
+        for pc in plan_circuits:
+            cid = pc["id"]
+            c2: Dict[str, Any] = {
+                "id": cid,
+                "name": pc["name"],
+            }
+            if pc.get("receiver_ieee"):
+                c2["receiver_ieee"] = pc["receiver_ieee"]
+            c2["receiver_command"] = pc.get("receiver_command", "thermostat")
+            if "receiver_endpoint" in pc:
+                c2["receiver_endpoint"] = pc["receiver_endpoint"]
+
+            new_rooms = []
+            for fp_room, level in rooms_by_circuit.get(cid, []):
+                base = existing_room_by_plan_id.get(fp_room["id"])
+                room_dict = _project_room(fp_room, level, base)
+                # Apply defaults for fields the plan doesn't carry
+                room_dict.setdefault("target_temp", 20.0)
+                room_dict.setdefault("night_setback", 17.0)
+                room_dict.setdefault("min_temp", 16.0)
+                room_dict.setdefault("external_temp_mode", "push")
+                room_dict.setdefault("external_temp_push_interval_sec", 300)
+                room_dict.setdefault("schedule", [])
+                new_rooms.append(room_dict)
+
+            if not new_rooms:
+                warnings.append(
+                    f"circuit '{cid}' has no rooms assigned in the floor plan"
+                )
+
+            c2["rooms"] = new_rooms
+            out_circuits.append(c2)
+
+        return out_circuits, warnings
+
+    # ── Legacy reconcile mode (original behaviour) ─────────────────────
+    out_circuits = []
     for c in circuits:
         if not isinstance(c, dict):
             out_circuits.append(c)
@@ -1104,38 +1403,7 @@ def project_floor_plan_to_circuits(
                 continue
 
             level, fp_room = match
-            level_id = level["id"]
-            dim = dims_by_level.get(level_id, {}).get(fp_room["id"])
-            if dim is not None:
-                r2["dimensions"] = dim
-
-            level_radiators = level.get("radiators") or []
-            level_sensors = level.get("sensors") or []
-
-            rich_rads = [rd for rd in level_radiators if rd.get("room_id") == fp_room["id"]]
-            r2["radiators"] = rich_rads
-            legacy_rad = _legacy_radiator_for_room(level_radiators, fp_room["id"], warnings)
-            if legacy_rad:
-                r2["radiator"] = legacy_rad
-            elif "radiator" in r2 and not rich_rads:
-                # No radiators in plan for this room → keep the user's
-                # existing legacy entry if any, untouched.
-                pass
-
-            sensors_in_room = [s for s in level_sensors if s.get("room_id") == fp_room["id"]]
-            r2["temperature_sensors"] = sensors_in_room
-            primary_ieee = _legacy_primary_sensor_ieee(level_sensors, fp_room["id"])
-            if primary_ieee:
-                r2["temperature_sensor_ieee"] = primary_ieee
-                # If the user previously set external_temp_mode='off' but now
-                # has a sensor, leave the mode alone — the controller config
-                # save path is the right place to upgrade defaults.
-
-            r2["contact_sensors"] = _contacts_for_room(level, fp_room["id"])
-            r2["trvs"] = _trvs_for_room(level_radiators, fp_room["id"]) or r2.get("trvs", [])
-
-            r2["floor_plan_ref"] = {"level_id": level_id, "room_id": fp_room["id"]}
-            new_rooms.append(r2)
+            new_rooms.append(_project_room(fp_room, level, r2))
         c2["rooms"] = new_rooms
         out_circuits.append(c2)
 

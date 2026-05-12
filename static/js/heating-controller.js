@@ -168,6 +168,27 @@ function renderControllerDisabled(reason) {
         </div>`;
 }
 
+
+/**
+ *  stratification correction applied
+ */
+function renderStratChip(room) {
+    const off = room?.stratification_offset_c;
+    if (off == null || Math.abs(off) < 0.05) return '';
+    const raw = room.current_temp_raw;
+    const height = room.sensor_height_m;
+    if (raw == null || height == null) return '';
+    const sign = off > 0 ? '+' : '';
+    const direction = off > 0 ? 'low' : 'high';
+    const tip = `Sensor at ${height.toFixed(1)} m reads ${direction} by `
+              + `${Math.abs(off).toFixed(1)}°C. Raw ${raw.toFixed(1)}° corrected `
+              + `to comfort-zone (1.5 m) reading.`;
+    return ` <span class="badge bg-info text-dark ms-1" title="${escapeAttr(tip)}" `
+         + `style="font-size:0.7em;cursor:help;">`
+         + `<i class="fas fa-arrows-alt-v me-1"></i>${sign}${off.toFixed(1)}°`
+         + `</span>`;
+}
+
 function renderControllerPanel(state) {
     if (!state.enabled) {
         return renderControllerDisabled('Controller defined but not enabled');
@@ -301,7 +322,7 @@ function renderCircuitStatusCard(c) {
                         <strong>${escapeHtml(r.name)}</strong>${healthChip}
                     </div>
                     <span style="color:${statusMeta.c}; font-size:0.85rem;">
-                        <i class="fas fa-${statusMeta.icon} me-1"></i>${r.current_temp != null ? r.current_temp.toFixed(1) : '—'}° / ${r.target_temp != null ? r.target_temp.toFixed(1) : '—'}°
+                        <i class="fas fa-${statusMeta.icon} me-1"></i>${r.current_temp != null ? r.current_temp.toFixed(1) : '—'}° / ${r.target_temp != null ? r.target_temp.toFixed(1) : '—'}°${renderStratChip(r)}
                     </span>
                 </div>
                 ${trvLines || `<div class="small text-muted fst-italic">
@@ -1280,6 +1301,12 @@ function renderRoomCard(room, ci, ri) {
         : null;
     const extraSensorCount = Math.max(0, (sensors.length - (sensorIeee ? 1 : 0)));
 
+    const pSensor = sensors.find(s => s.ieee === sensorIeee);
+    const pHeight = pSensor ? pSensor.height_m : null;
+    const heightBadge = (pHeight != null && Math.abs(pHeight - 1.5) >= 0.05)
+        ? `<span class="badge bg-warning text-dark" title="Sensor height (${pHeight}m) adjusts target for stratification"><i class="fas fa-arrows-alt-v me-1"></i>${pHeight}m</span>`
+        : '';
+
     // Header summary — compact info shown when collapsed
     const headerBadges = [
         `<span class="badge bg-primary">Target ${Number(room.target_temp).toFixed(1)}°C</span>`,
@@ -1292,6 +1319,7 @@ function renderRoomCard(room, ci, ri) {
         sensorLabel
             ? `<span class="badge bg-info text-dark"><i class="fas fa-thermometer-half me-1"></i>${escapeHtml(sensorLabel)}${extraSensorCount > 0 ? ` +${extraSensorCount}` : ''}</span>`
             : '',
+        heightBadge,
         (room.contact_sensors || []).length
             ? `<span class="badge bg-warning text-dark"><i class="fas fa-door-closed me-1"></i>${room.contact_sensors.length}</span>`
             : '',

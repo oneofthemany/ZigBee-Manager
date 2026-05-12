@@ -317,13 +317,17 @@ class HeatingAdvisor:
         if outdoor is None or indoor is None:
             return {"error": "Insufficient sensor data"}
 
-        minutes = self._calc_preheat_minutes(indoor, target_temp, outdoor)
+        solar_w = self._get_solar_gain_w(duration_minutes=60)
+        minutes = self._calc_preheat_minutes(
+            indoor, target_temp, outdoor, solar_gain_w=solar_w,
+        )
         return {
             "current_indoor": indoor,
             "current_outdoor": outdoor,
             "target_temp": target_temp,
             "preheat_minutes": min(minutes, self.preheat_max),
             "recommendation": f"Start heating {min(minutes, self.preheat_max)} minutes before needed",
+            "solar_gain_w": round(solar_w, 1) if solar_w else None,
         }
 
     # ── Core Analysis ──────────────────────────────────────────────
@@ -369,12 +373,17 @@ class HeatingAdvisor:
         preheat = None
         if outdoor is not None and avg_indoor is not None:
             try:
-                ph_mins = self._calc_preheat_minutes(self.night_setback, self.target_temp, outdoor)
+                solar_w = self._get_solar_gain_w(duration_minutes=60)
+                ph_mins = self._calc_preheat_minutes(
+                    self.night_setback, self.target_temp, outdoor,
+                    solar_gain_w=solar_w,
+                )
                 preheat = {
                     "from_temp": self.night_setback,
                     "to_temp": self.target_temp,
                     "outdoor_temp": outdoor,
                     "minutes_needed": min(ph_mins, self.preheat_max),
+                    "solar_gain_w": round(solar_w, 1) if solar_w else None,
                 }
             except Exception as e:
                 logger.debug(f"preheat calc failed: {e}")
@@ -570,11 +579,13 @@ class HeatingAdvisor:
             # Zone-specific pre-heat estimate
             zone_preheat = None
             if outdoor is not None and avg_temp is not None and avg_temp < effective_target:
+                solar_w = self._get_solar_gain_w(duration_minutes=60)
                 mins = self._calc_preheat_minutes(
                     start_temp=avg_temp,
                     target_temp=effective_target,
                     outdoor_temp=outdoor,
                     zone_id=z["id"],
+                    solar_gain_w=solar_w,
                 )
                 zone_preheat = min(mins, self.preheat_max)
 
@@ -859,6 +870,63 @@ class HeatingAdvisor:
             return []
         return fc.get("temperature_2m", [])[:24]
 
+    def _get_solar_gain_w(self, duration_minutes: int = 60) -> float:
+        """
+        Estimate average solar heat gain [W] across the whole property over
+        the next `duration_minutes`, for use in the advisor's bulk preheat
+        calculation.
+
+        The advisor works at the property level (not per-room), so we sum
+        gain across all rooms that have window/wall data and average the
+        result. Rooms without `dimensions` data contribute zero — the
+        calculation degrades gracefully to no solar adjustment.
+
+        Returns 0.0 if the weather service is unavailable or no room
+        geometry is configured.
+        """
+        if not self.weather:
+            return 0.0
+        try:
+            shortwave = self.weather.get_solar_irradiance()
+            cloud_frac = self.weather.get_cloud_fraction() or 0.0
+        except Exception:
+            return 0.0
+
+        try:
+            from modules.solar_gain import solar_gain_window
+        except Exception:
+            return 0.0
+
+        lat = getattr(self.weather, "latitude", None)
+        lon = getattr(self.weather, "longitude", None)
+        if lat is None or lon is None:
+            return 0.0
+
+        total_w = 0.0
+        room_count = 0
+        # Advisor has no direct access to per-room configs — use zones if
+        # available, otherwise return 0 (the controller has the per-room path).
+        for zone in (self.zones or []):
+            room_cfg = zone  # zones carry device refs, not dimensions — skip
+            dims = zone.get("dimensions")
+            if not dims:
+                continue
+            try:
+                sgw = solar_gain_window(
+                    room_config=zone,
+                    lat=lat,
+                    lon=lon,
+                    duration_minutes=duration_minutes,
+                    shortwave_wm2=shortwave,
+                    cloud_fraction=cloud_frac,
+                )
+                total_w += sgw.average_watts
+                room_count += 1
+            except Exception as e:
+                logger.debug(f"solar_gain_window failed for zone {zone.get('id')}: {e}")
+
+        return total_w  # sum across rooms, not average — whole-property view
+
     @staticmethod
     def _best_demand(state: Dict[str, Any]) -> float:
         """
@@ -930,10 +998,16 @@ class HeatingAdvisor:
 
     # ── Pre-heat Calculation ───────────────────────────────────────
     def _calc_preheat_minutes(self, start_temp: float, target_temp: float,
-                              outdoor_temp: float, zone_id: Optional[str] = None) -> int:
+                              outdoor_temp: float, zone_id: Optional[str] = None,
+                              solar_gain_w: float = 0.0) -> int:
         """
         Minutes needed to reach target_temp from start_temp.
         If zone_id is given, uses the zone's pro-rated thermal mass.
+
+        Args:
+            solar_gain_w: Average solar heat gain [W] over the preheat window.
+                          Added to net_watts so sunny mornings reduce lead time.
+                          Defaults to 0.0 (no solar adjustment — backward compat).
         """
         delta_t = target_temp - start_temp
         if delta_t <= 0:
@@ -953,7 +1027,9 @@ class HeatingAdvisor:
             boiler_watts = self.boiler_kw * 1000 * self.boiler_eff
 
         heat_loss_watts = loss_coeff * max(0, avg_delta_outdoor)
-        net_watts = boiler_watts - heat_loss_watts
+        # Solar gain augments the boiler's effective output — on a sunny morning
+        # the room heats faster and needs less lead time.
+        net_watts = boiler_watts + max(0.0, solar_gain_w) - heat_loss_watts
         if net_watts <= 0:
             return self.preheat_max
 

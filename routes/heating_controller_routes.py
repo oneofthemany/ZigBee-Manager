@@ -395,20 +395,21 @@ def _clean_room(r: dict, existing_ids: Optional[set] = None) -> Optional[dict]:
 
     # ── Temperature sensors (canonical: plural; derive legacy single) ──
     sensors_clean: List[dict] = []
-    if "temperature_sensor_ieee" in r:
+    if isinstance(r.get("temperature_sensors"), list):
+        for s in r["temperature_sensors"]:
+            c = _clean_sensor_dict(s)
+            if c:
+                sensors_clean.append(c)
+    elif "temperature_sensor_ieee" in r:
         legacy = r.get("temperature_sensor_ieee")
         if isinstance(legacy, str):
             legacy = legacy.strip()
             if legacy:
                 sensors_clean = [{"ieee": legacy, "kind": "temp_sensor", "primary": True}]
-    elif isinstance(r.get("temperature_sensors"), list):
-        for s in r["temperature_sensors"]:
-            c = _clean_sensor_dict(s)
-            if c:
-                sensors_clean.append(c)
-        # Ensure exactly one primary (first listed if none flagged)
-        if sensors_clean and not any(s.get("primary") for s in sensors_clean):
-            sensors_clean[0]["primary"] = True
+                
+    # Ensure exactly one primary (first listed if none flagged)
+    if sensors_clean and not any(s.get("primary") for s in sensors_clean):
+        sensors_clean[0]["primary"] = True
 
     primary_sensor = next((s for s in sensors_clean if s.get("primary")), None)
     if primary_sensor is None and sensors_clean:
@@ -728,7 +729,13 @@ def register_heating_controller_routes(app: FastAPI, get_controller, get_zigbee_
             ctrl = _resolve()
             if ctrl is not None and hasattr(ctrl, "apply_config"):
                 try:
-                    ctrl.apply_config(controller_block)
+                    # Pass the full heating block so apply_config can resolve
+                    # mode-aware circuits (floor_plan → controller.circuits,
+                    # manual → heating.circuits). The special thermal-plan key
+                    # is injected into the heating block temporarily.
+                    heating["_floor_plan_for_thermal"] = heating.get("floor_plan")
+                    await ctrl.apply_config(heating)
+                    heating.pop("_floor_plan_for_thermal", None)
                 except Exception as e:
                     logger.warning(f"controller hot-apply on mode switch failed: {e}")
                     warnings.append(f"controller hot-apply failed: {e}")
