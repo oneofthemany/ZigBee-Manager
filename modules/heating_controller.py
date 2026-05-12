@@ -1603,6 +1603,43 @@ class HeatingController:
         elif decision.current_temp < decision.target_temp - effective_cold_band:
             decision.status = "cold"
             decision.calling_for_heat = True
+
+            # ── Solar suppression check ───────────────────────────────
+            # If solar gain alone can cover most of the temperature deficit,
+            # suppress the heat call for this tick. The boiler stays off and
+            # we re-evaluate on the next tick. Conservative: only suppresses
+            # when solar can cover SOLAR_SUPPRESS_FRACTION of the deficit so
+            # a cloud passing over doesn't strand a cold room for long.
+            if self._weather is not None:
+                try:
+                    _solar_profile = self._get_room_profile(room)
+                    _w_per_k = (_solar_profile or {}).get("w_per_k")
+                    if _w_per_k:
+                        from modules.solar_gain import should_suppress_heat_call
+                        lat = getattr(self._weather, "latitude", None)
+                        lon = getattr(self._weather, "longitude", None)
+                        if lat is not None and lon is not None:
+                            suppress, solar_w = should_suppress_heat_call(
+                                room_config=room,
+                                lat=lat,
+                                lon=lon,
+                                current_temp_c=decision.current_temp,
+                                target_temp_c=decision.target_temp,
+                                w_per_k=_w_per_k,
+                                shortwave_wm2=self._weather.get_solar_irradiance(),
+                                cloud_fraction=self._weather.get_cloud_fraction() or 0.0,
+                            )
+                            if suppress and solar_w > 0:
+                                logger.info(
+                                    f"Room '{decision.name}': solar suppressing heat call "
+                                    f"(solar={solar_w:.0f}W, deficit="
+                                    f"{decision.target_temp - decision.current_temp:.1f}°C)"
+                                )
+                                decision.status = "solar_suppressed"
+                                decision.calling_for_heat = False
+                except Exception as ss_err:
+                    logger.debug(f"solar suppression check failed for {room['id']}: {ss_err}")
+
         elif decision.current_temp > decision.target_temp + HOT_BAND:
             decision.status = "hot"
             decision.calling_for_heat = False
@@ -2333,6 +2370,35 @@ class HeatingController:
 
         try:
             from modules.thermal_profile import compute_preheat
+            from modules.solar_gain import solar_gain_window
+
+            # Solar gain over the expected preheat window — reduces lead time
+            # on sunny mornings. Requires weather service; degrades to no-solar
+            # if unavailable or room has no window geometry.
+            solar_gain_w: Optional[float] = None
+            solar_has_orientation = False
+            solar_shortwave_measured = False
+            if self._weather is not None:
+                try:
+                    shortwave = self._weather.get_solar_irradiance()
+                    cloud_frac = self._weather.get_cloud_fraction() or 0.0
+                    lat = getattr(self._weather, "latitude", None)
+                    lon = getattr(self._weather, "longitude", None)
+                    if lat is not None and lon is not None:
+                        sgw = solar_gain_window(
+                            room_config=room,
+                            lat=lat,
+                            lon=lon,
+                            duration_minutes=int(upcoming["minutes_until"]),
+                            shortwave_wm2=shortwave,
+                            cloud_fraction=cloud_frac,
+                        )
+                        solar_gain_w = sgw.average_watts
+                        solar_has_orientation = sgw.has_orientation_data
+                        solar_shortwave_measured = shortwave is not None
+                except Exception as sg_err:
+                    logger.debug(f"solar_gain_window failed for {room['id']}: {sg_err}")
+
             est = compute_preheat(
                 room_id=room["id"],
                 from_temp_c=current_temp,
@@ -2343,6 +2409,9 @@ class HeatingController:
                 radiator_watts_effective=profile.get("radiator_watts"),
                 confidence_in=profile.get("confidence", "low"),
                 max_minutes=PREHEAT_LOOKAHEAD_MAX_MIN,
+                solar_gain_w=solar_gain_w,
+                solar_has_orientation=solar_has_orientation,
+                solar_shortwave_measured=solar_shortwave_measured,
             )
         except Exception as e:
             logger.debug(f"compute_preheat failed for {room['id']}: {e}")
@@ -2355,6 +2424,9 @@ class HeatingController:
             "reachable": est.reachable,
             "confidence": est.confidence,
             "preheating": False,
+            "solar_gain_w": est.solar_gain_w,
+            "minutes_saved_by_solar": est.minutes_saved_by_solar,
+            "solar_confidence": est.solar_confidence,
         }
 
         if not est.reachable or est.minutes_needed is None:

@@ -794,6 +794,18 @@ class PreheatEstimate:
     confidence: str                         # "high" | "medium" | "low" | "none"
     warnings: List[str] = field(default_factory=list)
 
+    # ── Solar gain fields (populated when solar data is available) ────
+    solar_gain_w: Optional[float] = None
+    """Average solar heat gain [W] over the preheat window. None = not computed."""
+
+    minutes_saved_by_solar: Optional[float] = None
+    """How many minutes shorter preheat is due to solar gain. None = not computed."""
+
+    solar_confidence: str = "none"
+    """Confidence in the solar component: 'high' (measured GHI + orientation),
+    'medium' (measured GHI, no orientation — diffuse only), 'low' (clear-sky
+    model, no measured data), 'none' (no solar data available)."""
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             "room_id": self.room_id,
@@ -808,6 +820,9 @@ class PreheatEstimate:
             "reachable": self.reachable,
             "confidence": self.confidence,
             "warnings": self.warnings,
+            "solar_gain_w": self.solar_gain_w,
+            "minutes_saved_by_solar": self.minutes_saved_by_solar,
+            "solar_confidence": self.solar_confidence,
         }
 
 
@@ -821,6 +836,9 @@ def compute_preheat(
         radiator_watts_effective: Optional[float],
         confidence_in: str = "medium",
         max_minutes: int = 240,
+        solar_gain_w: Optional[float] = None,
+        solar_has_orientation: bool = False,
+        solar_shortwave_measured: bool = False,
 ) -> PreheatEstimate:
     """
     Predict minutes needed to heat from_temp → to_temp given steady-state physics.
@@ -832,6 +850,15 @@ def compute_preheat(
           installed radiator. If None, we fall back to using the target
           (with-margin) output from Phase 4 sizing, which is the "ideal"
           installation. Returns lower confidence in that case.
+      solar_gain_w: average solar heat gain [W] over the expected preheat
+          window, from ``solar_gain.solar_gain_window().average_watts``.
+          Treated as additional heating power — reduces minutes_needed.
+          Pass None (default) to skip solar adjustment (backward compat).
+      solar_has_orientation: True if at least one window had a facing_deg —
+          affects solar_confidence reported on the estimate.
+      solar_shortwave_measured: True if shortwave_radiation came from the
+          weather service rather than the clear-sky model — affects
+          solar_confidence.
     """
     est = PreheatEstimate(
         room_id=room_id,
@@ -870,6 +897,39 @@ def compute_preheat(
         est.warnings.append("using default tau of 3h (no measured data)")
         confidence_in = "low"
 
+    # ── Solar gain adjustment ─────────────────────────────────────────
+    # Solar gain reduces the net load on the radiator, lowering the time
+    # to reach target. We model it by boosting the effective radiator output
+    # by the average solar watts over the preheat window.
+    #
+    # Physics: T_steady = T_outdoor + (Q_rad + Q_solar) / W_per_K
+    # The radiator and sun together push the room to a higher steady state,
+    # so it reaches the target faster. The τ doesn't change (it's a property
+    # of the room fabric, not the heat source).
+    #
+    # We also compute minutes_saved = minutes_without_solar − minutes_with_solar
+    # so the UI can say "pre-heat: 45 min (solar saving ~10 min)".
+    effective_radiator_w = radiator_watts_effective  # may be None
+    if solar_gain_w is not None and solar_gain_w > 0.0:
+        est.solar_gain_w = round(solar_gain_w, 1)
+        # Determine solar confidence
+        if solar_shortwave_measured and solar_has_orientation:
+            est.solar_confidence = "high"
+        elif solar_shortwave_measured:
+            est.solar_confidence = "medium"   # diffuse only — no beam direction
+        else:
+            est.solar_confidence = "low"      # clear-sky fallback model
+        if solar_gain_w > 0.5 * (radiator_watts_effective or 0):
+            est.warnings.append(
+                f"solar gain ({solar_gain_w:.0f} W) is >50% of radiator output — "
+                f"preheat estimate depends heavily on forecast accuracy."
+            )
+
+        if effective_radiator_w is not None and effective_radiator_w > 0:
+            effective_radiator_w = effective_radiator_w + solar_gain_w
+        # If radiator_watts_effective was None we can't sensibly add solar
+        # (the steady-state calc below handles None separately).
+
     if radiator_watts_effective is None or radiator_watts_effective <= 0:
         est.warnings.append(
             "no radiator capacity configured — pre-heat assumes the radiator "
@@ -881,7 +941,7 @@ def compute_preheat(
         est.steady_state_temp_c = round(steady, 1)
         confidence_in = "low"
     else:
-        steady = outdoor_temp_c + (radiator_watts_effective / w_per_k)
+        steady = outdoor_temp_c + (effective_radiator_w / w_per_k)
         est.steady_state_temp_c = round(steady, 1)
 
     if steady <= to_temp_c + 0.1:
@@ -913,6 +973,19 @@ def compute_preheat(
             f"clamped. Check radiator sizing or flow temp."
         )
         minutes = max_minutes
+
+    # ── Compute minutes_saved_by_solar ────────────────────────────────
+    if solar_gain_w is not None and solar_gain_w > 0.0 and radiator_watts_effective:
+        # Re-run without solar to get the baseline, then diff.
+        steady_no_solar = outdoor_temp_c + (radiator_watts_effective / w_per_k)
+        if steady_no_solar > to_temp_c + 0.1:
+            num_ns = steady_no_solar - to_temp_c
+            den_ns = steady_no_solar - from_temp_c
+            if den_ns > 0:
+                t_no_solar = -tau_seconds * _math.log(num_ns / den_ns)
+                mins_no_solar = min(max_minutes, t_no_solar / 60.0)
+                saved = mins_no_solar - minutes
+                est.minutes_saved_by_solar = round(max(0.0, saved), 1)
 
     est.minutes_needed = round(minutes, 0)
     est.reachable = True
