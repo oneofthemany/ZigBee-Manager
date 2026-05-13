@@ -138,15 +138,18 @@ def _detect_ssl_config():
 ALLOWED_WRITE_DIRS = [
     "",
     "core",
-    "routes",
-    "modules",
+    "device",
     "handlers",
+    "modules",
+    "routes",
     "static",
     "static/js",
     "static/js/modal",
     "static/css",
+    "static/css/api",
     "config",
     "config/matter_definitions",
+    "data",
 ]
 
 MAX_UPLOAD_BYTES = 4 * 1024 * 1024  # 4 MB
