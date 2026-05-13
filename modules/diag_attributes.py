@@ -151,26 +151,54 @@ async def _discover_ids_paginated(
 
 def _normalise_discover_result(result: Any) -> Tuple[List[int], bool]:
     """
-    zigpy returns Discover Attributes responses in a few shapes depending on
-    version. Normalise to (list_of_ids, complete_bool).
+    zigpy returns Discover Attributes / Discover Commands responses as a
+    Struct with named fields (zigpy 0.50+) or, on older versions, a
+    positional tuple. Normalise to (list_of_ids, complete_bool).
+
+    The schema is *always*:
+        discovery_complete: Bool
+        records:            List[Record]  (field name varies per command)
     """
-    # Tuple form: (attributes, complete)
+    if result is None:
+        return [], True
+
+    # Modern path: Struct with named fields
+    complete_attr = getattr(result, 'discovery_complete', None)
+    if complete_attr is not None:
+        for field in ('attribute_info', 'extended_attr_info', 'command_ids', 'attributes'):
+            records = getattr(result, field, None)
+            if records is not None:
+                ids = [_extract_id(a) for a in records]
+                return [i for i in ids if i is not None], bool(complete_attr)
+        return [], bool(complete_attr)
+
+    # Legacy positional tuple
     if isinstance(result, tuple) and len(result) == 2:
-        attrs, complete = result
-        ids = [_extract_id(a) for a in (attrs or [])]
+        a, b = result
+        try:
+            iter(a); a_iter = True
+        except TypeError:
+            a_iter = False
+        try:
+            iter(b); b_iter = True
+        except TypeError:
+            b_iter = False
+        if b_iter and not a_iter:
+            complete, records = a, b
+        elif a_iter and not b_iter:
+            records, complete = a, b
+        else:
+            try:
+                records, complete = (a, b) if len(a) else (b, a)
+            except TypeError:
+                return [], True
+        ids = [_extract_id(x) for x in (records or [])]
         return [i for i in ids if i is not None], bool(complete)
 
-    # List of DiscoverAttributesResponseRecord
-    if isinstance(result, (list, tuple)):
+    # Plain list
+    if isinstance(result, list):
         ids = [_extract_id(a) for a in result]
-        return [i for i in ids if i is not None], True  # unknown; assume done
-
-    # Object with .attributes + .discovery_complete
-    attrs = getattr(result, 'attributes', None)
-    if attrs is not None:
-        ids = [_extract_id(a) for a in attrs]
-        complete = bool(getattr(result, 'discovery_complete', True))
-        return [i for i in ids if i is not None], complete
+        return [i for i in ids if i is not None], True
 
     return [], True
 
@@ -226,8 +254,13 @@ async def _discover_extended(
         if not result:
             break
 
-        # Normalise: list of records with .attrid + .acl (int bitmap)
-        records = result if isinstance(result, (list, tuple)) else getattr(result, 'attributes', [])
+        # Pull records by named field — schema is
+        # {discovery_complete: Bool, extended_attr_info: List[Record]}.
+        records = (getattr(result, 'extended_attr_info', None)
+                   or getattr(result, 'attributes', None)
+                   or (result if isinstance(result, list) else None))
+        complete = bool(getattr(result, 'discovery_complete', False))
+
         if not records:
             break
 
@@ -247,8 +280,7 @@ async def _discover_extended(
             }
             last_id = attr_id
 
-        # Assume device is done if we got fewer than a chunk back
-        if last_id is None or len(records) < chunk_size:
+        if complete or last_id is None or len(records) < chunk_size:
             break
         start_id = last_id + 1
 
@@ -262,7 +294,7 @@ async def _discover_extended(
 async def _probe_read(cluster, attr_id: int, manufacturer=None) -> Tuple[bool, Any]:
     try:
         kwargs = {"manufacturer": manufacturer} if manufacturer is not None else {}
-        async with asyncio.timeout(5.0):
+        async with asyncio.timeout(2.0):
             result = await cluster.read_attributes([attr_id], **kwargs)
         if result and attr_id in result[0]:
             val = result[0][attr_id]
@@ -305,7 +337,7 @@ async def _probe_write(
 
     try:
         kwargs = {"manufacturer": manufacturer} if manufacturer is not None else {}
-        async with asyncio.timeout(5.0):
+        async with asyncio.timeout(2.0):
             write_result = await cluster.write_attributes({attr_id: current_value}, **kwargs)
 
         if not write_result:
@@ -383,25 +415,34 @@ async def _discover_commands(cluster, manufacturer=None) -> Dict[str, List[Dict]
     """
     out = {"received": [], "generated": []}
 
-    for direction, fn_name in (
-            ("received",  "discover_commands_received"),
-            ("generated", "discover_commands_generated"),
+    for direction, fn_name, defs_attr in (
+            ("received",  "discover_commands_received",  "server_commands"),
+            ("generated", "discover_commands_generated", "client_commands"),
     ):
+        commands_def = getattr(cluster, defs_attr, {}) or {}
+
+        # Try to ask the device first
+        ids: List[int] = []
+        device_responded = False
         try:
             fn = getattr(cluster, fn_name, None)
-            if fn is None:
-                continue
-            kwargs = {"manufacturer": manufacturer} if manufacturer is not None else {}
-            async with asyncio.timeout(5.0):
-                result = await fn(0, 255, **kwargs)
+            if fn is not None:
+                kwargs = {"manufacturer": manufacturer} if manufacturer is not None else {}
+                async with asyncio.timeout(3.0):
+                    result = await fn(0, 255, **kwargs)
+                ids, _ = _normalise_discover_result(result)
+                device_responded = True
+        except asyncio.TimeoutError:
+            logger.debug(f"{fn_name} timed out — falling back to zigpy spec")
         except Exception as e:
-            logger.debug(f"{fn_name} failed: {e}")
-            continue
+            logger.debug(f"{fn_name} failed ({e}) — falling back to zigpy spec")
 
-        ids, _ = _normalise_discover_result(result)
-        # Map to names if cluster has command defs
-        commands_def = getattr(cluster, 'server_commands' if direction == 'received'
-        else 'client_commands', {}) or {}
+        # If the device didn't respond (or returned nothing), fall back to
+        # whatever zigpy knows about the cluster.
+        source = "device" if device_responded and ids else "zcl_spec"
+        if not ids:
+            ids = sorted(commands_def.keys())
+
         for cmd_id in ids:
             name = "unknown"
             schema = None
@@ -416,6 +457,7 @@ async def _discover_commands(cluster, manufacturer=None) -> Dict[str, List[Dict]
                 "id_int": cmd_id,
                 "name":   name,
                 "schema": schema,
+                "source": source,   # "device" or "zcl_spec"
             })
 
     return out
@@ -544,6 +586,17 @@ async def introspect_cluster(
     attributes_out: List[Dict[str, Any]] = []
     readable_attr_ids: List[int] = []
 
+    LARGE_CLUSTER_THRESHOLD = 40
+    skip_write_probe_this_cluster = (
+            not include_write_probe
+            or len(all_attrs) > LARGE_CLUSTER_THRESHOLD
+    )
+    if len(all_attrs) > LARGE_CLUSTER_THRESHOLD:
+        logger.info(
+            f"Cluster 0x{cluster_id:04X} has {len(all_attrs)} attrs — "
+            f"skipping write probe (set include_write_probe explicitly if needed)"
+        )
+
     for attr_id in sorted(all_attrs.keys()):
         entry = all_attrs[attr_id]
         mfg = entry.get("mfg_code")
@@ -572,8 +625,10 @@ async def introspect_cluster(
                 entry["readable"] = False
 
         # Write probe only if we don't already know, caller allows it,
-        # and we have a value safe to echo back
-        if include_write_probe and entry.get("writable") is None and value is not None:
+        # the cluster isn't huge, and we have a value safe to echo back
+        if (not skip_write_probe_this_cluster
+                and entry.get("writable") is None
+                and value is not None):
             w = await _probe_write(cluster, attr_id, value, manufacturer=mfg)
             entry["writable"] = w  # may be True/False/None
 

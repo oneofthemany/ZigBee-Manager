@@ -265,23 +265,64 @@ async function _runIntrospection(ieee) {
     const status = document.getElementById('profileIntrospectStatus');
     const btn = document.getElementById('profileIntrospectBtn');
     if (btn) { btn.disabled = true; }
-    if (status) status.innerHTML = '<div class="alert alert-info py-2 small"><i class="fas fa-spinner fa-spin"></i> Walking every cluster… this can take 30–60 s on battery devices.</div>';
+    if (status) status.innerHTML = '<div class="alert alert-info py-2 small"><i class="fas fa-spinner fa-spin"></i> Walking every cluster — about 1 second per cluster, plus per-attribute reads. Battery devices may take a minute or two.</div>';
     try {
-        const r = await fetch(`/api/profiles/introspect/${encodeURIComponent(ieee)}`, { method: 'POST' });
+        const r = await fetch(`/api/profiles/introspect/${encodeURIComponent(ieee)}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ pace_seconds: 1.0 }),
+        });
         const d = await r.json();
+        const okCount = d.ok_count ?? (d.results?.length || 0);
+        const errCount = d.error_count ?? (d.errors?.length || 0);
+
+        let html;
         if (d.success) {
-            if (status) status.innerHTML = `<div class="alert alert-success py-2 small">Introspection finished — ${d.results?.length || 0} clusters interrogated.</div>`;
-            // Reload the page to pick up the new cache
-            await initProfileTab(ieee);
+            html = `<div class="alert alert-success py-2 small">
+                Introspection finished — ${okCount} cluster${okCount === 1 ? '' : 's'} interrogated.
+            </div>`;
+        } else if (okCount > 0) {
+            html = `<div class="alert alert-warning py-2 small">
+                <strong>Partial success:</strong> ${okCount} OK, ${errCount} failed.
+                ${_renderIntrospectErrors(d.errors || [])}
+            </div>`;
         } else {
-            const err = d.error || `${d.errors?.length || 0} errors`;
-            if (status) status.innerHTML = `<div class="alert alert-warning py-2 small">Introspection finished with errors: ${_esc(err)}</div>`;
+            html = `<div class="alert alert-danger py-2 small">
+                <strong>Introspection failed for all ${errCount} clusters.</strong>
+                Most likely the device is asleep (battery sensors / TRVs) or out of range.
+                Wake it (press a button / open the cover) and try again, or use the
+                tree below to introspect one cluster at a time.
+                ${_renderIntrospectErrors(d.errors || [])}
+            </div>`;
         }
+        if (status) status.innerHTML = html;
+        // Always reload the topology — even partial results are worth showing
+        await initProfileTab(ieee);
     } catch (e) {
         if (status) status.innerHTML = `<div class="alert alert-danger py-2 small">${_esc(e.message)}</div>`;
     } finally {
         if (btn) btn.disabled = false;
     }
+}
+
+function _renderIntrospectErrors(errors) {
+    if (!errors || !errors.length) return '';
+    // Group errors by message so a wall of timeouts collapses to a single row
+    const groups = new Map();
+    for (const e of errors) {
+        const key = e.error || 'unknown';
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key).push(`EP${e.ep}/${e.cluster}`);
+    }
+    const rows = [...groups.entries()].map(([msg, where]) => `
+        <li><strong>${_esc(msg)}</strong> — ${_esc(where.join(', '))}</li>
+    `).join('');
+    return `
+        <details class="mt-2">
+            <summary class="small">Show ${errors.length} error${errors.length === 1 ? '' : 's'}</summary>
+            <ul class="mt-1 small mb-0">${rows}</ul>
+        </details>
+    `;
 }
 
 // ===========================================================================
@@ -322,20 +363,24 @@ function _renderMap(container, ieee) {
                 <div class="card-header bg-light"><i class="fas fa-question-circle"></i> <strong>Unmapped raw keys (${unmapped.length})</strong></div>
                 <div class="table-responsive">
                     <table class="table table-sm mb-0">
-                        <thead><tr><th>Raw key</th><th>Current value</th><th class="text-end"></th></tr></thead>
+                        <thead><tr><th>Raw key</th><th>Name</th><th>Current value</th><th class="text-end"></th></tr></thead>
                         <tbody>
-                            ${unmapped.map(k => `
-                                <tr>
-                                    <td><code>${_esc(k)}</code></td>
-                                    <td><small><code>${_esc(_fmtVal(rawState[k]))}</code></small></td>
-                                    <td class="text-end">
-                                        <button class="btn btn-sm btn-outline-primary"
-                                                onclick="window._profileOpenMapDialog('${ieee}','${k}')">
-                                            <i class="fas fa-plus"></i> Map
-                                        </button>
-                                    </td>
-                                </tr>
-                            `).join('')}
+                            ${unmapped.map(k => {
+                                const friendly = (_data.friendly_labels || {})[k] || '';
+                                return `
+                                    <tr>
+                                        <td><code>${_esc(k)}</code></td>
+                                        <td><strong>${_esc(friendly)}</strong></td>
+                                        <td><small><code>${_esc(_fmtVal(rawState[k]))}</code></small></td>
+                                        <td class="text-end">
+                                            <button class="btn btn-sm btn-outline-primary"
+                                                    onclick="window._profileOpenMapDialog('${ieee}','${k}')">
+                                                <i class="fas fa-plus"></i> Map
+                                            </button>
+                                        </td>
+                                    </tr>
+                                `;
+                            }).join('')}
                         </tbody>
                     </table>
                 </div>
@@ -361,9 +406,13 @@ function _renderMap(container, ieee) {
 
 function _renderMappedRow(rawKey, mapping, ieee) {
     const m = typeof mapping === 'string' ? { name: mapping } : (mapping || {});
+    const friendly = (_data.friendly_labels || {})[rawKey] || '';
     return `
         <tr>
-            <td><code>${_esc(rawKey)}</code></td>
+            <td>
+                <code>${_esc(rawKey)}</code>
+                ${friendly ? `<br><small class="text-muted">${_esc(friendly)}</small>` : ''}
+            </td>
             <td><strong>${_esc(m.name || '')}</strong></td>
             <td>${m.scale || ''}</td>
             <td>${_esc(m.unit || '')}</td>
@@ -882,21 +931,23 @@ function _slug(s) {
 }
 
 function _suggestName(rawKey) {
+    const friendly = (_data.friendly_labels || {})[rawKey] || '';
+    // Friendly is "Cluster Name · attribute_name" — slugify the attr part
+    const parts = friendly.split('·');
+    if (parts.length === 2) {
+        const slug = _slug(parts[1].trim());
+        if (slug) return slug;
+    }
+    // Legacy fallback
     const m = rawKey.match(/cluster_([0-9a-f]+)_attr_([0-9a-f]+)/);
     if (!m) return '';
     const cid = parseInt(m[1], 16);
     const aid = parseInt(m[2], 16);
-    // Tiny built-in suggestion table — keeps the dialog friendly. Not authoritative.
     const t = {
-        '1024_0':  'illuminance',
-        '1026_0':  'temperature',
-        '1029_0':  'humidity',
-        '1030_0':  'occupancy',
-        '1280_0':  'contact',
-        '1_32':    'battery_voltage',
-        '1_33':    'battery_remaining',
-        '6_0':     'state',
-        '8_0':     'brightness',
+        '1024_0': 'illuminance', '1026_0': 'temperature', '1029_0': 'humidity',
+        '1030_0': 'occupancy',   '1280_0': 'contact',
+        '1_32':   'battery_voltage', '1_33': 'battery_remaining',
+        '6_0':    'state',           '8_0':  'brightness',
     };
     return t[`${cid}_${aid}`] || '';
 }

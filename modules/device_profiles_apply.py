@@ -62,15 +62,21 @@ def _get_device_identity(device) -> Dict[str, Any]:
         ident["protocol"]     = "zigbee"
         ident["model"]        = str(getattr(zdev, "model", "") or "")
         ident["manufacturer"] = str(getattr(zdev, "manufacturer", "") or "")
+        return ident
 
-    # Matter path
-    state = getattr(device, "state", None) or {}
-    if ident["protocol"] == "matter" or "vendor_id" in state or "product_id" in state:
+    # Matter path — only enter when there is no zigpy device backing this
+    # wrapper, or when the IEEE explicitly carries the matter_ prefix.
+    is_matter = (
+            str(getattr(device, "ieee", "")).startswith("matter_")
+            or getattr(device, "protocol", None) == "matter"
+    )
+    if is_matter:
+        state = getattr(device, "state", None) or {}
         ident["protocol"]     = "matter"
         ident["vendor_id"]    = _to_int(state.get("vendor_id"))
         ident["product_id"]   = state.get("product_id") or state.get("part_number")
-        ident["manufacturer"] = ident["manufacturer"] or state.get("vendor_name") or ""
-        ident["model"]        = ident["model"] or state.get("product_name") or ""
+        ident["manufacturer"] = state.get("vendor_name") or ident["manufacturer"]
+        ident["model"]        = state.get("product_name") or ident["model"]
 
     return ident
 
