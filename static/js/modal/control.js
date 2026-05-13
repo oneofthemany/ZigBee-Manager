@@ -554,10 +554,76 @@ function aqaraSetupBannerCopy(calState) {
             </div>`;
 }
 
+/**
+ * One-click handler for profile actions. Called from inline onclick="" strings.
+ * Safe to call from a sync context — it fires an async fetch and shows a toast.
+ */
+window.runProfileAction = async function(ieee, actionId) {
+    try {
+        const res = await fetch('/api/profiles/run_action', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ieee, action_id: actionId }),
+        });
+        const data = await res.json();
+        if (data && data.success) {
+            if (window.toast && typeof window.toast.success === 'function') {
+                window.toast.success(`Action '${actionId}' sent`);
+            }
+        } else {
+            const msg = (data && data.error) || 'Action failed';
+            if (window.toast && typeof window.toast.error === 'function') {
+                window.toast.error(msg);
+            } else {
+                console.warn('[runProfileAction]', msg);
+            }
+        }
+    } catch (e) {
+        console.error('[runProfileAction] fetch error:', e);
+        if (window.toast && typeof window.toast.error === 'function') {
+            window.toast.error('Network error running action');
+        }
+    }
+};
+
 export function renderControlTab(device) {
     const s = device.state || {};
     let html = '<div class="row g-3">';
     let controlsFound = false;
+
+    // --- Profile Actions ---
+    const profileActions = Array.isArray(device.profile_actions) ? device.profile_actions : [];
+    if (profileActions.length > 0) {
+        controlsFound = true;
+        const buttons = profileActions.map(a => {
+            const label = a.label || a.id || 'Action';
+            const safeId = String(a.id).replace(/[^a-zA-Z0-9_-]/g, '_');
+            return `<button
+                        type="button"
+                        id="profile-action-${safeId}-${device.ieee}"
+                        class="btn btn-outline-primary"
+                        onclick="window.runProfileAction('${device.ieee}', '${a.id}')"
+                        title="Run: ${label}">
+                        <i class="fas fa-play-circle me-1"></i>${label}
+                    </button>`;
+        }).join('\n');
+
+        html += `
+        <div class="col-12">
+            <div class="card border-primary">
+                <div class="card-header bg-primary bg-opacity-10 d-flex align-items-center gap-2">
+                    <i class="fas fa-bolt text-primary"></i>
+                    <strong class="text-primary">Actions</strong>
+                    <span class="badge bg-primary bg-opacity-75 ms-auto">${profileActions.length}</span>
+                </div>
+                <div class="card-body">
+                    <div class="d-flex flex-wrap gap-2">
+                        ${buttons}
+                    </div>
+                </div>
+            </div>
+        </div>`;
+    }
 
     // --- Window Covering (0x0102) ---
     const hasCover = hasCluster(device, 0x0102);

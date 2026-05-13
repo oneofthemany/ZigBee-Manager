@@ -8,6 +8,11 @@ import os
 import logging
 from typing import Any, Dict, Optional, List
 
+from modules.device_profiles import (
+    get_legacy_override_manager as get_override_manager,  # noqa: F401
+    CAPABILITY_TO_HA,                                     # noqa: F401
+)
+
 logger = logging.getLogger("modules.device_overrides")
 
 OVERRIDES_FILE = "./data/device_overrides.json"

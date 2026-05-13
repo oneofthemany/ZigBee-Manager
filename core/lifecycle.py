@@ -286,6 +286,17 @@ class DeviceLifecycleMixin:
     def handle_device_update(self, zha_device, changed_data, full_state=None,
                              qos: Optional[int] = None, endpoint_id: Optional[int] = None):
         """Called by ZigManDevice when state changes."""
+        try:
+            from modules.device_profile_apply import transform_state_with_profile
+            if isinstance(updates, dict):
+                transformed = transform_state_with_profile(device, {**device.state, **updates})
+                extras = {k: v for k, v in transformed.items()
+                          if k not in updates and k not in device.state}
+                if extras:
+                    updates = {**updates, **extras}
+        except Exception:
+            pass
+
         ieee = zha_device.ieee
 
         # >>> Instant Universal Automation Trigger <<<

@@ -188,6 +188,20 @@ class DeviceDiscoveryProviderMixin:
             }
         })
         return configs
+        # Profile-driven MQTT discovery — fills gaps left by built-in handlers
+        try:
+            from modules.device_profile_apply import build_discovery_configs
+            profile_configs = build_discovery_configs(self)
+            # De-dupe by object_id against what handlers already provided
+            seen_object_ids = {c.get("object_id") for c in configs if c.get("object_id")}
+            for cfg in profile_configs:
+                if cfg.get("object_id") in seen_object_ids:
+                    continue
+                if "device" not in cfg:
+                    cfg["device"] = device_info
+                configs.append(cfg)
+        except Exception as e:
+            logger.debug(f"[{self.ieee}] profile discovery configs skipped: {e}")
 
     def _apply_json_schema(self, payload: Dict):
         component = payload.get('component')

@@ -4,6 +4,7 @@ Each module exposes a register_*_routes(app, ...) function.
 """
 from routes.config_routes import register_config_routes
 from routes.device_routes import register_device_routes
+from routes.device_profile_routes import register_profile_routes
 from routes.network_routes import register_network_routes
 from routes.system_routes import register_system_routes
 from routes.matter_routes import register_matter_routes
@@ -35,6 +36,7 @@ __all__ = [
     'register_auth_routes',
     'register_upgrade_routes',
     'register_device_routes',
+    'register_profile_routes',
     'register_network_routes',
     'register_system_routes',
     'register_matter_routes',

@@ -10,7 +10,7 @@ import { renderControlTab, updateControlValues, refreshHeatingManaged } from './
 import { renderBindingTab } from './modal/binding.js';
 import { renderCapsTab } from './modal/clusters.js';
 import { renderAutomationTab, initAutomationTab } from './modal/automation.js';
-import { renderMappingsTab, initMappingsTab, hasGenericContent } from './modal/mappings.js';
+import { renderProfileTab, initProfileTab, hasUnmappedKeys } from './modal/profile.js';
 import { bindScheduleEvents } from './modal/schedule.js';
 import { renderOTATab, handleOTAProgress } from './modal/ota.js';
 import { renderHistoryTab, initHistoryTab } from './modal/history.js';
@@ -26,7 +26,7 @@ import {
 } from './modal/device-settings.js';
 
 // Re-export these functions so main.js (and others) can still import them from here
-export { renderOverviewTab, renderControlTab, renderBindingTab, renderCapsTab, renderAutomationTab, renderMappingsTab, saveConfig, handleOTAProgress, renderSettingsTab, applyInterviewStatusUpdate };
+export { renderOverviewTab, renderControlTab, renderBindingTab, renderCapsTab, renderAutomationTab, renderProfileTab, saveConfig, handleOTAProgress, renderSettingsTab, applyInterviewStatusUpdate };
 export async function openDeviceModal(d) {
     // Refresh heating-controller managed set so the Control tab can disable
     // direct heating controls for managed devices. Non-blocking failure.
@@ -66,7 +66,7 @@ export async function openDeviceModal(d) {
             <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-caps">Clusters</button></li>
             ${!isZigbee ? '<li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-endpoints">Endpoints</button></li>' : ''}
             <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-automation">Automation</button></li>
-            ${isZigbee ? '<li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-mappings">Mappings</button></li>' : ''}
+            ${isZigbee ? '<li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-profile">Profile</button></li>' : ''}
             ${isZigbee ? '<li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-settings">Settings</button></li>' : ''}
         </ul>
 
@@ -102,7 +102,7 @@ export async function openDeviceModal(d) {
             </div>
             ${isZigbee ? `
             <div class="tab-pane fade" id="tab-mappings">
-                ${renderMappingsTab(cachedDev)}
+                ${renderProfileTab(cachedDev)}
             </div>
             ` : ''}
             ${isZigbee ? `
@@ -164,13 +164,9 @@ export async function openDeviceModal(d) {
     const modalEl = document.getElementById('capModal');
     if (modalEl) new bootstrap.Modal(modalEl).show();
 
-    if (isZigbee) {
-        const mapTab = modalBody.querySelector('[data-bs-target="#tab-mappings"]');
-        if (mapTab) {
-            mapTab.addEventListener('shown.bs.tab', () => {
-                initMappingsTab(cachedDev.ieee);
-            });
-        }
+    const profTab = modalBody.querySelector('[data-bs-target="#tab-profile"]');
+    if (profTab) {
+        profTab.addEventListener('shown.bs.tab', () => initProfileTab(cachedDev.ieee));
     }
 }
 
@@ -252,15 +248,15 @@ export function refreshModalAfterInterview(device) {
     }
 
     // Mappings — definitions/cluster set may have changed
-    if (isZigbee) {
-        const mapTab = document.getElementById('tab-mappings');
-        if (mapTab) {
-            mapTab.innerHTML = renderMappingsTab(device);
-            if (mapTab.classList.contains('active') && device.ieee) {
-                try { initMappingsTab(device.ieee); } catch(e) {}
-            }
+
+    const profTab = document.getElementById('tab-profile');
+    if (profTab) {
+        profTab.innerHTML = renderProfileTab(device);
+        if (profTab.classList.contains('active') && device.ieee) {
+            try { initProfileTab(device.ieee); } catch(e) {}
         }
     }
+
 
     // Automation — available targets may have changed
     const autoTab = document.getElementById('tab-automation');
@@ -271,7 +267,7 @@ export function refreshModalAfterInterview(device) {
         }
     }
 
-    // Matter endpoints — same idea
+    // Matter endpoints
     if (!isZigbee) {
         const epTab = document.getElementById('tab-endpoints');
         if (epTab) {
