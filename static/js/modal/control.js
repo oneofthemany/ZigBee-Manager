@@ -554,76 +554,163 @@ function aqaraSetupBannerCopy(calState) {
             </div>`;
 }
 
-/**
- * One-click handler for profile actions. Called from inline onclick="" strings.
- * Safe to call from a sync context — it fires an async fetch and shows a toast.
- */
-window.runProfileAction = async function(ieee, actionId) {
-    try {
-        const res = await fetch('/api/profiles/run_action', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ ieee, action_id: actionId }),
-        });
-        const data = await res.json();
-        if (data && data.success) {
-            if (window.toast && typeof window.toast.success === 'function') {
-                window.toast.success(`Action '${actionId}' sent`);
-            }
-        } else {
-            const msg = (data && data.error) || 'Action failed';
-            if (window.toast && typeof window.toast.error === 'function') {
-                window.toast.error(msg);
-            } else {
-                console.warn('[runProfileAction]', msg);
-            }
-        }
-    } catch (e) {
-        console.error('[runProfileAction] fetch error:', e);
-        if (window.toast && typeof window.toast.error === 'function') {
-            window.toast.error('Network error running action');
-        }
-    }
-};
-
 export function renderControlTab(device) {
     const s = device.state || {};
     let html = '<div class="row g-3">';
     let controlsFound = false;
 
-    // --- Profile Actions ---
+
+
+
+    // --- Profile Actions (from unified device profile system) ---
     const profileActions = Array.isArray(device.profile_actions) ? device.profile_actions : [];
     if (profileActions.length > 0) {
         controlsFound = true;
-        const buttons = profileActions.map(a => {
-            const label = a.label || a.id || 'Action';
-            const safeId = String(a.id).replace(/[^a-zA-Z0-9_-]/g, '_');
-            return `<button
-                        type="button"
-                        id="profile-action-${safeId}-${device.ieee}"
-                        class="btn btn-outline-primary"
-                        onclick="window.runProfileAction('${device.ieee}', '${a.id}')"
-                        title="Run: ${label}">
-                        <i class="fas fa-play-circle me-1"></i>${label}
-                    </button>`;
-        }).join('\n');
-
         html += `
         <div class="col-12">
-            <div class="card border-primary">
-                <div class="card-header bg-primary bg-opacity-10 d-flex align-items-center gap-2">
-                    <i class="fas fa-bolt text-primary"></i>
-                    <strong class="text-primary">Actions</strong>
-                    <span class="badge bg-primary bg-opacity-75 ms-auto">${profileActions.length}</span>
+            <div class="card">
+                <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                    <strong><i class="fas fa-bolt"></i> Profile Actions</strong>
+                    <small class="text-muted">Defined in this device's profile · <a href="#" onclick="window._openProfileTab('${device.ieee}'); return false;">edit</a></small>
                 </div>
                 <div class="card-body">
                     <div class="d-flex flex-wrap gap-2">
-                        ${buttons}
+                        ${profileActions.map(a => `
+                            <button type="button"
+                                    class="btn btn-outline-primary"
+                                    data-profile-action="${_escAttr(a.id)}"
+                                    data-ieee="${device.ieee}"
+                                    onclick="window.runProfileAction('${device.ieee}', '${_escAttr(a.id)}', this)"
+                                    title="${_escAttr(_actionTooltip(a))}">
+                                <i class="fas fa-${_actionIcon(a)} me-1"></i>${_escHtml(a.label || a.id)}
+                            </button>
+                        `).join('')}
                     </div>
+                    <div class="small text-muted mt-2" data-profile-action-status="${device.ieee}"></div>
                 </div>
             </div>
         </div>`;
     }
+
+    // --- Profile action helpers ---
+
+    function _actionIcon(action) {
+        const id = String(action.id || '').toLowerCase();
+        const lbl = String(action.label || '').toLowerCase();
+        const k = id + ' ' + lbl;
+        if (k.includes('identify'))          return 'fingerprint';
+        if (k.includes('toggle'))            return 'toggle-on';
+        if (k.includes('on') && !k.includes('off')) return 'power-off';
+        if (k.includes('off'))               return 'power-off';
+        if (k.includes('open'))              return 'door-open';
+        if (k.includes('close'))             return 'door-closed';
+        if (k.includes('stop'))              return 'stop';
+        if (k.includes('reset'))             return 'undo';
+        if (k.includes('calibrat'))          return 'crosshairs';
+        if (k.includes('boost'))             return 'fire';
+        if (k.includes('lock'))              return 'lock';
+        if (k.includes('unlock'))            return 'lock-open';
+        if (k.includes('heat'))              return 'temperature-high';
+        if (k.includes('cool'))              return 'temperature-low';
+        if (k.includes('alarm') || k.includes('siren')) return 'bell';
+        return 'play';
+    }
+
+    function _actionTooltip(action) {
+        const parts = [`EP${action.ep} · cluster ${action.cluster}`];
+        if (action.command) {
+            parts.push(`cmd ${action.command}`);
+        } else if (Array.isArray(action.writes) && action.writes.length) {
+            const w = action.writes.length === 1
+                ? `1 write`
+                : `${action.writes.length} atomic writes`;
+            parts.push(w);
+        }
+        return parts.join(' · ');
+    }
+
+    function _escAttr(s) {
+        return String(s ?? '').replace(/[&<>"']/g, c => ({
+            '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+        }[c]));
+    }
+    function _escHtml(s) { return _escAttr(s); }
+
+    // Global handler — bound from the button onclick.
+    // Disables the button briefly, posts the action, surfaces success/error inline.
+    window.runProfileAction = async function(ieee, actionId, btn) {
+        if (!ieee || !actionId) return;
+
+        const statusEl = document.querySelector(
+            `[data-profile-action-status="${ieee.replace(/"/g, '')}"]`
+        );
+
+        // Lock the button while in flight
+        const originalHtml = btn?.innerHTML;
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>' + (btn.textContent || actionId).trim();
+        }
+        if (statusEl) {
+            statusEl.className = 'small text-muted mt-2';
+            statusEl.textContent = `Running ${actionId}…`;
+        }
+
+        try {
+            const res = await fetch('/api/profiles/run_action', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ieee, action_id: actionId }),
+            });
+            const data = await res.json();
+
+            if (data.success) {
+                if (statusEl) {
+                    statusEl.className = 'small text-success mt-2';
+                    let detail = '';
+                    if (data.command) detail = ` (command ${data.command})`;
+                    else if (data.writes) detail = ` (${data.writes} write${data.writes === 1 ? '' : 's'})`;
+                    statusEl.textContent = `✓ ${actionId} sent${detail}`;
+                }
+            } else {
+                if (statusEl) {
+                    statusEl.className = 'small text-danger mt-2';
+                    statusEl.textContent = `✗ ${actionId} failed: ${data.error || 'unknown error'}`;
+                }
+            }
+        } catch (e) {
+            if (statusEl) {
+                statusEl.className = 'small text-danger mt-2';
+                statusEl.textContent = `✗ Request failed: ${e.message || e}`;
+            }
+        } finally {
+            if (btn) {
+                btn.disabled = false;
+                if (originalHtml) btn.innerHTML = originalHtml;
+            }
+            // Auto-clear status after 5s
+            if (statusEl) {
+                setTimeout(() => {
+                    if (statusEl.textContent.startsWith('✓')) {
+                        statusEl.textContent = '';
+                        statusEl.className = 'small text-muted mt-2';
+                    }
+                }, 5000);
+            }
+        }
+    };
+
+    // Helper used by the "edit" link in the card header — jumps to the Profile tab
+    // of the device modal. Implementation depends on your existing tab API; the
+    // safe default is to click the Profile tab button if it's already in the DOM.
+    window._openProfileTab = function(ieee) {
+        const profileBtn = document.querySelector('[data-bs-target="#tab-profile"]');
+        if (profileBtn) {
+            try { new bootstrap.Tab(profileBtn).show(); }
+            catch { profileBtn.click(); }
+        }
+    };
+
 
     // --- Window Covering (0x0102) ---
     const hasCover = hasCluster(device, 0x0102);

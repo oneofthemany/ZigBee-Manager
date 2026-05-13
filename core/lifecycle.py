@@ -210,6 +210,18 @@ class DeviceLifecycleMixin:
             self._emit_sync("join_progress", {"ieee": ieee, "stage": "configuring"})
             await zdev.configure()
             logger.info(f"[{ieee}] Device configured successfully")
+
+            # Apply matching device profile (unified Zigbee+Matter system).
+            # Runs after handler configure so per-handler reporting wins on conflicts,
+            # before MQTT announce so the friendly capability set is in discovery,
+            # and before poll() so friendly keys are present in the first state snapshot.
+            # Idempotent — no-op when no profile matches.
+            try:
+                from modules.device_profile_apply import apply_profile
+                await apply_profile(zdev)
+            except Exception as _e:
+                logger.debug(f"[{ieee}] apply_profile skipped: {_e}")
+
             self._emit_sync("join_progress", {"ieee": ieee, "stage": "polling"})
 
             await zdev.poll()
@@ -288,8 +300,9 @@ class DeviceLifecycleMixin:
         """Called by ZigManDevice when state changes."""
         try:
             from modules.device_profile_apply import transform_state_with_profile
-            if isinstance(updates, dict):
-                transformed = transform_state_with_profile(device, {**device.state, **updates})
+            if isinstance(updates, dict) and any(k.startswith("cluster_") for k in updates):
+                merged = {**device.state, **updates}
+                transformed = transform_state_with_profile(device, merged)
                 extras = {k: v for k, v in transformed.items()
                           if k not in updates and k not in device.state}
                 if extras:
