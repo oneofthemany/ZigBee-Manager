@@ -101,7 +101,7 @@ export async function openDeviceModal(d) {
                 ${renderAutomationTab(cachedDev)}
             </div>
             ${isZigbee ? `
-            <div class="tab-pane fade" id="tab-mappings">
+            <div class="tab-pane fade" id="tab-profile">
                 ${renderProfileTab(cachedDev)}
             </div>
             ` : ''}
