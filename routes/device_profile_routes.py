@@ -61,7 +61,7 @@ def _find_device(ieee: str):
 def register_profile_routes(app):
 
     # =====================================================================
-    # PROFILE CRUD - SPECIFIC ROUTES FIRST
+    # PROFILE CRUD
     # =====================================================================
 
     @app.get("/api/profiles")
@@ -73,6 +73,13 @@ def register_profile_routes(app):
             "ieee":     _store().list_ieee_state(),
         }
 
+    @app.get("/api/profiles/{profile_id}")
+    async def get_profile(profile_id: str):
+        p = _store().get_profile(profile_id)
+        if not p:
+            raise HTTPException(status_code=404, detail="Profile not found")
+        return {"success": True, "profile": p}
+
     @app.post("/api/profiles")
     async def create_or_update_profile(data: Dict[str, Any]):
         """Create or update a user profile. Body = profile JSON."""
@@ -83,6 +90,29 @@ def register_profile_routes(app):
             logger.exception("upsert_profile failed")
             return {"success": False, "error": str(e)}
 
+    @app.delete("/api/profiles/{profile_id}")
+    async def delete_profile(profile_id: str):
+        if not _store().delete_profile(profile_id):
+            raise HTTPException(status_code=404, detail="Profile not found")
+        return {"success": True, "deleted": profile_id}
+
+    @app.get("/api/profiles/export/{profile_id}")
+    async def export_profile(profile_id: str):
+        """Download a single profile as JSON (suitable for sharing)."""
+        p = _store().get_profile(profile_id)
+        if not p:
+            raise HTTPException(status_code=404, detail="Profile not found")
+        # Strip volatile meta before export so two exports of the same profile
+        # produce byte-identical JSON (helps with sharing / version control).
+        export_copy = dict(p)
+        if "meta" in export_copy:
+            meta = dict(export_copy["meta"])
+            meta.pop("created_at", None)
+            meta.pop("updated_at", None)
+            meta["source"] = "imported"
+            export_copy["meta"] = meta
+        return {"success": True, "profile": export_copy}
+
     @app.post("/api/profiles/import")
     async def import_profile(data: Dict[str, Any]):
         """Import a profile JSON document."""
@@ -92,20 +122,6 @@ def register_profile_routes(app):
             return {"success": True, "profile": p}
         except Exception as e:
             return {"success": False, "error": str(e)}
-
-    # =====================================================================
-    # DEVICE TYPES (for the UI dropdown)
-    # =====================================================================
-
-    @app.get("/api/profiles/device_types")
-    async def list_device_types():
-        from modules.device_profiles import DEVICE_TYPES
-        return {
-            "success": True,
-            "types": [
-                {"id": k, **v} for k, v in DEVICE_TYPES.items()
-            ],
-        }
 
     # =====================================================================
     # IEEE PINS + LEGACY MAPPINGS
@@ -164,7 +180,7 @@ def register_profile_routes(app):
         return {"success": _store().remove_ieee_mapping(ieee, raw)}
 
     # =====================================================================
-    # DEVICE-CENTRIC VIEW
+    # DEVICE-CENTRIC VIEW (replaces /api/device_overrides/{ieee})
     # =====================================================================
 
     @app.get("/api/profiles/device/{ieee}")
@@ -208,12 +224,11 @@ def register_profile_routes(app):
             "ieee_mappings":  ieee_mappings,
             "topology":       topology,
             "unmapped_keys":  unmapped,
-            # SAFELY serialise raw values so enums/bytes don't cause 500 errors
-            "raw_state":      {k: _safe_jsonify(state[k]) for k in state if k.startswith("cluster_")},
+            "raw_state":      {k: state[k] for k in state if k.startswith("cluster_")},
         }
 
     # =====================================================================
-    # APPLY / RUN / CONFIG
+    # APPLY / RUN
     # =====================================================================
 
     @app.post("/api/profiles/apply/{ieee}")
@@ -250,6 +265,20 @@ def register_profile_routes(app):
         if not profile:
             return {"success": False, "error": "No profile applied"}
         return await apply_reporting(dev, profile)
+
+    # =====================================================================
+    # DEVICE TYPES (for the UI dropdown)
+    # =====================================================================
+
+    @app.get("/api/profiles/device_types")
+    async def list_device_types():
+        from modules.device_profiles import DEVICE_TYPES
+        return {
+            "success": True,
+            "types": [
+                {"id": k, **v} for k, v in DEVICE_TYPES.items()
+            ],
+        }
 
     # =====================================================================
     # FULL INTROSPECTION (one-button "discover everything")
@@ -305,40 +334,6 @@ def register_profile_routes(app):
                     errors.append({"ep": ep_id, "cluster": f"0x{cl_id:04X}", "error": str(e)})
                 await asyncio.sleep(0.2)
         return {"success": not errors, "results": results, "errors": errors}
-
-    # =====================================================================
-    # PROFILE CRUD - WILDCARD ROUTES
-    # =====================================================================
-
-    @app.get("/api/profiles/export/{profile_id}")
-    async def export_profile(profile_id: str):
-        """Download a single profile as JSON (suitable for sharing)."""
-        p = _store().get_profile(profile_id)
-        if not p:
-            raise HTTPException(status_code=404, detail="Profile not found")
-        # Strip volatile meta before export so two exports of the same profile
-        # produce byte-identical JSON (helps with sharing / version control).
-        export_copy = dict(p)
-        if "meta" in export_copy:
-            meta = dict(export_copy["meta"])
-            meta.pop("created_at", None)
-            meta.pop("updated_at", None)
-            meta["source"] = "imported"
-            export_copy["meta"] = meta
-        return {"success": True, "profile": export_copy}
-
-    @app.get("/api/profiles/{profile_id}")
-    async def get_profile(profile_id: str):
-        p = _store().get_profile(profile_id)
-        if not p:
-            raise HTTPException(status_code=404, detail="Profile not found")
-        return {"success": True, "profile": p}
-
-    @app.delete("/api/profiles/{profile_id}")
-    async def delete_profile(profile_id: str):
-        if not _store().delete_profile(profile_id):
-            raise HTTPException(status_code=404, detail="Profile not found")
-        return {"success": True, "deleted": profile_id}
 
 
 # ---------------------------------------------------------------------------
@@ -403,7 +398,7 @@ def _device_topology_summary(dev) -> Dict[str, Any]:
                         "id":       aid,
                         "name":     a.get("name") or "",
                         "type":     a.get("type") or "",
-                        "value":    _safe_jsonify(a.get("value")),
+                        "value":    a.get("value"),
                         "readable": a.get("readable"),
                         "writable": a.get("writable"),
                     }
