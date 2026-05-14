@@ -118,6 +118,14 @@
     background: var(--fp-canvas-bg);
 }
 
+/* Prevent the browser intercepting touch gestures on the canvas so our
+   touch handlers (pan, pinch-zoom, tap) receive every event. */
+#fpCanvas {
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+}
+
 #floorPlanModal #fpSidebar .text-muted,
 #floorPlanModal #fpProps .text-muted,
 #floorPlanModal #fpStatus,
@@ -293,7 +301,12 @@
 }
 
 /* Sun path */
-.fp-sun-path { stroke: var(--fp-sun-stroke); fill: none; }
+.fp-sun-path       { stroke: var(--fp-sun-stroke); fill: none; }
+.fp-sun-path-glow  { stroke: var(--fp-sun-stroke); fill: none; opacity: 0.22; }
+.fp-sun-endpoint   { fill: var(--fp-sun-stroke); }
+.fp-sun-marker     { fill: var(--fp-sun-stroke); stroke: var(--fp-canvas-bg); }
+.fp-sun-marker-ring { stroke: var(--fp-sun-stroke); }
+.fp-sun-label      { fill: var(--fp-sun-stroke); font-family: inherit; }
 
 /* Background image: faint frame in dark mode so a fully-white plan
    doesn't read as a hole in the canvas. */
