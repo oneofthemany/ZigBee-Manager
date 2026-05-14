@@ -18,10 +18,20 @@ permit_join, touchlink, get_device_list, and utility methods.
 import asyncio
 import logging
 import json
+import sys
 import time
 import os
 import re
 import traceback
+
+# Exception types that indicate a code bug rather than a hardware/transient
+# failure. Retrying these wastes time and pushes the process past the
+# launcher's HEALTHY_SECONDS threshold, preventing recovery_server from
+# triggering.
+_CODE_BUG_EXCEPTIONS = (
+    AttributeError, TypeError, NameError, ImportError,
+    SyntaxError, IndentationError,
+)
 from typing import Dict, Any, Optional
 from contextlib import suppress
 
@@ -428,9 +438,23 @@ class ZigbeeService(
                     if self.ban_manager.is_banned(ieee_str):
                         logger.info(f"Skipping banned device: {ieee_str}")
                         continue
-                    self.devices[ieee_str] = ZigManDevice(self, device)
-                    if ieee_str in self.state_cache:
-                        self.devices[ieee_str].restore_state(self.state_cache[ieee_str])
+                    try:
+                        self.devices[ieee_str] = ZigManDevice(self, device)
+                        if ieee_str in self.state_cache:
+                            self.devices[ieee_str].restore_state(self.state_cache[ieee_str])
+                    except _CODE_BUG_EXCEPTIONS as dev_err:
+                        # A code bug in device init — exit immediately so the
+                        # launcher sees a boot-crash and starts recovery_server.
+                        logger.error(
+                            f"[{ieee_str}] Device init failed with code error "
+                            f"({type(dev_err).__name__}: {dev_err}) — exiting for recovery"
+                        )
+                        logger.error(f"Full traceback:\n{traceback.format_exc()}")
+                        sys.exit(3)
+                    except Exception as dev_err:
+                        logger.error(
+                            f"[{ieee_str}] Device init failed ({dev_err}) — skipping device"
+                        )
 
                 self._rebuild_name_maps()
                 logger.info(f"Restored {len(self.devices)} devices from database")
@@ -479,6 +503,21 @@ class ZigbeeService(
 
                 return
 
+            except _CODE_BUG_EXCEPTIONS as e:
+                # Code bug — retrying won't help and wastes enough time to push
+                # past the launcher's HEALTHY_SECONDS threshold, blocking recovery.
+                # Exit immediately so the launcher triggers recovery_server.
+                logger.error(
+                    f"Non-retryable code error during startup "
+                    f"({type(e).__name__}: {e}) — exiting for recovery"
+                )
+                logger.error(f"Full traceback:\n{traceback.format_exc()}")
+                if self.app:
+                    try:
+                        await self.app.shutdown()
+                    except Exception:
+                        pass
+                sys.exit(3)
             except Exception as e:
                 logger.warning(f"Startup Attempt {attempt + 1} failed: {e}")
                 logger.error(f"Full traceback:\n{traceback.format_exc()}")
