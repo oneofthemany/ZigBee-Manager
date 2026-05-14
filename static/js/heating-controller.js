@@ -1216,6 +1216,24 @@ function renderCircuitCard(circuit, ci) {
         </div>`;
 }
 
+function renderHcScheduleSlots(slots, ci, ri) {
+    if (!slots || !slots.length) return '<div class="text-muted small fst-italic mb-1">No slots — uses global operating hours.</div>';
+    const days = ['mon','tue','wed','thu','fri','sat','sun'];
+    return slots.map((slot, si) => `
+      <div class="hc-slot border rounded p-1 mb-1" data-ci="${ci}" data-ri="${ri}" data-si="${si}">
+        <div class="d-flex flex-wrap gap-1 mb-1">
+          ${days.map(d => `<label class="fp-day-label"><input type="checkbox" class="hc-slot-day" data-ci="${ci}" data-ri="${ri}" data-si="${si}" data-day="${d}" ${(slot.days||[]).includes(d)?'checked':''}><span>${d.charAt(0).toUpperCase()}</span></label>`).join('')}
+        </div>
+        <div class="row g-1 align-items-center">
+          <div class="col-auto"><input type="time" class="form-control form-control-sm hc-slot-start" data-ci="${ci}" data-ri="${ri}" data-si="${si}" value="${slot.start||'07:00'}"/></div>
+          <div class="col-auto text-muted small">→</div>
+          <div class="col-auto"><input type="time" class="form-control form-control-sm hc-slot-end" data-ci="${ci}" data-ri="${ri}" data-si="${si}" value="${slot.end||'22:00'}"/></div>
+          <div class="col"><input type="number" step="0.5" min="5" max="32" class="form-control form-control-sm hc-slot-temp" data-ci="${ci}" data-ri="${ri}" data-si="${si}" value="${slot.temp??20}" placeholder="°C"/></div>
+          <div class="col-auto"><button type="button" class="btn btn-sm btn-outline-danger hc-del-slot" data-ci="${ci}" data-ri="${ri}" data-si="${si}" title="Delete slot"><i class="fas fa-times"></i></button></div>
+        </div>
+      </div>`).join('');
+}
+
 function renderRoomCard(room, ci, ri) {
     // When the room is projected from a floor plan, the sub-blocks listed
     // below have their bindings/values written by the projection on every
@@ -1381,6 +1399,37 @@ function renderRoomCard(room, ci, ri) {
                                data-ci="${ci}" data-ri="${ri}" value="${room.min_temp}">
                     </div>
                 </div>
+
+                <details class="mb-2">
+                  <summary class="form-label small mb-1" style="cursor:pointer">
+                    Schedule <span class="badge bg-secondary">${(room.schedule||[]).length}</span>
+                    <span class="text-muted small ms-1">(times vs temperatures)</span>
+                  </summary>
+                  <div class="hc-schedule-slots mt-1" data-ci="${ci}" data-ri="${ri}">
+                    ${renderHcScheduleSlots(room.schedule||[], ci, ri)}
+                  </div>
+                  <button type="button" class="btn btn-sm btn-outline-secondary w-100 mt-1 hc-add-slot"
+                          data-ci="${ci}" data-ri="${ri}">
+                    <i class="fas fa-plus me-1"></i>Add time slot
+                  </button>
+                  <div class="row g-1 mt-2">
+                    <div class="col-7">
+                      <label class="form-label small mb-0 text-muted">Outside schedule hours</label>
+                      <select class="form-select form-select-sm hc-room-ooh-action" data-ci="${ci}" data-ri="${ri}">
+                        <option value="setback" ${(room.out_of_hours_action||'setback')==='setback'?'selected':''}>Setback (lower target)</option>
+                        <option value="min_only" ${room.out_of_hours_action==='min_only'?'selected':''}>Frost-protect only</option>
+                        <option value="off" ${room.out_of_hours_action==='off'?'selected':''}>Off (no heat call)</option>
+                      </select>
+                    </div>
+                    <div class="col-5">
+                      <label class="form-label small mb-0 text-muted">Offset °C</label>
+                      <input type="number" step="0.5" min="-10" max="0"
+                             class="form-control form-control-sm hc-room-ooh-offset"
+                             data-ci="${ci}" data-ri="${ri}"
+                             placeholder="e.g. -3" value="${room.night_setback_offset_c??''}"/>
+                    </div>
+                  </div>
+                </details>
 
                 <div class="row g-2 mb-2">
                     <div class="col-md-8">
@@ -2046,6 +2095,53 @@ function bindCircuitCards() {
             });
         });
     }
+    // Schedule slot handlers
+    document.querySelectorAll('.hc-add-slot').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const ci = +btn.dataset.ci, ri = +btn.dataset.ri;
+            const room = workingCircuits[ci].rooms[ri];
+            if (!Array.isArray(room.schedule)) room.schedule = [];
+            room.schedule.push({ days: ['mon','tue','wed','thu','fri'], start: '07:00', end: '22:00', temp: room.target_temp || 20 });
+            renderCircuitsList();
+        });
+    });
+    document.querySelectorAll('.hc-del-slot').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const ci = +btn.dataset.ci, ri = +btn.dataset.ri, si = +btn.dataset.si;
+            const room = workingCircuits[ci].rooms[ri];
+            if (Array.isArray(room.schedule)) { room.schedule.splice(si, 1); renderCircuitsList(); }
+        });
+    });
+    document.querySelectorAll('.hc-slot-day').forEach(cb => {
+        cb.addEventListener('change', () => {
+            const ci = +cb.dataset.ci, ri = +cb.dataset.ri, si = +cb.dataset.si;
+            const slot = (workingCircuits[ci].rooms[ri].schedule || [])[si]; if (!slot) return;
+            if (cb.checked) { if (!slot.days.includes(cb.dataset.day)) slot.days.push(cb.dataset.day); }
+            else { slot.days = slot.days.filter(d => d !== cb.dataset.day); }
+        });
+    });
+    document.querySelectorAll('.hc-slot-start, .hc-slot-end, .hc-slot-temp').forEach(inp => {
+        inp.addEventListener('change', () => {
+            const ci = +inp.dataset.ci, ri = +inp.dataset.ri, si = +inp.dataset.si;
+            const slot = (workingCircuits[ci].rooms[ri].schedule || [])[si]; if (!slot) return;
+            if (inp.classList.contains('hc-slot-start')) slot.start = inp.value;
+            else if (inp.classList.contains('hc-slot-end')) slot.end = inp.value;
+            else slot.temp = parseFloat(inp.value) || slot.temp;
+        });
+    });
+    document.querySelectorAll('.hc-room-ooh-action').forEach(sel => {
+        sel.addEventListener('change', e => {
+            const ci = +e.target.dataset.ci, ri = +e.target.dataset.ri;
+            workingCircuits[ci].rooms[ri].out_of_hours_action = e.target.value;
+        });
+    });
+    document.querySelectorAll('.hc-room-ooh-offset').forEach(inp => {
+        inp.addEventListener('change', e => {
+            const ci = +e.target.dataset.ci, ri = +e.target.dataset.ri;
+            const v = parseFloat(e.target.value);
+            workingCircuits[ci].rooms[ri].night_setback_offset_c = isNaN(v) ? undefined : v;
+        });
+    });
     document.querySelectorAll('.btn-delete-room').forEach(btn => {
         btn.addEventListener('click', () => {
             const ci = +btn.dataset.ci, ri = +btn.dataset.ri;

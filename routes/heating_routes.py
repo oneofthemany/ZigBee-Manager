@@ -812,6 +812,20 @@ def register_heating_routes(app: FastAPI, get_heating_advisor, get_zigbee_servic
             logger.error(f"Tips endpoint failed: {e}", exc_info=True)
             return {"success": False, "error": str(e)}
 
+    def _active_circuits(heating: dict):
+        """Return the circuits list that is currently authoritative.
+
+        In floor_plan mode the circuits live under heating.controller.circuits
+        (written by the floor-plan projection).  In manual mode (or when no
+        mode is set) they live under heating.circuits.  All per-room endpoints
+        must use this helper so they can find rooms regardless of which mode
+        the user is in.
+        """
+        controller_block = heating.get("controller") or {}
+        config_mode = controller_block.get("config_mode") or "manual"
+        if config_mode == "floor_plan":
+            return controller_block.get("circuits") or []
+        return heating.get("circuits") or []
 
     @app.get("/api/heating/circuits/{circuit_id}/rooms/{room_id}/tips")
     async def circuit_room_tips(circuit_id: str, room_id: str):
@@ -825,7 +839,7 @@ def register_heating_routes(app: FastAPI, get_heating_advisor, get_zigbee_servic
 
             found_room = None
             found_circuit = None
-            for c in (heating.get("circuits") or []):
+            for c in _active_circuits(heating):
                 if str(c.get("id")) != str(circuit_id):
                     continue
                 found_circuit = c
@@ -1054,7 +1068,7 @@ def register_heating_routes(app: FastAPI, get_heating_advisor, get_zigbee_servic
             insulation = (heating.get("property") or {}).get("insulation", "partial")
 
             # ── Resolve the room (same logic as /thermal) ─────────────
-            circuits = heating.get("circuits") or []
+            circuits = _active_circuits(heating)
             found_room = None
             found_circuit = None
             matches = 0
@@ -1218,7 +1232,7 @@ def register_heating_routes(app: FastAPI, get_heating_advisor, get_zigbee_servic
             heating = cfg.get("heating") or {}
             insulation = (heating.get("property") or {}).get("insulation", "partial")
 
-            circuits = heating.get("circuits") or []
+            circuits = _active_circuits(heating)
             found_room = None
             found_circuit = None
             matches = 0
@@ -1322,10 +1336,9 @@ def register_heating_routes(app: FastAPI, get_heating_advisor, get_zigbee_servic
             insulation = (heating.get("property") or {}).get("insulation", "partial")
 
             # Locate room
-            circuits = heating.get("circuits") or []
             found_room = None
             found_circuit = None
-            for c in circuits:
+            for c in _active_circuits(heating):
                 if str(c.get("id")) != str(circuit_id):
                     continue
                 found_circuit = c

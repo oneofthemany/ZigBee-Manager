@@ -500,6 +500,20 @@ def _clean_room(r: dict, existing_ids: Optional[set] = None) -> Optional[dict]:
     if sensors_clean:
         out["temperature_sensors"] = sensors_clean
 
+    # Per-room out-of-hours override (optional — falls back to global when absent)
+    room_ooh = str(r.get("out_of_hours_action") or "").lower()
+    if room_ooh in ("setback", "min_only", "off"):
+        out["out_of_hours_action"] = room_ooh
+    room_ooh_offset = r.get("night_setback_offset_c")
+    if room_ooh_offset is not None:
+        try:
+            v = float(room_ooh_offset)
+            if -10.0 <= v <= 0.0:
+                out["night_setback_offset_c"] = round(v, 1)
+        except (TypeError, ValueError):
+            pass
+
+
     # Preserve floor_plan_ref so projected rooms keep their plan linkage
     # across save round-trips.
     fp_ref = r.get("floor_plan_ref")

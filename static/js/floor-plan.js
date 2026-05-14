@@ -1608,6 +1608,24 @@ function renderOpeningProps(o) {
       <button class="btn btn-sm btn-outline-danger w-100" data-action="delete-opening"><i class="fas fa-trash me-1"></i>Delete</button>`;
 }
 
+function renderFpScheduleSlots(slots) {
+    if (!slots || !slots.length) return '<div class="text-muted small fst-italic mb-1">No slots — room uses operating hours defaults.</div>';
+    const days = ['mon','tue','wed','thu','fri','sat','sun'];
+    return slots.map((slot, i) => `
+      <div class="fp-slot border rounded p-1 mb-1" data-slot-idx="${i}">
+        <div class="d-flex flex-wrap gap-1 mb-1">
+          ${days.map(d => `<label class="fp-day-label"><input type="checkbox" data-slot-day="${d}" data-slot-idx="${i}" ${(slot.days||[]).includes(d) ? 'checked' : ''}><span>${d.charAt(0).toUpperCase()}</span></label>`).join('')}
+        </div>
+        <div class="row g-1 align-items-center">
+          <div class="col-auto"><input type="time" class="form-control form-control-sm fp-slot-start" data-slot-idx="${i}" value="${slot.start||'07:00'}"/></div>
+          <div class="col-auto text-muted small">→</div>
+          <div class="col-auto"><input type="time" class="form-control form-control-sm fp-slot-end" data-slot-idx="${i}" value="${slot.end||'22:00'}"/></div>
+          <div class="col"><input type="number" step="0.5" min="5" max="32" class="form-control form-control-sm fp-slot-temp" data-slot-idx="${i}" value="${slot.temp??20}" placeholder="°C"/></div>
+          <div class="col-auto"><button class="btn btn-sm btn-outline-danger fp-del-slot" data-slot-idx="${i}" title="Delete slot"><i class="fas fa-times"></i></button></div>
+        </div>
+      </div>`).join('');
+}
+
 function renderRoomProps(r) {
     if (!r) return '';
     const planCircuits = _state.plan.circuits || [];
@@ -1619,11 +1637,49 @@ function renderRoomProps(r) {
         ? `<div class="mb-2"><label class="form-label small">Circuit</label>
              <select class="form-select form-select-sm" data-prop="room.circuit_id">${circuitOpts}</select></div>`
         : `<div class="mb-2 small text-muted fst-italic"><i class="fas fa-info-circle me-1"></i>Add a circuit in the sidebar to assign this room.</div>`;
+    const oohAction = r.out_of_hours_action || 'setback';
     return `
       <div class="text-muted small text-uppercase mb-2">Room</div>
       <div class="mb-2"><label class="form-label small">Name</label>
         <input class="form-control form-control-sm" data-prop="room.name" value="${escapeAttr(r.name || '')}"/></div>
       ${circuitSection}
+      <div class="mb-2"><label class="form-label small">Temperature targets</label>
+        <div class="row g-1">
+          <div class="col-4">
+            <label class="form-label small text-muted mb-0">Target (°C)</label>
+            <input type="number" step="0.5" min="5" max="32" class="form-control form-control-sm" data-prop="room.target_temp" value="${r.target_temp??20}"/>
+          </div>
+          <div class="col-4">
+            <label class="form-label small text-muted mb-0">Setback (°C)</label>
+            <input type="number" step="0.5" min="5" max="32" class="form-control form-control-sm" data-prop="room.night_setback" value="${r.night_setback??17}"/>
+          </div>
+          <div class="col-4">
+            <label class="form-label small text-muted mb-0">Min (°C)</label>
+            <input type="number" step="0.5" min="5" max="32" class="form-control form-control-sm" data-prop="room.min_temp" value="${r.min_temp??16}"/>
+          </div>
+        </div>
+      </div>
+      <div class="mb-2">
+        <label class="form-label small">Schedule <span class="badge bg-secondary">${(r.schedule||[]).length}</span></label>
+        <div class="fp-schedule-slots" data-room-id="${r.id}">${renderFpScheduleSlots(r.schedule||[])}</div>
+        <button class="btn btn-sm btn-outline-secondary w-100 mt-1 fp-add-slot"><i class="fas fa-plus me-1"></i>Add time slot</button>
+      </div>
+      <div class="mb-2"><label class="form-label small">Outside scheduled hours</label>
+        <div class="row g-1">
+          <div class="col-7">
+            <select class="form-select form-select-sm" data-prop="room.out_of_hours_action">
+              <option value="setback" ${oohAction==='setback'?'selected':''}>Setback (lower target)</option>
+              <option value="min_only" ${oohAction==='min_only'?'selected':''}>Frost-protect only</option>
+              <option value="off" ${oohAction==='off'?'selected':''}>Off (no heat call)</option>
+            </select>
+          </div>
+          <div class="col-5">
+            <input type="number" step="0.5" min="-10" max="0" class="form-control form-control-sm"
+                   placeholder="Offset °C" data-prop="room.night_setback_offset_c"
+                   value="${r.night_setback_offset_c??-3}"/>
+          </div>
+        </div>
+      </div>
       <div class="mb-2"><label class="form-label small">Floor type</label>
         <select class="form-select form-select-sm" data-prop="room.floor_type">
           <option value="">—</option>
@@ -1876,6 +1932,53 @@ function bindPropsHandlers() {
                 renderCircuitList();
             }
             renderScene();
+        });
+    });
+
+    // Schedule slot handlers (room props panel)
+    const fpAddSlot = root.querySelector('.fp-add-slot');
+    if (fpAddSlot) {
+        fpAddSlot.addEventListener('click', () => {
+            const lvl = currentLevel();
+            const room = lvl.rooms.find(r => r.id === sel.id);
+            if (!room) return;
+            if (!Array.isArray(room.schedule)) room.schedule = [];
+            room.schedule.push({ days: ['mon','tue','wed','thu','fri'], start: '07:00', end: '22:00', temp: room.target_temp || 20 });
+            renderProps();
+        });
+    }
+    root.querySelectorAll('.fp-del-slot').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const lvl = currentLevel();
+            const room = lvl.rooms.find(r => r.id === sel.id);
+            if (!room || !Array.isArray(room.schedule)) return;
+            const idx = parseInt(btn.dataset.slotIdx, 10);
+            room.schedule.splice(idx, 1);
+            renderProps();
+        });
+    });
+    root.querySelectorAll('[data-slot-day]').forEach(cb => {
+        cb.addEventListener('change', () => {
+            const lvl = currentLevel();
+            const room = lvl.rooms.find(r => r.id === sel.id);
+            if (!room || !Array.isArray(room.schedule)) return;
+            const idx = parseInt(cb.dataset.slotIdx, 10);
+            const slot = room.schedule[idx]; if (!slot) return;
+            const day = cb.dataset.slotDay;
+            if (cb.checked) { if (!slot.days.includes(day)) slot.days.push(day); }
+            else { slot.days = slot.days.filter(d => d !== day); }
+        });
+    });
+    root.querySelectorAll('.fp-slot-start, .fp-slot-end, .fp-slot-temp').forEach(inp => {
+        inp.addEventListener('change', () => {
+            const lvl = currentLevel();
+            const room = lvl.rooms.find(r => r.id === sel.id);
+            if (!room || !Array.isArray(room.schedule)) return;
+            const idx = parseInt(inp.dataset.slotIdx, 10);
+            const slot = room.schedule[idx]; if (!slot) return;
+            if (inp.classList.contains('fp-slot-start')) slot.start = inp.value;
+            else if (inp.classList.contains('fp-slot-end')) slot.end = inp.value;
+            else slot.temp = parseFloat(inp.value) || slot.temp;
         });
     });
 

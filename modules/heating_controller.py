@@ -1799,14 +1799,17 @@ class HeatingController:
             is_day, _ = self._is_within_operating_hours(now)
             if is_day:
                 return target
-            # Out-of-hours
-            if self._oh_action == "off":
-                # Sentinel — caller will floor at min_temp and never call for heat
+            # Out-of-hours — per-room override takes precedence over global
+            room_ooh = room.get("out_of_hours_action")
+            room_offset = room.get("night_setback_offset_c")
+            action = room_ooh if room_ooh else self._oh_action
+            offset = room_offset if room_offset is not None else self._oh_setback_offset
+            if action == "off":
                 return min_t
-            if self._oh_action == "min_only":
+            if action == "min_only":
                 return min_t
             # "setback"
-            setback = target + self._oh_setback_offset
+            setback = target + offset
             return max(setback, min_t)
 
         # 3. Legacy fallback (operating_hours disabled): old 22-06 setback
