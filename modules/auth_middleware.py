@@ -49,17 +49,38 @@ logger = logging.getLogger("modules.auth_middleware")
 # --- secret derivation -----------------------------------------------------
 
 def _derive_session_secret(path: str) -> bytes:
-    """Derive an HMAC secret stable across saves but invalidated on file replacement.
+    """Return a stable HMAC secret for signing session cookies.
 
-    We use just the inode (not mtime) so routine writes don't rotate the
-    secret. A backup-restore replaces the file → new inode → all sessions
-    invalidated, which is the desired behaviour."""
+    The secret lives in session_secret.bin next to the auth file.  It is
+    generated once on first boot and never rotated automatically, so atomic
+    rewrites of auth.yaml (os.replace → new inode) no longer invalidate
+    existing sessions.  Deleting session_secret.bin forces a rotation.
+    """
+    secret_path = os.path.join(
+        os.path.dirname(os.path.abspath(path)), "session_secret.bin"
+    )
     try:
-        st = os.stat(path)
-        material = f"{st.st_ino}".encode("ascii")
+        with open(secret_path, "rb") as fh:
+            data = fh.read()
+        if len(data) == 32:
+            return data
     except OSError:
-        material = b"zmm-no-auth-file"
-    return hashlib.sha256(b"zmm-session-secret:" + material).digest()
+        pass
+
+    # First boot (or after manual deletion) — generate and persist.
+    secret = os.urandom(32)
+    try:
+        tmp = secret_path + ".tmp"
+        with open(tmp, "wb") as fh:
+            fh.write(secret)
+        os.replace(tmp, secret_path)
+        try:
+            os.chmod(secret_path, 0o600)
+        except OSError:
+            pass
+    except OSError as e:
+        logger.warning(f"Could not persist session secret ({e}); sessions won't survive restarts")
+    return secret
 
 def _sign_session(username: str, issued_at: int, secret: bytes) -> str:
     """Cookie format: base64url(username|issued_at|hmac_sig)."""

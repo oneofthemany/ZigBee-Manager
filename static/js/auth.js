@@ -317,8 +317,13 @@
         return origFetch(input, init).then(function (resp) {
             if (resp.status === 401) {
                 var url = (typeof input === 'string') ? input : (input.url || '');
+                // Don't hijack 401s from auth-management endpoints — they handle
+                // their own error display (e.g. wrong password on MFA disable).
+                var isAuthMgmt = url.indexOf('/api/auth/login') !== -1
+                    || url.indexOf('/api/auth/mfa/') !== -1
+                    || url.indexOf('/api/auth/users/') !== -1;
                 if (url.indexOf('/api/') !== -1
-                    && url.indexOf('/api/auth/login') === -1
+                    && !isAuthMgmt
                     && state.ready
                     && state.principal // Only trigger if currently logged in
                 ) {
