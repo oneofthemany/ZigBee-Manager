@@ -237,13 +237,56 @@ export function adjustSetpoint(ieee, delta) {
 /**
  * Perform device maintenance action
  */
+function _showRemoveDialog() {
+    return new Promise(resolve => {
+        const id = 'zmm-remove-dialog';
+        document.getElementById(id)?.remove();
+
+        const el = document.createElement('div');
+        el.id = id;
+        el.innerHTML = `
+<div class="modal fade" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Remove Device</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p>Are you sure you want to remove this device?</p>
+        <p class="text-muted small mb-0">Banning prevents the device from rejoining the network.</p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" id="${id}-cancel">Cancel</button>
+        <button type="button" class="btn btn-warning" id="${id}-remove">Remove</button>
+        <button type="button" class="btn btn-danger" id="${id}-ban">Ban</button>
+      </div>
+    </div>
+  </div>
+</div>`;
+        document.body.appendChild(el);
+
+        const modalEl = el.querySelector('.modal');
+        const modal = new bootstrap.Modal(modalEl, { backdrop: 'static' });
+
+        const done = (choice) => { modal.hide(); resolve(choice); };
+        document.getElementById(`${id}-cancel`).addEventListener('click', () => done('cancel'));
+        document.getElementById(`${id}-remove`).addEventListener('click', () => done('remove'));
+        document.getElementById(`${id}-ban`).addEventListener('click',   () => done('ban'));
+        modalEl.addEventListener('hidden.bs.modal', () => el.remove());
+
+        modal.show();
+    });
+}
+
 export async function doAction(action, ieee) {
     let shouldBan = false;
 
     // Special handling for 'remove' to ask about banning
     if (action === 'remove') {
-        if (!confirm("Are you sure you want to remove this device?")) return;
-        shouldBan = confirm("Do you also want to BAN this device to prevent it from rejoining?\n\nClick OK to Remove & Ban.\nClick Cancel to just Remove.");
+        const choice = await _showRemoveDialog();
+        if (choice === 'cancel') return;
+        shouldBan = (choice === 'ban');
     }
 
     try {
