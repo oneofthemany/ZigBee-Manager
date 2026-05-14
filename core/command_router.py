@@ -4,6 +4,7 @@ Handles routing of API and MQTT commands to the appropriate device.
 """
 import logging
 import re
+import time
 import traceback
 from typing import Dict, Any, Optional
 
@@ -16,6 +17,7 @@ class CommandRouterMixin:
             return {"success": False, "error": "Device not found"}
         try:
             device = self.devices[ieee]
+            device._last_write_ts = time.time()
             result = await device.send_command(command, value, endpoint_id)
             if result is False:
                 if not getattr(device, 'handlers', None):

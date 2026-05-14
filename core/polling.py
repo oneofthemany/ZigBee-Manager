@@ -4,7 +4,13 @@ Extracted from core.py - standalone class (not a mixin).
 """
 import asyncio
 import logging
+import time
 from typing import Dict, Optional
+
+# Suppress polling for this many seconds after any write to the device.
+# Prevents concurrent radio traffic from confusing the SLR1c / other receivers
+# while an atomic write is still in flight.
+WRITE_BACKOFF_SEC = 20
 
 logger = logging.getLogger("core.polling")
 
@@ -97,6 +103,15 @@ class PollingScheduler:
                     if pi_heating_demand > 0:
                         logger.debug(f"[{ieee}] Skipping poll - TRV actively heating")
                         continue
+
+                # Back off if a write was recently dispatched to this device
+                last_write = getattr(device, '_last_write_ts', 0)
+                if time.time() - last_write < WRITE_BACKOFF_SEC:
+                    logger.debug(
+                        f"[{ieee}] Skipping poll - write in flight "
+                        f"({time.time() - last_write:.1f}s ago)"
+                    )
+                    continue
 
                 if device.is_available():
                     logger.debug(f"[{ieee}] Auto-polling device")
