@@ -129,6 +129,11 @@ TICK_INTERVAL_SEC = 60
 # Don't repeat the same setpoint command more often than this
 COMMAND_COOLDOWN_SEC = 300
 
+# How long a receiver can sit in commanded-but-unconfirmed state before
+# we bounce it (send off, next tick re-sends heat) to recover from
+# dropped ZigBee packets
+RECEIVER_STALL_RECOVERY_SEC = 300
+
 # Default external-temp push cadence when mode='push' and room doesn't override
 DEFAULT_EXT_TEMP_PUSH_INTERVAL_SEC = 300
 
@@ -1469,6 +1474,23 @@ class HeatingController:
             except Exception as e:
                 logger.warning(f"tick persistence failed (non-fatal): {e}")
 
+    def on_device_rejoin(self, ieee: str):
+        """
+        Called when a receiver rejoins the network. Clears the command cache
+        so the next tick re-sends all commands — the device will have lost its
+        state on rejoin/power cycle.
+        """
+        ieee = str(ieee)
+        cleared = False
+        for key in list(self._last_command.keys()):
+            if key == ieee or key.startswith(f"{ieee}:"):
+                del self._last_command[key]
+                cleared = True
+        if cleared:
+            logger.info(
+                f"Heating controller: cleared command cache for {ieee} after rejoin"
+            )
+
     # ── Device snapshot ────────────────────────────────────────────
     def _snapshot_devices(self) -> Dict[str, Any]:
         try:
@@ -2501,6 +2523,7 @@ class HeatingController:
         # mirror it here so the controller and the handler stay aligned
         # on which write protocol is in play.
         is_hive_receiver = False
+        dev = None
         try:
             devs = self._snapshot_devices()
             dev = devs.get(ieee)
@@ -2532,6 +2555,44 @@ class HeatingController:
             target_value = None
             display = target_command
 
+        # ── Stall recovery ─────────────────────────────────────────────
+        # If we commanded heat but the receiver hasn't confirmed after
+        # RECEIVER_STALL_RECOVERY_SEC, send an explicit off first so the
+        # device re-evaluates its state on the next tick (bounce off→heat).
+        if mode == "thermostat" and should_call and dev is not None:
+            prev = self._last_command.get(ieee)
+            if (prev
+                    and prev[0] == "system_mode"
+                    and prev[1] == "heat"
+                    and len(prev) > 2):
+                stall_age = time.time() - prev[2]
+                if stall_age > RECEIVER_STALL_RECOVERY_SEC:
+                    rx_state = (
+                        dev.get("state") if isinstance(dev, dict)
+                        else getattr(dev, "state", None)
+                    ) or {}
+                    actual_mode = str(rx_state.get("system_mode", "")).lower()
+                    if actual_mode != "heat":
+                        logger.warning(
+                            f"Receiver '{circuit['name']}' ({ieee}) stall: "
+                            f"commanded heat {stall_age / 60:.1f} min ago but "
+                            f"actual mode={actual_mode!r}. Bouncing off→heat."
+                        )
+                        try:
+                            await self._throttled_send(
+                                ieee, "system_mode", "off",
+                                endpoint_id=circuit.get("receiver_endpoint"),
+                            )
+                        except TypeError:
+                            await self._throttled_send(ieee, "system_mode", "off")
+                        self._last_command[ieee] = ("system_mode", "off", time.time())
+                        self._last_command.pop(f"{ieee}:setpoint", None)
+                        return {
+                            "sent": True,
+                            "command": "system_mode → off (stall bounce)",
+                            "stall_recovery": True,
+                        }
+
         last = self._last_command.get(ieee)
         if last and last[0] == target_command and last[1] == target_value:
             return {"sent": False, "reason": "unchanged", "command": display}
@@ -2541,18 +2602,30 @@ class HeatingController:
             self._last_command[ieee] = (target_command, target_value, time.time())
             return {"sent": True, "command": display, "dry_run": True}
 
-        # For a Hive receiver calling for heat
+        # For Hive calling for heat: set_target_temperature atomically writes
+        # system_mode=heat + hold=1 + duration=0xFFFF + setpoint — don't send mode separately.
         skip_mode_send = (
                 mode == "thermostat"
                 and should_call
                 and is_hive_receiver
         )
+        # For Hive turning off: set_hvac_mode atomically writes system_mode=off +
+        # hold=0 + duration=0 + frost setpoint — don't call set_target_temperature
+        # (which would wrongly include system_mode=heat in the same write).
+        skip_setpoint_send = (
+                mode == "thermostat"
+                and not should_call
+                and is_hive_receiver
+        )
 
         try:
-            # 1) Push setpoint first (only in thermostat mode)
-            if mode == "thermostat":
+            # 1) Push setpoint first (only in thermostat mode, not Hive turn-off)
+            if mode == "thermostat" and not skip_setpoint_send:
                 last_sp = self._last_command.get(f"{ieee}:setpoint")
-                if not last_sp or last_sp[0] != target_setpoint:
+                # Always send for Hive turn-on: the write atomically carries
+                # system_mode=heat, so it must fire even when the setpoint value
+                # is unchanged (e.g. still 30°C from the previous call cycle).
+                if not last_sp or last_sp[0] != target_setpoint or skip_mode_send:
                     try:
                         await self._throttled_send(
                             ieee, "temperature", target_setpoint,

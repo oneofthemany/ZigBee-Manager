@@ -262,11 +262,18 @@ mqtt_service = MQTTService(
 mqtt_enabled = get_conf('mqtt', 'enabled', True)  # Default True for backward compat
 
 
+async def _zigbee_event_callback(evt: str, data: dict):
+    await broadcast_event(evt, data)
+    if evt == "device_joined":
+        ieee = data.get("ieee")
+        if ieee:
+            heating_controller.on_device_rejoin(ieee)
+
 zigbee_service = ZigbeeService(
     port=get_conf('zigbee', 'port', '/dev/ttyACM0'),
     mqtt_client=mqtt_service,
     config=CONFIG.get('zigbee', {}),
-    event_callback=broadcast_event
+    event_callback=_zigbee_event_callback
 )
 
 weather_service = WeatherService(

@@ -257,6 +257,7 @@ class DeviceLifecycleMixin:
         self._emit_sync("log", {"level": "WARNING",
                                 "message": f"[{ieee}] ({name}) Device Left - marked offline",
                                 "ieee": ieee, "device_name": name, "category": "connection"})
+        self._emit_sync("device_offline", {"ieee": ieee, "name": name})
 
     def device_removed(self, device: zigpy.device.Device):
         ieee = str(device.ieee)

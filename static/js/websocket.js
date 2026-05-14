@@ -145,6 +145,17 @@ export function initWS() {
                     }
                     break;
 
+                case "device_offline": {
+                    const offlineData = msg.payload || msg.data || {};
+                    const offlineName = offlineData.name || offlineData.ieee || "Unknown device";
+                    if (window.showToast) {
+                        window.showToast('warning', `Device offline: ${offlineName}`, { duration: 8000 });
+                    }
+                    // Refresh device list so availability indicator updates
+                    fetchAllDevices().catch(() => {});
+                    break;
+                }
+
                 case "device_left":
                     // Handle both payload structures just in case
                     const leftIeee = msg.ieee || (msg.data ? msg.data.ieee : null) || (msg.payload ? msg.payload.ieee : null);

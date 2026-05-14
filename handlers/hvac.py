@@ -436,19 +436,31 @@ class ThermostatHandler(ClusterHandler):
 
         # --- HIVE PATH: SLT is master ---
         if self.is_receiver:
+            attrs_by_name = {
+                "system_mode": mode_val,
+                "temp_setpoint_hold": 0,
+            }
+            attrs_by_id = {
+                self.ATTR_SYSTEM_MODE: mode_val,
+                self.ATTR_TEMP_SETPOINT_HOLD: 0,
+            }
+            if mode == "off":
+                # Explicitly clear hold duration and write frost-protection setpoint
+                # so the receiver doesn't keep hold=True/duration=65535 from the
+                # previous heat call.
+                frost_cd = int(self._min_heat * 100)
+                attrs_by_name["temp_setpoint_hold_duration"] = 0
+                attrs_by_name["occupied_heating_setpoint"] = frost_cd
+                attrs_by_id[self.ATTR_TEMP_SETPOINT_HOLD_DURATION] = 0
+                attrs_by_id[self.ATTR_OCCUPIED_HEATING_SETPOINT] = frost_cd
+
             logger.info(
-                f"[{self.device.ieee}] Hive atomic mode write: "
-                f"system_mode={mode}, hold=0"
+                f"[{self.device.ieee}] Hive atomic mode write: system_mode={mode}, hold=0"
+                + (f", duration=0, setpoint={self._min_heat}°C" if mode == "off" else "")
             )
             ok = await self._write_atomic(
-                attrs_by_name={
-                    "system_mode": mode_val,
-                    "temp_setpoint_hold": 0,
-                },
-                attrs_by_id={
-                    self.ATTR_SYSTEM_MODE: mode_val,
-                    self.ATTR_TEMP_SETPOINT_HOLD: 0,
-                },
+                attrs_by_name=attrs_by_name,
+                attrs_by_id=attrs_by_id,
             )
             if not ok:
                 return
@@ -457,16 +469,13 @@ class ThermostatHandler(ClusterHandler):
                 "system_mode": mode,
                 "system_mode_raw": mode_val,
                 "temperature_setpoint_hold": False,
+                "temperature_setpoint_hold_duration": 0,
             }
             if mode == "off":
-                # Device will auto-clamp these; mirror locally to avoid
-                # heating_controller seeing a stale setpoint and hammering
-                # the device to "fix" it.
                 updates.update({
-                    "occupied_heating_setpoint": 1.0,
-                    "heating_setpoint": 1.0,
-                    "target_temp": 1.0,
-                    "temperature_setpoint_hold_duration": 0,
+                    "occupied_heating_setpoint": self._min_heat,
+                    "heating_setpoint": self._min_heat,
+                    "target_temp": self._min_heat,
                 })
             self.device.update_state(updates)
             self._fetch_thermostat_temperature()
