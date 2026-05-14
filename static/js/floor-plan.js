@@ -52,6 +52,8 @@ function resetState(plan) {
         showSun: false,
         showThermal: false,
         showContours: false,
+        showColdZones: false,
+        heatFluxWm2: 50,
         sunData: null,
         calibration: null,         // { p1: {x,y} } during 2-click calibrate
     };
@@ -246,6 +248,18 @@ function ensureModal() {
                   <input class="form-check-input" type="checkbox" id="fpToggleContours" disabled>
                   <label class="form-check-label text-muted" for="fpToggleContours">Contour lines</label>
                 </div>
+                <div class="form-check form-switch small ms-3">
+                  <input class="form-check-input" type="checkbox" id="fpToggleColdZones" disabled>
+                  <label class="form-check-label text-muted" for="fpToggleColdZones">Cold zones</label>
+                </div>
+                <div id="fpColdZoneControls" style="display:none" class="ms-4 mb-1">
+                  <label class="small text-muted d-block mb-1">Building heat loss</label>
+                  <select class="form-select form-select-sm py-0" id="fpHeatFlux" style="font-size:0.78rem">
+                    <option value="30">Well insulated — 30 W/m²</option>
+                    <option value="50" selected>Average — 50 W/m²</option>
+                    <option value="80">Poorly insulated — 80 W/m²</option>
+                  </select>
+                </div>
                 <div class="d-flex gap-1 mt-2">
                   <button class="btn btn-sm btn-outline-secondary flex-fill" id="fpZoomOut">−</button>
                   <button class="btn btn-sm btn-outline-secondary flex-fill" id="fpZoomFit">Fit</button>
@@ -320,12 +334,27 @@ function bindModalEvents() {
     document.getElementById('fpToggleThermal').addEventListener('change', e => {
         _state.showThermal = e.target.checked;
         const contoursEl = document.getElementById('fpToggleContours');
+        const coldEl = document.getElementById('fpToggleColdZones');
         contoursEl.disabled = !_state.showThermal;
-        if (!_state.showThermal) { _state.showContours = false; contoursEl.checked = false; }
+        coldEl.disabled = !_state.showThermal;
+        if (!_state.showThermal) {
+            _state.showContours = false; contoursEl.checked = false;
+            _state.showColdZones = false; coldEl.checked = false;
+            document.getElementById('fpColdZoneControls').style.display = 'none';
+        }
         renderScene();
     });
     document.getElementById('fpToggleContours').addEventListener('change', e => {
         _state.showContours = e.target.checked;
+        renderScene();
+    });
+    document.getElementById('fpToggleColdZones').addEventListener('change', e => {
+        _state.showColdZones = e.target.checked;
+        document.getElementById('fpColdZoneControls').style.display = _state.showColdZones ? '' : 'none';
+        renderScene();
+    });
+    document.getElementById('fpHeatFlux').addEventListener('change', e => {
+        _state.heatFluxWm2 = parseInt(e.target.value, 10) || 50;
         renderScene();
     });
     document.getElementById('fpZoomIn').addEventListener('click', () => zoomBy(1.25));
@@ -449,7 +478,14 @@ function syncViewToggles() {
     set('fpToggleBackground', _state.showBackground);
     set('fpToggleSun',        _state.showSun);
     set('fpToggleThermal',    _state.showThermal);
-    set('fpToggleContours',   _state.showContours, !_state.showThermal);
+    set('fpToggleContours',   _state.showContours,  !_state.showThermal);
+    set('fpToggleColdZones',  _state.showColdZones, !_state.showThermal);
+
+    // Cold zone sub-controls
+    const czCtrl = document.getElementById('fpColdZoneControls');
+    if (czCtrl) czCtrl.style.display = _state.showColdZones ? '' : 'none';
+    const hfEl = document.getElementById('fpHeatFlux');
+    if (hfEl) hfEl.value = String(_state.heatFluxWm2 || 50);
 
     // Keep grid visibility in sync with state
     const grid = document.getElementById('fpGrid');
@@ -632,6 +668,18 @@ function computeSolarGain(lvl, sunData, northOffsetDeg) {
         }
     }
     return result;
+}
+
+// Resolve the live open/closed state of a contact sensor bound to an opening.
+// Returns true (open), false (closed), or null (no sensor / unknown).
+function openingContactState(opening, lvl) {
+    const contact = (lvl.contacts || []).find(c => c.opening_id === opening.id);
+    if (!contact) return null;
+    const dev = (_availableDevices.contacts || []).find(d => d.ieee === contact.ieee);
+    if (!dev) return null;
+    if (typeof dev.is_open   === 'boolean') return dev.is_open;
+    if (typeof dev.contact   === 'boolean') return !dev.contact; // zigbee2mqtt: contact=true → closed
+    return null;
 }
 
 function clientToSvg(evt) {
@@ -819,6 +867,154 @@ function renderScene() {
                                   fill="rgba(120,80,0,0.88)" pointer-events="none">${hours}h sun</text>`);
             }
         }
+    }
+
+    // Cold zones — threshold demarcation + window/door draft overlay.
+    // Requires thermal to be on (shares the radiator heat data).
+    if (_state.showColdZones && _state.showThermal) {
+        const heatFlux = _state.heatFluxWm2 || 50; // W/m²
+        const coldDefs = [];
+        const coldPaths = [];
+        const definedClips = new Set();
+
+        const ensureRoomClip = (uid, roomPath) => {
+            if (definedClips.has(uid)) return;
+            coldDefs.push(`<clipPath id="cz_${uid}"><path d="${roomPath}"/></clipPath>`);
+            definedClips.add(uid);
+        };
+
+        // ── Heated-radius cold zone per room ──
+        for (const room of lvl.rooms) {
+            if (!room.polygon || room.polygon.length < 3) continue;
+            const rads = lvl.radiators.filter(r => r.room_id === room.id);
+            const uid = room.id.replace(/[^a-z0-9]/gi, '_');
+            const roomPath = polygonToPath(room.polygon);
+            ensureRoomClip(uid, roomPath);
+
+            if (rads.length === 0) {
+                // No radiator → entire room is below threshold
+                coldPaths.push(`<path d="${roomPath}" fill="rgba(59,130,246,0.20)" pointer-events="none"/>`);
+                const c = polygonCentroid(room.polygon);
+                const sc = modelToSvg(c);
+                coldPaths.push(`<text x="${sc.x}" y="${sc.y + 0.60}" font-size="0.17" text-anchor="middle"
+                                       fill="rgba(37,99,235,0.8)" pointer-events="none">no heating</text>`);
+                continue;
+            }
+
+            const totalWatts = rads.reduce((s, r) => s + (r.watts_at_dt50 || 0), 0);
+            if (totalWatts === 0) continue;
+
+            let heatX = 0, heatY = 0;
+            for (const r of rads) { const c = radiatorCenter(r, lvl); heatX += c.x; heatY += c.y; }
+            heatX /= rads.length; heatY /= rads.length;
+            const hsvg = modelToSvg({ x: heatX, y: heatY });
+
+            // Heated radius: area that the radiator can maintain above threshold
+            const heatedR = Math.sqrt(totalWatts / (heatFlux * Math.PI));
+
+            // If radiator covers the whole room, no cold zone to show
+            const xs = room.polygon.map(p => p[0]);
+            const ys = room.polygon.map(p => p[1]);
+            const roomDiag = Math.hypot(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys));
+            if (heatedR >= roomDiag * 0.62) continue;
+
+            // Mask punches out the heated circle; clip-path hard-bounds to room polygon.
+            const maskId = `czm_${uid}`;
+            coldDefs.push(`
+              <mask id="${maskId}" maskUnits="userSpaceOnUse">
+                <rect x="-5000" y="-5000" width="10000" height="10000" fill="white"/>
+                <circle cx="${hsvg.x}" cy="${hsvg.y}" r="${heatedR}" fill="black"/>
+              </mask>`);
+            coldPaths.push(`<path d="${roomPath}" fill="rgba(59,130,246,0.17)"
+                                  mask="url(#${maskId})" clip-path="url(#cz_${uid})"
+                                  pointer-events="none"/>`);
+
+            // Demarcation line at the threshold boundary
+            coldPaths.push(`<circle cx="${hsvg.x}" cy="${hsvg.y}" r="${heatedR}"
+                                   clip-path="url(#cz_${uid})" fill="none"
+                                   stroke="rgba(59,130,246,0.75)" stroke-width="0.045"
+                                   stroke-dasharray="0.20 0.10" pointer-events="none"/>`);
+
+            // Target temp label anchored in the cold zone (toward farthest corner)
+            const targetT = room.target_temp;
+            if (targetT) {
+                const fxs = xs.reduce((f, x) => Math.abs(x - heatX) > Math.abs(f - heatX) ? x : f, xs[0]);
+                const fys = ys.reduce((f, y) => Math.abs(y - heatY) > Math.abs(f - heatY) ? y : f, ys[0]);
+                const lp = modelToSvg({ x: heatX + (fxs - heatX) * 0.65, y: heatY + (fys - heatY) * 0.65 });
+                coldPaths.push(`<text x="${lp.x}" y="${lp.y}" font-size="0.17" text-anchor="middle"
+                                       fill="rgba(37,99,235,0.80)" pointer-events="none">&lt;${targetT}°C</text>`);
+            }
+        }
+
+        // ── Window / door draft zones ──
+        for (const opening of (lvl.openings || [])) {
+            const wall = lvl.walls.find(w => w.id === opening.wall_id);
+            if (!wall) continue;
+
+            const wlen = Math.hypot(wall.x2 - wall.x1, wall.y2 - wall.y1) || 1;
+            const ux = (wall.x2 - wall.x1) / wlen, uy = (wall.y2 - wall.y1) / wlen;
+            const wmx = wall.x1 + ux * (opening.offset_m + opening.width_m / 2);
+            const wmy = wall.y1 + uy * (opening.offset_m + opening.width_m / 2);
+            const wsvg = modelToSvg({ x: wmx, y: wmy });
+
+            const isOpen = openingContactState(opening, lvl);
+
+            // Draft intensity: state × glazing × door-type
+            const glazingFactor = { single: 1.45, double: 1.0, triple: 0.60 }[opening.glazing] ?? 1.0;
+            const doorFactor    = opening.kind === 'door'
+                ? ({ external: 1.15, internal: 0.55 }[opening.door_type] ?? 0.8)
+                : 1.0;
+            const stateBase = isOpen === true ? 0.40 : isOpen === false ? 0.07 : 0.18;
+            const draftOpacity = Math.min(0.55, stateBase * glazingFactor * doorFactor);
+            if (draftOpacity < 0.04) continue;
+
+            // Draft reach scales with opening width and state
+            const draftR = Math.max(1.0, opening.width_m * 1.4) * (isOpen === true ? 1.5 : 1.0);
+
+            // Apply to every room whose polygon edge contains this opening
+            for (const room of lvl.rooms) {
+                if (!room.polygon || room.polygon.length < 3) continue;
+                let onBoundary = false;
+                for (let i = 0; i < room.polygon.length; i++) {
+                    const a = room.polygon[i], b = room.polygon[(i + 1) % room.polygon.length];
+                    const ex = b[0] - a[0], ey = b[1] - a[1];
+                    const elen2 = ex * ex + ey * ey || 1;
+                    const t = Math.max(0, Math.min(1, ((wmx - a[0]) * ex + (wmy - a[1]) * ey) / elen2));
+                    if (Math.hypot(wmx - (a[0] + t * ex), wmy - (a[1] + t * ey)) < 0.3) {
+                        onBoundary = true; break;
+                    }
+                }
+                if (!onBoundary) continue;
+
+                const uid  = room.id.replace(/[^a-z0-9]/gi, '_');
+                const oid  = opening.id.replace(/[^a-z0-9]/gi, '_');
+                const gid  = `dg_${uid}_${oid}`;
+                ensureRoomClip(uid, polygonToPath(room.polygon));
+
+                coldDefs.push(`
+                  <radialGradient id="${gid}" cx="${wsvg.x}" cy="${wsvg.y}" r="${draftR}"
+                                  gradientUnits="userSpaceOnUse">
+                    <stop offset="0%"   stop-color="rgba(96,165,250,${draftOpacity.toFixed(2)})"/>
+                    <stop offset="55%"  stop-color="rgba(96,165,250,${(draftOpacity * 0.35).toFixed(2)})"/>
+                    <stop offset="100%" stop-color="rgba(96,165,250,0)"/>
+                  </radialGradient>`);
+
+                coldPaths.push(`<path d="${polygonToPath(room.polygon)}"
+                                      fill="url(#${gid})" clip-path="url(#cz_${uid})"
+                                      pointer-events="none"/>`);
+
+                // State label when known, coloured red/green
+                if (isOpen !== null) {
+                    const lc = isOpen ? 'rgba(220,38,38,0.90)' : 'rgba(22,163,74,0.85)';
+                    coldPaths.push(`<text x="${wsvg.x}" y="${wsvg.y - 0.28}" font-size="0.15"
+                                          text-anchor="middle" fill="${lc}"
+                                          pointer-events="none">${isOpen ? 'open' : 'closed'}</text>`);
+                }
+            }
+        }
+
+        if (coldDefs.length) parts.push(`<defs>${coldDefs.join('')}</defs>`);
+        parts.push(...coldPaths);
     }
 
     // Walls
